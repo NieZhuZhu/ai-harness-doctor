@@ -228,3 +228,6 @@ runner 缺失时，脚本输出手工协议，不做伪装。
 - `assets/AGENTS.template.md`：英文 `AGENTS.md` 模板。
 - `assets/github-actions-drift.yml`：目标仓库 CI gate 模板。
 - `assets/pre-commit-hook.sh`：目标仓库 pre-commit hook 模板。
+- `commands/`：Claude Code slash commands，按阶段路由到本 skill。
+- `adapters/`：Codex、Cursor、Gemini 与通用 agent 的薄指针模板。
+- `bin/cli.js`：npm CLI、安装器与 Python 脚本转发入口。

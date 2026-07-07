@@ -1,101 +1,144 @@
-# ai-harness-doctor
+**English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-AI harness doctor audits, consolidates, guards, and evaluates repository agent configuration. It turns scattered instructions into a canonical `AGENTS.md`. Scripts are deterministic mechanics only; semantic merge decisions stay with the agent and human owner.
+# 🩺 AI Harness Doctor
 
-## 定位
+Audit, consolidate & guard your repo's AI agent configs (`AGENTS.md` / `CLAUDE.md` / `.cursorrules` / copilot-instructions / `GEMINI.md` ...) with a checkup→treat→follow-up→efficacy pipeline.
 
-`ai-harness-doctor` 给仓库的 agent 配置层做四阶段治理：阶段 0 体检、阶段 1 治疗、阶段 2 复诊、阶段 3 疗效验证。目标是把 `AGENTS.md`、`CLAUDE.md`、`.cursorrules`、`.cursor/rules/*.mdc`、`.windsurfrules`、`.github/copilot-instructions.md`、`GEMINI.md`、`.clinerules` 等散落配置收敛到单一事实源 `AGENTS.md`。
+[![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml)
+[![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
+![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
 
-## 为什么需要
+## Why
 
-多 agent 工具会读取不同配置文件；团队经常把同一规则复制到多处，随后命令、路径、偏好和安全边界开始漂移。结果是 agent 行为不稳定、上下文膨胀，甚至被 32KB 左右的上下文文件限制静默截断。本 skill 用扫描、stub 降级、drift guard 和 eval 把配置治理变成可复诊的流程。
+Agent config drift is a repo disease: N tools read N rule files, teams copy-paste the same instructions everywhere, commands rot, paths move, and Codex-sized 32KB context files can be silently truncated. The result is a confident agent following stale or contradictory rules.
 
-## 安装
+AI Harness Doctor turns that mess into one canonical `AGENTS.md`, minimal tool stubs, drift gates, and an optional before/after efficacy run.
 
-克隆或复制到用户级 skill 目录：
+## Benchmark
 
-```bash
-mkdir -p ~/.claude/skills
-git clone <repo-url> ~/.claude/skills/ai-harness-doctor
-```
+This is the differentiator: the demo keeps code and package manifests identical, changing only the agent-facing config layer.
 
-或放到项目级目录：
+| Metric | Before: messy conflicting configs | After: canonical `AGENTS.md` |
+|---|---:|---:|
+| Objective tasks correct | 3/7 | 7/7 |
+| Avg latency per task | 20.2s | 11.4s |
+| Captured total cost | $1.81 | $1.19 |
 
-```bash
-mkdir -p .claude/skills
-cp -R /path/to/ai-harness-doctor .claude/skills/ai-harness-doctor
-```
+Scope: 7 objective tasks, single run, demo repo, runner `claude -p` using Claude CLI 2.1.202. See [`benchmark/`](benchmark/) to reproduce with the three commands in [`benchmark/README.md`](benchmark/README.md).
 
-## 四阶段 walkthrough
+## Quick Start
 
-### 阶段 0 体检（Scan / 审计）
-
-```bash
-python3 scripts/scan.py /path/to/target-repo
-python3 scripts/scan.py /path/to/target-repo --json
-```
-
-输出配置文件清单、大小告警、重叠候选、冲突候选和嵌套 `AGENTS.md`。
-
-### 阶段 1 治疗（Canonicalize / 收敛迁移）
+Install for Claude Code (default):
 
 ```bash
-python3 scripts/canonicalize.py --plan /path/to/target-repo -o merge-plan.md
+npx ai-harness-doctor install
 ```
 
-agent 按计划和人工裁决手工编写 root `AGENTS.md`。然后预览 / 应用 stub：
+Install adapters for other agents:
 
 ```bash
-python3 scripts/canonicalize.py --write-stubs /path/to/target-repo
-python3 scripts/canonicalize.py --write-stubs /path/to/target-repo --apply
-python3 scripts/canonicalize.py --validate /path/to/target-repo
+npx ai-harness-doctor install --agent codex
+npx ai-harness-doctor install --agent cursor
+npx ai-harness-doctor install --agent gemini
+npx ai-harness-doctor install --agent all
 ```
 
-写入默认 dry-run，`--apply` 要求目标仓库是 clean git repo；可用 `--force` 覆盖。
-
-### 阶段 2 复诊（Drift Guard / 漂移治理）
+Install into the current project instead of the user home where supported:
 
 ```bash
-python3 scripts/check_drift.py /path/to/target-repo
-python3 scripts/check_drift.py /path/to/target-repo --json
-python3 scripts/check_drift.py /path/to/target-repo --strict
+npx ai-harness-doctor install --project
+npx ai-harness-doctor install --agent all --project
 ```
 
-检查命令、路径、stub 再分叉、体积和嵌套 `AGENTS.md`。
+Claude Code slash commands:
 
-### 阶段 3 疗效验证（Eval / 有效性验证）
+| Command | What it does | Example |
+|---|---|---|
+| `/harness-doctor` | Full pipeline: phases 0→2; phase 3 only on request | `/harness-doctor .` |
+| `/harness-scan` | Phase 0 checkup: inventory, size, overlap, conflicts | `/harness-scan ~/repo` |
+| `/harness-treat` | Phase 1 treatment: plan, user conflict adjudication, canonical `AGENTS.md`, stubs, validate | `/harness-treat .` |
+| `/harness-drift` | Phase 2 follow-up: drift guard and repair advice | `/harness-drift .` |
+| `/harness-eval` | Phase 3 efficacy validation: before/after task metrics | `/harness-eval .` |
+
+Bare CLI for humans and CI:
 
 ```bash
-python3 scripts/eval_run.py --tasks assets/tasks.example.json --label before --workdir /path/to/target-repo -o results-before.json
-python3 scripts/eval_run.py --tasks assets/tasks.example.json --label after --workdir /path/to/target-repo -o results-after.json
-python3 scripts/eval_run.py --compare results-before.json results-after.json -o eval-report.md
+npx ai-harness-doctor scan .
+npx ai-harness-doctor plan . -o merge-plan.md
+npx ai-harness-doctor stubs . --apply
+npx ai-harness-doctor drift . --strict
+npx ai-harness-doctor eval --tasks tasks.json --label after --workdir . -o results-after.json
 ```
 
-如果 runner 缺失，脚本会输出手工记录协议。
+## Works with
 
-## 目录结构
+| Surface | Support |
+|---|---|
+| Claude Code | Native skill plus slash commands under `.claude/commands` or `~/.claude/commands`. |
+| OpenAI Codex CLI | Prompt adapters for `~/.codex/prompts/`. |
+| Cursor | Command adapters for `.cursor/commands/`. |
+| Gemini CLI | TOML custom command adapters for `~/.gemini/commands/harness/`. |
+| Windsurf / Cline / others | Universal mode: point the agent at the installed PLAYBOOK and say “run phase N”. |
+| Humans & CI | Plain `npx ai-harness-doctor ...`; no agent required. |
+
+Honest note: non-Claude adapters are thin pointers and lightly verified. If a command format changed, please file an issue.
+
+## The four phases
+
+| Phase | Script | Artifact | Stop condition |
+|---|---|---|---|
+| 0 — Checkup / scan | `scripts/scan.py` | Human or JSON health report | Stop at user confirmation of migration scope. |
+| 1 — Treat / canonicalize | `scripts/canonicalize.py --plan`, `--write-stubs`, `--validate` | Merge plan, canonical `AGENTS.md`, minimal stubs | Stop until every conflict has human adjudication. |
+| 2 — Follow-up / drift guard | `scripts/check_drift.py` | Drift report and CI/pre-commit exit codes | Stop when checks pass or repair advice is given. |
+| 3 — Efficacy eval | `scripts/eval_run.py` | Before/after JSON and Markdown report | Stop when metrics are produced. |
+
+Examples:
+
+```bash
+npx ai-harness-doctor scan . --json
+npx ai-harness-doctor plan . -o merge-plan.md
+npx ai-harness-doctor stubs . --apply --force
+npx ai-harness-doctor drift . --strict
+npx ai-harness-doctor eval --compare results-before.json results-after.json -o eval-report.md
+```
+
+## Feature comparison
+
+| Capability | AI Harness Doctor | Hand-rolled migration | Official `/init` | Plain docs |
+|---|---:|---:|---:|---:|
+| Conflict detection with evidence | ✅ | △ | ❌ | ❌ |
+| Overlap percentage | ✅ | △ | ❌ | ❌ |
+| Size / truncation warnings | ✅ | △ | ❌ | ❌ |
+| Stub downgrade with re-divergence guard | ✅ | △ | ❌ | ❌ |
+| CI / pre-commit gate | ✅ | △ | ❌ | △ |
+| Before/after efficacy eval | ✅ | ❌ | ❌ | ❌ |
+| Multi-agent adapters | ✅ | △ | ❌ | ❌ |
+
+## Repository layout
 
 ```text
-SKILL.md                         # skill 入口
-scripts/                         # deterministic CLI mechanics
-references/                      # 迁移和冲突处理参考
-assets/                          # 模板与示例
+SKILL.md                         # Skill playbook and phase stop conditions
+bin/cli.js                       # npm CLI and installer
+commands/                        # Claude Code slash commands
+adapters/                        # Codex, Cursor, Gemini, universal pointers
+scripts/                         # Python stdlib deterministic mechanics
+references/                      # Migration and conflict-resolution references
+assets/                          # Templates and CI/pre-commit examples
+benchmark/                       # Real before/after eval data
 tests/                           # stdlib unittest suite
 ```
 
-## 开发与测试
+## Roadmap v2
 
-```bash
-python3 -m unittest discover -s tests -v
-```
+- Repo harness-ification: CLI-ize project scripts, add verification gates, and layer docs cleanly.
+- Richer eval task packs for more languages, repo shapes, and multi-turn workflows.
+- More agent adapters as command formats stabilize.
 
-所有脚本只依赖 Python 3.9+ 标准库。
+## Contributing
 
-## v2 roadmap
-
-- 仓库 harness 化：把项目脚本 CLI 化、补验证 gate、文档分层。
-- 更细粒度的 monorepo 局部规则治理。
-- 更丰富的 eval 指标，如探索文件数、token 趋势和任务稳定性。
+Bug reports and focused PRs are welcome. Keep scripts deterministic, stdlib-only, and covered by `python3 -m unittest discover -s tests -v`.
 
 ## License
 

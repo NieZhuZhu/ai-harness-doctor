@@ -1,0 +1,1 @@
+Read {{PLAYBOOK}}/SKILL.md. Execute full pipeline phases 0→2 on the target repo (argument or cwd), and obey the phase stop condition (phase 3 only if explicitly requested). Scripts live in {{PLAYBOOK}}/scripts/.

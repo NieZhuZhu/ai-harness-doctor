@@ -1,0 +1,1 @@
+Read {{PLAYBOOK}}/SKILL.md. Execute phase 2 (Drift Guard / 复诊) on the target repo (argument or cwd), and obey the phase stop condition (stop when checks pass or repair advice is given). Scripts live in {{PLAYBOOK}}/scripts/.

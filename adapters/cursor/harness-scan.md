@@ -1,0 +1,1 @@
+Read {{PLAYBOOK}}/SKILL.md. Execute phase 0 (Scan / 体检) on the target repo (argument or cwd), and obey the phase stop condition (stop at migration-scope confirmation). Scripts live in {{PLAYBOOK}}/scripts/.

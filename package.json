@@ -1,0 +1,50 @@
+{
+  "name": "ai-harness-doctor",
+  "version": "0.1.0",
+  "description": "AI Harness Doctor — audit, consolidate & guard your repo's AI agent configs (AGENTS.md, CLAUDE.md, .cursorrules, ...) with a checkup→treat→follow-up→efficacy pipeline",
+  "bin": {
+    "ai-harness-doctor": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "commands",
+    "adapters",
+    "references",
+    "assets",
+    "SKILL.md",
+    "README.md",
+    "README.zh-CN.md",
+    "README.ja.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "agents-md",
+    "claude-code",
+    "claude",
+    "skill",
+    "ai-agents",
+    "agent-config",
+    "cursor",
+    "codex",
+    "gemini-cli",
+    "drift",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NieZhuZhu/ai-harness-doctor.git"
+  },
+  "homepage": "https://github.com/NieZhuZhu/ai-harness-doctor#readme",
+  "bugs": {
+    "url": "https://github.com/NieZhuZhu/ai-harness-doctor/issues"
+  },
+  "author": "NieZhuZhu",
+  "license": "MIT",
+  "scripts": {
+    "test": "python3 -m unittest discover -s tests"
+  }
+}

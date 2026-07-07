@@ -1,0 +1,4 @@
+description = "Run AI Harness Doctor drift guard"
+prompt = """
+Read {{PLAYBOOK}}/SKILL.md. Execute phase 2 (Drift Guard / 复诊) on the target repo ({args} or cwd), and obey the phase stop condition (checks pass or repair advice is given). Scripts live in {{PLAYBOOK}}/scripts/.
+"""

@@ -1,6 +1,8 @@
 __pycache__/
 .pytest_cache/
+node_modules/
 *.pyc
+*.tgz
 .DS_Store
 results-*.json
 eval-report.md
