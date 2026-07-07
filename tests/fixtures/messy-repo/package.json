@@ -1,0 +1,8 @@
+{
+  "name": "messy-repo",
+  "scripts": {
+    "test": "node src/index.js",
+    "build": "node src/index.js"
+  },
+  "devDependencies": {}
+}

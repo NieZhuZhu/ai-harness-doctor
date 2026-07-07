@@ -1,0 +1,14 @@
+[
+  {
+    "id": "find-test-command",
+    "prompt": "Identify the repository test command and explain why it is correct.",
+    "check": {"type": "regex", "value": "test|unittest|pytest|go test|npm run"},
+    "timeout_s": 30
+  },
+  {
+    "id": "repo-command-still-valid",
+    "prompt": "Run the lightweight repository validation command.",
+    "check": {"type": "command", "value": "test -f AGENTS.md"},
+    "timeout_s": 30
+  }
+]

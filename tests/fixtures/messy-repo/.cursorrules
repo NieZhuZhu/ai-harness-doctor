@@ -1,0 +1,11 @@
+# Cursor Rules
+
+Use npm install before development.
+Run npm test before every PR.
+Use 4 spaces for indentation.
+Prefer double quotes in TypeScript.
+Use ESLint for formatting checks.
+Shared rule: keep changes small.
+Shared rule: update tests when behavior changes.
+Shared rule: never commit secrets.
+Shared rule: explain validation in PRs.
