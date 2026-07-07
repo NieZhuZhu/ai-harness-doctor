@@ -1,0 +1,31 @@
+name: harness-drift
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+      - pnpm-lock.yaml
+      - Makefile
+      - pyproject.toml
+      - AGENTS.md
+      - CLAUDE.md
+      - .cursorrules
+      - .windsurfrules
+      - .github/copilot-instructions.md
+      - GEMINI.md
+      - .clinerules
+      - .cursor/rules/**
+      - .github/workflows/**
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Check AI harness drift
+        run: npx -y ai-harness-doctor drift . --strict

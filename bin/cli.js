@@ -30,6 +30,7 @@ Usage:
   ai-harness-doctor stubs [...args]
   ai-harness-doctor drift [...args]
   ai-harness-doctor eval [...args]
+  ai-harness-doctor guard [target-repo] [--apply] [--remove]
   ai-harness-doctor help
 
 Examples:
@@ -39,6 +40,7 @@ Examples:
   npm i -g ai-harness-doctor && ai-harness-doctor install --link
   npx ai-harness-doctor scan .
   npx ai-harness-doctor drift . --strict
+  npx ai-harness-doctor guard . --apply
 `);
 }
 
@@ -508,6 +510,190 @@ function runScript(command, argv) {
   process.exit(result.status === null ? 1 : result.status);
 }
 
+function parseGuardArgs(argv) {
+  let target = '.';
+  let apply = false;
+  let remove = false;
+  for (const arg of argv) {
+    if (arg === '--apply') apply = true;
+    else if (arg === '--remove') remove = true;
+    else if (arg.startsWith('--')) fail(`Unknown option: ${arg}`);
+    else target = arg;
+  }
+  return { target: path.resolve(process.cwd(), target), apply, remove };
+}
+
+function guardTemplate(name) {
+  return fs.readFileSync(path.join(PACKAGE_ROOT, 'assets', 'guard', name), 'utf8');
+}
+
+function commandOutput(command, args, cwd) {
+  const result = childProcess.spawnSync(command, args, { cwd, encoding: 'utf8' });
+  if (result.error || result.status !== 0) return null;
+  return String(result.stdout || '').trim();
+}
+
+function isGitRepo(target) {
+  return commandOutput('git', ['rev-parse', '--is-inside-work-tree'], target) === 'true';
+}
+
+function gitPath(target, gitRelativePath) {
+  const output = commandOutput('git', ['rev-parse', '--git-path', gitRelativePath], target);
+  if (!output) return path.join(target, '.git', gitRelativePath);
+  return path.isAbsolute(output) ? output : path.join(target, output);
+}
+
+function readTextIfExists(file) {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function ensureTrailingNewline(content) {
+  return content.endsWith('\n') ? content : `${content}\n`;
+}
+
+function guardSnippet() {
+  return guardTemplate('pre-commit.sh');
+}
+
+function replaceMaintenanceContract(content, contract) {
+  const start = '<!-- ai-harness-doctor:maintenance-contract:start -->';
+  const end = '<!-- ai-harness-doctor:maintenance-contract:end -->';
+  const pattern = new RegExp(`${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}`);
+  if (pattern.test(content)) return content.replace(pattern, contract.trimEnd());
+  return `${ensureTrailingNewline(content)}\n${contract.trimEnd()}\n`;
+}
+
+function removeMaintenanceContract(content) {
+  const start = '<!-- ai-harness-doctor:maintenance-contract:start -->';
+  const end = '<!-- ai-harness-doctor:maintenance-contract:end -->';
+  const pattern = new RegExp(`\\n?${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}\\n?`);
+  return content.replace(pattern, '\n').replace(/\n{3,}/g, '\n\n');
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function shortPreview(content) {
+  if (content === null) return '(absent)';
+  const lines = content.trimEnd().split('\n');
+  const shown = lines.slice(0, 12).join('\n');
+  return lines.length > 12 ? `${shown}\n...` : shown;
+}
+
+function describeChange(change) {
+  console.log(`\n### ${change.action}: ${change.path}`);
+  if (change.note) console.log(change.note);
+  if (change.manualSnippet) {
+    console.log('\nManual merge snippet:');
+    console.log('```sh');
+    console.log(change.manualSnippet.trimEnd());
+    console.log('```');
+    return;
+  }
+  console.log('Before:');
+  console.log('```');
+  console.log(shortPreview(change.before));
+  console.log('```');
+  console.log('After:');
+  console.log('```');
+  console.log(shortPreview(change.after));
+  console.log('```');
+}
+
+function plannedGuardInstallChanges(target) {
+  const changes = [];
+  const marker = '# ai-harness-doctor:guard';
+  const hookPath = gitPath(target, 'hooks/pre-commit');
+  const hookBefore = readTextIfExists(hookPath);
+  const hookAfter = guardTemplate('pre-commit.sh');
+  if (hookBefore !== null && !hookBefore.includes(marker)) {
+    changes.push({
+      action: 'manual-merge',
+      path: hookPath,
+      before: hookBefore,
+      after: hookBefore,
+      note: 'Existing pre-commit hook has no ai-harness-doctor marker; leaving it unchanged.',
+      manualSnippet: guardSnippet(),
+      write: false,
+    });
+  } else if (hookBefore !== hookAfter) {
+    changes.push({ action: hookBefore === null ? 'create' : 'overwrite', path: hookPath, before: hookBefore, after: hookAfter, mode: 0o755, write: true });
+  }
+
+  for (const [name, template] of [
+    ['.github/workflows/harness-drift.yml', 'harness-drift.yml'],
+    ['.github/workflows/harness-checkup.yml', 'harness-checkup.yml'],
+  ]) {
+    const file = path.join(target, name);
+    const before = readTextIfExists(file);
+    const after = guardTemplate(template);
+    if (before !== after) changes.push({ action: before === null ? 'create' : 'overwrite', path: file, before, after, write: true });
+  }
+
+  const agentsPath = path.join(target, 'AGENTS.md');
+  const agentsBefore = fs.readFileSync(agentsPath, 'utf8');
+  const agentsAfter = replaceMaintenanceContract(agentsBefore, guardTemplate('maintenance-contract.md'));
+  if (agentsBefore !== agentsAfter) changes.push({ action: 'update', path: agentsPath, before: agentsBefore, after: agentsAfter, write: true });
+  return changes;
+}
+
+function plannedGuardRemoveChanges(target) {
+  const changes = [];
+  const marker = '# ai-harness-doctor:guard';
+  const hookPath = gitPath(target, 'hooks/pre-commit');
+  const hookBefore = readTextIfExists(hookPath);
+  if (hookBefore !== null && hookBefore.includes(marker)) changes.push({ action: 'remove', path: hookPath, before: hookBefore, after: null, remove: true });
+
+  for (const name of ['.github/workflows/harness-drift.yml', '.github/workflows/harness-checkup.yml']) {
+    const file = path.join(target, name);
+    const before = readTextIfExists(file);
+    if (before !== null) changes.push({ action: 'remove', path: file, before, after: null, remove: true });
+  }
+
+  const agentsPath = path.join(target, 'AGENTS.md');
+  const agentsBefore = fs.readFileSync(agentsPath, 'utf8');
+  const agentsAfter = removeMaintenanceContract(agentsBefore);
+  if (agentsBefore !== agentsAfter) changes.push({ action: 'update', path: agentsPath, before: agentsBefore, after: agentsAfter, write: true });
+  return changes;
+}
+
+function applyGuardChanges(changes) {
+  for (const change of changes) {
+    if (change.remove) {
+      removePath(change.path);
+    } else if (change.write) {
+      ensureDir(path.dirname(change.path));
+      fs.writeFileSync(change.path, change.after, { encoding: 'utf8', mode: change.mode || 0o644 });
+      if (change.mode) fs.chmodSync(change.path, change.mode);
+    }
+  }
+}
+
+function guard(argv) {
+  const { target, apply, remove } = parseGuardArgs(argv);
+  if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) fail(`Target is not a directory: ${target}`);
+  if (!isGitRepo(target)) fail(`Target must be a git repo: ${target}`);
+  if (!fs.existsSync(path.join(target, 'AGENTS.md'))) fail('run the treat phase first');
+
+  const changes = remove ? plannedGuardRemoveChanges(target) : plannedGuardInstallChanges(target);
+  console.log(`Guard ${remove ? 'remove' : 'install'} plan for ${target}`);
+  console.log(apply ? 'Mode: apply' : 'Mode: dry-run (use --apply to write)');
+  if (!changes.length) console.log('\nNo changes needed.');
+  for (const change of changes) describeChange(change);
+  if (apply) {
+    applyGuardChanges(changes);
+    console.log(`\nApplied ${changes.filter((change) => change.write || change.remove).length} change(s).`);
+  } else {
+    console.log('\nDry-run only; no files written.');
+  }
+}
+
 function main() {
   const [command, ...rest] = process.argv.slice(2);
   if (!command || command === 'help' || command === '--help' || command === '-h') {
@@ -518,6 +704,7 @@ function main() {
   if (command === 'install') return install(rest);
   if (command === 'uninstall') return uninstall(rest);
   if (command === 'update') return updateInstalled();
+  if (command === 'guard') return guard(rest);
   if (['scan', 'plan', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
   fail(`Unknown command: ${command}`);
 }

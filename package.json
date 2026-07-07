@@ -7,7 +7,7 @@
   },
   "files": [
     "bin",
-    "scripts",
+    "scripts/*.py",
     "commands",
     "adapters",
     "references",

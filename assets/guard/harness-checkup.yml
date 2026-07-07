@@ -1,0 +1,63 @@
+name: harness-checkup
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  checkup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Scan harness
+        run: npx -y ai-harness-doctor scan . > harness-scan-report.md
+      - name: Check drift
+        id: drift
+        shell: bash
+        run: |
+          set +e
+          npx -y ai-harness-doctor drift . --strict > harness-drift-report.md 2>&1
+          status=$?
+          {
+            echo "# Harness checkup"
+            echo
+            echo "## Scan"
+            cat harness-scan-report.md
+            echo
+            echo "## Drift"
+            cat harness-drift-report.md
+          } > harness-checkup-report.md
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: harness-checkup-report
+          path: |
+            harness-scan-report.md
+            harness-drift-report.md
+            harness-checkup-report.md
+      - name: Create or update drift issue
+        if: steps.drift.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "🩺 Harness checkup: drift detected"
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(cat harness-checkup-report.md)"
+          issue_number="$(gh issue list --state open --json number,title --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)"
+          if [ -n "$issue_number" ]; then
+            gh issue comment "$issue_number" --body "$body"
+          else
+            gh issue create --title "$TITLE" --body "$body"
+          fi
+          exit "${{ steps.drift.outputs.status }}"

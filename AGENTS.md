@@ -9,6 +9,7 @@ Run the full test suite from the repository root:
 ```bash
 python3 -m unittest discover -s tests -v
 npm test
+node --check bin/cli.js
 node bin/cli.js help
 ```
 
@@ -19,4 +20,5 @@ node bin/cli.js help
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
 - Public documentation is kept in synchronized English, Simplified Chinese, and Japanese READMEs; code comments are English; `assets/AGENTS.template.md` is English.
+- Guard suite templates live under `assets/guard/`; keep the pre-commit, PR gate, weekly checkup, and maintenance contract templates synchronized with `bin/cli.js` behavior.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.

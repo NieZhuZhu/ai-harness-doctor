@@ -126,6 +126,12 @@ python3 scripts/check_drift.py /path/to/repo --strict
 
 停在「校验通过或修复建议已给出」。不要在复诊阶段擅自重写语义内容。
 
+### 长期随访
+
+治疗完成并存在 root `AGENTS.md` 后，可用 `npx ai-harness-doctor guard /path/to/repo --apply` 安装长期守护。
+它只安装核心套件：pre-commit drift hook、path-aware PR gate、weekly checkup issue workflow、`AGENTS.md` maintenance contract。
+移除时运行 `npx ai-harness-doctor guard /path/to/repo --remove --apply`；不集成 Claude hooks。
+
 ## 阶段 3 疗效验证（Eval / 有效性验证）
 
 ### 输入
@@ -226,8 +232,7 @@ runner 缺失时，脚本输出手工协议，不做伪装。
 - `references/migration-decision-tree.md`：迁移范围决策树。
 - `references/conflict-resolution.md`：冲突分类、消解规则与上报格式。
 - `assets/AGENTS.template.md`：英文 `AGENTS.md` 模板。
-- `assets/github-actions-drift.yml`：目标仓库 CI gate 模板。
-- `assets/pre-commit-hook.sh`：目标仓库 pre-commit hook 模板。
+- `assets/guard/`：长期随访 guard 套件模板（pre-commit、PR gate、weekly checkup、maintenance contract）。
 - `commands/`：Claude Code slash commands，按阶段路由到本 skill。
 - `adapters/`：Codex、Cursor、Gemini 与通用 agent 的薄指针模板。
 - `bin/cli.js`：npm CLI、安装器与 Python 脚本转发入口。
