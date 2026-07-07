@@ -92,6 +92,27 @@ npm update -g ai-harness-doctor
 
 使用 `--link` 时，Claude 的 `~/.claude/skills/ai-harness-doctor` 会指向全局 package，其他 adapters 也会指向同一个 package root，因此 `npm update -g ai-harness-doctor` 会立即更新所有地方的 playbook。Windows 上目录链接使用 junction。
 
+### 长期随访 guard
+
+当治疗阶段已经产出 canonical root `AGENTS.md` 后，安装长期随访套件：
+
+```bash
+npx ai-harness-doctor guard . --apply
+```
+
+它会安装 4 个由仓库追踪的 guardrail：
+
+- `.git/hooks/pre-commit` 运行 `ai-harness-doctor drift .`，并支持 `AI_HARNESS_DOCTOR_SKIP=1` 逃生口。
+- `.github/workflows/harness-drift.yml` 是 path-aware PR drift gate。
+- `.github/workflows/harness-checkup.yml` 每周运行 scan + drift，并创建或更新同一个 drift issue。
+- `AGENTS.md` 会追加带 marker 的维护契约，提醒贡献者在改 build/test/convention 时同步更新它。
+
+精确移除这些内容：
+
+```bash
+npx ai-harness-doctor guard . --remove --apply
+```
+
 ## 支持哪些工具
 
 | 入口 | 支持方式 |
@@ -99,7 +120,7 @@ npm update -g ai-harness-doctor
 | Claude Code | 原生 skill，加 `.claude/commands` 或 `~/.claude/commands` slash commands。 |
 | OpenAI Codex CLI | 写入 `~/.codex/prompts/` 的 prompt adapters。 |
 | Cursor | 写入 `.cursor/commands/` 的 command adapters。 |
-| Gemini CLI | 写入 `~/.gemini/commands/harness/` 的 TOML 自定义命令。 |
+| Gemini CLI | 写入 `~/.gemini/commands/harness/` 的 TOML 自定义命令。Google 已于 2026-06-18 面向个人层级 retired Gemini CLI；企业版 Gemini Code Assist 不受影响，这些 adapters 仍适用于企业版 / 既有安装。 |
 | Windsurf / Cline / 其他 | 通用模式：让 agent 读取已安装的 PLAYBOOK，并说“run phase N”。 |
 | 人类与 CI | 直接运行 `npx ai-harness-doctor ...`，不需要 agent。 |
 
@@ -126,15 +147,28 @@ npx ai-harness-doctor eval --compare results-before.json results-after.json -o e
 
 ## 功能对比
 
-| 能力 | AI Harness Doctor | 手工迁移 | 官方 `/init` | 纯文档 |
-|---|---:|---:|---:|---:|
-| 带证据的冲突检测 | ✅ | △ | ❌ | ❌ |
-| 重叠百分比 | ✅ | △ | ❌ | ❌ |
-| 体积 / 截断告警 | ✅ | △ | ❌ | ❌ |
-| stub 降级与再分叉守护 | ✅ | △ | ❌ | ❌ |
-| CI / pre-commit gate | ✅ | △ | ❌ | △ |
-| 前后疗效 eval | ✅ | ❌ | ❌ | ❌ |
-| 多 agent adapters | ✅ | △ | ❌ | ❌ |
+### 定位
+
+AI Harness Doctor 与 Claude Code 官方 `/init` 互补：`/init` 从零引导生成配置；AI Harness Doctor 诊断、收敛、守护并验证已经散落的既有配置。本项目的 `SKILL.md` 明确不进入 `/init` 的职责范围。
+
+图例：✅ 内置 / △ 部分支持或不同方法 / ❌ 公开文档中未声明该特性。
+
+| 维度 | AI Harness Doctor | [Ruler](https://github.com/intellectronica/ruler) | [rulesync](https://github.com/dyoshikawa/rulesync) |
+|---|---|---|---|
+| Canonical-source model | △ `AGENTS.md` 本身是 canonical + 最小 stubs。 | △ `.ruler/` 中央源分发到各 agent 文件。 | △ `.rulesync/` 统一规则生成到 20+ 工具。 |
+| Consolidate FROM existing configs | ✅ Treat phase 收敛既有配置。 | ❌ 公开文档中未声明该特性。 | ✅ 可从既有 `CLAUDE.md` / `.cursorrules` 反向 IMPORT。 |
+| Conflict detection with file:line evidence | ✅ Scan/plan 报告引用 file:line 证据。 | ❌ 公开文档中未声明该特性。 | ❌ 公开文档中未声明该特性。 |
+| Overlap % metrics | ✅ 内置于 scan 报告。 | ❌ 公开文档中未声明该特性。 | ❌ 公开文档中未声明该特性。 |
+| Size/truncation warnings | ✅ 内置于 scan/drift。 | ❌ 公开文档中未声明该特性。 | ❌ 公开文档中未声明该特性。 |
+| Re-divergence guard on hand-edited files | ✅ D3 drift guard 捕获 stub 再分叉。 | △ 通过 regeneration 用另一种方式解决。 | △ 通过 regeneration 用另一种方式解决。 |
+| CI / pre-commit gate | ✅ `guard` 套件安装 pre-commit、PR gate 与 weekly checkup。 | △ 可在 CI 中 regenerate。 | △ 可在 CI 中 regenerate。 |
+| Before/after efficacy eval with real benchmark | ✅ 见 [`benchmark/`](benchmark/)。 | ❌ 公开文档中未声明该特性。 | ❌ 公开文档中未声明该特性。 |
+| Distribution breadth | △ 4 个 agents + universal pointer。 | ✅ 多种 agent-specific 输出。 | ✅ 20+ 工具。 |
+| MCP config propagation | ❌ 不支持。 | ✅ 内置 MCP config propagation。 | ❌ 公开文档中未声明该特性。 |
+
+说明：regeneration 与 guarding 是两种有效哲学：Ruler/rulesync 让生成输出可丢弃；AI Harness Doctor 守护 canonical `AGENTS.md` 与最小 stubs。
+
+截至 2026-07，以上基于各项目公开文档；最新情况请查看它们的仓库。
 
 ## 仓库结构
 
@@ -155,6 +189,7 @@ tests/                           # 标准库 unittest 套件
 - 仓库 harness 化：把项目脚本 CLI 化、补验证 gate、做好文档分层。
 - 更丰富的 eval task packs，覆盖更多语言、仓库形态与多轮流程。
 - 随着各工具命令格式稳定，补充更多 agent adapters。
+- Antigravity CLI adapter（等待其 custom-command format 文档化）。
 
 ## 贡献
 

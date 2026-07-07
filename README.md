@@ -92,6 +92,27 @@ npm update -g ai-harness-doctor
 
 With `--link`, Claude points `~/.claude/skills/ai-harness-doctor` at the global package and other adapters point at the same package root, so `npm update -g ai-harness-doctor` updates the playbook everywhere instantly. On Windows, directory links use junctions.
 
+### Long-term guard
+
+After the treat phase has produced the canonical root `AGENTS.md`, install the follow-up guard suite:
+
+```bash
+npx ai-harness-doctor guard . --apply
+```
+
+It installs four repo-tracked guardrails:
+
+- `.git/hooks/pre-commit` runs `ai-harness-doctor drift .` and honors `AI_HARNESS_DOCTOR_SKIP=1`.
+- `.github/workflows/harness-drift.yml` is a path-aware PR drift gate.
+- `.github/workflows/harness-checkup.yml` runs weekly scan + drift and creates/updates one drift issue.
+- `AGENTS.md` gets a marked maintenance contract reminding contributors to update it with build/test/convention changes.
+
+Remove exactly those pieces with:
+
+```bash
+npx ai-harness-doctor guard . --remove --apply
+```
+
 ## Works with
 
 | Surface | Support |
@@ -99,7 +120,7 @@ With `--link`, Claude points `~/.claude/skills/ai-harness-doctor` at the global 
 | Claude Code | Native skill plus slash commands under `.claude/commands` or `~/.claude/commands`. |
 | OpenAI Codex CLI | Prompt adapters for `~/.codex/prompts/`. |
 | Cursor | Command adapters for `.cursor/commands/`. |
-| Gemini CLI | TOML custom command adapters for `~/.gemini/commands/harness/`. |
+| Gemini CLI | TOML custom command adapters for `~/.gemini/commands/harness/`. Google retired Gemini CLI for individual tiers on 2026-06-18; enterprise Gemini Code Assist is unaffected, and these adapters still work for enterprise/existing installs. |
 | Windsurf / Cline / others | Universal mode: point the agent at the installed PLAYBOOK and say “run phase N”. |
 | Humans & CI | Plain `npx ai-harness-doctor ...`; no agent required. |
 
@@ -126,15 +147,28 @@ npx ai-harness-doctor eval --compare results-before.json results-after.json -o e
 
 ## Feature comparison
 
-| Capability | AI Harness Doctor | Hand-rolled migration | Official `/init` | Plain docs |
-|---|---:|---:|---:|---:|
-| Conflict detection with evidence | ✅ | △ | ❌ | ❌ |
-| Overlap percentage | ✅ | △ | ❌ | ❌ |
-| Size / truncation warnings | ✅ | △ | ❌ | ❌ |
-| Stub downgrade with re-divergence guard | ✅ | △ | ❌ | ❌ |
-| CI / pre-commit gate | ✅ | △ | ❌ | △ |
-| Before/after efficacy eval | ✅ | ❌ | ❌ | ❌ |
-| Multi-agent adapters | ✅ | △ | ❌ | ❌ |
+### Positioning
+
+AI Harness Doctor is complementary to Claude Code's official `/init`: `/init` bootstraps a config from scratch, while AI Harness Doctor diagnoses, consolidates, guards, and validates an existing sprawl. Its `SKILL.md` explicitly stays out of `/init`'s lane.
+
+Legend: ✅ built-in / △ partial or different approach / ❌ not a stated feature.
+
+| Dimension | AI Harness Doctor | [Ruler](https://github.com/intellectronica/ruler) | [rulesync](https://github.com/dyoshikawa/rulesync) |
+|---|---|---|---|
+| Canonical-source model | △ `AGENTS.md` itself is canonical + minimal stubs. | △ `.ruler/` central source distributes to agent-specific files. | △ `.rulesync/` unified rules generate to 20+ tools. |
+| Consolidate FROM existing configs | ✅ Treat phase consolidates existing configs. | ❌ Not a stated feature in their docs. | ✅ Reverse IMPORT from existing `CLAUDE.md` / `.cursorrules`. |
+| Conflict detection with file:line evidence | ✅ Scan/plan reports cite file:line evidence. | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Overlap % metrics | ✅ Built into scan reports. | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Size/truncation warnings | ✅ Built into scan/drift. | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Re-divergence guard on hand-edited files | ✅ D3 drift guard catches stub re-divergence. | △ Solves the problem differently by regeneration. | △ Solves the problem differently by regeneration. |
+| CI / pre-commit gate | ✅ `guard` suite installs pre-commit, PR gate, and weekly checkup. | △ Can regenerate in CI. | △ Can regenerate in CI. |
+| Before/after efficacy eval with real benchmark | ✅ See [`benchmark/`](benchmark/). | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Distribution breadth | △ 4 agents + universal pointer. | ✅ Multiple agent-specific outputs. | ✅ 20+ tools. |
+| MCP config propagation | ❌ Not supported. | ✅ Built-in MCP config propagation. | ❌ Not a stated feature in their docs. |
+
+Note: regeneration and guarding are two valid philosophies: Ruler/rulesync make generated outputs disposable, while AI Harness Doctor guards a canonical `AGENTS.md` plus minimal stubs.
+
+As of 2026-07, based on each project's public documentation — see their repos for the latest.
 
 ## Repository layout
 
@@ -155,6 +189,7 @@ tests/                           # stdlib unittest suite
 - Repo harness-ification: CLI-ize project scripts, add verification gates, and layer docs cleanly.
 - Richer eval task packs for more languages, repo shapes, and multi-turn workflows.
 - More agent adapters as command formats stabilize.
+- Antigravity CLI adapter (when its custom-command format is documented).
 
 ## Contributing
 

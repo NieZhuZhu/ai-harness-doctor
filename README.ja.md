@@ -92,6 +92,27 @@ npm update -g ai-harness-doctor
 
 `--link` では Claude の `~/.claude/skills/ai-harness-doctor` が global package を指し、他の adapters も同じ package root を指すため、`npm update -g ai-harness-doctor` で playbook が即時に全体へ反映されます。Windows では directory link に junction を使います。
 
+### Long-term guard
+
+treat phase で canonical root `AGENTS.md` を作成した後、follow-up guard suite をインストールします:
+
+```bash
+npx ai-harness-doctor guard . --apply
+```
+
+4 つの repo-tracked guardrail を入れます:
+
+- `.git/hooks/pre-commit` が `ai-harness-doctor drift .` を実行し、`AI_HARNESS_DOCTOR_SKIP=1` を escape hatch として尊重します。
+- `.github/workflows/harness-drift.yml` は path-aware PR drift gate です。
+- `.github/workflows/harness-checkup.yml` は週次で scan + drift を実行し、1 つの drift issue を作成または更新します。
+- `AGENTS.md` には marker 付き maintenance contract が追加され、build/test/convention 変更時の同期更新を促します。
+
+これらだけを削除するには:
+
+```bash
+npx ai-harness-doctor guard . --remove --apply
+```
+
 ## Works with
 
 | Surface | Support |
@@ -99,7 +120,7 @@ npm update -g ai-harness-doctor
 | Claude Code | native skill と `.claude/commands` または `~/.claude/commands` の slash commands。 |
 | OpenAI Codex CLI | `~/.codex/prompts/` 向け prompt adapters。 |
 | Cursor | `.cursor/commands/` 向け command adapters。 |
-| Gemini CLI | `~/.gemini/commands/harness/` 向け TOML custom commands。 |
+| Gemini CLI | `~/.gemini/commands/harness/` 向け TOML custom commands。Google は 2026-06-18 に個人 tier 向け Gemini CLI を retired しました。enterprise Gemini Code Assist は影響を受けず、これらの adapters は enterprise / existing installs で引き続き使えます。 |
 | Windsurf / Cline / others | Universal mode: agent にインストール済み PLAYBOOK を示し、「run phase N」と伝える。 |
 | Humans & CI | `npx ai-harness-doctor ...` を直接実行。agent は不要。 |
 
@@ -126,15 +147,28 @@ npx ai-harness-doctor eval --compare results-before.json results-after.json -o e
 
 ## Feature comparison
 
-| Capability | AI Harness Doctor | Hand-rolled migration | Official `/init` | Plain docs |
-|---|---:|---:|---:|---:|
-| 証拠付き conflict detection | ✅ | △ | ❌ | ❌ |
-| overlap percentage | ✅ | △ | ❌ | ❌ |
-| size / truncation warnings | ✅ | △ | ❌ | ❌ |
-| stub downgrade と再分岐 guard | ✅ | △ | ❌ | ❌ |
-| CI / pre-commit gate | ✅ | △ | ❌ | △ |
-| before/after efficacy eval | ✅ | ❌ | ❌ | ❌ |
-| multi-agent adapters | ✅ | △ | ❌ | ❌ |
+### Positioning
+
+AI Harness Doctor は Claude Code 公式 `/init` と補完関係にあります。`/init` は config をゼロから bootstraps し、AI Harness Doctor は既存の sprawl を diagnose、consolidate、guard、validate します。本 project の `SKILL.md` は明示的に `/init` の lane に入りません。
+
+Legend: ✅ built-in / △ partial or different approach / ❌ not a stated feature.
+
+| Dimension | AI Harness Doctor | [Ruler](https://github.com/intellectronica/ruler) | [rulesync](https://github.com/dyoshikawa/rulesync) |
+|---|---|---|---|
+| Canonical-source model | △ `AGENTS.md` 自体が canonical + minimal stubs。 | △ `.ruler/` central source を agent-specific files へ配布。 | △ `.rulesync/` unified rules を 20+ tools へ生成。 |
+| Consolidate FROM existing configs | ✅ Treat phase が existing configs を consolidates。 | ❌ Not a stated feature in their docs. | ✅ existing `CLAUDE.md` / `.cursorrules` から reverse IMPORT。 |
+| Conflict detection with file:line evidence | ✅ Scan/plan reports が file:line evidence を引用。 | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Overlap % metrics | ✅ scan reports に built-in。 | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Size/truncation warnings | ✅ scan/drift に built-in。 | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Re-divergence guard on hand-edited files | ✅ D3 drift guard が stub re-divergence を検出。 | △ regeneration で別アプローチとして解決。 | △ regeneration で別アプローチとして解決。 |
+| CI / pre-commit gate | ✅ `guard` suite が pre-commit、PR gate、weekly checkup をインストール。 | △ CI で regenerate 可能。 | △ CI で regenerate 可能。 |
+| Before/after efficacy eval with real benchmark | ✅ [`benchmark/`](benchmark/) 参照。 | ❌ Not a stated feature in their docs. | ❌ Not a stated feature in their docs. |
+| Distribution breadth | △ 4 agents + universal pointer。 | ✅ Multiple agent-specific outputs。 | ✅ 20+ tools。 |
+| MCP config propagation | ❌ Not supported. | ✅ Built-in MCP config propagation。 | ❌ Not a stated feature in their docs. |
+
+Note: regeneration と guarding はどちらも有効な philosophy です。Ruler/rulesync は generated outputs を disposable にし、AI Harness Doctor は canonical `AGENTS.md` と minimal stubs を guard します。
+
+As of 2026-07, based on each project's public documentation — see their repos for the latest.
 
 ## Repository layout
 
@@ -155,6 +189,7 @@ tests/                           # stdlib unittest suite
 - Repo harness-ification: project scripts の CLI 化、verification gates、doc layering。
 - より多様な language、repo shape、multi-turn workflow 向けの eval task packs。
 - command format が安定した agent adapters の追加。
+- Antigravity CLI adapter (when its custom-command format is documented)。
 
 ## Contributing
 
