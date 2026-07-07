@@ -29,6 +29,7 @@ class EvalRunTests(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 data = json.loads(out.read_text(encoding="utf-8"))
                 self.assertTrue(all(t["passed"] for t in data["tasks"]))
+                self.assertEqual(data["tasks"][0]["answer"], "ok hello")
             report = Path(td) / "report.md"
             proc = subprocess.run([sys.executable, str(EVAL), "--compare", str(before), str(after), "-o", str(report)], text=True, capture_output=True)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -53,6 +54,51 @@ class EvalRunTests(unittest.TestCase):
             self.assertFalse(data["tasks"][0]["passed"])
             self.assertTrue(data["tasks"][0]["timed_out"])
             self.assertIsNone(data["tasks"][0]["exit_code"])
+
+    def test_json_envelope_result_is_extracted_and_normalized(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(json.dumps([
+                {"id": "dev", "prompt": "dev", "check": {"type": "regex", "value": r"^pnpm\s+(run\s+)?dev\b"}, "timeout_s": 10},
+            ]), encoding="utf-8")
+            output = Path(td) / "results.json"
+            runner = f"{sys.executable} -c \"import json; print(json.dumps({{'type':'result','result':'  '+chr(96)+'pnpm dev'+chr(96)+'  ','usage':{{}}}}))\""
+
+            proc = subprocess.run([sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "envelope", "--workdir", str(workdir), "--runner", runner, "-o", str(output)], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            self.assertTrue(data["tasks"][0]["passed"])
+            self.assertEqual(data["tasks"][0]["answer"], "pnpm dev")
+
+    def test_regrade_flips_stored_false_to_true_after_regex_fix(self):
+        with tempfile.TemporaryDirectory() as td:
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(json.dumps([
+                {"id": "format", "prompt": "format", "check": {"type": "regex", "value": r"(?i)prettier"}, "timeout_s": 10},
+            ]), encoding="utf-8")
+            results = Path(td) / "results.json"
+            results.write_text(json.dumps({
+                "label": "stored",
+                "tasks": [{
+                    "id": "format",
+                    "passed": False,
+                    "duration_s": 1.23,
+                    "usage": {"total_cost_usd": 0.01},
+                    "stdout": json.dumps({"type": "result", "result": "`Prettier`"}),
+                }],
+            }), encoding="utf-8")
+
+            proc = subprocess.run([sys.executable, str(EVAL), "--regrade", str(results), "--tasks", str(tasks), "-o", str(results)], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(results.read_text(encoding="utf-8"))
+            record = data["tasks"][0]
+            self.assertTrue(record["passed"])
+            self.assertTrue(record["regraded"])
+            self.assertEqual(record["answer"], "Prettier")
+            self.assertEqual(record["duration_s"], 1.23)
+            self.assertEqual(record["usage"], {"total_cost_usd": 0.01})
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ Manual protocol:
 1. Open the target repo in your agent tool.
 2. For each task in `{tasks_path}`, run the prompt exactly once.
 3. Record JSON with shape:
-   {{"label":"manual","tasks":[{{"id":"task-id","passed":true,"duration_s":0.0,"exit_code":0,"stdout":"..."}}]}}
+   {{"label":"manual","tasks":[{{"id":"task-id","passed":true,"duration_s":0.0,"exit_code":0,"stdout":"...","answer":"..."}}]}}
 4. Compare two result files with: python3 scripts/eval_run.py --compare before.json after.json -o report.md
 """
 
@@ -49,6 +49,43 @@ def timeout_output(value):
     return value
 
 
+def extract_answer(stdout):
+    """Return the normalized text used for grading.
+
+    Claude CLI `--output-format json` emits a JSON envelope whose `result` field is
+    the agent answer. Older/manual results may be raw text, so fall back to stdout.
+    """
+    raw = timeout_output(stdout)
+    answer = raw
+    try:
+        data = json.loads(raw)
+    except Exception:
+        data = None
+    if isinstance(data, dict) and isinstance(data.get("result"), str):
+        answer = data["result"]
+    return answer.strip().strip("`").strip()
+
+
+def regex_passes(pattern, answer):
+    return re.search(pattern or "", answer or "") is not None
+
+
+def check_task(task, stdout, workdir=None):
+    check = task.get("check", {})
+    answer = extract_answer(stdout)
+    passed = False
+    regraded = True
+    if check.get("type") == "regex":
+        passed = regex_passes(check.get("value", ""), answer)
+    elif check.get("type") == "command":
+        regraded = False
+        if workdir is not None:
+            cproc = subprocess.run(check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
+            passed = cproc.returncode == 0
+            regraded = True
+    return answer, passed, regraded
+
+
 def run_tasks(args):
     tasks_path = Path(args.tasks)
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
@@ -66,17 +103,19 @@ def run_tasks(args):
             proc = subprocess.run(command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
         except subprocess.TimeoutExpired as exc:
             duration = round(time.time() - start, 3)
+            stdout = timeout_output(exc.stdout)
             results["tasks"].append({
                 "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
-                "exit_code": None, "stdout": timeout_output(exc.stdout), "stderr": timeout_output(exc.stderr),
+                "exit_code": None, "stdout": stdout, "answer": extract_answer(stdout), "stderr": timeout_output(exc.stderr),
                 "usage": {},
             })
             continue
         duration = round(time.time() - start, 3)
         check = task.get("check", {})
         passed = False
+        answer = extract_answer(proc.stdout)
         if check.get("type") == "regex":
-            passed = re.search(check.get("value", ""), proc.stdout or "") is not None
+            passed = regex_passes(check.get("value", ""), answer)
         elif check.get("type") == "command":
             try:
                 cproc = subprocess.run(check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
@@ -84,17 +123,42 @@ def run_tasks(args):
                 duration = round(time.time() - start, 3)
                 results["tasks"].append({
                     "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
-                    "exit_code": None, "stdout": timeout_output(exc.stdout), "stderr": timeout_output(exc.stderr),
+                    "exit_code": None, "stdout": proc.stdout, "answer": answer, "stderr": timeout_output(exc.stderr),
                     "usage": maybe_usage(proc.stdout),
                 })
                 continue
             passed = cproc.returncode == 0
         results["tasks"].append({
             "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
-            "exit_code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr,
+            "exit_code": proc.returncode, "stdout": proc.stdout, "answer": answer, "stderr": proc.stderr,
             "usage": maybe_usage(proc.stdout),
         })
     output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
+    output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"wrote {output}")
+    return 0
+
+
+def regrade(args):
+    tasks = json.loads(Path(args.tasks).read_text(encoding="utf-8"))
+    task_map = {task["id"]: task for task in tasks}
+    results = json.loads(Path(args.regrade).read_text(encoding="utf-8"))
+    for record in results.get("tasks", []):
+        task = task_map.get(record.get("id"))
+        answer = extract_answer(record.get("stdout", ""))
+        record["answer"] = answer
+        if not task:
+            record["regraded"] = False
+            continue
+        check = task.get("check", {})
+        if check.get("type") == "regex":
+            record["passed"] = regex_passes(check.get("value", ""), answer)
+            record["regraded"] = True
+        elif check.get("type") == "command":
+            record["regraded"] = False
+        else:
+            record["regraded"] = False
+    output = Path(args.output) if args.output else Path(args.regrade)
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
     return 0
@@ -132,9 +196,14 @@ def main(argv=None):
     parser.add_argument("--runner", default="claude -p {prompt} --output-format json")
     parser.add_argument("-o", "--output")
     parser.add_argument("--compare", nargs=2)
+    parser.add_argument("--regrade")
     args = parser.parse_args(argv)
     if args.compare:
         return compare(args)
+    if args.regrade:
+        if not args.tasks:
+            parser.error("--tasks is required with --regrade")
+        return regrade(args)
     required = [args.tasks, args.label, args.workdir]
     if not all(required):
         parser.error("--tasks, --label and --workdir are required unless --compare is used")
