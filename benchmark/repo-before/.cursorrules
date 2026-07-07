@@ -1,0 +1,33 @@
+# Cursor rules
+
+Use pnpm for package management.
+Install dependencies with `pnpm install`.
+Run lint with `pnpm lint`.
+Use 2 spaces for indentation.
+Prefer TypeScript for application code.
+Keep React components focused and small.
+Utility helpers live in `src/utils/`.
+Avoid committing generated output.
+Review package.json before adding scripts.
+Commit style has no convention.
+Write clear PR descriptions.
+Prefer explicit names over abbreviations.
+Keep comments focused on surprising behavior.
+Ask before changing dependency versions.
+Do not introduce unrelated formatting churn.
+Keep changes scoped to the task.
+Use existing directories before adding new ones.
+Favor simple functions over clever abstractions.
+Run checks before requesting review.
+Document manual testing in PRs.
+Avoid broad refactors in feature branches.
+Use accessible labels for interactive UI.
+Prefer named exports for shared utilities.
+Do not duplicate business logic.
+Keep imports ordered by source.
+Treat linter warnings as actionable.
+Use project scripts instead of global tools.
+Check the actual package manager field.
+Preserve public APIs unless requested.
+Keep benchmark fixtures deterministic.
+

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "install",
+    "prompt": "Which package manager and exact command should be used to install dependencies in this repo? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "pnpm\\s+install|pnpm\\s+i\\b"}
+  },
+  {
+    "id": "test",
+    "prompt": "What is the exact command to run the test suite? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "^(?![\\s\\S]*test:unit)[\\s\\S]*pnpm\\s+(run\\s+)?test\\b"}
+  },
+  {
+    "id": "lint",
+    "prompt": "What is the exact command to lint the code? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "pnpm\\s+(run\\s+)?lint\\b"}
+  },
+  {
+    "id": "node",
+    "prompt": "Which Node.js major version does this repo target? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "\\b20\\b"}
+  },
+  {
+    "id": "framework",
+    "prompt": "Which test framework does this repo use? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)vitest"}
+  },
+  {
+    "id": "components",
+    "prompt": "In which directory should a new React component file be created? Answer with the relative path. Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "src/components"}
+  },
+  {
+    "id": "commit",
+    "prompt": "Does this repo follow a commit message convention? Which one? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)conventional"}
+  }
+]
