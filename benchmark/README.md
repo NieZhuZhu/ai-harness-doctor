@@ -9,6 +9,8 @@ This benchmark constructs two demo repositories with identical underlying realit
 
 This benchmark keeps repository reality identical and changes only agent-facing documentation. The before repo has stale or conflicting tool docs; the after repo has one canonical `AGENTS.md` plus stubs. Tasks are graded by regex against real `claude -p ... --output-format json` output.
 
+The reported headline uses 14 objective tasks × 2 runs per side (28 task attempts per side). The second run is included to expose answer instability rather than to claim statistical confidence.
+
 ## Environment
 
 - Runner: `claude -p {prompt} --output-format json`
@@ -29,27 +31,43 @@ Each prompt ends with `Answer with ONLY the exact command/value, no explanation.
 | `framework` | `Vitest` | `(?i)vitest` |
 | `components` | `src/components` | `src/components` |
 | `commit` | `conventional commits` | `(?i)conventional` |
+| `dev` | `pnpm dev` or `pnpm run dev` | `^pnpm\s+(run\s+)?dev\b` |
+| `typecheck` | `pnpm typecheck`, `pnpm run typecheck`, or `tsc --noEmit` | `^(pnpm\s+(run\s+)?typecheck\b|tsc\s+--noEmit)$` |
+| `coverage` | `pnpm coverage` or `pnpm run coverage`, not Jest | `^(?!.*jest)pnpm\s+(run\s+)?coverage\b` |
+| `format` | `prettier` | `(?i)^prettier$` |
+| `quotes` | `single` | `(?i)^single$` |
+| `testloc` | colocated / next to component files / same directory | `(?i)^(?!.*__tests__).*?(colocat|next to|src/components.*\.test\.|same (directory|folder))` |
+| `moduletype` | ESM / ES modules, not CommonJS | `(?i)^(?=.*(esm|es modules?))(?!.*commonjs).*` |
 
 ## Reproduce
 
 ```bash
 python3 scripts/eval_run.py --tasks benchmark/tasks.json --label before --workdir benchmark/repo-before -o benchmark/results/results-before.json
+python3 scripts/eval_run.py --tasks benchmark/tasks.json --label before-run2 --workdir benchmark/repo-before -o benchmark/results/results-before-run2.json
 python3 scripts/eval_run.py --tasks benchmark/tasks.json --label after --workdir benchmark/repo-after -o benchmark/results/results-after.json
+python3 scripts/eval_run.py --tasks benchmark/tasks.json --label after-run2 --workdir benchmark/repo-after -o benchmark/results/results-after-run2.json
 python3 scripts/eval_run.py --compare benchmark/results/results-before.json benchmark/results/results-after.json -o benchmark/results/report.md
 ```
 
 ## Actual results
 
-- Before: 3/7 passed, average duration 20.206s, captured total cost USD 1.812925.
-- After: 7/7 passed, average duration 11.393s, captured total cost USD 1.191250.
-- Improvement: +4 passing tasks; the fixed tasks were install command, test command, test framework, and component directory.
+| Side | Runs | Passed | Flip-flop tasks | Avg duration/task | Total captured cost (USD) |
+|---|---|---:|---:|---:|---:|
+| before | `before` + `before-run2` | 4/28 | 2 | 16.041s | 5.820612 |
+| after | `after` + `after-run2` | 16/28 | 0 | 11.651s | 4.810770 |
+| delta | after - before | +12 tasks | -2 | -4.389s | -1.009842 |
 
-See `results/results-before.json`, `results/results-after.json`, and `results/report.md` for details.
+- Headline: before 4/28 passed; after 16/28 passed; improvement +12 passing task attempts.
+- Answer instability metric: before had 2 flip-flop tasks (`node, moduletype`); after had 0 flip-flop tasks.
+- Single-run comparison in `results/report.md`: before 2/14 → after 8/14 for the first run pair.
+
+See `results/results-before.json`, `results/results-before-run2.json`, `results/results-after.json`, `results/results-after-run2.json`, and `results/report.md` for details.
 
 ## Honest limitations
 
-- Single run only; no repeated trials or confidence intervals.
-- Small sample: 7 objective Q&A tasks.
+- Single demo repo; results may not generalize to larger or different repositories.
+- Only N=2 runs per side; the repeated run is enough to reveal instability, not enough for confidence intervals.
+- Small sample: 14 objective Q&A tasks, 28 task attempts per side.
 - Results depend on the installed Claude Code CLI/model behavior at run time.
 - The demo intentionally isolates documentation effects; it does not benchmark editing quality or multi-turn workflows.
 - Regex grading is intentionally simple and may not capture all semantically equivalent answers.
