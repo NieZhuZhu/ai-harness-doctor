@@ -36,6 +36,24 @@ class EvalRunTests(unittest.TestCase):
             self.assertIn("before", text)
             self.assertIn("after", text)
 
+    def test_runner_timeout_records_task_and_continues(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(json.dumps([
+                {"id": "hang", "prompt": "sleep", "timeout_s": 1},
+            ]), encoding="utf-8")
+            output = Path(td) / "results.json"
+            runner = "python3 -c \"import time;time.sleep(5)\""
+            proc = subprocess.run([sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "timeout", "--workdir", str(workdir), "--runner", runner, "-o", str(output)], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(len(data["tasks"]), 1)
+            self.assertFalse(data["tasks"][0]["passed"])
+            self.assertTrue(data["tasks"][0]["timed_out"])
+            self.assertIsNone(data["tasks"][0]["exit_code"])
+
 
 if __name__ == "__main__":
     unittest.main()

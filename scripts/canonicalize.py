@@ -120,11 +120,14 @@ def collect_stub_targets(root, tools):
         for rel_path in spec["paths"]:
             path = root / rel_path
             if path.is_file():
-                changes.append((path, spec["content"]))
+                changes.append({"action": "write", "path": path, "content": spec["content"]})
     if "cursor" in tools:
         rules_dir = root / ".cursor" / "rules"
         if rules_dir.is_dir() and any(p.is_file() for p in rules_dir.iterdir()):
-            changes.append((rules_dir / "agents-md.mdc", CURSOR_RULE_STUB))
+            changes.append({"action": "write", "path": rules_dir / "agents-md.mdc", "content": CURSOR_RULE_STUB})
+            for p in sorted(rules_dir.iterdir()):
+                if p.is_file() and p.name != "agents-md.mdc" and p.suffix in {".md", ".mdc"}:
+                    changes.append({"action": "delete", "path": p})
     return changes
 
 
@@ -139,11 +142,18 @@ def write_stubs(args):
     if not changes:
         print("No existing tool files matched; nothing to change.")
         return
-    for path, new in changes:
+    for change in changes:
+        path = change["path"]
+        rp = path.relative_to(root)
+        if change["action"] == "delete":
+            if args.apply:
+                path.unlink()
+            print(f"delete {rp.as_posix()}")
+            continue
+        new = change["content"]
         old = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
         if old == new:
             continue
-        rp = path.relative_to(root)
         if args.apply:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(new, encoding="utf-8")
@@ -176,24 +186,30 @@ def validate(args):
         for req in args.require_sections.split(","):
             if req.strip() and not heading_present(text, req.strip()):
                 findings.append({"level": "ERROR", "check": "SECTION", "message": f"Missing required heading: {req.strip()}"})
-    for path, _new in collect_stub_targets(root, ["claude", "cursor", "windsurf", "copilot", "gemini", "cline"]):
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if "AGENTS.md" in text and len(text.encode("utf-8")) <= 800:
-            continue
-        # Existing full files are allowed before stub-writing; check_drift catches post-migration re-divergence.
-    result = {"ok": not findings, "findings": findings}
+    if agents.is_file():
+        for change in collect_stub_targets(root, ["claude", "cursor", "windsurf", "copilot", "gemini", "cline"]):
+            path = change["path"]
+            if not path.is_file():
+                continue
+            if change["action"] == "write":
+                text = path.read_text(encoding="utf-8", errors="replace")
+                if "AGENTS.md" in text and len(text.encode("utf-8")) <= 800:
+                    continue
+            # Existing full files are allowed before stub-writing; check_drift catches post-migration re-divergence.
+            findings.append({"level": "NOTICE", "check": "STUB", "path": path.relative_to(root).as_posix(), "message": "tool file not yet downgraded to stub (or regrew)"})
+    errors = [f for f in findings if f.get("level") == "ERROR"]
+    result = {"ok": not errors, "findings": findings}
     if args.as_json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         if findings:
-            print("阶段 1 治疗校验失败：")
+            print("阶段 1 治疗校验失败：" if errors else "阶段 1 治疗校验通过（含提示）：")
             for f in findings:
-                print(f"- [{f['check']}] {f['message']}")
+                loc = f" {f['path']}" if "path" in f else ""
+                print(f"- [{f['level']}/{f['check']}]{loc} {f['message']}")
         else:
             print("阶段 1 治疗校验通过。")
-    return 0 if not findings else 1
+    return 0 if not errors else 1
 
 
 def main(argv=None):

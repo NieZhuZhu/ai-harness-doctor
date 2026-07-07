@@ -1,4 +1,5 @@
 import shutil
+import json
 import subprocess
 import sys
 import tempfile
@@ -39,6 +40,32 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("D1", proc.stdout)
         self.assertIn("nonexist", proc.stdout)
+
+    def test_package_manager_builtins_do_not_trigger_d1(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS + "```bash\nnpm install\nyarn add foo\nnpm run nonexist\n```\n", encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1)
+        report = json.loads(proc.stdout)
+        d1 = [f for f in report["findings"] if f["check"] == "D1"]
+        self.assertEqual(len(d1), 1)
+        self.assertIn("nonexist", d1[0]["message"])
+
+    def test_glob_backtick_does_not_trigger_d2(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS + "Run against `src/**/*.ts`.\n", encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D2"])
 
     def test_clean_fixture_exit_zero(self):
         td, repo = self.copy_repo()

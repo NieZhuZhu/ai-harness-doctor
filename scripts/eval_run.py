@@ -41,6 +41,14 @@ def maybe_usage(stdout):
     return usage
 
 
+def timeout_output(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
 def run_tasks(args):
     tasks_path = Path(args.tasks)
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
@@ -54,17 +62,35 @@ def run_tasks(args):
         prompt = task["prompt"]
         command = args.runner.replace("{prompt}", shlex.quote(prompt))
         start = time.time()
-        proc = subprocess.run(command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
+        try:
+            proc = subprocess.run(command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
+        except subprocess.TimeoutExpired as exc:
+            duration = round(time.time() - start, 3)
+            results["tasks"].append({
+                "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
+                "exit_code": None, "stdout": timeout_output(exc.stdout), "stderr": timeout_output(exc.stderr),
+                "usage": {},
+            })
+            continue
         duration = round(time.time() - start, 3)
         check = task.get("check", {})
         passed = False
         if check.get("type") == "regex":
             passed = re.search(check.get("value", ""), proc.stdout or "") is not None
         elif check.get("type") == "command":
-            cproc = subprocess.run(check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
+            try:
+                cproc = subprocess.run(check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
+            except subprocess.TimeoutExpired as exc:
+                duration = round(time.time() - start, 3)
+                results["tasks"].append({
+                    "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
+                    "exit_code": None, "stdout": timeout_output(exc.stdout), "stderr": timeout_output(exc.stderr),
+                    "usage": maybe_usage(proc.stdout),
+                })
+                continue
             passed = cproc.returncode == 0
         results["tasks"].append({
-            "id": task["id"], "passed": passed, "duration_s": duration,
+            "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
             "exit_code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr,
             "usage": maybe_usage(proc.stdout),
         })

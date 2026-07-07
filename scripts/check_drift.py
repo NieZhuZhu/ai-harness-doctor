@@ -11,6 +11,12 @@ from pathlib import Path
 
 DEFAULT_MAX_BYTES = 32768
 STUB_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", ".cursorrules", ".windsurfrules", ".github/copilot-instructions.md", "GEMINI.md", ".clinerules"]
+PACKAGE_MANAGER_BUILTINS = {
+    "install", "ci", "i", "init", "add", "remove", "rm", "uninstall", "update", "up", "upgrade",
+    "exec", "dlx", "create", "audit", "link", "unlink", "publish", "outdated", "config", "cache",
+    "login", "logout", "whoami", "version", "info", "list", "ls", "why", "dedupe", "prune",
+    "rebuild", "help", "test", "start",
+}
 
 
 def line_collected_code(text):
@@ -59,6 +65,9 @@ def d1_command_drift(root, text):
             name = m.group(2) or m.group(3) or m.group(4)
             if tool == "make" and targets is not None and name not in targets:
                 findings.append({"check": "D1", "level": "ERROR", "line": lineno, "message": f"Unknown Makefile target `{name}`", "suggestion": "Update AGENTS.md or add the Makefile target."})
+            # Treat package-manager builtins as valid unconditionally; false negatives are cheaper than noisy false positives here.
+            if tool != "make" and name in PACKAGE_MANAGER_BUILTINS:
+                continue
             if tool != "make" and scripts is not None and name not in scripts:
                 findings.append({"check": "D1", "level": "ERROR", "line": lineno, "message": f"Unknown package.json script `{name}`", "suggestion": "Update AGENTS.md or add the package.json script."})
     return findings
@@ -73,6 +82,8 @@ def d2_path_drift(root, text):
             if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
                 continue
             if token.startswith(("npm ", "pnpm ", "yarn ", "make ", "python", "git ")):
+                continue
+            if "*" in token or "?" in token:
                 continue
             if "/" not in token and token not in known:
                 continue
