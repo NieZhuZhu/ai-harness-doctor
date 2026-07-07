@@ -56,12 +56,25 @@ jobs:
             exit 1
           fi
 
+      - name: Check whether this version is already on npm
+        id: npm_version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "ai-harness-doctor@$version" version >/dev/null 2>&1; then
+            echo "ai-harness-doctor@$version is already published; skipping npm publish and GitHub release."
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: steps.npm_version.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
 
       - name: Create GitHub Release
+        if: steps.npm_version.outputs.already_published != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --generate-notes
