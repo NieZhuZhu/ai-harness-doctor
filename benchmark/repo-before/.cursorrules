@@ -3,7 +3,14 @@
 Use pnpm for package management.
 Install dependencies with `pnpm install`.
 Run lint with `pnpm lint`.
+Run coverage with `jest --coverage`.
+Format with `eslint --fix`.
+Use single quotes for strings.
 Use 2 spaces for indentation.
+Tests live in `__tests__/` folders.
+This project is CommonJS.
+Start the dev server with `npm start`.
+CI config lives at `.circleci/config.yml`.
 Prefer TypeScript for application code.
 Keep React components focused and small.
 Utility helpers live in `src/utils/`.
@@ -30,4 +37,3 @@ Use project scripts instead of global tools.
 Check the actual package manager field.
 Preserve public APIs unless requested.
 Keep benchmark fixtures deterministic.
-

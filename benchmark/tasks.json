@@ -40,5 +40,47 @@
     "prompt": "Does this repo follow a commit message convention? Which one? Answer with ONLY the exact command/value, no explanation.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)conventional"}
+  },
+  {
+    "id": "dev",
+    "prompt": "What is the exact command to start the dev server? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "^pnpm\\s+(run\\s+)?dev\\b"}
+  },
+  {
+    "id": "typecheck",
+    "prompt": "What is the exact command to type-check the project? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "^(pnpm\\s+(run\\s+)?typecheck\\b|tsc\\s+--noEmit)$"}
+  },
+  {
+    "id": "coverage",
+    "prompt": "What is the exact command to run coverage? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "^(?!.*jest)pnpm\\s+(run\\s+)?coverage\\b"}
+  },
+  {
+    "id": "format",
+    "prompt": "What tool formats code in this repo? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)^prettier$"}
+  },
+  {
+    "id": "quotes",
+    "prompt": "Does this repo use single or double quotes? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)^single$"}
+  },
+  {
+    "id": "testloc",
+    "prompt": "Where do test files live in this repo? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)^(?!.*__tests__).*?(colocat|next to|src/components.*\\.test\\.|same (directory|folder))"}
+  },
+  {
+    "id": "moduletype",
+    "prompt": "Is this project CommonJS or ESM? Answer with ONLY the exact command/value, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)^(?=.*(esm|es modules?))(?!.*commonjs).*"}
   }
 ]

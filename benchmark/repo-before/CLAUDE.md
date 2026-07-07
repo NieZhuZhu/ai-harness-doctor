@@ -7,12 +7,16 @@ This file contains project instructions for Claude Code contributors.
 - Use Node 16 for all local development.
 - Install dependencies with `npm install`.
 - The repository is a small React application.
+- The project is CommonJS; do not add ESM-only configuration.
+- Start the dev server with `npm start`.
 - Always read this file before touching code.
 
 ## Test workflow
 
 - Tests use Jest.
 - Run the unit tests with `npm run test:unit`.
+- Run coverage with `jest --coverage`.
+- Tests live in a top-level `__tests__/` directory.
 - Add Jest tests near the component being changed.
 - Use snapshots when they make review easier.
 
@@ -32,6 +36,9 @@ This file contains project instructions for Claude Code contributors.
 ## Coding rules
 
 - Prefer TypeScript for all source files.
+- Use double quotes in TypeScript and JSX.
+- Use 4 spaces for indentation.
+- Format changed files with `eslint --fix`.
 - Keep functions small and readable.
 - Avoid broad refactors in feature branches.
 - Prefer explicit names over abbreviations.
@@ -46,4 +53,3 @@ This file contains project instructions for Claude Code contributors.
 - Do not commit generated build output.
 - Ask before changing dependency versions.
 - Keep changes scoped to the task.
-

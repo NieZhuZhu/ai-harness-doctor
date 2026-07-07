@@ -1,12 +1,16 @@
 {
   "name": "demo-app",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
+    "dev": "vite",
     "test": "vitest run",
     "lint": "eslint src",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "coverage": "vitest run --coverage",
+    "format": "prettier --write ."
   },
   "devDependencies": {
     "@vitejs/plugin-react": "latest",
