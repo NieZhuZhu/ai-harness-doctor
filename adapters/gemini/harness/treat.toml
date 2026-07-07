@@ -1,4 +1,4 @@
 description = "Run AI Harness Doctor treatment"
 prompt = """
-Read {{PLAYBOOK}}/SKILL.md. Execute phase 1 (Canonicalize / 治疗) on the target repo ({{args}} or cwd), and obey the phase stop condition (human-adjudicated conflicts). Scripts live in {{PLAYBOOK}}/scripts/.
+Read {{PLAYBOOK}}/SKILL.md. Execute Phase 1 — Treat (Canonicalize) on the target repo ({{args}} or cwd), and obey the phase stop condition (human-adjudicated conflicts). Scripts live in {{PLAYBOOK}}/scripts/.
 """

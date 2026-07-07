@@ -1,34 +1,34 @@
-# 迁移决策树
+# Migration decision tree
 
-## 1. 先确定范围
+## 1. Determine the scope first
 
-- 只有 root 配置文件：优先全仓迁移到 root `AGENTS.md`。
-- 多个子项目且命令 / owner / 技术栈不同：root `AGENTS.md` 写全局规则，子目录保留局部 `AGENTS.md`。
-- 用户只关心部分工具：只迁移指定文件，其他文件在报告中标为 deferred。
+- Root configuration files only: prefer a whole-repository migration to root `AGENTS.md`.
+- Multiple subprojects with different commands, owners, or stacks: put global rules in root `AGENTS.md` and keep local `AGENTS.md` files for subdirectories.
+- The user cares about only some tools: migrate only the selected files and mark the rest as deferred in the report.
 
-## 2. 决定是否保留局部文件
+## 2. Decide whether to keep local files
 
-保留局部 `AGENTS.md` 的条件：
+Keep a local `AGENTS.md` when:
 
-- 子目录有独立构建和测试命令。
-- 子目录规则与 root 明显不同。
-- 子目录 owner 明确要求局部规则。
+- The subdirectory has independent build and test commands.
+- The subdirectory rules materially differ from the root rules.
+- The subdirectory owner explicitly requires local rules.
 
-不保留的条件：
+Do not keep it when:
 
-- 内容只是 root 规则复制。
-- 内容已过期且无法找到 owner。
-- 会让 agent 读取路径出现歧义。
+- The content only copies root rules.
+- The content is stale and no owner can be found.
+- It would make agent read paths ambiguous.
 
-## 3. 何时保留工具 stub
+## 3. When to keep tool stubs
 
-- 工具必须读取自己的固定文件名。
-- 工具不支持读取 `AGENTS.md`。
-- 团队仍在使用该工具，需要最小 pointer 提醒。
+- The tool must read its own fixed filename.
+- The tool cannot read `AGENTS.md` directly.
+- The team still uses the tool and needs a minimal pointer reminder.
 
-## 4. 何时放弃迁移
+## 4. When to abandon migration
 
-- 冲突无法裁决且影响构建、测试或安全边界。
-- 目标仓库不是 git repo，且用户不允许 `--force`。
-- 工作树不干净，无法用 git 作为回滚机制。
-- 配置内容涉及敏感信息，必须先由 owner 清理。
+- Conflicts cannot be adjudicated and affect build, test, or safety boundaries.
+- The target repository is not a git repository and the user does not allow `--force`.
+- The worktree is dirty, so git cannot provide a rollback mechanism.
+- The configuration contains sensitive information that the owner must clean up first.

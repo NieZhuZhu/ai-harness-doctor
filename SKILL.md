@@ -1,106 +1,106 @@
 ---
 name: ai-harness-doctor
-description: 给仓库的 AI harness 配置层做体检-治疗-复诊-疗效验证，触发于 AGENTS.md、CLAUDE.md、.cursorrules、copilot-instructions、迁移/统一/整理 agent 配置、agent 配置体检、agent config drift、consolidate agent configs、AI harness audit 等场景。
+description: Audit, canonicalize, guard, and evaluate a repository's AI harness configuration layer around AGENTS.md; triggers include AGENTS.md, CLAUDE.md, .cursorrules, copilot-instructions, 迁移/统一/整理 agent 配置、agent 配置体检, agent config drift, consolidate agent configs, and AI harness audit.
 ---
 
 # ai-harness-doctor
 
-一句话定位：给仓库的 AI harness 配置层做「体检 → 治疗 → 复诊 → 疗效验证」，把散落、漂移的 agent 配置收敛为单一事实源 `AGENTS.md`，并持续守护。
+One-line purpose: run a repository's AI harness configuration through Checkup -> Treat -> Follow-up -> Efficacy, consolidating scattered or drifting agent instructions into the single source of truth `AGENTS.md` and keeping them guarded over time.
 
-## 何时使用
+## When to use
 
-- 仓库里同时存在 `AGENTS.md`、`CLAUDE.md`、`.cursorrules`、`.cursor/rules/*.mdc`、`.windsurfrules`、`.github/copilot-instructions.md`、`GEMINI.md`、`.clinerules` 等多份规则。
-- 用户要求「迁移 / 统一 / 整理 agent 配置」「agent 配置体检」「检查 agent config drift」「consolidate agent configs」「AI harness audit」。
-- 需要把多工具配置降级为指向 `AGENTS.md` 的最小 stub，并建立 CI / pre-commit drift guard。
+- The repository contains multiple rule files, such as `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md`, `GEMINI.md`, or `.clinerules`.
+- The user asks to migrate, unify, or organize agent configs; run an agent config checkup; check agent config drift; consolidate agent configs; or audit an AI harness.
+- Tool-specific configs need to be downgraded to minimal stubs pointing at `AGENTS.md`, with CI or pre-commit drift guards added afterward.
 
-## 何时不用
+## When not to use
 
-- 不做从零 init 空仓库：这会撞官方 `/init`。
-- 不做仓库 harness 化重构：脚本 CLI 化、验证 gate、文档分层等归 v2。
-- 不生成语言 / 框架专属规范：例如从零写 React、Go、Python 规范归 v2 或项目专项。
-- 不替用户裁决语义冲突：脚本只做确定性机械动作，语义合并、去重、冲突裁决由 agent 引导人工完成。
+- Do not initialize an empty repository from scratch; that overlaps with the official `/init` flow.
+- Do not perform a full harness-platform refactor, such as converting scripts into a CLI, adding validation gates, or redesigning documentation layers; those belong to v2.
+- Do not generate language- or framework-specific standards from scratch, such as React, Go, or Python rules; those belong to v2 or a project-specific effort.
+- Do not adjudicate semantic conflicts for the user. Scripts perform deterministic mechanical actions only; the agent guides human review for semantic merging, deduplication, and conflict resolution.
 
-## 阶段 0 体检（Scan / 审计）
+## Phase 0 — Checkup (Scan)
 
-### 输入
+### Inputs
 
-- 目标仓库根目录。
-- 可选体积阈值，默认 `32768` bytes（Codex `project_doc_max_bytes` 常见默认）。
+- Target repository root.
+- Optional size threshold, defaulting to `32768` bytes, a common Codex `project_doc_max_bytes` default.
 
-### 动作
+### Actions
 
-运行只读扫描：
+Run the read-only scan:
 
 ```bash
 python3 scripts/scan.py /path/to/repo
 python3 scripts/scan.py /path/to/repo --json
 ```
 
-检查内容：配置文件清单、大小告警、重叠候选、冲突候选、嵌套 `AGENTS.md`。
+The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files.
 
-### 产物
+### Outputs
 
-- 人类可读的「体检报告」。
-- `--json` 机器输出：`files`、`warnings`、`overlaps`、`conflicts`、`nested`。
+- A human-readable Checkup report.
+- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, and `nested`.
 
-### 明确停止条件
+### Explicit stop condition
 
-停在「用户确认迁移范围」：全仓、子目录或指定文件。未确认前不要进入治疗。
+Stop at migration-scope confirmation: whole repository, subdirectory, or selected files. Do not enter Treat before the scope is confirmed.
 
-## 阶段 1 治疗（Canonicalize / 收敛迁移）
+## Phase 1 — Treat (Canonicalize)
 
-### 输入
+### Inputs
 
-- 阶段 0 报告。
-- 用户确认的迁移范围。
-- 人工裁决后的冲突结论。
+- Phase 0 report.
+- User-confirmed migration scope.
+- Human-adjudicated conflict decisions.
 
-### 动作
+### Actions
 
-先生成合并计划骨架：
+First generate the merge-plan skeleton:
 
 ```bash
 python3 scripts/canonicalize.py --plan /path/to/repo -o merge-plan.md
 ```
 
-然后由 agent 手工编写 root `AGENTS.md`。脚本不会做语义合并。
+Then the agent manually writes the root `AGENTS.md`. The scripts do not perform semantic merging.
 
-`AGENTS.md` 存在后，预览 / 应用工具 stub 降级：
+After `AGENTS.md` exists, preview or apply tool-stub downgrades:
 
 ```bash
 python3 scripts/canonicalize.py --write-stubs /path/to/repo
 python3 scripts/canonicalize.py --write-stubs /path/to/repo --apply
 ```
 
-写入脚本默认 dry-run；`--apply` 前要求目标仓库是 git repo 且工作树干净，可用 `--force` 覆盖。
+Writes are dry-run by default. Before `--apply`, the target must be a git repository with a clean worktree; use `--force` only when the user explicitly accepts that override.
 
-最后校验：
+Finally validate:
 
 ```bash
 python3 scripts/canonicalize.py --validate /path/to/repo
 python3 scripts/canonicalize.py --validate /path/to/repo --json
 ```
 
-### 产物
+### Outputs
 
-- canonical root `AGENTS.md`。
-- 多工具最小 stub：`CLAUDE.md`、`.cursorrules`、`.windsurfrules`、`.cursor/rules/agents-md.mdc`、`copilot-instructions`、`GEMINI.md`、`.clinerules`。
-- 校验报告。
+- Canonical root `AGENTS.md`.
+- Minimal tool stubs: `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, `.cursor/rules/agents-md.mdc`, `copilot-instructions`, `GEMINI.md`, and `.clinerules`.
+- Validation report.
 
-### 明确停止条件
+### Explicit stop condition
 
-停在「所有冲突已人工裁决」。规则打架时绝不擅自决定；列出冲突、证据和建议，请用户或仓库 owner 裁决。
+Stop when all conflicts have been human-adjudicated. Never silently decide between contradictory rules; list the conflict, evidence, and recommendation, then ask the user or repository owner to decide.
 
-## 阶段 2 复诊（Drift Guard / 漂移治理）
+## Phase 2 — Follow-up (Drift Guard)
 
-### 输入
+### Inputs
 
-- 已收敛的目标仓库。
-- root `AGENTS.md` 与工具 stub。
+- Canonicalized target repository.
+- Root `AGENTS.md` and tool stubs.
 
-### 动作
+### Actions
 
-运行 drift guard：
+Run the drift guard:
 
 ```bash
 python3 scripts/check_drift.py /path/to/repo
@@ -108,131 +108,131 @@ python3 scripts/check_drift.py /path/to/repo --json
 python3 scripts/check_drift.py /path/to/repo --strict
 ```
 
-检查：
+Checks:
 
-- D1：命令漂移，核对 `package.json` scripts 与 `Makefile` targets。
-- D2：路径漂移，核对反引号路径是否存在。
-- D3：stub 再分叉，检查体积与 `AGENTS.md` pointer。
-- D4：`AGENTS.md` 体积。
-- D5：嵌套 `AGENTS.md` inventory（信息项，不阻断）。
+- D1: command drift, comparing referenced commands against `package.json` scripts and `Makefile` targets.
+- D2: path drift, checking whether backtick-quoted paths exist.
+- D3: stub re-divergence, checking size and the `AGENTS.md` pointer.
+- D4: `AGENTS.md` size.
+- D5: nested `AGENTS.md` inventory, informational and non-blocking.
 
-### 产物
+### Outputs
 
-- drift 报告。
-- 可接入 CI / pre-commit 的失败退出码。
-- 修复建议：指出要改哪类内容、通常在哪一行。
+- Drift report.
+- CI- and pre-commit-friendly failing exit codes.
+- Repair advice that points to the category to fix and usually the line to inspect.
 
-### 明确停止条件
+### Explicit stop condition
 
-停在「校验通过或修复建议已给出」。不要在复诊阶段擅自重写语义内容。
+Stop when checks pass or repair advice has been provided. Do not rewrite semantic content during Follow-up.
 
-### 长期随访
+### Long-term follow-up
 
-治疗完成并存在 root `AGENTS.md` 后，可用 `npx ai-harness-doctor guard /path/to/repo --apply` 安装长期守护。
-它只安装核心套件：pre-commit drift hook、path-aware PR gate、weekly checkup issue workflow、`AGENTS.md` maintenance contract。
-移除时运行 `npx ai-harness-doctor guard /path/to/repo --remove --apply`；不集成 Claude hooks。
+After Treat completes and root `AGENTS.md` exists, install the long-term guard suite with `npx ai-harness-doctor guard /path/to/repo --apply`.
+It installs only the core suite: pre-commit drift hook, path-aware PR gate, weekly checkup issue workflow, and `AGENTS.md` maintenance contract.
+Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply`; Claude hooks are not integrated.
 
-## 阶段 3 疗效验证（Eval / 有效性验证）
+## Phase 3 — Efficacy (Eval)
 
-### 输入
+### Inputs
 
-- 固定任务文件 `tasks.json`。
-- before / after 两个标签与目标仓库。
-- runner 模板，例如 `claude -p {prompt} --output-format json`。
+- Fixed task file `tasks.json`.
+- Before and after labels plus the target repository.
+- Runner template, for example `claude -p {prompt} --output-format json`.
 
-### 动作
+### Actions
 
-运行任务：
+Run tasks:
 
 ```bash
 python3 scripts/eval_run.py --tasks tasks.json --label before --workdir /path/to/repo -o results-before.json
 python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/repo -o results-after.json
 ```
 
-对比结果：
+Compare results:
 
 ```bash
 python3 scripts/eval_run.py --compare results-before.json results-after.json -o eval-report.md
 ```
 
-runner 缺失时，脚本输出手工协议，不做伪装。
+If the runner is missing, the script prints a manual protocol instead of pretending to run an eval.
 
-### 产物
+### Outputs
 
-- before / after JSON 结果。
-- Markdown 对比报告：通过率、耗时、token / cost（如果 runner 输出提供）。
+- Before and after JSON results.
+- Markdown comparison report with pass rate, duration, and token or cost data when the runner provides it.
 
-### 明确停止条件
+### Explicit stop condition
 
-停在「指标产出」。报告回答：这份 `AGENTS.md` 是否让 agent 行为更稳定。
+Stop when metrics have been produced. The report should answer whether this `AGENTS.md` made agent behavior more stable.
 
-## 决策规则
+## Decision rules
 
-### 什么进 AGENTS.md
+### What belongs in AGENTS.md
 
-- 只写 agent 无法从代码、manifest、CI 配置直接推断的信息。
-- 写稳定约定：项目结构、必跑命令、危险操作、安全边界、PR / commit 约定。
-- 用渐进披露：细节放 `references/`，`AGENTS.md` 只保留入口与关键规则。
+- Only information the agent cannot directly infer from code, manifests, or CI configuration.
+- Stable conventions: project structure, required commands, dangerous operations, safety boundaries, and PR or commit conventions.
+- Progressive disclosure: put details in `references/`; keep only entry points and critical rules in `AGENTS.md`.
 
-### 什么不进 AGENTS.md
+### What does not belong in AGENTS.md
 
-- 不搬运 package scripts、README、框架默认规范的全文。
-- 不写易过期的长列表，除非有 drift guard 能验证。
-- 不复制工具 stub 正文。
+- Do not wholesale-copy package scripts, README content, or framework-default standards.
+- Do not keep long lists that will go stale unless a drift guard can validate them.
+- Do not copy tool-stub bodies.
 
-### monorepo 何时用子目录局部 AGENTS.md
+### When a monorepo needs local subdirectory AGENTS.md files
 
-- 子项目语言、命令、安全边界显著不同。
-- 子目录有独立 owner / release 流程。
-- root 只写全局规则，局部 `AGENTS.md` 写该子树差异。
+- Subprojects have materially different languages, commands, or safety boundaries.
+- Subdirectories have independent owners or release processes.
+- Root `AGENTS.md` holds global rules; local `AGENTS.md` files hold only subtree-specific differences.
 
-### 冲突消解升级路径
+### Conflict-resolution escalation path
 
-1. 事实冲突：优先以 manifest、CI、代码实况为证据。
-2. 偏好冲突：提交给 owner 裁决，不由 agent 拍板。
-3. 过期规则：标注来源、建议删除，但仍需确认。
-4. 无法判断：保留在计划的 conflict list，阻塞治疗完成。
+1. Factual conflicts: prefer manifests, CI, and live code as evidence.
+2. Preference conflicts: send to the owner for adjudication; the agent does not decide.
+3. Stale rules: cite the source and recommend deletion, but still require confirmation.
+4. Unknown cases: keep them in the plan's conflict list and block Treat completion.
 
-## 命名化反模式清单
+## Named anti-patterns
 
-### 全量搬运
+### Wholesale Dumping
 
-症状：把所有旧内容原样堆进 `AGENTS.md`。
+Symptom: all old content is copied verbatim into `AGENTS.md`.
 
-纠正：只保留不可推断的规则，重复事实改成引用 manifest 或 `references/`。
+Correction: keep only non-inferable rules; replace duplicated facts with references to manifests or `references/`.
 
-### 擅自裁决
+### Silent Adjudication
 
-症状：发现 `pnpm install` vs `npm install` 后直接选一个。
+Symptom: after finding `pnpm install` vs `npm install`, the agent chooses one directly.
 
-纠正：列出 file:line 证据，请用户或 owner 裁决。
+Correction: list file:line evidence and ask the user or owner to adjudicate.
 
-### 复制粘贴降级
+### Copy-Paste Stubs
 
-症状：stub 里又复制正文，导致再次分叉。
+Symptom: stubs copy the full rules again, causing another fork.
 
-纠正：stub 只能是 pointer / import，不保留规则正文。
+Correction: stubs must be pointers or imports only, with no rule body retained.
 
-### 静默截断
+### Silent Truncation
 
-症状：无视 32KB 或 12KB 体积告警。
+Symptom: 32KB or 12KB size warnings are ignored.
 
-纠正：拆分 references，保持 `AGENTS.md` 小而深。
+Correction: split details into references and keep `AGENTS.md` small and deep.
 
-### 一次性大爆炸
+### Big-Bang Migration
 
-症状：不分阶段、不设检查点，直接改完所有文件。
+Symptom: all files are changed at once without phases or checkpoints.
 
-纠正：严格按体检、治疗、复诊、疗效验证推进，每阶段都有停止条件。
+Correction: proceed strictly through Checkup, Treat, Follow-up, and Efficacy, with a stop condition at each phase.
 
-## References 索引
+## References index
 
-- `references/tool-matrix.md`：各工具读取文件、import 能力、优先级与降级策略。
-- `references/section-template.md`：推荐 `AGENTS.md` 章节组织。
-- `references/migration-decision-tree.md`：迁移范围决策树。
-- `references/conflict-resolution.md`：冲突分类、消解规则与上报格式。
-- `assets/AGENTS.template.md`：英文 `AGENTS.md` 模板。
-- `assets/guard/`：长期随访 guard 套件模板（pre-commit、PR gate、weekly checkup、maintenance contract）。
-- `commands/`：Claude Code slash commands，按阶段路由到本 skill。
-- `adapters/`：Codex、Cursor、Gemini 与通用 agent 的薄指针模板。
-- `bin/cli.js`：npm CLI、安装器与 Python 脚本转发入口。
+- `references/tool-matrix.md`: tool-specific read files, import support, priority, and downgrade strategy.
+- `references/section-template.md`: recommended `AGENTS.md` section structure.
+- `references/migration-decision-tree.md`: migration-scope decision tree.
+- `references/conflict-resolution.md`: conflict categories, resolution rules, and escalation format.
+- `assets/AGENTS.template.md`: English `AGENTS.md` template.
+- `assets/guard/`: long-term follow-up guard suite templates: pre-commit, PR gate, weekly checkup, and maintenance contract.
+- `commands/`: Claude Code slash commands routed to this skill by phase.
+- `adapters/`: thin pointer templates for Codex, Cursor, Gemini, and universal agents.
+- `bin/cli.js`: npm CLI, installer, and forwarding entry point for Python scripts.

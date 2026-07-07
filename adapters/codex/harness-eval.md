@@ -1,1 +1,1 @@
-Read {{PLAYBOOK}}/SKILL.md. Execute phase 3 (Eval / 疗效验证) on the target repo (argument or cwd), and obey the phase stop condition (stop when metrics are produced). Scripts live in {{PLAYBOOK}}/scripts/.
+Read {{PLAYBOOK}}/SKILL.md. Execute Phase 3 — Efficacy (Eval) on the target repo (argument or cwd), and obey the phase stop condition (stop when metrics are produced). Scripts live in {{PLAYBOOK}}/scripts/.

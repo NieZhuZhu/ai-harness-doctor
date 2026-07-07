@@ -1,4 +1,4 @@
-# 项目概览
+# Project overview
 
 This demo repo is a Vite React app used by the ai-harness-doctor benchmark.
 The repository reality is authoritative: `package.json`, `.nvmrc`, and the `src/`
@@ -20,7 +20,7 @@ tree decide commands and paths when old tool docs disagree.
 - Module type: ESM (`"type": "module"` in `package.json`).
 - CI workflow: `.github/workflows/ci.yml`.
 
-# 代码规范
+# Conventions
 
 - Use TypeScript for source files.
 - Keep React components in `src/components/`.
@@ -34,7 +34,7 @@ tree decide commands and paths when old tool docs disagree.
 - Do not commit generated build output.
 - Follow existing package scripts rather than inventing commands.
 
-# Commit 约定
+# Commit conventions
 
 Use conventional commits, for example `feat: add button variant` or
 `fix: handle empty date input`.

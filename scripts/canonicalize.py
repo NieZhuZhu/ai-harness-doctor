@@ -69,18 +69,18 @@ def unified_diff(path, old, new):
 
 
 def render_plan(report):
-    lines = ["# 阶段 1 治疗合并计划骨架", ""]
+    lines = ["# Phase 1 — Treat Merge Plan Skeleton", ""]
     lines.append("## Inventory")
-    lines.append("| 文件 | 工具 | 字节 | 行数 |")
+    lines.append("| File | Tool | Bytes | Lines |")
     lines.append("|---|---|---:|---:|")
     for f in report["files"]:
         lines.append(f"| `{f['path']}` | {f['tool']} | {f['bytes']} | {f['lines']} |")
     lines.extend(["", "## Overlap clusters"])
     if report["overlaps"]:
         for o in report["overlaps"]:
-            lines.append(f"- `{o['a']}` ↔ `{o['b']}`：{o['percent']}%")
+            lines.append(f"- `{o['a']}` ↔ `{o['b']}`: {o['percent']}%")
     else:
-        lines.append("- 无超过阈值的重叠。")
+        lines.append("- No overlaps above the threshold.")
     lines.extend(["", "## Conflict list"])
     if report["conflicts"]:
         for c in report["conflicts"]:
@@ -90,14 +90,14 @@ def render_plan(report):
                 for e in entries:
                     lines.append(f"    - {e['path']}:{e['line']} `{e['evidence']}`")
     else:
-        lines.append("- 无明显冲突候选。")
+        lines.append("- No obvious conflict candidates.")
     lines.extend([
         "", "## TODO decision checklist",
-        "- [ ] 确认迁移范围（全仓 / 子目录 / 指定文件）。",
-        "- [ ] 对每个冲突项记录人工裁决结论。",
-        "- [ ] 手工编写 root `AGENTS.md`，只纳入 agent 无法从代码/manifest 推断的信息。",
-        "- [ ] 运行 `canonicalize.py --write-stubs` 预览降级 diff。",
-        "- [ ] 运行 `canonicalize.py --validate` 复核。",
+        "- [ ] Confirm the migration scope (whole repository / subdirectory / selected files).",
+        "- [ ] Record the human adjudication for every conflict.",
+        "- [ ] Manually write the root `AGENTS.md`, keeping only information agents cannot infer from code or manifests.",
+        "- [ ] Run `canonicalize.py --write-stubs` to preview the downgrade diff.",
+        "- [ ] Run `canonicalize.py --validate` to re-check the result.",
     ])
     return "\n".join(lines) + "\n"
 
@@ -203,12 +203,12 @@ def validate(args):
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         if findings:
-            print("阶段 1 治疗校验失败：" if errors else "阶段 1 治疗校验通过（含提示）：")
+            print("Phase 1 treat validation failed:" if errors else "Phase 1 treat validation passed (with notices):")
             for f in findings:
                 loc = f" {f['path']}" if "path" in f else ""
                 print(f"- [{f['level']}/{f['check']}]{loc} {f['message']}")
         else:
-            print("阶段 1 治疗校验通过。")
+            print("Phase 1 treat validation passed.")
     return 0 if not errors else 1
 
 
@@ -225,7 +225,7 @@ def main(argv=None):
     parser.add_argument("--tools", default="claude,cursor,windsurf,copilot,gemini,cline")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--max-bytes", type=int, default=32768)
-    parser.add_argument("--require-sections", default="项目概览/Project overview,构建与测试/Build & test,代码规范/Conventions")
+    parser.add_argument("--require-sections", default="Project overview,Build & test,Conventions")
     args = parser.parse_args(argv)
     if args.plan:
         write_plan(args)

@@ -1,37 +1,37 @@
-# AGENTS.md 章节模板
+# AGENTS.md section template
 
-## Project overview / 项目概览
+## Project overview
 
-该写什么：仓库用途、关键子系统、agent 工作时最容易误判的边界。
+Write: repository purpose, critical subsystems, and boundaries agents are likely to misread.
 
-不该写什么：README 已经清楚描述的市场文案、长篇背景故事。
+Do not write: marketing copy already covered by README, or long background narratives.
 
-## Build & test / 构建与测试命令
+## Build & test
 
-该写什么：必须从仓库根执行的核心命令、常见变体、必要环境前置条件。
+Write: core commands that must run from the repository root, common variants, and required environment prerequisites.
 
-不该写什么：`package.json` scripts 的完整复制；应引用真实 manifest，并让 drift guard 校验。
+Do not write: a full copy of `package.json` scripts; reference the real manifest and let the drift guard validate it.
 
-## Conventions / 代码规范
+## Conventions
 
-该写什么：仓库特有、工具无法推断的约定，例如分层边界、错误处理策略、命名限制。
+Write: repository-specific conventions that tools cannot infer, such as layer boundaries, error-handling strategy, or naming restrictions.
 
-不该写什么：语言默认风格、formatter 已覆盖的细节。
+Do not write: language-default style or details already enforced by the formatter.
 
-## Testing requirements / 测试要求
+## Testing requirements
 
-该写什么：哪些改动必须加测试、测试夹具位置、不可触碰的外部依赖。
+Write: which changes require tests, where fixtures live, and which external dependencies must not be touched.
 
-不该写什么：测试框架官网教程。
+Do not write: the test framework's official tutorial.
 
-## Safety / 安全注意
+## Safety
 
-该写什么：禁止提交密钥、禁止访问生产资源、危险脚本说明、数据合规边界。
+Write: secrets that must never be committed, production resources that must not be accessed, dangerous scripts, and data-compliance boundaries.
 
-不该写什么：泛泛的“注意安全”。
+Do not write: generic reminders to "be safe".
 
-## Commit & PR / 提交与评审约定
+## Commit & PR
 
-该写什么：提交信息风格、PR 描述必须包含的验证信息、是否允许 squash。
+Write: commit-message style, verification that PR descriptions must include, and whether squash is allowed.
 
-不该写什么：和平台默认行为完全相同的流程。
+Do not write: workflows that are identical to the platform default.

@@ -106,7 +106,7 @@ def compare(args):
     bmap = {t["id"]: t for t in before.get("tasks", [])}
     amap = {t["id"]: t for t in after.get("tasks", [])}
     ids = sorted(set(bmap) | set(amap))
-    lines = ["# 阶段 3 疗效验证对比报告", "", f"Before label: `{before.get('label')}`", f"After label: `{after.get('label')}`", "", "| Task | Before | After | Duration Δ(s) | Usage |", "|---|---:|---:|---:|---|"]
+    lines = ["# Phase 3 — Efficacy Comparison Report", "", f"Before label: `{before.get('label')}`", f"After label: `{after.get('label')}`", "", "| Task | Before | After | Duration Δ(s) | Usage |", "|---|---:|---:|---:|---|"]
     before_pass = after_pass = 0
     for tid in ids:
         b, a = bmap.get(tid, {}), amap.get(tid, {})

@@ -83,7 +83,7 @@ def file_info(root, tool, path, max_bytes):
 
 def normalized_lines(text):
     out = []
-    punctuation = set(string.punctuation + "#*-_=|`~>。！？、，；：（）【】《》")
+    punctuation = set(string.punctuation + "#*-_=|`~>\u3002\uff01\uff1f\u3001\uff0c\uff1b\uff1a\uff08\uff09\u3010\u3011\u300a\u300b")
     for line in text.splitlines():
         s = line.strip()
         if not s:
@@ -128,8 +128,8 @@ SIGNAL_PATTERNS = {
         ("4 spaces", re.compile(r"\b4\s+spaces\b|\bfour\s+spaces\b", re.I)),
     ],
     "quote_style": [
-        ("single", re.compile(r"\bsingle quotes?\b|单引号", re.I)),
-        ("double", re.compile(r"\bdouble quotes?\b|双引号", re.I)),
+        ("single", re.compile(r"\bsingle quotes?\b|\u5355\u5f15\u53f7", re.I)),
+        ("double", re.compile(r"\bdouble quotes?\b|\u53cc\u5f15\u53f7", re.I)),
     ],
     "test_command": [
         ("jest", re.compile(r"\bjest\b")),
@@ -204,40 +204,40 @@ def scan_repo(repo_root, max_bytes):
 
 
 def render_markdown(report):
-    lines = ["# 阶段 0 体检报告", ""]
-    lines.append("## 配置文件清单")
+    lines = ["# Phase 0 — Checkup Report", ""]
+    lines.append("## Configuration file inventory")
     if not report["files"]:
-        lines.append("未发现已知 AI harness 配置文件。")
+        lines.append("No known AI harness configuration files were found.")
     else:
-        lines.append("| 文件 | 工具 | 字节 | 行数 | SHA256 |")
+        lines.append("| File | Tool | Bytes | Lines | SHA256 |")
         lines.append("|---|---:|---:|---:|---|")
         for f in report["files"]:
             lines.append(f"| `{f['path']}` | {f['tool']} | {f['bytes']} | {f['lines']} | `{f['sha256']}` |")
-    lines.extend(["", "## 体积告警"])
+    lines.extend(["", "## Size warnings"])
     if report["warnings"]:
         for w in report["warnings"]:
-            lines.append(f"- **{w['level']}** `{w['path']}`：{w['message']}")
+            lines.append(f"- **{w['level']}** `{w['path']}`: {w['message']}")
     else:
-        lines.append("未发现体积告警。")
-    lines.extend(["", "## 重叠候选"])
+        lines.append("No size warnings found.")
+    lines.extend(["", "## Overlap candidates"])
     if report["overlaps"]:
         for o in report["overlaps"]:
-            lines.append(f"- `{o['a']}` ↔ `{o['b']}`：共享行占较小文件 {o['percent']}%")
+            lines.append(f"- `{o['a']}` ↔ `{o['b']}`: shared lines are {o['percent']}% of the smaller file")
     else:
-        lines.append("未发现超过 30% 的重叠候选。")
-    lines.extend(["", "## 冲突候选"])
+        lines.append("No overlap candidates above 30% were found.")
+    lines.extend(["", "## Conflict candidates"])
     if report["conflicts"]:
         for c in report["conflicts"]:
             lines.append(f"- **{c['signal']}**")
             for value, entries in c["values"].items():
                 evidence = "; ".join(f"{e['path']}:{e['line']} `{e['evidence']}`" for e in entries)
-                lines.append(f"  - `{value}`：{evidence}")
+                lines.append(f"  - `{value}`: {evidence}")
     else:
-        lines.append("未发现明显冲突候选。")
-    lines.extend(["", "## 嵌套 AGENTS.md", *(f"- `{p}`" for p in report["nested"])])
+        lines.append("No obvious conflict candidates were found.")
+    lines.extend(["", "## Nested AGENTS.md", *(f"- `{p}`" for p in report["nested"])])
     if not report["nested"]:
-        lines.append("无。")
-    lines.extend(["", "> 停止条件：请确认迁移范围（全仓 / 子目录 / 指定文件）后再进入阶段 1 治疗。"])
+        lines.append("None.")
+    lines.extend(["", "> Stop condition: confirm the migration scope (whole repository / subdirectory / selected files) before entering Phase 1 — Treat."])
     return "\n".join(lines) + "\n"
 
 

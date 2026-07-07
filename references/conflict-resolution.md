@@ -1,53 +1,53 @@
-# 冲突消解规则
+# Conflict resolution rules
 
-## 冲突分类
+## Conflict categories
 
-### 事实冲突
+### Factual conflicts
 
-示例：一个文件写 `pnpm install`，另一个写 `npm install`；一个文件写 Node 18，另一个写 Node 20。
+Example: one file says `pnpm install` while another says `npm install`; one file says Node 18 while another says Node 20.
 
-消解：优先查看 manifest、lockfile、CI、Makefile、实际代码。仍无法判断时升级给人工。
+Resolution: check manifests, lockfiles, CI, Makefiles, and live code first. Escalate to a human when the facts still do not decide the answer.
 
-### 偏好冲突
+### Preference conflicts
 
-示例：单引号 vs 双引号、2 空格 vs 4 空格。
+Example: single quotes vs double quotes, or 2 spaces vs 4 spaces.
 
-消解：优先 formatter / linter 配置；没有机器配置时交给 owner 裁决。
+Resolution: prefer formatter and linter configuration. If no machine-readable config exists, ask the owner to decide.
 
-### 过期规则
+### Stale rules
 
-示例：引用不存在目录、已删除测试框架、旧 CI 命令。
+Example: references to missing directories, removed test frameworks, or old CI commands.
 
-消解：标注证据，建议删除或改为当前事实；删除前仍需人工确认。
+Resolution: cite the evidence and recommend deletion or an update to current facts; still require human confirmation before deletion.
 
-## 消解原则
+## Resolution principles
 
-1. 机器证据优先，但不伪造语义判断。
-2. 安全相关冲突默认升级。
-3. 命令和路径必须可被 drift guard 验证。
-4. 所有裁决记录到迁移计划或 PR 描述。
+1. Machine evidence comes first, but never fabricate a semantic judgment.
+2. Escalate safety-related conflicts by default.
+3. Commands and paths must be verifiable by the drift guard.
+4. Record every decision in the migration plan or PR description.
 
-## 升级给人工的报告格式
+## Human escalation report format
 
 ```markdown
-## 冲突：<signal>
+## Conflict: <signal>
 
-- 候选 A：`<value>`
-  - 证据：`path/to/file.md:12` 原文
-- 候选 B：`<value>`
-  - 证据：`path/to/other.md:8` 原文
+- Candidate A: `<value>`
+  - Evidence: `path/to/file.md:12` original text
+- Candidate B: `<value>`
+  - Evidence: `path/to/other.md:8` original text
 
-### 影响
+### Impact
 
-说明如果选错会影响什么：安装、测试、安全、代码风格或 agent 行为。
+Explain what a wrong choice would affect: install, tests, safety, code style, or agent behavior.
 
-### 建议
+### Recommendation
 
-说明可验证事实；如果只是偏好，写“需要 owner 裁决”。
+State the verifiable fact; if the issue is only a preference, write "owner adjudication required".
 
-### 需要裁决
+### Decision needed
 
-- [ ] 采用 A
-- [ ] 采用 B
-- [ ] 另行指定
+- [ ] Choose A
+- [ ] Choose B
+- [ ] Specify another answer
 ```

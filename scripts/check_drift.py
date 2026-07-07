@@ -155,9 +155,9 @@ def run_checks(root, max_bytes, strict=False):
 
 
 def render(report):
-    lines = ["# 阶段 2 复诊 Drift Guard 报告", ""]
+    lines = ["# Phase 2 — Follow-up Drift Guard Report", ""]
     if report["ok"]:
-        lines.append("未发现阻断性 drift。")
+        lines.append("No blocking drift found.")
     for check in ["D1", "D2", "D3", "D4"]:
         items = [f for f in report["findings"] if f["check"] == check]
         if not items:
@@ -165,12 +165,12 @@ def render(report):
         lines.extend(["", f"## {check}"])
         for f in items:
             loc = f":{f['line']}" if "line" in f else f" `{f.get('path')}`" if "path" in f else ""
-            lines.append(f"- **{f['level']}**{loc} {f['message']} 修复建议：{f['suggestion']}")
-    lines.extend(["", "## D5 嵌套 AGENTS.md（信息项，不阻断）"])
+            lines.append(f"- **{f['level']}**{loc} {f['message']} Repair advice: {f['suggestion']}")
+    lines.extend(["", "## D5 Nested AGENTS.md (informational, non-blocking)"])
     if report["info"]:
         lines.extend(f"- `{i['path']}`" for i in report["info"])
     else:
-        lines.append("无。")
+        lines.append("None.")
     return "\n".join(lines) + "\n"
 
 

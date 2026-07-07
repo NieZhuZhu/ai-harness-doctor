@@ -1,67 +1,67 @@
-# 工具矩阵
+# Tool matrix
 
-本表用于阶段 1 治疗时决定哪些文件降级为 stub。能力与限制以官方文档为准；不确定处明确标注。
+Use this table during Phase 1 — Treat to decide which files should be downgraded to stubs. Capabilities and limits follow official documentation; uncertain entries are explicitly marked.
 
 ## Claude Code
 
-- 读取文件：常见为仓库 `CLAUDE.md`，也可能读取用户级 / 父级配置；本 skill 处理 root `CLAUDE.md` 与 `.claude/CLAUDE.md`。
-- import / 引用：支持 `@path` 引用文件。
-- 优先级 / 合并顺序：以 Claude Code 官方解析顺序为准。
-- 大小限制：以官方文档为准。
-- 降级策略：`CLAUDE.md` 首行写 `@AGENTS.md`，第二行写最小注释；不复制正文。
+- Read files: commonly repository `CLAUDE.md`, and possibly user-level or parent-level configuration; this skill handles root `CLAUDE.md` and `.claude/CLAUDE.md`.
+- Import/reference: supports `@path` file references.
+- Priority/merge order: follow the official Claude Code resolution order.
+- Size limits: follow official documentation.
+- Downgrade strategy: put `@AGENTS.md` on the first line of `CLAUDE.md`, followed by a minimal comment; do not copy the body.
 
 ## Codex
 
-- 读取文件：`AGENTS.md`，包括 root 与子目录局部文件。
-- import / 引用：以官方文档为准；本 skill 不依赖 import。
-- 优先级 / 合并顺序：通常按目录层级应用，越靠近工作目录越具体；以官方文档为准。
-- 大小限制：`project_doc_max_bytes` 默认常见为 32KB，超限可能导致上下文截断。
-- 降级策略：保留 root `AGENTS.md` 为单一事实源；monorepo 可保留子目录局部 `AGENTS.md`。
+- Read files: `AGENTS.md`, including root and local subdirectory files.
+- Import/reference: follow official documentation; this skill does not depend on imports.
+- Priority/merge order: usually applied by directory hierarchy, with rules closer to the working directory being more specific; follow official documentation.
+- Size limits: `project_doc_max_bytes` commonly defaults to 32KB, and oversized files may be truncated from context.
+- Downgrade strategy: keep root `AGENTS.md` as the single source of truth; monorepos may keep local subdirectory `AGENTS.md` files.
 
 ## Cursor
 
-- 读取文件：旧式 `.cursorrules`；新式 `.cursor/rules/*.mdc` 或 `.md`。
-- import / 引用：规则能力随 Cursor 版本变化，以官方文档为准。
-- 优先级 / 合并顺序：项目规则与全局规则的合并顺序以官方文档为准。
-- 大小限制：以官方文档为准。
-- 降级策略：`.cursorrules` 写 pointer；`.cursor/rules/` 下保留单个 `agents-md.mdc`，用 `alwaysApply: true` 指向 `AGENTS.md`。
+- Read files: legacy `.cursorrules`; newer `.cursor/rules/*.mdc` or `.md` files.
+- Import/reference: rule capabilities vary by Cursor version; follow official documentation.
+- Priority/merge order: follow official documentation for project and global rule merging.
+- Size limits: follow official documentation.
+- Downgrade strategy: write a pointer in `.cursorrules`; under `.cursor/rules/`, keep a single `agents-md.mdc` with `alwaysApply: true` that points to `AGENTS.md`.
 
 ## Windsurf
 
-- 读取文件：`.windsurfrules`、`.windsurf/rules/*`。
-- import / 引用：以官方文档为准。
-- 优先级 / 合并顺序：以官方文档为准。
-- 大小限制：以官方文档为准。
-- 降级策略：保留最小 pointer，说明所有规则在 `AGENTS.md`。
+- Read files: `.windsurfrules`, `.windsurf/rules/*`.
+- Import/reference: follow official documentation.
+- Priority/merge order: follow official documentation.
+- Size limits: follow official documentation.
+- Downgrade strategy: keep a minimal pointer saying all rules live in `AGENTS.md`.
 
 ## GitHub Copilot
 
-- 读取文件：`.github/copilot-instructions.md`、`.github/instructions/*.instructions.md`。
-- import / 引用：不依赖 import；本 skill 假设不能安全 import `AGENTS.md`。
-- 优先级 / 合并顺序：以 GitHub Copilot 官方文档为准。
-- 大小限制：以官方文档为准。
-- 降级策略：保留极短 pointer note，提醒不要复制规则正文。
+- Read files: `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`.
+- Import/reference: this skill does not depend on imports and assumes `AGENTS.md` cannot be safely imported.
+- Priority/merge order: follow official GitHub Copilot documentation.
+- Size limits: follow official documentation.
+- Downgrade strategy: keep a very short pointer note and remind maintainers not to copy rule bodies.
 
 ## Gemini CLI
 
-- 读取文件：常见为 `GEMINI.md`；可配置 context 文件名。
-- import / 引用：以官方文档为准。
-- 优先级 / 合并顺序：以官方文档为准。
-- 大小限制：以官方文档为准。
-- 降级策略：`GEMINI.md` 写 pointer，并建议配置 `contextFileName=AGENTS.md`。
+- Read files: commonly `GEMINI.md`; the context filename can be configured.
+- Import/reference: follow official documentation.
+- Priority/merge order: follow official documentation.
+- Size limits: follow official documentation.
+- Downgrade strategy: write a pointer in `GEMINI.md` and recommend configuring `contextFileName=AGENTS.md`.
 
 ## Cline
 
-- 读取文件：`.clinerules` 文件或 `.clinerules/` 目录下规则文件。
-- import / 引用：以官方文档为准。
-- 优先级 / 合并顺序：以官方文档为准。
-- 大小限制：以官方文档为准。
-- 降级策略：保留最小 pointer；复杂目录规则需要人工确认后再迁移。
+- Read files: `.clinerules` file or rule files under a `.clinerules/` directory.
+- Import/reference: follow official documentation.
+- Priority/merge order: follow official documentation.
+- Size limits: follow official documentation.
+- Downgrade strategy: keep a minimal pointer; complex directory rules require human confirmation before migration.
 
 ## Roo
 
-- 读取文件：`.roo/rules/*.md`、`.roo/rules/*.mdc` 等。
-- import / 引用：以官方文档为准。
-- 优先级 / 合并顺序：以官方文档为准。
-- 大小限制：以官方文档为准。
-- 降级策略：v1 主要扫描与报告；是否降级为 pointer 需人工确认。
+- Read files: `.roo/rules/*.md`, `.roo/rules/*.mdc`, and similar files.
+- Import/reference: follow official documentation.
+- Priority/merge order: follow official documentation.
+- Size limits: follow official documentation.
+- Downgrade strategy: v1 mainly scans and reports; whether to downgrade to a pointer requires human confirmation.
