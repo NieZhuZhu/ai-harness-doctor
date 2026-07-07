@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -56,16 +57,16 @@ class CliInstallerTests(unittest.TestCase):
 
             manifest_path = home / ".ai-harness-doctor" / "manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "0.1.0")
+            self.assertEqual(manifest["version"], "0.1.1")
             self.assertEqual(len(manifest["installs"]), 1)
             self.assertEqual(manifest["installs"][0]["agent"], "claude")
             self.assertEqual(Path(manifest["installs"][0]["project"]).resolve(), project.resolve())
             self.assertFalse(manifest["installs"][0]["link"])
 
             update = self.run_cli(["update"], home, project)
-            self.assertIn("Deploying ai-harness-doctor 0.1.0", update.stdout)
+            self.assertIn("Deploying ai-harness-doctor 0.1.1", update.stdout)
             self.assertIn("Update summary", update.stdout)
-            self.assertIn("deployed 0.1.0", update.stdout)
+            self.assertIn("deployed 0.1.1", update.stdout)
 
             link = self.run_cli(["install", "--link", "--project"], home, project)
             self.assertIn("Linked install", link.stdout)
@@ -161,6 +162,30 @@ class CliInstallerTests(unittest.TestCase):
             self.assertNotIn("ai-harness-doctor:maintenance-contract:start", agents_after)
             self.assertIn("Keep this intact.", agents_after)
             self.assertEqual(agents_after.strip(), original_agents.strip())
+
+    def test_forced_update_check_unreachable_registry_does_not_crash_help(self):
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:
+            env = os.environ.copy()
+            env["HOME"] = home_dir
+            env.pop("AI_HARNESS_DOCTOR_NO_UPDATE_CHECK", None)
+            env["AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK"] = "1"
+            env["AI_HARNESS_DOCTOR_REGISTRY"] = "http://127.0.0.1:9/"
+
+            started = time.monotonic()
+            proc = subprocess.run(
+                ["node", str(CLI), "help"],
+                cwd=project_dir,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=5,
+            )
+            elapsed = time.monotonic() - started
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertLess(elapsed, 2.5)
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertNotIn("TypeError", proc.stderr)
 
 
 if __name__ == "__main__":

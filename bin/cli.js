@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const http = require('http');
 const https = require('https');
 const childProcess = require('child_process');
 
@@ -234,43 +235,70 @@ function compareVersions(a, b) {
 }
 
 function maybeCheckForUpdate() {
-  if (process.env.AI_HARNESS_DOCTOR_NO_UPDATE_CHECK === '1') return;
-  if (!process.stderr.isTTY) return;
-  const manifest = readManifest();
-  const now = Date.now();
-  if (now - manifest.lastUpdateCheck < UPDATE_CHECK_INTERVAL_MS) return;
-  manifest.lastUpdateCheck = now;
-  writeManifest(manifest);
+  try {
+    if (process.env.AI_HARNESS_DOCTOR_NO_UPDATE_CHECK === '1') return;
+    // Internal testability hook: bypass only the TTY and 24h throttle gates.
+    const force = process.env.AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK === '1';
+    if (!force && !process.stderr.isTTY) return;
+    const manifest = readManifest();
+    const now = Date.now();
+    if (!force && now - manifest.lastUpdateCheck < UPDATE_CHECK_INTERVAL_MS) return;
+    manifest.lastUpdateCheck = now;
+    writeManifest(manifest);
 
-  let done = false;
-  const finish = () => {
-    done = true;
-  };
-  const req = https.get(UPDATE_CHECK_URL, { timeout: 1500 }, (res) => {
-    let body = '';
-    res.setEncoding('utf8');
-    res.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 4096) req.destroy();
-    });
-    res.on('end', () => {
+    // Internal testability hook: override the registry base URL used for checks.
+    const updateUrl = process.env.AI_HARNESS_DOCTOR_REGISTRY
+      ? new URL('ai-harness-doctor/latest', process.env.AI_HARNESS_DOCTOR_REGISTRY).toString()
+      : UPDATE_CHECK_URL;
+    const transport = updateUrl.startsWith('http:') ? http : https;
+
+    let done = false;
+    let timeout;
+    const finish = () => {
       if (done) return;
-      finish();
+      done = true;
+      if (timeout) clearTimeout(timeout);
+    };
+    const safe = (fn) => (...args) => {
       try {
-        const remote = JSON.parse(body).version;
-        if (remote && compareVersions(remote, PACKAGE_VERSION) > 0) {
-          console.error(`Update available ${PACKAGE_VERSION} → ${remote} — run: npx ai-harness-doctor@latest update`);
-        }
+        return fn(...args);
       } catch (_) {
-        // Best effort only.
+        finish();
+        return undefined;
       }
-    });
-  });
-  req.on('socket', (socket) => socket.unref());
-  req.on('timeout', () => req.destroy());
-  req.on('error', () => finish());
-  req.end();
-  req.unref();
+    };
+    const req = transport.get(updateUrl, safe((res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', safe((chunk) => {
+        body += chunk;
+        if (body.length > 4096) req.destroy();
+      }));
+      res.on('end', safe(() => {
+        if (done) return;
+        finish();
+        try {
+          const remote = JSON.parse(body).version;
+          if (remote && compareVersions(remote, PACKAGE_VERSION) > 0) {
+            console.error(`Update available ${PACKAGE_VERSION} → ${remote} — run: npx ai-harness-doctor@latest update`);
+          }
+        } catch (_) {
+          // Best effort only.
+        }
+      }));
+    }));
+    req.on('socket', safe((socket) => {
+      socket.unref();
+    }));
+    req.on('error', safe(() => finish()));
+    timeout = setTimeout(safe(() => {
+      finish();
+      req.destroy();
+    }), 1500);
+    timeout.unref();
+  } catch (_) {
+    // The update nudge must never crash or delay the main command.
+  }
 }
 
 function replacePlaybook(content, playbook) {
