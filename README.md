@@ -72,6 +72,26 @@ npx ai-harness-doctor drift . --strict
 npx ai-harness-doctor eval --tasks tasks.json --label after --workdir . -o results-after.json
 ```
 
+## Updating
+
+Copy installs are tracked in `~/.ai-harness-doctor/manifest.json`. To redeploy the newest package files to everything previously installed, run:
+
+```bash
+npx ai-harness-doctor@latest update
+```
+
+Interactive commands check npm at most once per day and may print an update hint such as `npx ai-harness-doctor@latest update`; set `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1` to disable that check. Bare `npx` CLI users should pin `ai-harness-doctor@latest` when they want the newest one-off command.
+
+For true hot updates, install the package persistently and link the payload:
+
+```bash
+npm i -g ai-harness-doctor
+ai-harness-doctor install --link
+npm update -g ai-harness-doctor
+```
+
+With `--link`, Claude points `~/.claude/skills/ai-harness-doctor` at the global package and other adapters point at the same package root, so `npm update -g ai-harness-doctor` updates the playbook everywhere instantly. On Windows, directory links use junctions.
+
 ## Works with
 
 | Surface | Support |

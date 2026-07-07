@@ -72,6 +72,26 @@ npx ai-harness-doctor drift . --strict
 npx ai-harness-doctor eval --tasks tasks.json --label after --workdir . -o results-after.json
 ```
 
+## 更新
+
+普通复制安装会记录在 `~/.ai-harness-doctor/manifest.json`。要把最新 package 文件重新部署到所有之前安装过的目标，运行：
+
+```bash
+npx ai-harness-doctor@latest update
+```
+
+交互式命令最多每天检查一次 npm，并可能打印类似 `npx ai-harness-doctor@latest update` 的更新提示；设置 `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1` 可关闭检查。只临时运行裸 `npx` CLI 的用户，如果想确保拿到最新版，请显式使用 `ai-harness-doctor@latest`。
+
+如果想要真正的热更新，请先持久安装 package，再用 link 模式安装 payload：
+
+```bash
+npm i -g ai-harness-doctor
+ai-harness-doctor install --link
+npm update -g ai-harness-doctor
+```
+
+使用 `--link` 时，Claude 的 `~/.claude/skills/ai-harness-doctor` 会指向全局 package，其他 adapters 也会指向同一个 package root，因此 `npm update -g ai-harness-doctor` 会立即更新所有地方的 playbook。Windows 上目录链接使用 junction。
+
 ## 支持哪些工具
 
 | 入口 | 支持方式 |

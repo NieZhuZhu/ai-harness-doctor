@@ -72,6 +72,26 @@ npx ai-harness-doctor drift . --strict
 npx ai-harness-doctor eval --tasks tasks.json --label after --workdir . -o results-after.json
 ```
 
+## Updating
+
+コピー方式のインストールは `~/.ai-harness-doctor/manifest.json` に記録されます。以前インストールしたすべての対象へ最新 package files を再デプロイするには、次を実行します:
+
+```bash
+npx ai-harness-doctor@latest update
+```
+
+対話的なコマンドは npm を最大 1 日 1 回だけ確認し、`npx ai-harness-doctor@latest update` のような更新ヒントを表示することがあります。この確認を無効にするには `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1` を設定してください。素の `npx` CLI を単発で使う場合、最新版が必要なら `ai-harness-doctor@latest` を明示してください。
+
+本当の hot update が必要な場合は、package を永続的にインストールしてから payload を link します:
+
+```bash
+npm i -g ai-harness-doctor
+ai-harness-doctor install --link
+npm update -g ai-harness-doctor
+```
+
+`--link` では Claude の `~/.claude/skills/ai-harness-doctor` が global package を指し、他の adapters も同じ package root を指すため、`npm update -g ai-harness-doctor` で playbook が即時に全体へ反映されます。Windows では directory link に junction を使います。
+
 ## Works with
 
 | Surface | Support |
