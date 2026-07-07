@@ -7,7 +7,7 @@ This benchmark constructs two demo repositories with identical underlying realit
 - `repo-before/`: no `AGENTS.md`, and stale, conflicting `CLAUDE.md`, `.cursorrules`, and `.github/copilot-instructions.md` files are present.
 - `repo-after/`: uses this skill's `scan.py` and `canonicalize.py --plan` to generate the checkup and merge plan, resolves conflicts manually against repository facts, writes a single-source-of-truth `AGENTS.md`, then uses `canonicalize.py --write-stubs --apply --force` to downgrade old tool files into pointer stubs.
 
-This benchmark keeps repository reality identical and changes only agent-facing documentation. The before repo has stale or conflicting tool docs; the after repo has one canonical `AGENTS.md` plus stubs. Tasks are graded by regex against real `claude -p ... --output-format json` output.
+This benchmark keeps repository reality identical and changes only agent-facing documentation. The before repo has stale or conflicting tool docs; the after repo has one canonical `AGENTS.md` plus stubs. Tasks are graded by regex against the extracted answer text from real `claude -p ... --output-format json` output.
 
 The reported headline uses 14 objective tasks × 2 runs per side (28 task attempts per side). The second run is included to expose answer instability rather than to claim statistical confidence.
 
@@ -20,7 +20,7 @@ The reported headline uses 14 objective tasks × 2 runs per side (28 task attemp
 
 ## Tasks and grading
 
-Each prompt ends with `Answer with ONLY the exact command/value, no explanation.` Grading checks only whether runner stdout matches the regex. The `test` task additionally uses a negative lookahead so `test:unit` does not count as a false positive.
+Each prompt ends with `Answer with ONLY the exact command/value, no explanation.` Grading extracts the Claude runner JSON envelope's `result` field when present, strips surrounding whitespace/backticks, then checks only whether that normalized answer text matches the regex. The `test` task additionally uses a negative lookahead so `test:unit` does not count as a false positive.
 
 | id | Ground truth | Regex |
 |---|---|---|
@@ -31,13 +31,17 @@ Each prompt ends with `Answer with ONLY the exact command/value, no explanation.
 | `framework` | `Vitest` | `(?i)vitest` |
 | `components` | `src/components` | `src/components` |
 | `commit` | `conventional commits` | `(?i)conventional` |
-| `dev` | `pnpm dev` or `pnpm run dev` | `^pnpm\s+(run\s+)?dev\b` |
-| `typecheck` | `pnpm typecheck`, `pnpm run typecheck`, or `tsc --noEmit` | `^(pnpm\s+(run\s+)?typecheck\b|tsc\s+--noEmit)$` |
-| `coverage` | `pnpm coverage` or `pnpm run coverage`, not Jest | `^(?!.*jest)pnpm\s+(run\s+)?coverage\b` |
-| `format` | `prettier` | `(?i)^prettier$` |
-| `quotes` | `single` | `(?i)^single$` |
-| `testloc` | colocated / next to component files / same directory | `(?i)^(?!.*__tests__).*?(colocat|next to|src/components.*\.test\.|same (directory|folder))` |
-| `moduletype` | ESM / ES modules, not CommonJS | `(?i)^(?=.*(esm|es modules?))(?!.*commonjs).*` |
+| `dev` | `pnpm dev` or `pnpm run dev` | `pnpm\s+(run\s+)?dev\b` |
+| `typecheck` | `pnpm typecheck`, `pnpm run typecheck`, or `tsc --noEmit` | `pnpm\s+(run\s+)?typecheck\b\|tsc\s+--noEmit` |
+| `coverage` | `pnpm coverage` or `pnpm run coverage` | `pnpm\s+(run\s+)?coverage\b` |
+| `format` | `prettier` | `(?i)prettier` |
+| `quotes` | `single` / `singleQuote` | `(?i)\bsingle\b\|singleQuote` |
+| `testloc` | colocated / next to component files / `.test.tsx?`, not `__tests__` | `(?i)^(?!.*__tests__).*(colocat\|next to (the )?(source\|component)\|\.test\.tsx?)` |
+| `moduletype` | ESM / ES modules / `"type": "module"` | `(?i)(\besm\b\|es modules?\|"type":\s*"module")` |
+
+## Grading methodology note
+
+Answers are extracted from the runner JSON envelope and normalized before regex grading. The harness initially graded raw envelopes, which meant anchored checks could fail even when the recorded model answer was correct. We caught this by dogfooding the benchmark and fixed it by offline regrading the same recorded model outputs; no Claude reruns were used for the regraded numbers below.
 
 ## Reproduce
 
@@ -53,13 +57,13 @@ python3 scripts/eval_run.py --compare benchmark/results/results-before.json benc
 
 | Side | Runs | Passed | Flip-flop tasks | Avg duration/task | Total captured cost (USD) |
 |---|---|---:|---:|---:|---:|
-| before | `before` + `before-run2` | 4/28 | 2 | 16.041s | 5.820612 |
-| after | `after` + `after-run2` | 16/28 | 0 | 11.651s | 4.810770 |
-| delta | after - before | +12 tasks | -2 | -4.389s | -1.009842 |
+| before | `before` + `before-run2` | 6/28 | 2 | 16.041s | 5.820612 |
+| after | `after` + `after-run2` | 28/28 | 0 | 11.651s | 4.810770 |
+| delta | after - before | +22 tasks | -2 | -4.389s | -1.009842 |
 
-- Headline: before 4/28 passed; after 16/28 passed; improvement +12 passing task attempts.
+- Headline: before 6/28 passed; after 28/28 passed; improvement +22 passing task attempts.
 - Answer instability metric: before had 2 flip-flop tasks (`node, moduletype`); after had 0 flip-flop tasks.
-- Single-run comparison in `results/report.md`: before 2/14 → after 8/14 for the first run pair.
+- Single-run comparison in `results/report.md`: before 3/14 → after 14/14 for the first run pair.
 
 See `results/results-before.json`, `results/results-before-run2.json`, `results/results-after.json`, `results/results-after-run2.json`, and `results/report.md` for details.
 

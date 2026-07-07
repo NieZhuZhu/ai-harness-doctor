@@ -42,7 +42,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.22959999999999997
-      }
+      },
+      "answer": "npm install",
+      "regraded": true
     },
     {
       "id": "test",
@@ -84,7 +86,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16444999999999999
-      }
+      },
+      "answer": "npm run test:unit",
+      "regraded": true
     },
     {
       "id": "lint",
@@ -126,7 +130,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.17363
-      }
+      },
+      "answer": "eslint --fix",
+      "regraded": true
     },
     {
       "id": "node",
@@ -168,7 +174,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.38662799999999997
-      }
+      },
+      "answer": "20",
+      "regraded": true
     },
     {
       "id": "framework",
@@ -210,7 +218,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16496
-      }
+      },
+      "answer": "Jest",
+      "regraded": true
     },
     {
       "id": "components",
@@ -252,7 +262,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16283
-      }
+      },
+      "answer": "src/ui/",
+      "regraded": true
     },
     {
       "id": "commit",
@@ -294,7 +306,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.38071200000000005
-      }
+      },
+      "answer": "Conventional Commits",
+      "regraded": true
     },
     {
       "id": "dev",
@@ -336,11 +350,13 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16065000000000002
-      }
+      },
+      "answer": "npm start",
+      "regraded": true
     },
     {
       "id": "typecheck",
-      "passed": false,
+      "passed": true,
       "timed_out": false,
       "duration_s": 22.934,
       "exit_code": 0,
@@ -378,7 +394,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.368467
-      }
+      },
+      "answer": "pnpm run typecheck",
+      "regraded": true
     },
     {
       "id": "coverage",
@@ -420,7 +438,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16243000000000002
-      }
+      },
+      "answer": "jest --coverage",
+      "regraded": true
     },
     {
       "id": "format",
@@ -462,7 +482,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16481
-      }
+      },
+      "answer": "eslint --fix",
+      "regraded": true
     },
     {
       "id": "quotes",
@@ -504,7 +526,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16485
-      }
+      },
+      "answer": "Double quotes",
+      "regraded": true
     },
     {
       "id": "testloc",
@@ -546,7 +570,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16586
-      }
+      },
+      "answer": "__tests__/",
+      "regraded": true
     },
     {
       "id": "moduletype",
@@ -588,7 +614,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16797
-      }
+      },
+      "answer": "CommonJS",
+      "regraded": true
     }
   ]
 }

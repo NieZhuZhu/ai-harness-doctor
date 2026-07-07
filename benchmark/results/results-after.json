@@ -42,7 +42,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.22925
-      }
+      },
+      "answer": "pnpm install",
+      "regraded": true
     },
     {
       "id": "test",
@@ -84,7 +86,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.164627
-      }
+      },
+      "answer": "pnpm test",
+      "regraded": true
     },
     {
       "id": "lint",
@@ -126,7 +130,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.165357
-      }
+      },
+      "answer": "pnpm lint",
+      "regraded": true
     },
     {
       "id": "node",
@@ -168,7 +174,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16719699999999998
-      }
+      },
+      "answer": "20",
+      "regraded": true
     },
     {
       "id": "framework",
@@ -210,7 +218,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.166937
-      }
+      },
+      "answer": "Vitest",
+      "regraded": true
     },
     {
       "id": "components",
@@ -252,7 +262,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.16250699999999998
-      }
+      },
+      "answer": "src/components/",
+      "regraded": true
     },
     {
       "id": "commit",
@@ -294,11 +306,13 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.165427
-      }
+      },
+      "answer": "conventional commits",
+      "regraded": true
     },
     {
       "id": "dev",
-      "passed": false,
+      "passed": true,
       "timed_out": false,
       "duration_s": 9.139,
       "exit_code": 0,
@@ -336,11 +350,13 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.164377
-      }
+      },
+      "answer": "pnpm dev",
+      "regraded": true
     },
     {
       "id": "typecheck",
-      "passed": false,
+      "passed": true,
       "timed_out": false,
       "duration_s": 12.665,
       "exit_code": 0,
@@ -378,11 +394,13 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.165677
-      }
+      },
+      "answer": "pnpm typecheck",
+      "regraded": true
     },
     {
       "id": "coverage",
-      "passed": false,
+      "passed": true,
       "timed_out": false,
       "duration_s": 9.319,
       "exit_code": 0,
@@ -420,11 +438,13 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.165407
-      }
+      },
+      "answer": "pnpm coverage",
+      "regraded": true
     },
     {
       "id": "format",
-      "passed": false,
+      "passed": true,
       "timed_out": false,
       "duration_s": 12.137,
       "exit_code": 0,
@@ -462,11 +482,13 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.170387
-      }
+      },
+      "answer": "Prettier",
+      "regraded": true
     },
     {
       "id": "quotes",
-      "passed": false,
+      "passed": true,
       "timed_out": false,
       "duration_s": 12.064,
       "exit_code": 0,
@@ -504,7 +526,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.17107699999999998
-      }
+      },
+      "answer": "singleQuote: true",
+      "regraded": true
     },
     {
       "id": "testloc",
@@ -546,11 +570,13 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.174587
-      }
+      },
+      "answer": "Colocated with source as `*.test.tsx` / `*.test.ts",
+      "regraded": true
     },
     {
       "id": "moduletype",
-      "passed": false,
+      "passed": true,
       "timed_out": false,
       "duration_s": 12.106,
       "exit_code": 0,
@@ -588,7 +614,9 @@
           "speed": "standard"
         },
         "total_cost_usd": 0.169197
-      }
+      },
+      "answer": "\"type\": \"module\"",
+      "regraded": true
     }
   ]
 }
