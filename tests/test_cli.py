@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import subprocess
 import tempfile
@@ -146,22 +147,30 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("ai-harness-doctor:maintenance-contract:start", (repo / "AGENTS.md").read_text(encoding="utf-8"))
 
     def test_guard_remove_apply_restores_installed_files(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
-            home = Path(home_dir)
-            repo = self.make_git_repo(Path(parent_dir))
-            original_agents = (repo / "AGENTS.md").read_text(encoding="utf-8")
-            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+        variants = [
+            b"# Agent Guide\n\nKeep this intact.",
+            b"# Agent Guide\n\nKeep this intact.\n",
+            b"# Agent Guide\n\nKeep this intact.\n\n  \t",
+        ]
+        for original_agents_bytes in variants:
+            with self.subTest(original=original_agents_bytes), tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+                home = Path(home_dir)
+                repo = self.make_git_repo(Path(parent_dir))
+                (repo / "AGENTS.md").write_bytes(original_agents_bytes)
+                original_hash = hashlib.sha256(original_agents_bytes).hexdigest()
+                self.run_cli(["guard", str(repo), "--apply"], home, repo)
 
-            proc = self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
+                proc = self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
 
-            self.assertIn("Guard remove plan", proc.stdout)
-            self.assertFalse((repo / ".git" / "hooks" / "pre-commit").exists())
-            self.assertFalse((repo / ".github" / "workflows" / "harness-drift.yml").exists())
-            self.assertFalse((repo / ".github" / "workflows" / "harness-checkup.yml").exists())
-            agents_after = (repo / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertNotIn("ai-harness-doctor:maintenance-contract:start", agents_after)
-            self.assertIn("Keep this intact.", agents_after)
-            self.assertEqual(agents_after.strip(), original_agents.strip())
+                self.assertIn("Guard remove plan", proc.stdout)
+                self.assertFalse((repo / ".git" / "hooks" / "pre-commit").exists())
+                self.assertFalse((repo / ".github" / "workflows" / "harness-drift.yml").exists())
+                self.assertFalse((repo / ".github" / "workflows" / "harness-checkup.yml").exists())
+                agents_after_bytes = (repo / "AGENTS.md").read_bytes()
+                agents_after = agents_after_bytes.decode("utf-8")
+                self.assertNotIn("ai-harness-doctor:maintenance-contract:start", agents_after)
+                self.assertIn("Keep this intact.", agents_after)
+                self.assertEqual(hashlib.sha256(agents_after_bytes).hexdigest(), original_hash)
 
     def test_forced_update_check_unreachable_registry_does_not_crash_help(self):
         with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:

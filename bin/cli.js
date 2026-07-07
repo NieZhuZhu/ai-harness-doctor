@@ -580,8 +580,21 @@ function readTextIfExists(file) {
   }
 }
 
-function ensureTrailingNewline(content) {
-  return content.endsWith('\n') ? content : `${content}\n`;
+function trailingWhitespaceState(content) {
+  const match = content.match(/[ \t\r\n]*$/);
+  return match ? match[0] : '';
+}
+
+function encodeTrailingWhitespace(content) {
+  return Buffer.from(trailingWhitespaceState(content), 'utf8').toString('base64');
+}
+
+function decodeTrailingWhitespace(encoded) {
+  try {
+    return Buffer.from(encoded || '', 'base64').toString('utf8');
+  } catch (_) {
+    return '';
+  }
 }
 
 function guardSnippet() {
@@ -591,14 +604,25 @@ function guardSnippet() {
 function replaceMaintenanceContract(content, contract) {
   const start = '<!-- ai-harness-doctor:maintenance-contract:start -->';
   const end = '<!-- ai-harness-doctor:maintenance-contract:end -->';
+  const statePrefix = '<!-- ai-harness-doctor:maintenance-contract:trailing-base64:';
   const pattern = new RegExp(`${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}`);
   if (pattern.test(content)) return content.replace(pattern, contract.trimEnd());
-  return `${ensureTrailingNewline(content)}\n${contract.trimEnd()}\n`;
+  const trailing = trailingWhitespaceState(content);
+  const body = content.slice(0, content.length - trailing.length);
+  const state = `${statePrefix}${encodeTrailingWhitespace(content)} -->`;
+  const prefix = body ? `${body}\n\n` : '';
+  return `${prefix}${state}\n${contract.trimEnd()}\n`;
 }
 
 function removeMaintenanceContract(content) {
   const start = '<!-- ai-harness-doctor:maintenance-contract:start -->';
   const end = '<!-- ai-harness-doctor:maintenance-contract:end -->';
+  const statePrefix = '<!-- ai-harness-doctor:maintenance-contract:trailing-base64:';
+  const statePattern = `${escapeRegExp(statePrefix)}([A-Za-z0-9+/=]*) -->`;
+  const recordedPattern = new RegExp(`(?:\\n\\n)?${statePattern}\\n${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}\\n?`);
+  if (recordedPattern.test(content)) {
+    return content.replace(recordedPattern, (_match, encoded) => decodeTrailingWhitespace(encoded));
+  }
   const pattern = new RegExp(`\\n?${escapeRegExp(start)}[\\s\\S]*?${escapeRegExp(end)}\\n?`);
   return content.replace(pattern, '\n').replace(/\n{3,}/g, '\n\n');
 }
