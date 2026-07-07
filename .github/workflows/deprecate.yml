@@ -1,0 +1,27 @@
+name: deprecate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to deprecate, for example 0.1.0"
+        required: true
+        type: string
+      message:
+        description: "Deprecation message shown by npm"
+        required: true
+        type: string
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Deprecate npm version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm deprecate "ai-harness-doctor@${{ inputs.version }}" "${{ inputs.message }}"
