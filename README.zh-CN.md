@@ -56,6 +56,7 @@ npx ai-harness-doctor install
 npx ai-harness-doctor scan .
 npx ai-harness-doctor plan . -o merge-plan.md
 # Write AGENTS.md from the plan, then:
+npx ai-harness-doctor validate .
 npx ai-harness-doctor stubs . --apply
 npx ai-harness-doctor guard . --apply
 ```
@@ -70,7 +71,7 @@ npx ai-harness-doctor guard . --apply
 
 - 目标必须是 git repo。
 - `ai-harness-doctor` CLI 需要 Node >=16。
-- 确定性的 scan/plan/stubs/drift/eval 脚本需要 Python >=3.9，且只使用 stdlib。
+- 确定性的 scan/plan/validate/stubs/drift/eval 脚本需要 Python >=3.9，且只使用 stdlib。
 - 在 `stubs` 或 `guard` 写入任何内容之前，`AGENTS.md` 必须已经存在。
 
 ### 安装矩阵
@@ -91,6 +92,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `scan` | ✅ | ❌ | 始终以 0 退出；只做清单和证据收集。 |
 | `plan` | ✅ | 可选输出文件 | 搭建合并计划；不会执行合并。 |
 | Write `AGENTS.md` | ❌ | ✅ | 由人或 agent 完成的语义步骤。 |
+| `validate` | ✅ | ❌ | 检查 canonical `AGENTS.md` 是否包含必需章节。 |
 | `stubs` | ✅ | 使用 `--apply` 时 | 除非使用 `--force`，否则要求工作区干净。 |
 | `guard` | ✅ | 使用 `--apply` 时 | 要求目标是 git repo 且已有 `AGENTS.md`。 |
 | `drift` | ✅ | ❌ | 遇到 blocking drift 会失败；`--strict` 会把 notices 提升为错误。 |
@@ -253,6 +255,13 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 <summary><code>plan</code></summary>
 
 从 scan 输出搭建 Phase 1 合并计划：清单、重叠 clusters、冲突列表，以及 TODO 决策清单。它明确**不会**合并内容或替你选边。
+
+</details>
+
+<details>
+<summary><code>validate</code></summary>
+
+在你写好 canonical `AGENTS.md` 后验证其结构。它是对 `scripts/canonicalize.py --validate` 的只读透传。
 
 </details>
 

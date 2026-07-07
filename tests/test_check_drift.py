@@ -86,6 +86,20 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("D3", proc.stdout)
 
+    def test_pre_migration_without_agents_suppresses_d3_but_reports_d4(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "CLAUDE.md").write_text("existing pre-migration instructions\n" * 40, encoding="utf-8")
+
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+
+        self.assertEqual(proc.returncode, 1)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D3"])
+        d4 = [f for f in report["findings"] if f["check"] == "D4"]
+        self.assertEqual(len(d4), 1)
+        self.assertIn("AGENTS.md is missing", d4[0]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

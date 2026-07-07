@@ -58,16 +58,16 @@ class CliInstallerTests(unittest.TestCase):
 
             manifest_path = home / ".ai-harness-doctor" / "manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(manifest["version"], "0.1.1")
+            self.assertEqual(manifest["version"], "0.1.2")
             self.assertEqual(len(manifest["installs"]), 1)
             self.assertEqual(manifest["installs"][0]["agent"], "claude")
             self.assertEqual(Path(manifest["installs"][0]["project"]).resolve(), project.resolve())
             self.assertFalse(manifest["installs"][0]["link"])
 
             update = self.run_cli(["update"], home, project)
-            self.assertIn("Deploying ai-harness-doctor 0.1.1", update.stdout)
+            self.assertIn("Deploying ai-harness-doctor 0.1.2", update.stdout)
             self.assertIn("Update summary", update.stdout)
-            self.assertIn("deployed 0.1.1", update.stdout)
+            self.assertIn("deployed 0.1.2", update.stdout)
 
             link = self.run_cli(["install", "--link", "--project"], home, project)
             self.assertIn("Linked install", link.stdout)
@@ -193,6 +193,7 @@ class CliInstallerTests(unittest.TestCase):
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertLess(elapsed, 2.5)
+            self.assertIn("ai-harness-doctor validate [...args]", proc.stdout)
             self.assertNotIn("Traceback", proc.stderr)
             self.assertNotIn("TypeError", proc.stderr)
 

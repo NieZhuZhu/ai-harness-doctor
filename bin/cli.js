@@ -28,6 +28,7 @@ Usage:
   ai-harness-doctor update
   ai-harness-doctor scan [...args]
   ai-harness-doctor plan [...args]
+  ai-harness-doctor validate [...args]
   ai-harness-doctor stubs [...args]
   ai-harness-doctor drift [...args]
   ai-harness-doctor eval [...args]
@@ -40,6 +41,7 @@ Examples:
   npx ai-harness-doctor@latest update
   npm i -g ai-harness-doctor && ai-harness-doctor install --link
   npx ai-harness-doctor scan .
+  npx ai-harness-doctor validate .
   npx ai-harness-doctor drift . --strict
   npx ai-harness-doctor guard . --apply
 `);
@@ -524,6 +526,7 @@ function runScript(command, argv) {
   const mapping = {
     scan: ['scan.py'],
     plan: ['canonicalize.py', '--plan'],
+    validate: ['canonicalize.py', '--validate'],
     stubs: ['canonicalize.py', '--write-stubs'],
     drift: ['check_drift.py'],
     eval: ['eval_run.py'],
@@ -757,7 +760,7 @@ function main() {
   if (command === 'uninstall') return uninstall(rest);
   if (command === 'update') return updateInstalled();
   if (command === 'guard') return guard(rest);
-  if (['scan', 'plan', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
+  if (['scan', 'plan', 'validate', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
   fail(`Unknown command: ${command}`);
 }
 

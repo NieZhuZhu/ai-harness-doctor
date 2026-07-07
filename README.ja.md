@@ -56,6 +56,7 @@ npx ai-harness-doctor install
 npx ai-harness-doctor scan .
 npx ai-harness-doctor plan . -o merge-plan.md
 # Write AGENTS.md from the plan, then:
+npx ai-harness-doctor validate .
 npx ai-harness-doctor stubs . --apply
 npx ai-harness-doctor guard . --apply
 ```
@@ -70,7 +71,7 @@ npx ai-harness-doctor guard . --apply
 
 - 対象は git repo である必要があります。
 - `ai-harness-doctor` CLI には Node >=16 が必要です。
-- 決定的な scan/plan/stubs/drift/eval scripts には Python >=3.9 が必要です。stdlib-only です。
+- 決定的な scan/plan/validate/stubs/drift/eval scripts には Python >=3.9 が必要です。stdlib-only です。
 - `stubs` または `guard` が何かを書き込む前に、`AGENTS.md` が存在している必要があります。
 
 ### Install matrix
@@ -91,6 +92,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `scan` | ✅ | ❌ | 常に 0 で終了します。inventory と evidence のみです。 |
 | `plan` | ✅ | Optional output file | merge plan の土台を作ります。merge はしません。 |
 | Write `AGENTS.md` | ❌ | ✅ | 人間または agent による意味判断のステップです。 |
+| `validate` | ✅ | ❌ | 正本 `AGENTS.md` に必要な sections が含まれているか確認します。 |
 | `stubs` | ✅ | With `--apply` | `--force` がない限り clean tree が必要です。 |
 | `guard` | ✅ | With `--apply` | git repo と既存の `AGENTS.md` が必要です。 |
 | `drift` | ✅ | ❌ | blocking drift で失敗します。`--strict` は notices を昇格します。 |
@@ -253,6 +255,13 @@ manifest で追跡されているすべての copy install を、現在の packa
 <summary><code>plan</code></summary>
 
 scan output から Phase 1 の merge plan を組み立てます。inventory、overlap clusters、conflict list、TODO decision checklist を含みます。content を merge したり、どちらかを選んだりは明示的に **しません**。
+
+</details>
+
+<details>
+<summary><code>validate</code></summary>
+
+正本 `AGENTS.md` を書いた後、その構造を検証します。`scripts/canonicalize.py --validate` への read-only passthrough です。
 
 </details>
 

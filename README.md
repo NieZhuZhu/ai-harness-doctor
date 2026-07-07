@@ -56,6 +56,7 @@ There is deliberately no true one-click migration. Phase 1 contains semantic dec
 npx ai-harness-doctor scan .
 npx ai-harness-doctor plan . -o merge-plan.md
 # Write AGENTS.md from the plan, then:
+npx ai-harness-doctor validate .
 npx ai-harness-doctor stubs . --apply
 npx ai-harness-doctor guard . --apply
 ```
@@ -70,7 +71,7 @@ Three ways to write `AGENTS.md`:
 
 - Target must be a git repo.
 - Node >=16 for the `ai-harness-doctor` CLI.
-- Python >=3.9, stdlib-only, for deterministic scan/plan/stubs/drift/eval scripts.
+- Python >=3.9, stdlib-only, for deterministic scan/plan/validate/stubs/drift/eval scripts.
 - `AGENTS.md` must exist before `stubs` or `guard` writes anything.
 
 ### Install matrix
@@ -91,6 +92,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `scan` | ✅ | ❌ | Always exits 0; inventory and evidence only. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
+| `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
 | `stubs` | ✅ | With `--apply` | Requires clean tree unless `--force`. |
 | `guard` | ✅ | With `--apply` | Requires git repo and existing `AGENTS.md`. |
 | `drift` | ✅ | ❌ | Fails on blocking drift; `--strict` promotes notices. |
@@ -253,6 +255,13 @@ Detects five classes: config inventory, size/truncation risk, overlap candidates
 <summary><code>plan</code></summary>
 
 Scaffolds a Phase 1 merge plan from scan output: inventory, overlap clusters, conflict list, and a TODO decision checklist. It explicitly does **not** merge content or choose a side.
+
+</details>
+
+<details>
+<summary><code>validate</code></summary>
+
+Validates the canonical `AGENTS.md` structure after you write it. It is a read-only passthrough to `scripts/canonicalize.py --validate`.
 
 </details>
 

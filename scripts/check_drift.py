@@ -96,6 +96,8 @@ def d2_path_drift(root, text):
 
 def d3_stub_regrowth(root):
     findings = []
+    if not (root / "AGENTS.md").is_file():
+        return findings
     for rel in STUB_FILES:
         path = root / rel
         if not path.is_file():
