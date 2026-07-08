@@ -2,13 +2,23 @@
 
 # 🩺 AI Harness Doctor
 
-给仓库的 AI harness 做医生：把散落的 agent 配置体检、合并、守护并评估，收敛到唯一 canonical `AGENTS.md`。
+**你的 AI 编码 agent 正自信满满地照着过时指令干活。** `CLAUDE.md`、`.cursorrules`、`GEMINI.md`、`AGENTS.md` 悄悄漂移，直到 agent 跑起早已不存在的脚本、改动早已搬走的路径，还在一个已经切到 `pnpm` 的仓库里教 `npm`。
+
+AI Harness Doctor 让这种漂移可见，把散落的 agent 配置收敛到唯一 canonical `AGENTS.md`，并守护它，让仓库不再悄悄遗忘 —— 支持 Claude Code、Codex、Cursor、Gemini 以及纯 CI。一条零安装的 `scan` 就能给你一份完整体检：配置清单、冲突证据、安全审计、缺失的基础设施缺口，以及技术栈快照。
 
 [![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml)
 [![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
 ![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
+
+> **在我们的 14-task benchmark 中，把一个仓库 canonical 化后，agent 的正确答案从 6/28 提升到 28/28 —— 同时消除了同一个问题在不同轮次答案反复横跳的情况。** [看数据 ↓](#benchmark)
+
+一条命令就能试 —— 无需安装，不往你的仓库写任何东西：
+
+```bash
+npx ai-harness-doctor scan .
+```
 
 ## 为什么
 
@@ -34,7 +44,13 @@ AI Harness Doctor 让这种漂移可见，帮助人或 agent 写出唯一 canoni
 
 ### 最快路径
 
-安装 Claude Code skill，并在目标仓库里运行医生：
+零安装、只读体检 —— 一条命令在几秒内呈现你的 harness 的配置清单、冲突证据（带 file:line）、安全发现、缺失的基础设施缺口，以及技术栈快照：
+
+```bash
+npx ai-harness-doctor scan .
+```
+
+想开始修复？安装 Claude Code skill，让 agent 驱动完整流程：
 
 ```bash
 npx ai-harness-doctor install
@@ -581,9 +597,9 @@ python3 -m unittest discover -s tests -v
 仓库还提供一套基于 npm 的 lint/format/test 工作流（仅用于开发，不会打包进发布产物）。CI 会在 Python（3.9/3.10/3.12）与 Node（16/20/22）版本矩阵上运行完整套件：
 
 ```bash
-npm test            # Python unittest + node --test CLI 套件
-npm run lint        # eslint (bin) + ruff (scripts/tests) + 三语 README 标题同步检查
-npm run format      # prettier --write .   （npm run format:py 运行 ruff format）
+npm test            # Python unittest + node --test CLI suite
+npm run lint        # eslint (bin) + ruff (scripts/tests) + trilingual README structure sync
+npm run format      # prettier --write .   (npm run format:py for ruff format)
 ```
 
 `npm run lint:docs`（即 `scripts/check_readme_sync.py`）会强制 `README.md`、`README.zh-CN.md`、`README.ja.md` 保持完全一致的标题骨架，因此对任一 README 的结构改动都必须同步到另外两个。

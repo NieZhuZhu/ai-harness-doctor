@@ -35,7 +35,7 @@ node bin/cli.js help
 - `bin/cli.js` must use Node >=16 standard library only; do not add npm runtime dependencies.
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
-- Public documentation is kept in synchronized English, Simplified Chinese, and Japanese READMEs; code comments are English; `assets/AGENTS.template.md` is English.
+- Public documentation is kept in synchronized English, Simplified Chinese, and Japanese READMEs; code comments are English; `assets/AGENTS.template.md` is English. Beyond the shared heading skeleton, the three READMEs must also keep byte-identical fenced code blocks (commands, JSON, and their inline `#` comments included) and the same number of table rows and links. Prose is translated; code blocks, table structure, and link targets are not. `scripts/check_readme_sync.py` (run via `npm run lint:docs`) enforces all of this, so any change to one README must be mirrored in the other two.
 - Guard suite templates live under `assets/guard/`; keep the pre-commit, PR gate, weekly checkup, and maintenance contract templates synchronized with `bin/cli.js` behavior.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
 
