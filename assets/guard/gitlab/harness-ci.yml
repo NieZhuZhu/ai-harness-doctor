@@ -9,6 +9,12 @@
 # `harness-drift` runs on merge requests (fast gate); `harness-checkup` runs on
 # scheduled pipelines and publishes a scan + drift report as an artifact.
 
+# Note: inline PR/MR review comments are implemented only in the GitHub guard
+# template (`.github/workflows/harness-drift.yml`), because posting review
+# comments is provider-specific. The eval health-score gate below is portable
+# and mirrors the GitHub template: it fails the pipeline when the committed eval
+# results drop under the threshold. Replace RESULTS with your repo's committed
+# results JSON (produced by `eval_run.py`); it is skipped when the file is absent.
 harness-drift:
   image: node:20
   rules:
@@ -16,6 +22,13 @@ harness-drift:
     - if: '$CI_PIPELINE_SOURCE == "web"'
   script:
     - npx -y ai-harness-doctor drift . --strict
+    - |
+      RESULTS="benchmark/self-eval/results-after-graded.json"
+      if [ -f "$RESULTS" ]; then
+        python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
+      else
+        echo "No committed eval results at $RESULTS; skipping eval gate."
+      fi
 
 harness-checkup:
   image: node:20

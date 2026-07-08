@@ -26,6 +26,15 @@ case "$MODE" in
   drift)
     # Fast gate for merge requests: fail the pipeline when the harness has drifted.
     run drift . --strict
+    # Eval health-score gate (portable; mirrors the GitHub guard template).
+    # Inline MR review comments are GitHub-only. This gate fails the check when
+    # the committed eval results drop under the threshold; skipped when absent.
+    RESULTS="benchmark/self-eval/results-after-graded.json"
+    if [ -f "$RESULTS" ]; then
+      python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
+    else
+      echo "No committed eval results at $RESULTS; skipping eval gate."
+    fi
     ;;
   checkup)
     # Scheduled deep checkup: publish a scan + drift report, exit with drift status.

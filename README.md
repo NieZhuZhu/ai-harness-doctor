@@ -148,6 +148,8 @@ npx ai-harness-doctor guard . --apply
 
 The CI gate is provider-aware: pass `--provider github|gitlab|codebase` (default `auto`) to install the matching CI files. See the [`guard`](#command-reference) command reference for the per-provider file layout.
 
+On a pull request, the GitHub guard template does two more things. First, it surfaces drift findings as **inline PR review comments**: `scripts/pr_review.py` reads a `check_drift.py --json` (or `scan.py --json`) report and posts a single PR review — findings with a repo-relative `path` become inline `{path, line, body}` comments, and unlocated findings roll up into a summary carrying a stable `<!-- ai-harness-doctor:pr-review -->` marker. It is dry-run by default (prints the JSON payload, never touches the network) and only posts with `--post` using `GITHUB_TOKEN`. Second, it runs an **eval health-score gate** — `python3 scripts/eval_run.py --score <committed results.json> --fail-under <N>` — so CI fails (exit 5) when the eval health score drops below the threshold. Inline review comments are GitHub-only; the GitLab/Codebase templates gain just the eval gate.
+
 Defense in depth, strongest to weakest:
 
 1. **Pre-commit hard block** — defends against local edits that make `AGENTS.md` stale before they leave the machine. `AI_HARNESS_DOCTOR_SKIP=1` is an explicit, auditable bypass, not a silent pass.

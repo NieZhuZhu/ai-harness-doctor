@@ -148,6 +148,8 @@ npx ai-harness-doctor guard . --apply
 
 CI 卡点是 provider 感知的：传入 `--provider github|gitlab|codebase`（默认 `auto`）以安装匹配的 CI 文件。各 provider 的文件布局见 [`guard`](#command-reference) 命令参考。
 
+在 pull request 上，GitHub guard 模板还会多做两件事。其一，把漂移发现项作为**内联 PR review 评论**呈现：`scripts/pr_review.py` 读取 `check_drift.py --json`（或 `scan.py --json`）报告并发布一条 PR review——带有 repo 相对 `path` 的发现项会变成内联 `{path, line, body}` 评论，无位置的发现项汇总进一条带有稳定标记 `<!-- ai-harness-doctor:pr-review -->` 的总结中。它默认 dry-run（打印 JSON 负载，绝不触网），仅在 `--post` 时用 `GITHUB_TOKEN` 发布。其二，运行一个 **eval 健康分卡点**——`python3 scripts/eval_run.py --score <已提交的 results.json> --fail-under <N>`——当 eval 健康分低于阈值时使 CI 失败（退出码 5）。内联 review 评论仅限 GitHub；GitLab/Codebase 模板只获得 eval 卡点。
+
 纵深防御，从强到弱：
 
 1. **Pre-commit hard block** — 防止本地改动在离开机器前就让 `AGENTS.md` 过期。`AI_HARNESS_DOCTOR_SKIP=1` 是显式、可审计的绕过，而不是静默放行。
