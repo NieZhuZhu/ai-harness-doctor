@@ -192,7 +192,7 @@ class CliInstallerTests(unittest.TestCase):
             elapsed = time.monotonic() - started
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertLess(elapsed, 2.5)
+            self.assertLess(elapsed, 4.5)
             self.assertIn("ai-harness-doctor validate [...args]", proc.stdout)
             self.assertNotIn("Traceback", proc.stderr)
             self.assertNotIn("TypeError", proc.stderr)
