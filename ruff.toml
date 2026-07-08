@@ -1,0 +1,11 @@
+# Dev-only Python linter/formatter config for ai-harness-doctor.
+# Ruff is a dev tool only; it is never a runtime dependency.
+target-version = "py39"
+line-length = 120
+
+[lint]
+# Conservative rule set: pyflakes (F), pycodestyle errors (E), import sorting (I).
+select = ["E", "F", "I"]
+
+[format]
+quote-style = "double"

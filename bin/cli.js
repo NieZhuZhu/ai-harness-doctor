@@ -824,4 +824,11 @@ function main() {
   fail(`Unknown command: ${command}`);
 }
 
-main();
+// Only run the CLI when executed directly (e.g. `node bin/cli.js ...` or via the
+// installed bin). When required as a module (e.g. from unit tests) we export the
+// pure helpers instead of executing, so importing does not change CLI behavior.
+if (require.main === module) {
+  main();
+}
+
+module.exports = { compareVersions, parseInstallArgs };

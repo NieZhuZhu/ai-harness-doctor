@@ -1,9 +1,8 @@
 import json
 import subprocess
-import unittest
 import tempfile
+import unittest
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "bin" / "mcp-server.js"
