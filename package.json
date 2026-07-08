@@ -12,6 +12,7 @@
     "adapters",
     "references",
     "assets",
+    "assets/agent-tools.json",
     "SKILL.md",
     "README.md",
     "README.zh-CN.md",

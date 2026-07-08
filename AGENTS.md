@@ -16,6 +16,7 @@ node bin/cli.js help
 # Conventions
 
 - Python scripts must use Python 3.9+ standard library only.
+- The set of known AI-agent config files lives in `assets/agent-tools.json` (the single source of truth). `scripts/scan.py`, `scripts/canonicalize.py`, and `scripts/check_drift.py` derive their lists from it via `scripts/registry.py`; add a new tool as one entry there rather than re-hardcoding lists. The `bin/cli.js` `AGENTS` constant is a separate concept (installer deployment targets, not scanned config files) and is intentionally not derived from the registry.
 - `bin/cli.js` must use Node >=16 standard library only; do not add npm runtime dependencies.
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.

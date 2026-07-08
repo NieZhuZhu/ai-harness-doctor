@@ -322,8 +322,11 @@ scan output から Phase 1 の merge plan を組み立てます。inventory、ov
 | Copilot | `.github/copilot-instructions.md` becomes a pointer. |
 | Gemini | `GEMINI.md` becomes a pointer and recommends `contextFileName`. |
 | Cline | `.clinerules` becomes a pointer. |
+| Roo | `scan` で検出されます（`.roo/rules/*.md`）が、降格は**されません**。単一の慣例的な stub 位置を持たない rules-directory 型ツールのため、scan-only のままです。 |
 
 デフォルトは dry-run です。`--apply` には clean git tree が必要です。`--force` はその safety check を上書きします。
+
+既知のツール config ファイルは `assets/agent-tools.json` に一元定義されています。これは `scan`、`stubs`/`canonicalize`、`drift` がすべて読み込む唯一の registry なので、新しいツールの追加はこのファイル 1 つを編集するだけで済みます。
 
 </details>
 
