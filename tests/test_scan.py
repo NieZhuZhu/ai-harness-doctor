@@ -41,6 +41,53 @@ class ScanTests(unittest.TestCase):
             report = json.loads(proc.stdout)
             self.assertTrue(any(w["level"] == "WARN" and w["path"] == "AGENTS.md" for w in report["warnings"]))
 
+    def test_gaps_flag_missing_agents_and_guard(self):
+        # The messy fixture has no root AGENTS.md, no guard CI, no MCP/permissions.
+        report = self.run_json(FIXTURE)
+        self.assertIn("gaps", report)
+        checks = {g["check"] for g in report["gaps"]}
+        self.assertIn("G1", checks)  # missing root AGENTS.md
+        self.assertIn("G4", checks)  # missing guard CI workflow
+        g1 = next(g for g in report["gaps"] if g["check"] == "G1")
+        self.assertEqual(g1["level"], "ERROR")
+
+    def test_gaps_clean_when_harness_complete(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            sections = ["Project overview", "Build & test", "Conventions",
+                        "Testing requirements", "Safety", "Commit & PR"]
+            agents = "\n\n".join(f"# {s}\n\nBody for {s}." for s in sections) + "\n\nMaintenance contract: see guard.\n"
+            (tmp / "AGENTS.md").write_text(agents, encoding="utf-8")
+            (tmp / "CLAUDE.md").write_text("Canonical agent instructions live in AGENTS.md.\n", encoding="utf-8")
+            wf = tmp / ".github" / "workflows"
+            wf.mkdir(parents=True)
+            (wf / "harness-drift.yml").write_text("name: drift\n", encoding="utf-8")
+            (wf / "harness-checkup.yml").write_text("name: checkup\n", encoding="utf-8")
+            hooks = tmp / ".githooks"
+            hooks.mkdir()
+            (hooks / "pre-commit").write_text("#!/bin/sh\n# ai-harness-doctor:guard\n", encoding="utf-8")
+            claude = tmp / ".claude"
+            claude.mkdir()
+            (claude / "settings.json").write_text(
+                json.dumps({"permissions": {"allow": ["Bash(git status)"]},
+                            "mcpServers": {"demo": {"command": "demo"}}}), encoding="utf-8")
+            (tmp / ".mcp.json").write_text(json.dumps({"mcpServers": {"demo": {"command": "demo"}}}), encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(SCAN), str(tmp), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads(proc.stdout)
+            self.assertEqual(report["gaps"], [], report["gaps"])
+
+    def test_fail_on_gaps_exit_code(self):
+        proc = subprocess.run([sys.executable, str(SCAN), str(FIXTURE), "--fail-on-gaps"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 3, proc.stderr)
+
+    def test_no_gaps_flag_omits_section(self):
+        proc = subprocess.run([sys.executable, str(SCAN), str(FIXTURE), "--json", "--no-gaps"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertNotIn("gaps", report)
+
 
 def _write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)

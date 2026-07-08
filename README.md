@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, and a security checkup. `--fail-on-security` exits 2 on HIGH findings. |
+| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, and a gap analysis of missing harness infrastructure. `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -246,7 +246,7 @@ It manages a provider-agnostic core plus a **provider-aware CI gate**:
 <details>
 <summary><code>scan</code></summary>
 
-Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files.
+Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files. On top of that it answers the complementary question — *what is missing* — via a gap analysis (see below).
 
 It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags severity-ranked findings (HIGH/MEDIUM):
 
@@ -257,10 +257,14 @@ It also inventories the **extended harness surface** — MCP servers, subagents,
 
 It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-severity finding is present, which is handy as a CI gate.
 
+It also runs a **gap analysis** that diffs the repo against a harness completeness checklist and reports the infrastructure it is *missing* (not just what exists): a canonical root `AGENTS.md`, the required `AGENTS.md` sections (kept in sync with `assets/AGENTS.template.md`), tool stubs that should be minimal pointers to `AGENTS.md`, the drift-guard / weekly-checkup CI workflows, a pre-commit drift guard, the maintenance contract, and MCP / permission configuration. Each gap carries a `level` (`ERROR`/`WARN`/`NOTICE`), an `item`, a `message`, and an actionable `suggestion`. With `--fail-on-gaps` it exits `3` when any ERROR-level gap (e.g. a missing root `AGENTS.md`) is present.
+
 | Flag | Purpose |
 |---|---|
 | `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
 | `--fail-on-security` | Exit `2` when any HIGH-severity security finding is present. |
+| `--no-gaps` | Skip the missing / gap analysis (drops the `gaps` key). |
+| `--fail-on-gaps` | Exit `3` when any ERROR-level harness gap is present. |
 
 `--json` returns (existing keys are unchanged — backward compatible):
 
@@ -280,11 +284,14 @@ It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-seve
   },
   "security": [
     { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ],
+  "gaps": [
+    { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
   ]
 }
 ```
 
-`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted.
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G8`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted.
 
 </details>
 
