@@ -2,13 +2,23 @@
 
 # 🩺 AI Harness Doctor
 
-リポジトリの AI ハーネスを診るドクターです。散らばった agent 設定を健診し、統合し、守り、効果検証して、1 つの正本 `AGENTS.md` にまとめます。
+**あなたの AI コーディング agent は、古い指示に自信たっぷりに従っています。** `CLAUDE.md`、`.cursorrules`、`GEMINI.md`、`AGENTS.md` は静かにドリフトし、やがて agent はもう存在しないスクリプトを実行し、すでに移動したパスを編集し、`pnpm` に切り替えたリポジトリで `npm` を教え続けます。
+
+AI Harness Doctor は、そのドリフトを見える化し、散らばった agent 設定を 1 つの正本 `AGENTS.md` にまとめ、それを守ってリポジトリが静かに忘れないようにします —— Claude Code、Codex、Cursor、Gemini、そして素の CI に対応。ゼロインストールの `scan` 一発で、設定インベントリ、衝突の根拠、セキュリティ監査、欠けているインフラのギャップ、技術スタックのスナップショットまでを一括で健診します。
 
 [![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml)
 [![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
 ![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
+
+> **私たちの 14 タスク benchmark では、リポジトリを正本化することで agent の正答が 6/28 → 28/28 に改善し、同じ質問が実行のたびに違う答えになる「ブレ」も解消しました。** [数値を見る ↓](#benchmark)
+
+インストール不要、リポジトリには何も書き込まない一発コマンドで試せます:
+
+```bash
+npx ai-harness-doctor scan .
+```
 
 ## Why
 
@@ -34,7 +44,13 @@ AI Harness Doctor は、そのドリフトを見える化し、人間または a
 
 ### Fastest path
 
-Claude Code skill をインストールし、対象リポジトリでドクターを実行します。
+インストール不要・読み取り専用の健診 —— 一発のコマンドで、harness の設定インベントリ、衝突の根拠（file:line 付き）、セキュリティの発見、欠けているインフラのギャップ、技術スタックのスナップショットを数秒で提示します:
+
+```bash
+npx ai-harness-doctor scan .
+```
+
+修正に取りかかりますか？ Claude Code skill をインストールし、agent にフロー全体を駆動させます:
 
 ```bash
 npx ai-harness-doctor install
@@ -548,9 +564,9 @@ python3 -m unittest discover -s tests -v
 リポジトリには npm ベースの lint/format/test ワークフローも同梱されています（開発専用で、公開パッケージには含まれません）。CI は Python（3.9/3.10/3.12）と Node（16/20/22）のバージョンマトリクスで全スイートを実行します。
 
 ```bash
-npm test            # Python unittest + node --test CLI スイート
-npm run lint        # eslint (bin) + ruff (scripts/tests) + 三言語 README 見出し同期チェック
-npm run format      # prettier --write .   （npm run format:py で ruff format）
+npm test            # Python unittest + node --test CLI suite
+npm run lint        # eslint (bin) + ruff (scripts/tests) + trilingual README structure sync
+npm run format      # prettier --write .   (npm run format:py for ruff format)
 ```
 
 `npm run lint:docs`（すなわち `scripts/check_readme_sync.py`）は `README.md`、`README.zh-CN.md`、`README.ja.md` が同一の見出し骨格を保つことを強制します。したがって、いずれかの README の構造変更は他の 2 つにも反映する必要があります。

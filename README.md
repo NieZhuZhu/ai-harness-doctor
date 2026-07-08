@@ -565,7 +565,7 @@ The repo also ships an npm-driven lint/format/test workflow (dev-only; none of i
 
 ```bash
 npm test            # Python unittest + node --test CLI suite
-npm run lint        # eslint (bin) + ruff (scripts/tests) + trilingual README heading sync
+npm run lint        # eslint (bin) + ruff (scripts/tests) + trilingual README structure sync
 npm run format      # prettier --write .   (npm run format:py for ruff format)
 ```
 
