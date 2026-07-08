@@ -489,6 +489,13 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 
 **Health score.** Every eval also computes a one-click efficacy health score = pass rate across all task records, expressed `0–100` with an A–F letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F). It is embedded as a `health` key in both single-run results (`{"tasks":...}`) and matrix results (`{"agents":...}`), and printed as a summary line (`health score: N/100 (grade X), P/T tasks passed`). Timeouts count as failures. `--score PATH` prints the health score for an existing results/matrix JSON (add `--json` for machine output), and `--fail-under N` exits code `5` when the health score is below `N` (a CI gate).
 
+**Multi-round stability (`--rounds`).** `--rounds N` (N > 1) runs the whole task set N times and aggregates stability statistics, which is how you surface *flaky* tasks that pass on some runs and fail on others. The results JSON then carries `rounds`, `round_results` (each round's full task records + per-round `health`), a per-task `task_stats` array (`runs`, `passed`, `failed`, `timed_out`, `pass_rate`, `flaky`), and a `stats` summary (`mean_health`, `variance`, `stddev`, `min_health`, `max_health`, `health_scores`, `flaky_tasks`, `flaky_count`). A task is `flaky` when it neither passes every round nor fails every round. Overall `health` is the pass rate across every task-run, and `--fail-under N` gates on it. `--rounds 1` (the default) keeps the legacy single-round output shape byte-for-byte unchanged. `--stats PATH` re-aggregates an existing multi-round results file offline (add `--json` for machine output, `--fail-under N` to gate).
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --rounds 5   # run 5x, aggregate stability stats
+npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
+```
+
 </details>
 
 <details>

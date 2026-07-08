@@ -214,6 +214,80 @@ def compute_health(data):
     }
 
 
+def _round_records(round_result):
+    """Return the flat task records for a single round result."""
+    if isinstance(round_result, dict):
+        return round_result.get("tasks", []) or []
+    return []
+
+
+def aggregate_task_stats(round_results):
+    """Per-task pass/fail statistics across N rounds.
+
+    Returns an ordered list (first-seen order) of
+    ``{id, runs, passed, failed, timed_out, pass_rate, flaky}``. A task is
+    ``flaky`` when it both passes and fails across the rounds (i.e. it is not
+    consistently green or consistently red).
+    """
+    order = []
+    seen = {}
+    for rr in round_results:
+        for rec in _round_records(rr):
+            tid = rec.get("id")
+            if tid not in seen:
+                seen[tid] = {"id": tid, "runs": 0, "passed": 0, "timed_out": 0}
+                order.append(tid)
+            entry = seen[tid]
+            entry["runs"] += 1
+            if rec.get("passed"):
+                entry["passed"] += 1
+            if rec.get("timed_out"):
+                entry["timed_out"] += 1
+    stats = []
+    for tid in order:
+        entry = seen[tid]
+        entry["failed"] = entry["runs"] - entry["passed"]
+        entry["pass_rate"] = round(entry["passed"] / entry["runs"], 4) if entry["runs"] else 0.0
+        entry["flaky"] = 0 < entry["passed"] < entry["runs"]
+        stats.append(entry)
+    return stats
+
+
+def _round_health_score(round_result):
+    health = round_result.get("health") if isinstance(round_result, dict) else None
+    if isinstance(health, dict) and "score" in health:
+        return health["score"]
+    return compute_health(round_result)["score"]
+
+
+def summarize_rounds(round_results):
+    """Aggregate per-round health + per-task flakiness across N rounds.
+
+    Returns ``(task_stats, stats)`` where ``stats`` carries the mean health
+    score across rounds, its (population) variance / standard deviation, the
+    per-round health scores, and the flaky-task list.
+    """
+    task_stats = aggregate_task_stats(round_results)
+    scores = [_round_health_score(rr) for rr in round_results]
+    n = len(scores)
+    mean = (sum(scores) / n) if n else 0.0
+    variance = (sum((x - mean) ** 2 for x in scores) / n) if n else 0.0
+    flaky = [t["id"] for t in task_stats if t["flaky"]]
+    stats = {
+        "rounds": n,
+        "health_scores": scores,
+        "mean_health": round(mean, 4),
+        "variance": round(variance, 4),
+        "stddev": round(variance ** 0.5, 4),
+        "min_health": min(scores) if scores else 0,
+        "max_health": max(scores) if scores else 0,
+        "flaky_tasks": flaky,
+        "flaky_count": len(flaky),
+        "task_count": len(task_stats),
+    }
+    return task_stats, stats
+
+
 def parse_judge_output(stdout):
     """Parse an LLM-as-judge verdict.
 
@@ -323,15 +397,9 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True):
     return False, None
 
 
-def run_tasks(args):
-    tasks_path = Path(args.tasks)
-    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
-    binary = runner_binary(args.runner)
-    if binary and shutil.which(binary) is None:
-        print(manual_protocol(binary, args.tasks), file=sys.stderr)
-        return 127
-    workdir = Path(args.workdir).resolve()
-    results = {"label": args.label, "workdir": str(workdir), "tasks": []}
+def _run_round(tasks, args, workdir):
+    """Run every task once and return the list of graded task records."""
+    records = []
     for task in tasks:
         prompt = task["prompt"]
         command = args.runner.replace("{prompt}", shlex.quote(prompt))
@@ -341,7 +409,7 @@ def run_tasks(args):
         except subprocess.TimeoutExpired as exc:
             duration = round(time.time() - start, 3)
             stdout = timeout_output(exc.stdout)
-            results["tasks"].append({
+            records.append({
                 "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
                 "exit_code": None, "stdout": stdout, "answer": extract_answer(stdout), "stderr": timeout_output(exc.stderr),
                 "usage": {},
@@ -357,18 +425,80 @@ def run_tasks(args):
         }
         if judge_info is not None:
             record["judge"] = judge_info
-        results["tasks"].append(record)
-    results["health"] = compute_health(results)
+        records.append(record)
+    return records
+
+
+def run_tasks(args):
+    tasks_path = Path(args.tasks)
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    binary = runner_binary(args.runner)
+    if binary and shutil.which(binary) is None:
+        print(manual_protocol(binary, args.tasks), file=sys.stderr)
+        return 127
+    workdir = Path(args.workdir).resolve()
+    rounds = args.rounds if args.rounds and args.rounds > 1 else 1
+
+    if rounds == 1:
+        # Single-round default: byte-compatible with the previous output shape.
+        results = {"label": args.label, "workdir": str(workdir), "tasks": _run_round(tasks, args, workdir)}
+        results["health"] = compute_health(results)
+        output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
+        output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"wrote {output}")
+        health = results["health"]
+        print(f"health score: {health['score']}/100 (grade {health['grade']}), "
+              f"{health['passed']}/{health['total']} tasks passed")
+        if args.fail_under is not None and health["score"] < args.fail_under:
+            print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+            return 5
+        return 0
+
+    # Multi-round: run the task set N times, then aggregate per-task stats.
+    round_results = []
+    for i in range(rounds):
+        recs = _run_round(tasks, args, workdir)
+        rr = {"round": i + 1, "tasks": recs}
+        rr["health"] = compute_health(rr)
+        round_results.append(rr)
+    task_stats, stats = summarize_rounds(round_results)
+    results = {
+        "label": args.label,
+        "workdir": str(workdir),
+        "rounds": rounds,
+        "round_results": round_results,
+        "task_stats": task_stats,
+        "stats": stats,
+    }
+    # Overall health = pass rate across every task record from every round.
+    all_records = {"tasks": [rec for rr in round_results for rec in rr["tasks"]]}
+    results["health"] = compute_health(all_records)
     output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
-    health = results["health"]
-    print(f"health score: {health['score']}/100 (grade {health['grade']}), "
-          f"{health['passed']}/{health['total']} tasks passed")
-    if args.fail_under is not None and health["score"] < args.fail_under:
-        print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+    print(render_stats_summary(stats, results["health"]), end="")
+    if args.fail_under is not None and results["health"]["score"] < args.fail_under:
+        print(f"health score {results['health']['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
         return 5
     return 0
+
+
+def render_stats_summary(stats, overall_health=None):
+    """Human-readable multi-round summary block."""
+    lines = []
+    lines.append(f"ran {stats['rounds']} round(s) over {stats['task_count']} task(s)")
+    if overall_health is not None:
+        lines.append(f"overall health score: {overall_health['score']}/100 (grade {overall_health['grade']}), "
+                     f"{overall_health['passed']}/{overall_health['total']} task-runs passed")
+    lines.append(f"mean per-round health: {stats['mean_health']}/100 "
+                 f"(stddev {stats['stddev']}, variance {stats['variance']}, "
+                 f"min {stats['min_health']}, max {stats['max_health']})")
+    lines.append(f"per-round health scores: {stats['health_scores']}")
+    if stats["flaky_tasks"]:
+        lines.append(f"flaky tasks ({stats['flaky_count']}): {', '.join(stats['flaky_tasks'])}")
+    else:
+        lines.append("flaky tasks: none")
+    return "\n".join(lines) + "\n"
 
 
 def regrade(args):
@@ -559,6 +689,35 @@ def score_report(args):
     return 0
 
 
+def stats_report(args):
+    """Aggregate multi-round statistics from an existing results JSON file.
+
+    Accepts a multi-round file produced by ``--rounds`` (has ``round_results``)
+    or a bare list of round result objects. Re-computes the per-task flakiness
+    and per-round health summary so old result files can be analysed offline.
+    """
+    data = json.loads(Path(args.stats).read_text(encoding="utf-8"))
+    if isinstance(data, dict) and isinstance(data.get("round_results"), list):
+        round_results = data["round_results"]
+    elif isinstance(data, list):
+        round_results = data
+    elif isinstance(data, dict) and isinstance(data.get("tasks"), list):
+        # A single-round result file: treat it as one round.
+        round_results = [data]
+    else:
+        raise SystemExit("--stats file must contain 'round_results', a list of rounds, or a single-round 'tasks' result")
+    task_stats, stats = summarize_rounds(round_results)
+    overall = compute_health({"tasks": [rec for rr in round_results for rec in _round_records(rr)]})
+    if args.as_json:
+        print(json.dumps({"task_stats": task_stats, "stats": stats, "health": overall}, ensure_ascii=False, indent=2))
+    else:
+        print(render_stats_summary(stats, overall), end="")
+    if args.fail_under is not None and overall["score"] < args.fail_under:
+        print(f"health score {overall['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+        return 5
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Run or compare AI harness eval tasks.")
     parser.add_argument("--tasks")
@@ -576,12 +735,17 @@ def main(argv=None):
     parser.add_argument("--no-default-judge", dest="no_default_judge", action="store_true",
                         help="Disable the built-in judge; judge checks then require --judge-cmd (legacy behavior).")
     parser.add_argument("--score", help="Print an automated health score for an existing results / matrix JSON file.")
+    parser.add_argument("--stats", help="Aggregate multi-round statistics (flakiness, mean/variance) from an existing results JSON file.")
+    parser.add_argument("--rounds", type=int, default=1,
+                        help="Run the task set N times and aggregate per-task flakiness + per-round health stats (default 1).")
     parser.add_argument("--fail-under", dest="fail_under", type=float, default=None,
                         help="Exit 5 when the health score is below this value (0-100).")
     parser.add_argument("--json", dest="as_json", action="store_true", help="Emit machine-readable JSON (used by --score).")
     args = parser.parse_args(argv)
     if args.score:
         return score_report(args)
+    if args.stats:
+        return stats_report(args)
     if args.compare:
         return compare(args)
     if args.regrade:

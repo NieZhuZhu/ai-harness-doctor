@@ -293,6 +293,18 @@ python3 scripts/eval_run.py --score results-after.json --json  # machine-readabl
 python3 scripts/eval_run.py --tasks tasks.json --workdir /path/to/repo -o results.json --fail-under 80
 ```
 
+### Multi-round stability (`--rounds`)
+
+`--rounds N` (N > 1) runs the whole task set N times and aggregates stability statistics so you can surface **flaky** tasks — ones that pass on some runs and fail on others. The results JSON then adds `rounds`, `round_results` (each round's full task records + per-round `health`), a per-task `task_stats` array (`runs`, `passed`, `failed`, `timed_out`, `pass_rate`, `flaky`), and a `stats` summary (`mean_health`, `variance`, `stddev`, `min_health`, `max_health`, `health_scores`, `flaky_tasks`, `flaky_count`). A task is `flaky` when it neither passes every round nor fails every round. Overall `health` is the pass rate across every task-run and `--fail-under N` gates on it. `--rounds 1` (the default) keeps the legacy single-round output shape byte-for-byte unchanged. `--stats PATH` re-aggregates an existing multi-round results file offline.
+
+```bash
+# Run the task set 5 times and aggregate flakiness + per-round health stats
+python3 scripts/eval_run.py --tasks tasks.json --label nightly --workdir /path/to/repo --rounds 5 -o results-nightly.json
+
+# Re-analyze an existing multi-round results file (add --json for machine output)
+python3 scripts/eval_run.py --stats results-nightly.json --json
+```
+
 ## MCP server
 
 The core read-only capabilities are also exposed as an MCP (Model Context Protocol) stdio server so agents can call them as tools:
