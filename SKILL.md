@@ -108,6 +108,7 @@ Run the drift guard:
 python3 scripts/check_drift.py /path/to/repo
 python3 scripts/check_drift.py /path/to/repo --json
 python3 scripts/check_drift.py /path/to/repo --strict
+python3 scripts/check_drift.py /path/to/repo --min-score 80
 ```
 
 Checks:
@@ -117,6 +118,9 @@ Checks:
 - D3: stub re-divergence, checking size and the `AGENTS.md` pointer.
 - D4: `AGENTS.md` size.
 - D5: nested `AGENTS.md` inventory, informational and non-blocking.
+- D6: fact drift, cross-validating claims declared in `AGENTS.md` against repo ground truth — the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the lockfile that actually exists: `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent.
+
+All findings (D1..D6) roll up into a 0-100 **health score** with a letter grade (A/B/C/D/F), rendered as a `## Health score` section and exposed via the `score`/`grade` keys in `--json`. Use `--min-score N` to fail CI when the score drops below `N`; this gate is independent of `--strict` and both can apply together.
 
 ### Outputs
 
