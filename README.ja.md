@@ -513,6 +513,16 @@ Bug reports と focused PRs を歓迎します。scripts は deterministic、std
 python3 -m unittest discover -s tests -v
 ```
 
+リポジトリには npm ベースの lint/format/test ワークフローも同梱されています（開発専用で、公開パッケージには含まれません）。CI は Python（3.9/3.10/3.12）と Node（16/20/22）のバージョンマトリクスで全スイートを実行します。
+
+```bash
+npm test            # Python unittest + node --test CLI スイート
+npm run lint        # eslint (bin) + ruff (scripts/tests) + 三言語 README 見出し同期チェック
+npm run format      # prettier --write .   （npm run format:py で ruff format）
+```
+
+`npm run lint:docs`（すなわち `scripts/check_readme_sync.py`）は `README.md`、`README.zh-CN.md`、`README.ja.md` が同一の見出し骨格を保つことを強制します。したがって、いずれかの README の構造変更は他の 2 つにも反映する必要があります。
+
 ## License
 
 MIT. Copyright (c) NieZhuZhu.
