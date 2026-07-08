@@ -31,6 +31,22 @@ class CanonicalizeTests(unittest.TestCase):
         self.assertIn("Conflict list", proc.stdout)
         self.assertIn("package_manager", proc.stdout)
 
+    def test_plan_contains_merge_suggestions_section(self):
+        proc = subprocess.run([sys.executable, str(CANON), "--plan", str(FIXTURE)], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = proc.stdout
+        # New semi-automatic merge-suggestion section is appended.
+        self.assertIn("## Merge suggestions (semi-automatic)", out)
+        # Existing skeleton sections are still intact.
+        self.assertIn("## TODO decision checklist", out)
+        # Overlap consolidation names AGENTS.md as canonical and lists the drifted files.
+        self.assertIn("### Overlap consolidation", out)
+        self.assertIn("reduce `CLAUDE.md` to an import stub", out)
+        # Concrete conflict recommendation with evidence for the messy-repo fixture.
+        self.assertIn("### Conflict resolutions", out)
+        self.assertIn("**package_manager** → recommend `npm`", out)
+        self.assertIn("`.cursorrules:4`", out)
+
     def test_write_stubs_dry_run_prints_diff_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"

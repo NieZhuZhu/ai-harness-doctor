@@ -1,0 +1,33 @@
+# ai-harness-doctor guard — GitLab CI pipeline
+#
+# This file is installed by `ai-harness-doctor guard --provider gitlab`.
+# Activate it by adding the following to your top-level .gitlab-ci.yml:
+#
+#   include:
+#     - local: .gitlab/harness-ci.yml
+#
+# `harness-drift` runs on merge requests (fast gate); `harness-checkup` runs on
+# scheduled pipelines and publishes a scan + drift report as an artifact.
+
+harness-drift:
+  image: node:20
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+  script:
+    - npx -y ai-harness-doctor drift . --strict
+
+harness-checkup:
+  image: node:20
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+  script:
+    - npx -y ai-harness-doctor scan . > harness-scan-report.md
+    - set +e; npx -y ai-harness-doctor drift . --strict > harness-drift-report.md 2>&1; echo "drift exit=$?"
+    - cat harness-scan-report.md harness-drift-report.md
+  artifacts:
+    when: always
+    paths:
+      - harness-scan-report.md
+      - harness-drift-report.md

@@ -100,6 +100,116 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(len(d4), 1)
         self.assertIn("AGENTS.md is missing", d4[0]["message"])
 
+    def test_fix_dry_run_reports_but_writes_nothing(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("lots\n" * 200, encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        before = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix"], text=True, capture_output=True)
+
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("dry run", proc.stdout)
+        self.assertIn("would rewrite `CLAUDE.md`", proc.stdout)
+        self.assertIn("1 fixable", proc.stdout)
+        # Nothing was actually written.
+        self.assertEqual(before, (repo / "CLAUDE.md").read_text(encoding="utf-8"))
+
+    def test_fix_apply_rewrites_regrown_stub_to_minimal_form(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("lots\n" * 200, encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("rewrote `CLAUDE.md`", proc.stdout)
+        self.assertIn("1 fixed", proc.stdout)
+        rewritten = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertTrue(rewritten.startswith("@AGENTS.md"))
+        self.assertLessEqual(len(rewritten.encode("utf-8")), 600)
+        # A follow-up drift check now passes (D3 resolved).
+        recheck = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
+        self.assertEqual(recheck.returncode, 0, recheck.stdout + recheck.stderr)
+
+    def test_fix_reports_non_autofixable_drift_and_leaves_files_untouched(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        agents = CLEAN_AGENTS.replace("npm run test", "npm run nonexist")
+        (repo / "AGENTS.md").write_text(agents, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("needs manual attention", proc.stdout)
+        self.assertIn("D1", proc.stdout)
+        self.assertIn("nonexist", proc.stdout)
+        self.assertIn("1 need manual attention", proc.stdout)
+        # AGENTS.md is not modified by --fix for D1 command drift.
+        self.assertEqual(agents, (repo / "AGENTS.md").read_text(encoding="utf-8"))
+
+    def _stub_pointers(self, repo):
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+
+    def test_node_version_fact_drift_d6(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS + "\n# Toolchain\nUse Node 18 for development.\n", encoding="utf-8")
+        (repo / ".nvmrc").write_text("20\n", encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d6 = [f for f in report["findings"] if f["check"] == "D6"]
+        self.assertTrue(d6)
+        self.assertTrue(any("Node 18" in f["message"] and "Node 20" in f["message"] for f in d6))
+
+    def test_package_manager_fact_drift_d6(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS.replace("npm run test", "pnpm run test"), encoding="utf-8")
+        (repo / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d6 = [f for f in report["findings"] if f["check"] == "D6"]
+        self.assertTrue(d6)
+        self.assertTrue(any("pnpm" in f["message"] and "package-lock.json" in f["message"] for f in d6))
+
+    def test_clean_repo_high_score_grade_and_no_d6(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D6"])
+        self.assertGreaterEqual(report["score"], 80)
+        self.assertIn(report["grade"], ("A", "B"))
+
+    def test_min_score_gate_returns_nonzero(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        self._stub_pointers(repo)
+        # Clean repo scores 100 (exit 0), but a threshold above the score must gate CI.
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--min-score", "101"], text=True, capture_output=True)
+        self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("Score:", proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
