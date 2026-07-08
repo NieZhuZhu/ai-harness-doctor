@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -11,9 +12,14 @@ from pathlib import Path
 # content/logic instead of duplicating it here.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import canonicalize  # noqa: E402
+import registry  # noqa: E402
+import scan  # noqa: E402  # reuse scan.SKIP_DIRS so the drift walk prunes the same vendored dirs
 
 DEFAULT_MAX_BYTES = 32768
-STUB_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", ".cursorrules", ".windsurfrules", ".github/copilot-instructions.md", "GEMINI.md", ".clinerules"]
+# Flat list of every canonical stub path, derived (in registry order) from the
+# shared agent-config registry so the drift guard tracks exactly the same stubs
+# canonicalize.py writes. See assets/agent-tools.json.
+STUB_FILES = [p for tool in registry.canonicalizable_tools() for p in tool["stub_paths"]]
 PACKAGE_MANAGER_BUILTINS = {
     "install", "ci", "i", "init", "add", "remove", "rm", "uninstall", "update", "up", "upgrade",
     "exec", "dlx", "create", "audit", "link", "unlink", "publish", "outdated", "config", "cache",
@@ -76,6 +82,23 @@ def d1_command_drift(root, text):
     return findings
 
 
+def _within_root(root, token):
+    """Return True only if `token` resolves to a path contained in `root`.
+
+    The drift gate reads backtick tokens from an untrusted AGENTS.md and probes
+    them on disk. `pathlib` happily lets an absolute (`/etc/hostname`) or
+    `../`-escaping token point outside the repo, which would let a malicious
+    AGENTS.md infer the existence of arbitrary filesystem paths. Reject anything
+    that does not stay under the repo root before calling `.exists()`.
+    """
+    try:
+        candidate = (root / token).resolve()
+        candidate.relative_to(root.resolve())  # raises ValueError if outside root
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def d2_path_drift(root, text):
     findings = []
     known = {"package.json", "Makefile", "AGENTS.md", "README.md"}
@@ -91,6 +114,10 @@ def d2_path_drift(root, text):
             if "/" not in token and token not in known:
                 continue
             if any(ch.isspace() for ch in token):
+                continue
+            # Never probe outside the repo root: an absolute or `../`-escaping
+            # token is not repo drift and must not be stat()'d (info-leak guard).
+            if not _within_root(root, token):
                 continue
             if not (root / token).exists():
                 findings.append({"check": "D2", "level": "ERROR", "line": lineno, "message": f"Referenced path `{token}` does not exist", "suggestion": "Fix or remove the backtick-quoted path."})
@@ -228,11 +255,18 @@ def d6_fact_drift(root, text):
 
 def nested_agents(root):
     out = []
-    for p in root.rglob("AGENTS.md"):
-        if ".git" in p.parts or p == root / "AGENTS.md":
+    # Walk with os.walk so we can prune vendored dirs in place and avoid
+    # following directory symlinks (which can loop). Reuse scan.SKIP_DIRS so
+    # scan.py and check_drift.py never maintain divergent skip sets.
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in scan.SKIP_DIRS]
+        if "AGENTS.md" not in filenames:
+            continue
+        p = Path(dirpath) / "AGENTS.md"
+        if p == root / "AGENTS.md":
             continue
         out.append(p.relative_to(root).as_posix())
-    return out
+    return sorted(out)
 
 
 SCORE_WEIGHTS = {"ERROR": 15, "NOTICE": 5}

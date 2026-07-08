@@ -172,6 +172,58 @@ class CliInstallerTests(unittest.TestCase):
                 self.assertIn("Keep this intact.", agents_after)
                 self.assertEqual(hashlib.sha256(agents_after_bytes).hexdigest(), original_hash)
 
+    def test_guard_remove_strips_block_and_preserves_user_appended_hook_lines(self):
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            self.assertIn("# ai-harness-doctor:guard", hook.read_text(encoding="utf-8"))
+            user_line = "\n# my own hook line\necho custom-check\n"
+            hook.write_text(hook.read_text(encoding="utf-8") + user_line, encoding="utf-8")
+
+            proc = self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
+
+            self.assertTrue(hook.exists())
+            hook_after = hook.read_text(encoding="utf-8")
+            self.assertIn("echo custom-check", hook_after)
+            self.assertNotIn("# ai-harness-doctor:guard", hook_after)
+            self.assertIn("strip", proc.stdout)
+
+    def test_guard_remove_does_not_delete_user_edited_workflow(self):
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+
+            drift = repo / ".github" / "workflows" / "harness-drift.yml"
+            edited = drift.read_text(encoding="utf-8") + "\n# user tweak\n"
+            drift.write_text(edited, encoding="utf-8")
+
+            proc = self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
+
+            self.assertTrue(drift.exists())
+            self.assertEqual(drift.read_text(encoding="utf-8"), edited)
+            self.assertIn("skip", proc.stdout)
+
+    def test_guard_reinstall_does_not_overwrite_user_edited_workflow(self):
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+
+            drift = repo / ".github" / "workflows" / "harness-drift.yml"
+            edited = drift.read_text(encoding="utf-8").replace(
+                "# ai-harness-doctor:guard\n", ""
+            ) + "\n# user tweak\n"
+            drift.write_text(edited, encoding="utf-8")
+
+            proc = self.run_cli(["guard", str(repo), "--apply"], home, repo)
+
+            self.assertIn("manual-merge", proc.stdout)
+            self.assertEqual(drift.read_text(encoding="utf-8"), edited)
+
     def test_guard_provider_gitlab_installs_gitlab_ci(self):
         with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
             home = Path(home_dir)

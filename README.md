@@ -239,7 +239,7 @@ It manages a provider-agnostic core plus a **provider-aware CI gate**:
 | `gitlab` | An includable `.gitlab/harness-ci.yml` (`harness-drift` on MRs, `harness-checkup` on schedules with an artifact). | Add `include: { local: .gitlab/harness-ci.yml }` to `.gitlab-ci.yml`. |
 | `codebase` | A portable `.harness-ci/harness-guard.sh` (`drift`/`checkup` modes) + a wiring `README.md`. | Register the script as an MR check and a scheduled pipeline step. |
 
-`AI_HARNESS_DOCTOR_SKIP=1` is the explicit auditable escape hatch for the local hook. `guard --remove --apply` removes managed snippets, cleans up **all providers'** CI files (so switching providers leaves nothing behind), and restores byte-exact pre-existing hook content when possible.
+`AI_HARNESS_DOCTOR_SKIP=1` is the explicit auditable escape hatch for the local hook. `guard --remove --apply` removes managed snippets, cleans up **all providers'** CI files (so switching providers leaves nothing behind), and restores byte-exact pre-existing hook content when possible. Both install and remove are non-destructive: every managed file carries an `ai-harness-doctor:guard` marker, so `guard --apply` never overwrites a user-edited CI file that lacks the marker (it reports a `manual-merge` and leaves your file untouched), and `--remove` only deletes a managed file when it is byte-identical to what the tool shipped — a hand-extended hook has just its own guard block stripped out, and a modified block is skipped rather than destroyed.
 
 </details>
 
@@ -322,8 +322,11 @@ Downgrades existing tool files to minimal pointers after `AGENTS.md` exists.
 | Copilot | `.github/copilot-instructions.md` becomes a pointer. |
 | Gemini | `GEMINI.md` becomes a pointer and recommends `contextFileName`. |
 | Cline | `.clinerules` becomes a pointer. |
+| Roo | Detected by `scan` (`.roo/rules/*.md`) but **not** downgraded — a rules-directory tool with no single conventional stub location, so it stays scan-only. |
 
 Dry-run by default. `--apply` requires a clean git tree; `--force` overrides that safety check.
+
+Known tool config files are defined once in `assets/agent-tools.json`, the single registry that `scan`, `stubs`/`canonicalize`, and `drift` all read, so adding a new tool means editing that one file.
 
 </details>
 

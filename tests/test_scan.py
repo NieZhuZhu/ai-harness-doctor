@@ -41,6 +41,35 @@ class ScanTests(unittest.TestCase):
             self.assertTrue(any(w["level"] == "WARN" and w["path"] == "AGENTS.md" for w in report["warnings"]))
 
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import scan  # noqa: E402
+
+
+class FileInfoStatBeforeReadTests(unittest.TestCase):
+    def test_oversize_file_reports_full_size_but_reads_only_max_bytes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "AGENTS.md"
+            body = "x" * 5000
+            path.write_text(body, encoding="utf-8")
+            info = scan.file_info(root, "AGENTS.md", path, max_bytes=100)
+            # bytes field must still report the true on-disk size.
+            self.assertEqual(info["bytes"], 5000)
+            # WARN emitted, and the body kept in memory is capped at max_bytes.
+            self.assertTrue(any(w["level"] == "WARN" for w in info["warnings"]))
+            self.assertLessEqual(len(info["text"]), 100)
+
+    def test_normal_file_reads_full_body(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "AGENTS.md"
+            path.write_text("hello\nworld\n", encoding="utf-8")
+            info = scan.file_info(root, "AGENTS.md", path, max_bytes=32768)
+            self.assertEqual(info["bytes"], 12)
+            self.assertEqual(info["text"], "hello\nworld\n")
+            self.assertEqual(info["warnings"], [])
+
+
 def _write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")

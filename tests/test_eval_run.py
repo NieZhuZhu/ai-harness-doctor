@@ -8,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EVAL = ROOT / "scripts" / "eval_run.py"
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import eval_run  # noqa: E402
+
 
 class EvalRunTests(unittest.TestCase):
     def test_run_tasks_and_compare(self):
@@ -215,6 +218,42 @@ class EvalRunTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(out.read_text(encoding="utf-8"))
             self.assertTrue(data["tasks"][0]["passed"])
+
+    def test_command_check_timeout_is_graded_as_non_crashing_fail(self):
+        # grade_answer must swallow a slow `command` check and return a plain
+        # fail (passed=False) without raising subprocess.TimeoutExpired.
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td)
+            task = {
+                "id": "slow-check",
+                "prompt": "x",
+                "check": {"type": "command", "value": "sleep 5"},
+                "timeout_s": 0.1,
+            }
+            passed, judge_info = eval_run.grade_answer(task, "answer", workdir, None)
+            self.assertFalse(passed)
+            self.assertIsNone(judge_info)
+
+    def test_run_tasks_command_check_timeout_records_non_crashing_fail(self):
+        # End-to-end: a command check that times out is a fail, and run_tasks
+        # still emits the full record (does not crash, keeps timed_out field).
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(json.dumps([
+                {"id": "slow", "prompt": "x", "check": {"type": "command", "value": "sleep 5"}, "timeout_s": 0.1},
+            ]), encoding="utf-8")
+            output = Path(td) / "results.json"
+            runner = f"{sys.executable} -c \"print('done')\""
+            proc = subprocess.run([sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "slow", "--workdir", str(workdir), "--runner", runner, "-o", str(output)], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            record = data["tasks"][0]
+            self.assertFalse(record["passed"])
+            self.assertFalse(record["timed_out"])
+            self.assertEqual(record["exit_code"], 0)
+            self.assertIn("answer", record)
 
 
 if __name__ == "__main__":
