@@ -1,5 +1,6 @@
 import json
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -158,6 +159,112 @@ class ExtendedSurfaceTests(unittest.TestCase):
             report = json.loads(self.run_json(repo, "--no-security").stdout)
             self.assertNotIn("security", report)
             self.assertIn("surface", report)
+
+
+class ProjectSnapshotTests(unittest.TestCase):
+    def build_repo(self, td):
+        repo = Path(td) / "repo"
+        _write(repo / "go.mod", "module example.com/x\n\ngo 1.22\n")
+        _write(repo / "package.json", json.dumps({"name": "x"}))
+        _write(repo / ".github/workflows/ci.yml", "name: ci\n")
+        _write(repo / ".pre-commit-config.yaml", "repos: []\n")
+        _write(repo / ".eslintrc.json", "{}\n")
+        _write(repo / "tsconfig.json", "{}\n")
+        _write(repo / "AGENTS.md",
+               "# Project overview\nx\n\n# Build & test\nx\n\nMaintenance contract: see guard.\n")
+        _write(repo / ".mcp.json", json.dumps({"mcpServers": {"docs": {"command": "npx"}}}))
+        _write(repo / ".claude/settings.json",
+               json.dumps({"permissions": {"allow": ["Bash(git status)"]}}))
+        return repo
+
+    def run_json(self, repo, *extra):
+        return subprocess.run(
+            [sys.executable, str(SCAN), str(repo), "--json", *extra],
+            text=True, capture_output=True)
+
+    def test_snapshot_collected(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self.build_repo(td)
+            proc = self.run_json(repo)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            snap = json.loads(proc.stdout)["project_snapshot"]
+            langs = {s["language"] for s in snap["tech_stack"]}
+            self.assertIn("Go", langs)
+            self.assertIn("Node.js", langs)
+            self.assertIn(".github/workflows/ci.yml", snap["existing_files"]["ci"])
+            self.assertIn(".pre-commit-config.yaml", snap["existing_files"]["hooks"])
+            self.assertIn(".eslintrc.json", snap["existing_files"]["lint_format"])
+            self.assertIn("tsconfig.json", snap["existing_files"]["typecheck"])
+            self.assertIn("Project overview", snap["agents_sections"])
+            self.assertTrue(snap["maintenance_contract"])
+            self.assertEqual(snap["mcp_tools"], ["docs"])
+            self.assertTrue(snap["has_permissions"])
+
+    def test_no_snapshot_flag_omits_section(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self.build_repo(td)
+            report = json.loads(self.run_json(repo, "--no-snapshot").stdout)
+            self.assertNotIn("project_snapshot", report)
+
+    def test_gaps_no_longer_include_g5_to_g8(self):
+        # An otherwise clean harness with no MCP/permissions/guard hook must not
+        # emit the old G5-G8 static gaps; those are snapshot facts now.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nx\n")
+            report = json.loads(self.run_json(repo).stdout)
+            checks = {g["check"] for g in report["gaps"]}
+            self.assertNotIn("G5", checks)
+            self.assertNotIn("G6", checks)
+            self.assertNotIn("G7", checks)
+            self.assertNotIn("G8", checks)
+
+
+class AgentGapsTests(unittest.TestCase):
+    def run_json(self, repo, *extra):
+        return subprocess.run(
+            [sys.executable, str(SCAN), str(repo), "--json", *extra],
+            text=True, capture_output=True)
+
+    def test_agent_gaps_pipes_snapshot_and_parses_output(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nx\n")
+            _write(repo / "go.mod", "module x\n")
+            # Fake agent: reads the piped JSON, asserts it has the snapshot,
+            # and emits one inferred gap.
+            agent = Path(td) / "agent.py"
+            _write(agent, (
+                "import json, sys\n"
+                "data = json.load(sys.stdin)\n"
+                "assert 'project_snapshot' in data, data\n"
+                "assert data['project_snapshot']['tech_stack'], data\n"
+                "print(json.dumps([{'level': 'WARN', 'item': 'CI for Go',\n"
+                "  'message': 'Go repo has no CI', 'suggestion': 'add a workflow'}]))\n"
+            ))
+            cmd = f"{shlex.quote(sys.executable)} {shlex.quote(str(agent))}"
+            report = json.loads(self.run_json(repo, "--agent-gaps", cmd).stdout)
+            self.assertIn("agent_gaps", report)
+            self.assertEqual(len(report["agent_gaps"]), 1)
+            self.assertEqual(report["agent_gaps"][0]["item"], "CI for Go")
+
+    def test_agent_gaps_reports_error_on_bad_output(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nx\n")
+            agent = Path(td) / "agent.py"
+            _write(agent, "print('not json')\n")
+            cmd = f"{shlex.quote(sys.executable)} {shlex.quote(str(agent))}"
+            report = json.loads(self.run_json(repo, "--agent-gaps", cmd).stdout)
+            self.assertIn("agent_gaps", report)
+            self.assertIn("error", report["agent_gaps"])
+
+    def test_no_agent_gaps_key_without_flag(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nx\n")
+            report = json.loads(self.run_json(repo).stdout)
+            self.assertNotIn("agent_gaps", report)
 
 
 

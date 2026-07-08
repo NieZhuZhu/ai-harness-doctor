@@ -7,7 +7,9 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import string
+import subprocess
 import sys
 from itertools import combinations
 from pathlib import Path
@@ -111,6 +113,141 @@ GUARD_CI_WORKFLOWS = [
 ]
 GUARD_MARKER = "ai-harness-doctor:guard"
 PRECOMMIT_HOOK_PATHS = [".git/hooks/pre-commit", ".githooks/pre-commit"]
+
+# ---------------------------------------------------------------------------
+# Project snapshot: a compact, factual description of the repository that an
+# external agent/LLM can reason over to infer what harness pieces *should* exist
+# for this particular tech stack. Unlike the static G1-G4 gap checks (which are
+# mandatory infrastructure and stay rule-based), the snapshot only reports facts
+# and defers the "should have but doesn't" judgement to the agent.
+# ---------------------------------------------------------------------------
+
+# Manifest files that reveal the primary language / ecosystem. Order matters
+# only for readability; every match is reported.
+TECH_STACK_MARKERS = [
+    ("Go", ["go.mod"]),
+    ("Node.js", ["package.json"]),
+    ("Python", ["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "Pipfile"]),
+    ("Rust", ["Cargo.toml"]),
+    ("Ruby", ["Gemfile"]),
+    ("PHP", ["composer.json"]),
+    ("Java (Maven)", ["pom.xml"]),
+    ("Java/Kotlin (Gradle)", ["build.gradle", "build.gradle.kts"]),
+    (".NET", ["*.csproj", "*.sln", "*.fsproj"]),
+    ("Elixir", ["mix.exs"]),
+    ("Dart/Flutter", ["pubspec.yaml"]),
+    ("Swift", ["Package.swift"]),
+]
+
+# Config surfaces grouped by concern so an agent can see what tooling is (and is
+# not) wired up. Values are glob patterns evaluated from the repo root.
+SNAPSHOT_FILE_GROUPS = [
+    ("ci", [
+        ".github/workflows/*.yml", ".github/workflows/*.yaml",
+        ".gitlab-ci.yml", ".circleci/config.yml", "azure-pipelines.yml",
+        "Jenkinsfile", ".travis.yml", "buildkite.yml", ".drone.yml",
+    ]),
+    ("hooks", [
+        ".pre-commit-config.yaml", ".pre-commit-config.yml",
+        ".githooks/*", ".husky/*", "lefthook.yml", "lefthook.yaml",
+    ]),
+    ("lint_format", [
+        ".eslintrc", ".eslintrc.*", "eslint.config.*", ".prettierrc",
+        ".prettierrc.*", "prettier.config.*", "biome.json", "biome.jsonc",
+        ".flake8", "ruff.toml", ".ruff.toml", ".pylintrc",
+        ".golangci.yml", ".golangci.yaml", ".rubocop.yml",
+        ".editorconfig", ".rustfmt.toml", "rustfmt.toml",
+    ]),
+    ("typecheck", [
+        "tsconfig.json", "mypy.ini", ".mypy.ini", "pyrightconfig.json",
+    ]),
+]
+
+
+def snapshot_tech_stack(root):
+    """Detect the languages / ecosystems present via their manifest files."""
+    stack = []
+    for language, patterns in TECH_STACK_MARKERS:
+        markers = []
+        for pattern in patterns:
+            for path in root.glob(pattern):
+                if is_skipped(path, root) or not path.is_file():
+                    continue
+                markers.append(rel(path, root))
+        if markers:
+            stack.append({"language": language, "markers": sorted(set(markers))})
+    return stack
+
+
+def snapshot_existing_files(root):
+    """Inventory CI / hook / lint / typecheck config files present in the repo."""
+    groups = {}
+    for group, patterns in SNAPSHOT_FILE_GROUPS:
+        found = []
+        for pattern in patterns:
+            for path in root.glob(pattern):
+                if is_skipped(path, root) or not path.is_file():
+                    continue
+                found.append(rel(path, root))
+        groups[group] = sorted(set(found))
+    # Pre-commit drift-guard hook (previously the static G5 check) is now a fact.
+    guard_hook = None
+    for rel_path in PRECOMMIT_HOOK_PATHS:
+        path = root / rel_path
+        if path.is_file() and GUARD_MARKER in path.read_text(encoding="utf-8", errors="replace"):
+            guard_hook = rel_path
+            break
+    groups["drift_guard_hook"] = guard_hook
+    return groups
+
+
+def build_project_snapshot(root, surface, agents_text):
+    """Compact, factual description of the repo for agent-based gap inference."""
+    sections = markdown_headings(agents_text, levels=(1,)) if agents_text else []
+    return {
+        "tech_stack": snapshot_tech_stack(root),
+        "existing_files": snapshot_existing_files(root),
+        "agents_sections": sections,
+        "maintenance_contract": bool(agents_text) and "maintenance contract" in agents_text.lower(),
+        "mcp_tools": [s["name"] for s in surface.get("mcp_servers", [])],
+        "has_permissions": bool(surface.get("permissions")),
+    }
+
+
+def run_agent_gaps(command, report):
+    """Pipe the project snapshot (as JSON) to an external agent/LLM command and
+    parse its stdout as inferred gaps.
+
+    The command receives, on stdin, a JSON object of the form
+    `{"project_snapshot": {...}, "gaps": [...]}` and is expected to print a JSON
+    array of gap objects (or an object with an `agent_gaps` array). Returns a
+    dict with either `agent_gaps` or `error` so failures never crash the scan.
+    """
+    payload = json.dumps({
+        "project_snapshot": report.get("project_snapshot", {}),
+        "gaps": report.get("gaps", []),
+    }, ensure_ascii=False)
+    try:
+        argv = shlex.split(command)
+        proc = subprocess.run(
+            argv, input=payload, text=True, capture_output=True, timeout=120,
+        )
+    except Exception as exc:  # noqa: BLE001 - report, never crash the scan
+        return {"error": f"failed to invoke agent command: {exc}"}
+    if proc.returncode != 0:
+        return {"error": f"agent command exited {proc.returncode}: {proc.stderr.strip()[:500]}"}
+    out = proc.stdout.strip()
+    if not out:
+        return {"agent_gaps": []}
+    try:
+        parsed = json.loads(out)
+    except json.JSONDecodeError as exc:
+        return {"error": f"agent command did not return valid JSON: {exc}"}
+    if isinstance(parsed, dict):
+        parsed = parsed.get("agent_gaps", parsed.get("gaps", []))
+    if not isinstance(parsed, list):
+        return {"error": "agent command JSON must be a list of gaps or an object with an `agent_gaps` list"}
+    return {"agent_gaps": parsed}
 
 
 def rel(path, root):
@@ -538,44 +675,11 @@ def find_gaps(root, surface):
                 "Run `ai-harness-doctor guard . --apply` to install the guard suite.",
             ))
 
-    # 5) Pre-commit drift guard hook.
-    hook_installed = False
-    for rel_path in PRECOMMIT_HOOK_PATHS:
-        path = root / rel_path
-        if path.is_file() and GUARD_MARKER in path.read_text(encoding="utf-8", errors="replace"):
-            hook_installed = True
-            break
-    if not hook_installed:
-        gaps.append(gap(
-            "G5", "NOTICE", "Pre-commit drift guard",
-            f"No pre-commit hook carrying the `{GUARD_MARKER}` marker was found.",
-            "Run `ai-harness-doctor guard . --apply` to install the local pre-commit guard.",
-        ))
-
-    # 6) Maintenance contract embedded in AGENTS.md.
-    if agents.is_file() and "maintenance contract" not in agents_text.lower():
-        gaps.append(gap(
-            "G6", "NOTICE", "Maintenance contract",
-            "AGENTS.md has no maintenance contract section.",
-            "Run `ai-harness-doctor guard . --apply` to append the maintenance contract to AGENTS.md.",
-        ))
-
-    # 7) MCP configuration (informational — only relevant if the repo uses MCP).
-    if not surface.get("mcp_servers"):
-        gaps.append(gap(
-            "G7", "NOTICE", "MCP configuration",
-            "No MCP server configuration was found (`.mcp.json`, `.cursor/mcp.json`, etc.).",
-            "Add an MCP config only if your agents rely on MCP servers; otherwise ignore.",
-        ))
-
-    # 8) Permission configuration.
-    if not surface.get("permissions"):
-        gaps.append(gap(
-            "G8", "NOTICE", "Permission configuration",
-            "No permission configuration was found (`.claude/settings.json` permissions block).",
-            "Define explicit allow/deny permission rules to constrain agent execution.",
-        ))
-
+    # G5-G8 (pre-commit drift guard, maintenance contract, MCP configuration,
+    # permission configuration) used to be reported here as static gaps. They
+    # are stack-dependent judgement calls rather than mandatory infrastructure,
+    # so they are now surfaced as facts in `project_snapshot` and left to the
+    # agent inference layer (`--agent-gaps`) to reason about.
     order = {"ERROR": 0, "WARN": 1, "NOTICE": 2}
     return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
 
@@ -599,6 +703,8 @@ def scan_repo(repo_root, max_bytes):
         "hooks": hooks,
         "permissions": permissions,
     }
+    agents_path = root / "AGENTS.md"
+    agents_text = agents_path.read_text(encoding="utf-8", errors="replace") if agents_path.is_file() else ""
     return {
         "files": result_files,
         "warnings": warnings,
@@ -607,6 +713,7 @@ def scan_repo(repo_root, max_bytes):
         "nested": nested_agents(result_files),
         "surface": surface,
         "security": security_findings(root, files, mcp, hooks, permissions),
+        "project_snapshot": build_project_snapshot(root, surface, agents_text),
         "gaps": find_gaps(root, surface),
     }
 
@@ -648,8 +755,12 @@ def render_markdown(report):
     render_surface(lines, report.get("surface", {}))
     if "security" in report:
         render_security(lines, report["security"])
+    if "project_snapshot" in report:
+        render_snapshot(lines, report["project_snapshot"])
     if "gaps" in report:
         render_gaps(lines, report["gaps"])
+    if "agent_gaps" in report:
+        render_agent_gaps(lines, report["agent_gaps"])
     lines.extend(["", "> Stop condition: confirm the migration scope (whole repository / subdirectory / selected files) before entering Phase 1 — Treat."])
     return "\n".join(lines) + "\n"
 
@@ -699,6 +810,51 @@ def render_gaps(lines, gaps):
         lines.append(f"  - Suggestion: {g['suggestion']}")
 
 
+def render_snapshot(lines, snapshot):
+    lines.extend(["", "## Project snapshot"])
+    stack = snapshot.get("tech_stack", [])
+    if stack:
+        lines.append("- Tech stack:")
+        for s in stack:
+            lines.append(f"  - {s['language']}: {', '.join(f'`{m}`' for m in s['markers'])}")
+    else:
+        lines.append("- Tech stack: none detected")
+    existing = snapshot.get("existing_files", {})
+    for group in ("ci", "hooks", "lint_format", "typecheck"):
+        items = existing.get(group, [])
+        if items:
+            lines.append(f"- {group}: {', '.join(f'`{i}`' for i in items)}")
+        else:
+            lines.append(f"- {group}: none")
+    lines.append(f"- Drift-guard pre-commit hook: {existing.get('drift_guard_hook') or 'none'}")
+    sections = snapshot.get("agents_sections", [])
+    lines.append(f"- AGENTS.md sections: {', '.join(sections) if sections else 'none'}")
+    lines.append(f"- Maintenance contract: {'present' if snapshot.get('maintenance_contract') else 'absent'}")
+    mcp_tools = snapshot.get("mcp_tools", [])
+    lines.append(f"- MCP tools: {', '.join(f'`{t}`' for t in mcp_tools) if mcp_tools else 'none'}")
+    lines.append(f"- Permission configuration: {'present' if snapshot.get('has_permissions') else 'absent'}")
+
+
+def render_agent_gaps(lines, agent_gaps):
+    lines.extend(["", "## Agent-inferred gaps"])
+    if isinstance(agent_gaps, dict):
+        lines.append(f"- Agent inference failed: {agent_gaps.get('error', 'unknown error')}")
+        return
+    if not agent_gaps:
+        lines.append("The agent inferred no additional gaps.")
+        return
+    for g in agent_gaps:
+        if isinstance(g, dict):
+            item = g.get("item") or g.get("check") or "gap"
+            level = g.get("level", "NOTICE")
+            message = g.get("message", "")
+            lines.append(f"- **{level}** {item}: {message}")
+            if g.get("suggestion"):
+                lines.append(f"  - Suggestion: {g['suggestion']}")
+        else:
+            lines.append(f"- {g}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Scan AI harness config files.")
     parser.add_argument("repo_root", nargs="?", default=".")
@@ -712,8 +868,20 @@ def main(argv=None):
                         help="Skip the missing / gap analysis section.")
     parser.add_argument("--fail-on-gaps", action="store_true",
                         help="Exit non-zero when any ERROR-level harness gap is present.")
+    parser.add_argument("--no-snapshot", action="store_true",
+                        help="Skip the project snapshot section (drops the `project_snapshot` key).")
+    parser.add_argument("--agent-gaps", metavar="CMD", default=None,
+                        help="Invoke an external agent/LLM command to infer stack-specific gaps. "
+                             "The project snapshot is piped to the command on stdin as JSON; the "
+                             "command must print a JSON array of gaps (or an object with an "
+                             "`agent_gaps` list). Results are added under the `agent_gaps` key.")
     args = parser.parse_args(argv)
     report = scan_repo(args.repo_root, args.max_bytes)
+    if args.agent_gaps:
+        result = run_agent_gaps(args.agent_gaps, report)
+        report["agent_gaps"] = result if "error" in result else result["agent_gaps"]
+    if args.no_snapshot:
+        report.pop("project_snapshot", None)
     if args.no_security:
         report.pop("security", None)
     if args.no_gaps:
