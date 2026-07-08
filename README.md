@@ -406,6 +406,8 @@ Dry-run by default. `--apply` requires a clean git tree; `--force` overrides tha
 
 Known tool config files are defined once in `assets/agent-tools.json`, the single registry that `scan`, `stubs`/`canonicalize`, and `drift` all read, so adding a new tool means editing that one file.
 
+In the same spirit, the per-command Codex/Cursor/Gemini adapters under `adapters/` are generated from a single source: `scripts/gen_adapters.py` renders all 15 files (5 commands × 3 flavors) from one command table, `python3 scripts/gen_adapters.py --check` (also `npm run lint:adapters`) fails CI when a committed adapter drifts from that source, and `npm run gen:adapters` regenerates them.
+
 </details>
 
 <details>
