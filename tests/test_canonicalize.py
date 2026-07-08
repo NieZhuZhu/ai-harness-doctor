@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "messy-repo"
 CANON = ROOT / "scripts" / "canonicalize.py"
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import canonicalize  # noqa: E402
+
 
 AGENTS_MIN = """# Project overview
 Fixture repo.
@@ -112,6 +115,126 @@ class CanonicalizeTests(unittest.TestCase):
             report = json.loads(proc.stdout)
             self.assertFalse(report["ok"])
             self.assertTrue(any(f["check"] == "SECTION" and f["level"] == "ERROR" for f in report["findings"]))
+
+
+REQUIRED_DRAFT_HEADINGS = [
+    "# Project overview",
+    "# Build & test",
+    "# Conventions",
+    "# Testing requirements",
+    "# Safety",
+    "# Commit & PR",
+]
+
+
+class DraftTests(unittest.TestCase):
+    def test_draft_fills_all_canonical_sections_with_marked_inferences(self):
+        proc = subprocess.run([sys.executable, str(CANON), str(FIXTURE), "--draft"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = proc.stdout
+        # Every canonical AGENTS.md section from assets/AGENTS.template.md is present.
+        for heading in REQUIRED_DRAFT_HEADINGS:
+            self.assertIn(heading, out)
+        # Draft banner tells the human this is a mechanical draft to review.
+        self.assertIn("Auto-drafted by", out)
+        # Inferred lines are clearly marked as suggestions to confirm.
+        self.assertIn("(inferred — confirm)", out)
+        # Fact-derived build commands come from the fixture's package.json scripts.
+        self.assertIn("npm install", out)
+        self.assertIn("npm run test", out)
+        self.assertIn("npm run build", out)
+        # Detected tech stack surfaced from the manifest.
+        self.assertIn("Node.js (`package.json`)", out)
+        # A safe default convention is offered too.
+        self.assertIn("(suggested default)", out)
+
+    def test_draft_suggests_conflict_defaults_backed_by_lockfile(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "package.json").write_text(
+                '{"name":"x","scripts":{"test":"node t.js"}}\n', encoding="utf-8"
+            )
+            # A committed pnpm lockfile is stronger evidence than instruction text.
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+            (repo / "CLAUDE.md").write_text(
+                "# Claude\nUse npm install before development.\nRun npm test.\n", encoding="utf-8"
+            )
+            (repo / ".cursorrules").write_text(
+                "# Cursor\nUse pnpm install before development.\nRun pnpm test.\n", encoding="utf-8"
+            )
+            proc = subprocess.run([sys.executable, str(CANON), str(repo), "--draft"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            out = proc.stdout
+            self.assertIn("suggested defaults", out)
+            # The lockfile-backed manager wins the package_manager conflict.
+            self.assertIn("`package_manager` → `pnpm`", out)
+            # And the draft's build commands use pnpm accordingly.
+            self.assertIn("pnpm install", out)
+
+    def test_draft_o_writes_file_and_refuses_to_overwrite(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            shutil.copytree(FIXTURE, repo)
+            out_path = Path(td) / "AGENTS.draft.md"
+            proc = subprocess.run(
+                [sys.executable, str(CANON), str(repo), "--draft", "-o", str(out_path)],
+                text=True, capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(out_path.is_file())
+            self.assertIn("# Project overview", out_path.read_text(encoding="utf-8"))
+            # Second run must refuse to clobber an existing file without --force.
+            proc2 = subprocess.run(
+                [sys.executable, str(CANON), str(repo), "--draft", "-o", str(out_path)],
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(proc2.returncode, 0)
+            self.assertIn("Refusing to overwrite", proc2.stderr)
+            # --force allows overwrite.
+            proc3 = subprocess.run(
+                [sys.executable, str(CANON), str(repo), "--draft", "-o", str(out_path), "--force"],
+                text=True, capture_output=True,
+            )
+            self.assertEqual(proc3.returncode, 0, proc3.stderr)
+
+
+class ConflictDefaultTests(unittest.TestCase):
+    def test_lockfile_backs_package_manager_recommendation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "yarn.lock").write_text("# yarn lockfile\n", encoding="utf-8")
+            values = {
+                "npm": [{"path": "CLAUDE.md", "line": 3}],
+                "yarn": [{"path": ".cursorrules", "line": 3}],
+            }
+            value, rationale = canonicalize.recommend_conflict_default("package_manager", values, root)
+            self.assertEqual(value, "yarn")
+            self.assertIn("yarn.lock", rationale)
+
+    def test_falls_back_to_vote_when_no_lockfile(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            values = {
+                "npm": [{"path": ".cursorrules", "line": 3}],
+                "pnpm": [{"path": "CLAUDE.md", "line": 3}],
+            }
+            value, rationale = canonicalize.recommend_conflict_default("package_manager", values, root)
+            # Tie broken lexicographically -> npm.
+            self.assertEqual(value, "npm")
+            self.assertIn("configuration files agree", rationale)
+
+    def test_node_version_recommendation_matches_nvmrc(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".nvmrc").write_text("20\n", encoding="utf-8")
+            values = {
+                "node 18": [{"path": "CLAUDE.md", "line": 3}],
+                "node 20": [{"path": ".cursorrules", "line": 3}],
+            }
+            value, rationale = canonicalize.recommend_conflict_default("node_version", values, root)
+            self.assertEqual(value, "node 20")
+            self.assertIn(".nvmrc", rationale)
 
 
 if __name__ == "__main__":

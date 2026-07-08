@@ -338,9 +338,25 @@ Scaffolds a Phase 1 merge plan from scan output: inventory, overlap clusters, co
 It also appends a **"Merge suggestions (semi-automatic)"** section derived from the scan:
 
 - **Overlap consolidation** — each overlap cluster names the canonical file (`AGENTS.md`) and lists the files to reduce to stubs as a checkbox list.
-- **Conflict resolutions** — each conflict signal gets ONE recommended value plus its supporting `path:line` evidence as a tickable item. The recommendation is deterministic (most-supported value, ties broken lexicographically).
+- **Conflict resolutions** — each conflict signal gets ONE recommended value plus its supporting `path:line` evidence as a tickable item, together with a short **rationale**. The recommendation is deterministic and fact-aware: for `package_manager` it prefers the manager backed by the committed lockfile, for `node_version` it prefers the version pinned by `.nvmrc` / `engines.node`, and otherwise it falls back to the most-supported value (ties broken lexicographically).
 
 These are suggestions for human review, not automatic adjudication; the existing inventory/overlap/conflict/TODO sections are preserved.
+
+</details>
+
+<details>
+<summary><code>draft</code></summary>
+
+Auto-drafts a **starter `AGENTS.md`** filled with concrete, fact-derived content instead of an empty skeleton. Invoked as `python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]` (read-only passthrough of the scan; it never mutates the scanned repo).
+
+The draft fills every canonical section (`Project overview`, `Build & test`, `Conventions`, `Testing requirements`, `Safety`, `Commit & PR`) using deterministic repository facts reused from `scan.py` / `semantic.py`:
+
+- detected tech stack (from manifests such as `package.json`, `pyproject.toml`, …);
+- build/test commands derived from `package.json` `scripts` and `Makefile` targets, using the package manager backed by the committed lockfile;
+- detected CI, lint/format, and type-check tooling;
+- **default resolutions for every conflict** scan reports (e.g. prefer the lockfile-backed package manager), each with a rationale.
+
+Every inferred line is tagged `(inferred — confirm)` and safe conventions `(suggested default)`, and a banner reminds the human to review and edit before committing. Without `-o` it prints to stdout; with `-o PATH` it writes the file and refuses to overwrite an existing file unless `--force` is given.
 
 </details>
 
