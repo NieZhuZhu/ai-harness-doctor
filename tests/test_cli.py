@@ -253,5 +253,33 @@ class CliInstallerTests(unittest.TestCase):
             self.assertNotIn("TypeError", proc.stderr)
 
 
+    def test_help_lists_mcp_command(self):
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            proc = self.run_cli(["help"], home, Path(project_dir))
+            self.assertIn("ai-harness-doctor mcp", proc.stdout)
+
+    def test_mcp_command_starts_and_responds_to_initialize(self):
+        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:
+            env = os.environ.copy()
+            env["HOME"] = home_dir
+            env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+            payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}) + "\n"
+            proc = subprocess.run(
+                ["node", str(CLI), "mcp"],
+                input=payload,
+                cwd=project_dir,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            first = next(line for line in proc.stdout.splitlines() if line.strip())
+            response = json.loads(first)
+            self.assertEqual(response["id"], 1)
+            self.assertEqual(response["result"]["serverInfo"]["name"], "ai-harness-doctor")
+
+
 if __name__ == "__main__":
     unittest.main()

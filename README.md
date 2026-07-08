@@ -174,6 +174,7 @@ Why detection over regeneration? Silently “fixing” drift removes human aware
 | Cursor | Command adapters for `.cursor/commands/`. |
 | Gemini CLI | TOML custom command adapters for `~/.gemini/commands/harness/`. Google retired Gemini CLI for individual tiers on 2026-06-18; enterprise Gemini Code Assist is unaffected, and these adapters still work for enterprise/existing installs. |
 | Windsurf / Cline / others | Universal mode: point the agent at the installed playbook and say “run phase N”. |
+| MCP clients | `ai-harness-doctor mcp` exposes `harness_scan`/`drift`/`validate`/`plan` as MCP tools over stdio. |
 | Humans & CI | Plain `npx ai-harness-doctor ...`; no agent required. |
 
 Honest note: non-Claude adapters are thin pointers and lightly verified. If a command format changed, please file an issue.
@@ -378,7 +379,38 @@ Runs or compares before/after agent tasks.
 ]
 ```
 
-Checks can be `regex` over the extracted answer or `command` executed in the workdir. For Claude CLI JSON output, grading extracts the `result` field before matching. Usage/cost fields are captured when present. `--compare before.json after.json` writes a Markdown comparison. `--regrade results.json --tasks tasks.json` regrades recorded outputs offline. If the runner binary is missing, the command prints a manual protocol fallback instead of pretending it ran.
+Checks can be `regex` over the extracted answer, `command` executed in the workdir, or `judge` for open-ended LLM-as-judge grading. For Claude CLI JSON output, grading extracts the `result` field before matching. Usage/cost fields are captured when present. `--compare before.json after.json` writes a Markdown comparison. `--regrade results.json --tasks tasks.json` regrades recorded outputs offline. If the runner binary is missing, the command prints a manual protocol fallback instead of pretending it ran.
+
+**Multi-agent matrix.** Run the same task set across several runners ("agents") and compare them side by side. Provide runners inline with repeatable `--runner-cmd NAME=CMD`, or via `--matrix agents.json` (a mapping of agent name → runner command template). `--matrix-report FILE` writes a Markdown matrix (rows = tasks, columns = agents, cells = pass/fail + duration, plus per-agent pass-rate summary) and `--matrix-json FILE` writes per-agent task records with a `summary` block (`passed`, `total`, `pass_rate`). The single-runner before/after/compare flow is unchanged; matrix mode activates only when `--matrix` and/or `--runner-cmd` are supplied.
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . \
+  --runner-cmd "claude=claude -p {prompt} --output-format json" \
+  --runner-cmd "codex=codex exec {prompt}" \
+  --matrix-report matrix-report.md --matrix-json matrix-results.json
+```
+
+**LLM-as-judge check.** A task check may use `{ "type": "judge", "rubric": "..." }` for grading that regex cannot express. Grading is delegated to `--judge-cmd "CMD_TEMPLATE"`. The judge receives env `JUDGE_ANSWER`, `JUDGE_RUBRIC`, and `JUDGE_INPUT` (path to a temp JSON `{answer, rubric}`), and template placeholders `{answer}`/`{rubric}`/`{input}` are substituted. It must print `{"passed": bool, "score": number, "reason": "..."}`; if `passed` is omitted, `score >= 0.5` counts as a pass. An offline deterministic judge works for CI.
+
+</details>
+
+<details>
+<summary><code>mcp</code></summary>
+
+Starts an MCP (Model Context Protocol) stdio server so agents can call the doctor's read-only capabilities as tools.
+
+```bash
+npx ai-harness-doctor mcp   # or directly: node bin/mcp-server.js
+```
+
+Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line on stdin/stdout). Supported methods:
+
+- `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
+- `notifications/initialized` → notification, no response.
+- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, each with an input schema `{ repo: string (default "."), ... }`.
+- `tools/call` → dispatches to the matching Python script and returns `{ content: [{ type: "text", text }] }`.
+
+Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`. Unknown methods and tools return a JSON-RPC error object.
 
 </details>
 
@@ -455,6 +487,7 @@ As of 2026-07, based on each project's public documentation — see their repos 
 ```text
 SKILL.md                         # Skill playbook and phase stop conditions
 bin/cli.js                       # npm CLI and installer
+bin/mcp-server.js                # MCP stdio server (harness_scan/drift/validate/plan)
 commands/                        # Claude Code slash commands
 adapters/                        # Codex, Cursor, Gemini, universal pointers
 scripts/                         # Python stdlib deterministic mechanics
