@@ -54,8 +54,10 @@ node bin/cli.js help
 
 # Commit & PR
 
+- See `CONTRIBUTING.md` for the full contribution workflow (when to open an issue, the PR checklist, and releasing).
 - Use Conventional Commits for messages, e.g. `feat(scan): ...`, `fix(drift): ...`, `docs(agents): ...`, `refactor(...)`, `chore(...)`. Commit messages are written in English.
 - Land changes through pull requests; do not push directly to `main`.
+- Opening an issue first is optional: do it for larger features, externally reported bugs, or anything that benefits from a public record, and link it with `Closes #<n>`. Small, unambiguous changes may go straight to a PR.
 - Every behavior change to `scripts/*.py` or `bin/cli.js` must ship with matching tests in the same commit/PR (see Testing requirements).
 - Before opening a PR, run the full test suite (see Build & test) and a self-checkup with `python3 scripts/scan.py .` and `python3 scripts/check_drift.py .`; keep the drift health score at grade A.
 - Keep the English, Simplified Chinese, and Japanese READMEs in sync within the same PR when user-facing behavior changes.
