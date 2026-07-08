@@ -131,8 +131,12 @@ Stop when checks pass or repair advice has been provided. Do not rewrite semanti
 ### Long-term follow-up
 
 After Treat completes and root `AGENTS.md` exists, install the long-term guard suite with `npx ai-harness-doctor guard /path/to/repo --apply`.
-It installs only the core suite: pre-commit drift hook, path-aware PR gate, weekly checkup issue workflow, and `AGENTS.md` maintenance contract.
-Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply`; Claude hooks are not integrated.
+It installs only the core suite: pre-commit drift hook, CI drift/checkup gate, and `AGENTS.md` maintenance contract.
+The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (default `auto`, detected from the git remote / `.gitlab-ci.yml`):
+- `github` → `.github/workflows/harness-drift.yml` + `harness-checkup.yml`
+- `gitlab` → includable `.gitlab/harness-ci.yml` (add `include: { local: .gitlab/harness-ci.yml }`)
+- `codebase` → portable `.harness-ci/harness-guard.sh` + wiring `README.md` for internal Codebase / Bits / any runner
+Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cleans up all providers' CI files); Claude hooks are not integrated.
 
 ## Phase 3 — Efficacy (Eval)
 

@@ -146,6 +146,8 @@ npm update -g ai-harness-doctor
 npx ai-harness-doctor guard . --apply
 ```
 
+CI 卡点是 provider 感知的：传入 `--provider github|gitlab|codebase`（默认 `auto`）以安装匹配的 CI 文件。各 provider 的文件布局见 [`guard`](#command-reference) 命令参考。
+
 纵深防御，从强到弱：
 
 1. **Pre-commit hard block** — 防止本地改动在离开机器前就让 `AGENTS.md` 过期。`AI_HARNESS_DOCTOR_SKIP=1` 是显式、可审计的绕过，而不是静默放行。
@@ -221,14 +223,21 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 默认 dry-run；使用 `--apply` 写入。要求：目标是 git repo，且 `AGENTS.md` 已存在。
 
-它管理四个产物：
+它管理一个与 provider 无关的核心，外加一个 **provider 感知的 CI 卡点**：
 
 1. `.git/hooks/pre-commit` drift block。
-2. `.github/workflows/harness-drift.yml` path-aware PR gate。
-3. `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue。
-4. `AGENTS.md` 中带 marker 的 maintenance contract。
+2. 一个 CI drift/checkup 卡点，其文件取决于 `--provider`（见下文）。
+3. `AGENTS.md` 中带 marker 的 maintenance contract。
 
-`AI_HARNESS_DOCTOR_SKIP=1` 是本地 hook 显式且可审计的逃生口。`guard --remove --apply` 会移除托管片段，并在可能时按字节精确恢复此前已存在的 hook 内容。
+`--provider github|gitlab|codebase|auto`（默认 `auto`）选择安装哪些 CI 文件。`auto` 会从 `.gitlab-ci.yml` 和 `origin` remote 探测 provider（github.com → `github`，主机名含 `gitlab` → `gitlab`，其他企业主机（如内部 Codebase）→ `codebase`，无 remote → `github`）：
+
+| Provider | 安装的 CI 文件 | 接线说明 |
+|---|---|---|
+| `github` | `.github/workflows/harness-drift.yml` path-aware PR gate + `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue。 | 在 GitHub Actions 上自动运行。 |
+| `gitlab` | 一个可 include 的 `.gitlab/harness-ci.yml`（`harness-drift` 跑在 MR 上，`harness-checkup` 跑在 schedule 上并产出 artifact）。 | 在 `.gitlab-ci.yml` 中加入 `include: { local: .gitlab/harness-ci.yml }`。 |
+| `codebase` | 一个可移植的 `.harness-ci/harness-guard.sh`（`drift`/`checkup` 模式）+ 一个接线用的 `README.md`。 | 将该脚本注册为 MR 检查和定时 pipeline 步骤。 |
+
+`AI_HARNESS_DOCTOR_SKIP=1` 是本地 hook 显式且可审计的逃生口。`guard --remove --apply` 会移除托管片段、清理**所有 provider** 的 CI 文件（这样切换 provider 不会残留任何东西），并在可能时按字节精确恢复此前已存在的 hook 内容。
 
 </details>
 

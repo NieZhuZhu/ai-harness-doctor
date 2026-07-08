@@ -146,6 +146,8 @@ Install after the treat phase has produced a canonical root `AGENTS.md`:
 npx ai-harness-doctor guard . --apply
 ```
 
+The CI gate is provider-aware: pass `--provider github|gitlab|codebase` (default `auto`) to install the matching CI files. See the [`guard`](#command-reference) command reference for the per-provider file layout.
+
 Defense in depth, strongest to weakest:
 
 1. **Pre-commit hard block** — defends against local edits that make `AGENTS.md` stale before they leave the machine. `AI_HARNESS_DOCTOR_SKIP=1` is an explicit, auditable bypass, not a silent pass.
@@ -221,14 +223,21 @@ Redeploys every manifest-tracked copy install to the current package version. Li
 
 Dry-run by default; use `--apply` to write. Requirements: target is a git repo and `AGENTS.md` already exists.
 
-It manages four artifacts:
+It manages a provider-agnostic core plus a **provider-aware CI gate**:
 
 1. `.git/hooks/pre-commit` drift block.
-2. `.github/workflows/harness-drift.yml` path-aware PR gate.
-3. `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue.
-4. A marked maintenance contract in `AGENTS.md`.
+2. A CI drift/checkup gate whose files depend on `--provider` (see below).
+3. A marked maintenance contract in `AGENTS.md`.
 
-`AI_HARNESS_DOCTOR_SKIP=1` is the explicit auditable escape hatch for the local hook. `guard --remove --apply` removes managed snippets and restores byte-exact pre-existing hook content when possible.
+`--provider github|gitlab|codebase|auto` (default `auto`) selects which CI files to install. `auto` detects the provider from `.gitlab-ci.yml` and the `origin` remote (github.com → `github`, a host containing `gitlab` → `gitlab`, any other enterprise host such as internal Codebase → `codebase`, no remote → `github`):
+
+| Provider | CI files installed | Wiring note |
+|---|---|---|
+| `github` | `.github/workflows/harness-drift.yml` path-aware PR gate + `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue. | Runs automatically on GitHub Actions. |
+| `gitlab` | An includable `.gitlab/harness-ci.yml` (`harness-drift` on MRs, `harness-checkup` on schedules with an artifact). | Add `include: { local: .gitlab/harness-ci.yml }` to `.gitlab-ci.yml`. |
+| `codebase` | A portable `.harness-ci/harness-guard.sh` (`drift`/`checkup` modes) + a wiring `README.md`. | Register the script as an MR check and a scheduled pipeline step. |
+
+`AI_HARNESS_DOCTOR_SKIP=1` is the explicit auditable escape hatch for the local hook. `guard --remove --apply` removes managed snippets, cleans up **all providers'** CI files (so switching providers leaves nothing behind), and restores byte-exact pre-existing hook content when possible.
 
 </details>
 
