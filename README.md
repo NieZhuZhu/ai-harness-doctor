@@ -292,6 +292,13 @@ It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-seve
 
 Scaffolds a Phase 1 merge plan from scan output: inventory, overlap clusters, conflict list, and a TODO decision checklist. It explicitly does **not** merge content or choose a side.
 
+It also appends a **"Merge suggestions (semi-automatic)"** section derived from the scan:
+
+- **Overlap consolidation** — each overlap cluster names the canonical file (`AGENTS.md`) and lists the files to reduce to stubs as a checkbox list.
+- **Conflict resolutions** — each conflict signal gets ONE recommended value plus its supporting `path:line` evidence as a tickable item. The recommendation is deterministic (most-supported value, ties broken lexicographically).
+
+These are suggestions for human review, not automatic adjudication; the existing inventory/overlap/conflict/TODO sections are preserved.
+
 </details>
 
 <details>
@@ -338,6 +345,18 @@ Example finding lines:
 **Health score.** All findings (D1..D6) roll up into a 0–100 health score with a letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F), rendered as a `## Health score` section (e.g. `Score: 85/100 (grade B)`). With `--json` the report gains `score` and `grade` keys alongside the existing fields.
 
 `--min-score N` exits non-zero when the score is below `N` — a CI gate that is independent of `--strict`, so both can apply together.
+
+**Semi-automatic repair: `--fix`.** `--fix` auto-repairs only the safe, mechanical subset of drift — currently **D3 stub regrowth**. Any tool stub that grew real content or lost its `AGENTS.md` pointer is rewritten back to its minimal canonical import-stub form (the stub bodies are reused from `canonicalize.py`, so `--fix` and `stubs`/`--write-stubs` stay in sync).
+
+```bash
+npx ai-harness-doctor drift . --fix          # DRY RUN: prints the diff, writes nothing
+npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stubs
+```
+
+- Default `--fix` is a dry run: it prints a unified diff of what would be rewritten and changes no files.
+- `--fix --apply` rewrites the regrown stub files in place.
+- Non-safe drift (D1 command drift, D2 path drift, D4 size, and any other semantic drift) is never modified; it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
+- A summary line reports `N fixed/fixable, M need manual attention`. The command exits non-zero while any drift remains.
 
 </details>
 

@@ -65,6 +65,8 @@ First generate the merge-plan skeleton:
 python3 scripts/canonicalize.py --plan /path/to/repo -o merge-plan.md
 ```
 
+The plan skeleton lists the inventory, overlap clusters, conflict list, and a TODO decision checklist. It also appends a **"Merge suggestions (semi-automatic)"** section derived from the scan: for each overlap cluster it recommends keeping content in the canonical `AGENTS.md` and reducing the other files to stubs (checkbox list), and for each conflict signal it proposes ONE recommended value with the supporting `path:line` evidence as an actionable checkbox item. The recommendation is deterministic (most-supported value, ties broken lexicographically) — it is a suggestion for human review, not an automatic adjudication.
+
 Then the agent manually writes the root `AGENTS.md`. The scripts do not perform semantic merging.
 
 After `AGENTS.md` exists, preview or apply tool-stub downgrades:
@@ -121,6 +123,20 @@ Checks:
 - D6: fact drift, cross-validating claims declared in `AGENTS.md` against repo ground truth — the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the lockfile that actually exists: `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent.
 
 All findings (D1..D6) roll up into a 0-100 **health score** with a letter grade (A/B/C/D/F), rendered as a `## Health score` section and exposed via the `score`/`grade` keys in `--json`. Use `--min-score N` to fail CI when the score drops below `N`; this gate is independent of `--strict` and both can apply together.
+
+#### Semi-automatic repair: `--fix`
+
+`--fix` auto-repairs ONLY the safe, mechanical subset of drift — currently **D3 stub regrowth**: any tool stub (`CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `GEMINI.md`, `.clinerules`, `.cursor/rules/*`, …) that grew real content or lost its `AGENTS.md` pointer is rewritten back to its minimal canonical import-stub form. The canonical stub bodies are reused directly from `canonicalize.py` (its `STUBS` mapping), so `--fix` and `canonicalize.py --write-stubs` stay in sync.
+
+```bash
+python3 scripts/check_drift.py /path/to/repo --fix          # DRY RUN: prints the diff, writes nothing
+python3 scripts/check_drift.py /path/to/repo --fix --apply  # actually rewrites the regrown stubs
+```
+
+- Default `--fix` is a dry run: it prints a unified diff of what WOULD be rewritten and changes no files.
+- `--fix --apply` rewrites the regrown stub files in place.
+- Drift that is NOT safely auto-fixable (D1 command drift, D2 path drift, D4 size, and any other semantic drift) is never modified; instead it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
+- A summary line reports `N fixed/fixable, M need manual attention`. The command exits non-zero while any drift remains (pending fixes in dry run, or unresolved manual items after `--apply`).
 
 ### Outputs
 

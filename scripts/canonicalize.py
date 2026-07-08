@@ -99,7 +99,76 @@ def render_plan(report):
         "- [ ] Run `canonicalize.py --write-stubs` to preview the downgrade diff.",
         "- [ ] Run `canonicalize.py --validate` to re-check the result.",
     ])
+    lines.extend(render_merge_suggestions(report))
     return "\n".join(lines) + "\n"
+
+
+def recommend_conflict_value(values):
+    """Deterministically pick one recommended value for a conflict signal.
+
+    Rule: prefer the value with the most supporting evidence entries; break ties
+    by the lexicographically smallest value so the recommendation is stable.
+    """
+    best_value = None
+    best_count = -1
+    for value in sorted(values.keys()):
+        count = len(values[value])
+        if count > best_count:
+            best_value = value
+            best_count = count
+    return best_value
+
+
+def _evidence_ref(entry):
+    return f"{entry['path']}:{entry['line']}"
+
+
+def render_merge_suggestions(report):
+    """Concrete, actionable semi-automatic merge suggestions derived from scan results.
+
+    Deterministic: overlaps and conflicts are already ordered by scan.py, and the
+    recommended conflict value is chosen by a stable rule (see recommend_conflict_value).
+    """
+    lines = ["", "## Merge suggestions (semi-automatic)",
+             "Canonical file: `AGENTS.md` (single source of truth)."]
+
+    lines.append("")
+    lines.append("### Overlap consolidation")
+    if report["overlaps"]:
+        for o in report["overlaps"]:
+            lines.append(
+                f"- [ ] `{o['a']}` \u2194 `{o['b']}` ({o['percent']}% shared): "
+                f"keep the shared content in `AGENTS.md` and reduce these files to stubs:"
+            )
+            for path in (o["a"], o["b"]):
+                lines.append(f"  - [ ] reduce `{path}` to an import stub pointing at `AGENTS.md`")
+    else:
+        lines.append("- No overlap clusters above the threshold; nothing to consolidate.")
+
+    lines.append("")
+    lines.append("### Conflict resolutions")
+    if report["conflicts"]:
+        for c in report["conflicts"]:
+            values = c["values"]
+            recommended = recommend_conflict_value(values)
+            rec_entries = values[recommended]
+            rec_evidence = ", ".join(f"`{_evidence_ref(e)}`" for e in rec_entries)
+            others = []
+            for value in sorted(values.keys()):
+                if value == recommended:
+                    continue
+                ev = ", ".join(f"`{_evidence_ref(e)}`" for e in values[value])
+                others.append(f"`{value}` ({ev})")
+            other_text = "; ".join(others) if others else "none"
+            lines.append(
+                f"- [ ] **{c['signal']}** \u2192 recommend `{recommended}` "
+                f"(evidence: {rec_evidence}); record it in `AGENTS.md` and drop conflicting "
+                f"lines from the other files. Other candidates: {other_text}."
+            )
+    else:
+        lines.append("- No conflict signals detected; no adjudication needed.")
+
+    return lines
 
 
 def write_plan(args):

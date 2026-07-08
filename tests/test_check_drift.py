@@ -100,6 +100,63 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(len(d4), 1)
         self.assertIn("AGENTS.md is missing", d4[0]["message"])
 
+    def test_fix_dry_run_reports_but_writes_nothing(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("lots\n" * 200, encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        before = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix"], text=True, capture_output=True)
+
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("dry run", proc.stdout)
+        self.assertIn("would rewrite `CLAUDE.md`", proc.stdout)
+        self.assertIn("1 fixable", proc.stdout)
+        # Nothing was actually written.
+        self.assertEqual(before, (repo / "CLAUDE.md").read_text(encoding="utf-8"))
+
+    def test_fix_apply_rewrites_regrown_stub_to_minimal_form(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("lots\n" * 200, encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("rewrote `CLAUDE.md`", proc.stdout)
+        self.assertIn("1 fixed", proc.stdout)
+        rewritten = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertTrue(rewritten.startswith("@AGENTS.md"))
+        self.assertLessEqual(len(rewritten.encode("utf-8")), 600)
+        # A follow-up drift check now passes (D3 resolved).
+        recheck = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
+        self.assertEqual(recheck.returncode, 0, recheck.stdout + recheck.stderr)
+
+    def test_fix_reports_non_autofixable_drift_and_leaves_files_untouched(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        agents = CLEAN_AGENTS.replace("npm run test", "npm run nonexist")
+        (repo / "AGENTS.md").write_text(agents, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("needs manual attention", proc.stdout)
+        self.assertIn("D1", proc.stdout)
+        self.assertIn("nonexist", proc.stdout)
+        self.assertIn("1 need manual attention", proc.stdout)
+        # AGENTS.md is not modified by --fix for D1 command drift.
+        self.assertEqual(agents, (repo / "AGENTS.md").read_text(encoding="utf-8"))
+
     def _stub_pointers(self, repo):
         (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")

@@ -8,6 +8,11 @@ import re
 import sys
 from pathlib import Path
 
+# canonicalize.py lives in the same scripts/ dir; reuse its canonical stub
+# content/logic instead of duplicating it here.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import canonicalize  # noqa: E402
+
 
 DEFAULT_MAX_BYTES = 32768
 STUB_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", ".cursorrules", ".windsurfrules", ".github/copilot-instructions.md", "GEMINI.md", ".clinerules"]
@@ -294,15 +299,108 @@ def render(report):
     return "\n".join(lines) + "\n"
 
 
+def canonical_stub_content(root, rel_path):
+    """Return the minimal canonical stub content for a regrown stub path.
+
+    Reuses canonicalize.STUBS (path -> content) and the Cursor rule template so
+    the auto-fix rewrites drift back to exactly what canonicalize.py would write.
+    Returns None if the path is not a known auto-fixable tool stub.
+    """
+    for spec in canonicalize.STUBS.values():
+        if rel_path in spec["paths"]:
+            return spec["content"]
+    posix = Path(rel_path).as_posix()
+    if posix.startswith(".cursor/rules/"):
+        return canonicalize.CURSOR_RULE_STUB
+    return None
+
+
+def _finding_loc(f):
+    if "line" in f:
+        return f":{f['line']}"
+    if "path" in f:
+        return f" `{f.get('path')}`"
+    return ""
+
+
+def run_fix(root, max_bytes, apply, strict=False):
+    """Auto-repair ONLY the safe, mechanical subset of drift (D3 stub regrowth).
+
+    Dry run by default (writes nothing); with apply=True actually rewrites the
+    regrown tool stubs back to their minimal canonical import-stub form. Any drift
+    that is not safely auto-fixable is reported as "needs manual attention" and its
+    files are left untouched.
+    """
+    report = run_checks(root, max_bytes, strict)
+    d3 = [f for f in report["findings"] if f["check"] == "D3"]
+    manual = [f for f in report["findings"] if f["check"] != "D3" and f.get("level") in ("ERROR", "NOTICE")]
+
+    lines = ["# check_drift --fix (%s)" % ("apply" if apply else "dry run"), ""]
+    fixed = 0
+    skipped = []
+
+    lines.append("## Auto-fixable: D3 stub regrowth")
+    if not d3:
+        lines.append("- None.")
+    for f in d3:
+        rel_path = f["path"]
+        path = root / rel_path
+        new = canonical_stub_content(root, rel_path)
+        if new is None:
+            skipped.append(f)
+            continue
+        old = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        if old == new:
+            continue
+        fixed += 1
+        if apply:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(new, encoding="utf-8")
+            lines.append(f"- rewrote `{rel_path}` back to minimal canonical stub")
+        else:
+            lines.append(f"- would rewrite `{rel_path}` back to minimal canonical stub:")
+            lines.append("")
+            lines.append("```diff")
+            lines.append(canonicalize.unified_diff(Path(rel_path), old, new).rstrip("\n"))
+            lines.append("```")
+
+    # Stubs flagged as D3 but with no known canonical form fall back to manual.
+    manual = manual + skipped
+
+    lines.extend(["", "## Needs manual attention (not safely auto-fixable)"])
+    if manual:
+        for f in manual:
+            loc = _finding_loc(f)
+            lines.append(f"- needs manual attention: **{f['check']}**{loc} {f['message']} — {f.get('suggestion', '')}".rstrip(" —"))
+    else:
+        lines.append("- None.")
+
+    action = "fixed" if apply else "fixable"
+    lines.extend(["", f"Summary: {fixed} {action}, {len(manual)} need manual attention."])
+    text = "\n".join(lines) + "\n"
+
+    # Exit non-zero while drift remains. After --apply the D3 items are resolved,
+    # so only manual items keep it failing; in dry run the pending fixes also count.
+    remaining = len(manual) + (0 if apply else fixed)
+    return text, 0 if remaining == 0 else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Check AGENTS.md drift.")
     parser.add_argument("repo_root", nargs="?", default=".")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--fix", action="store_true", help="Auto-repair the safe subset (D3 stub regrowth); dry run unless --apply.")
+    parser.add_argument("--apply", action="store_true", help="With --fix, actually rewrite files instead of a dry run.")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     parser.add_argument("--min-score", type=int, default=None, help="Exit non-zero if the health score is below N (CI gating).")
     args = parser.parse_args(argv)
-    report = run_checks(Path(args.repo_root).resolve(), args.max_bytes, args.strict)
+    root = Path(args.repo_root).resolve()
+    if args.fix:
+        text, code = run_fix(root, args.max_bytes, args.apply, args.strict)
+        print(text, end="")
+        return code
+    report = run_checks(root, args.max_bytes, args.strict)
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
