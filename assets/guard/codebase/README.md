@@ -1,9 +1,14 @@
 # Harness guard — Codebase / generic pipeline wiring
 
-`ai-harness-doctor guard --provider codebase` installs a portable entrypoint at
-`.harness-ci/harness-guard.sh`. Unlike GitHub Actions or GitLab CI, internal
-Codebase / Bits pipelines vary between teams, so the guard ships a runner-agnostic
-shell script that you wire into your own pipeline.
+`ai-harness-doctor guard --provider codebase` installs two files:
+
+- a portable entrypoint at `.harness-ci/harness-guard.sh` (the actual guard logic), and
+- a ready-to-run Codebase pipeline at `.codebase/pipelines/harness-guard.yaml` that
+  delegates to that entrypoint (`change`/MR runs `drift`, `cron`/schedule runs `checkup`).
+
+Unlike GitHub Actions or GitLab CI, internal Codebase / Bits pipelines vary between
+teams, so the guard keeps its logic in a runner-agnostic shell script and provides the
+pipeline YAML as a starting point you can adapt.
 
 ## What it does
 
@@ -36,5 +41,23 @@ stage('Harness drift') {
 }
 ```
 
-Requires Node.js 20+ on the runner (for `npx -y ai-harness-doctor`). Set
-`AI_HARNESS_DOCTOR_SKIP=1` in the environment to bypass the guard for a run.
+**Codebase CI (auto-installed)** — `.codebase/pipelines/harness-guard.yaml` is written
+for you. It runs `drift` on MR (`change`) events and `checkup` on the `cron` schedule.
+Register the cron schedule under the repo's *Codebase CI → Schedules* (only pipelines
+whose YAML declares a `cron` trigger are eligible).
+
+## Runner requirements
+
+The runner must be able to resolve the `ai-harness-doctor` CLI. Public npm is usually
+**not reachable** from internal Codebase / Bits runners, so `npx -y ai-harness-doctor`
+will fail there. Do one of the following:
+
+- **Pre-install** the CLI on the runner image: `npm i -g ai-harness-doctor`, or
+- point npm at the **internal mirror** before running the guard:
+  `npm config set registry https://bnpm.byted.org`.
+
+Node.js 20+ is required in either case. `harness-guard.sh` prefers a locally installed
+`ai-harness-doctor` and only falls back to `npx` when it is not on `PATH`.
+
+Set `AI_HARNESS_DOCTOR_SKIP=1` in the environment to bypass the guard for a run
+(honoured by both `harness-guard.sh` and the local pre-commit hook).

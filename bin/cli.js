@@ -575,12 +575,13 @@ const GUARD_CI_FILES = {
   codebase: [
     ['.harness-ci/harness-guard.sh', 'codebase/harness-guard.sh'],
     ['.harness-ci/README.md', 'codebase/README.md'],
+    ['.codebase/pipelines/harness-guard.yaml', 'codebase/harness-guard.yaml'],
   ],
 };
 
 const GUARD_PROVIDER_NOTES = {
   gitlab: 'Add `include: { local: .gitlab/harness-ci.yml }` to your .gitlab-ci.yml to activate the drift/checkup jobs.',
-  codebase: 'Register `.harness-ci/harness-guard.sh` as a merge-request check and a scheduled pipeline step. See .harness-ci/README.md.',
+  codebase: 'Installed `.codebase/pipelines/harness-guard.yaml` (change=drift, cron=checkup) wired to `.harness-ci/harness-guard.sh`. Register the cron schedule in Codebase CI \u2192 Schedules; the runner must have `ai-harness-doctor` pre-installed or npm pointed at the internal mirror. See .harness-ci/README.md.',
 };
 
 function detectProvider(target) {
