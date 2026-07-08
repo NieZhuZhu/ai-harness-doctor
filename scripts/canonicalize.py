@@ -13,6 +13,19 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import scan  # noqa: E402
 import registry  # noqa: E402
+import semantic  # noqa: E402  # reuse package.json/Makefile/lockfile/node fact readers
+
+# Lockfile -> package-manager map, mirrored from check_drift.py / semantic.py so
+# the draft generator and the conflict-default recommender agree on which manager
+# a committed lockfile implies.
+LOCKFILE_MANAGERS = {
+    "package-lock.json": "npm",
+    "npm-shrinkwrap.json": "npm",
+    "pnpm-lock.yaml": "pnpm",
+    "yarn.lock": "yarn",
+    "bun.lockb": "bun",
+    "bun.lock": "bun",
+}
 
 
 def _build_stubs():
@@ -55,7 +68,7 @@ def unified_diff(path, old, new):
     ))
 
 
-def render_plan(report):
+def render_plan(report, root=None):
     lines = ["# Phase 1 — Treat Merge Plan Skeleton", ""]
     lines.append("## Inventory")
     lines.append("| File | Tool | Bytes | Lines |")
@@ -86,7 +99,7 @@ def render_plan(report):
         "- [ ] Run `canonicalize.py --write-stubs` to preview the downgrade diff.",
         "- [ ] Run `canonicalize.py --validate` to re-check the result.",
     ])
-    lines.extend(render_merge_suggestions(report))
+    lines.extend(render_merge_suggestions(report, root))
     return "\n".join(lines) + "\n"
 
 
@@ -106,15 +119,75 @@ def recommend_conflict_value(values):
     return best_value
 
 
+def _lockfile_backed_manager(root):
+    """Return ``(manager, lockfile)`` when exactly one lockfile-backed package
+    manager is committed, else ``(None, None)``.
+
+    A committed lockfile is stronger evidence than instruction-file text, so it
+    is the preferred tie-breaker for a ``package_manager`` conflict.
+    """
+    if root is None:
+        return None, None
+    found = []
+    for name, mgr in LOCKFILE_MANAGERS.items():
+        if (Path(root) / name).is_file():
+            found.append((mgr, name))
+    managers = sorted({m for m, _ in found})
+    if len(managers) == 1:
+        mgr = managers[0]
+        lockfile = next(name for m, name in found if m == mgr)
+        return mgr, lockfile
+    return None, None
+
+
+def _ground_node_version(root):
+    """Return ``(major_version, source)`` for the Node version the repo pins via
+    ``.nvmrc`` or ``package.json`` engines.node, else ``(None, None)``."""
+    if root is None:
+        return None, None
+    root = Path(root)
+    nvmrc = semantic.nvmrc_node_version(root)
+    if nvmrc is not None:
+        return nvmrc, ".nvmrc"
+    engines = semantic.engines_node_version(root)
+    if engines is not None:
+        return engines, "package.json engines.node"
+    return None, None
+
+
+def recommend_conflict_default(signal, values, root=None):
+    """Return ``(recommended_value, rationale)`` for a conflict signal.
+
+    Prefers a repository *fact* when one settles the conflict (a committed
+    lockfile for ``package_manager``, ``.nvmrc`` / engines.node for
+    ``node_version``); otherwise falls back to :func:`recommend_conflict_value`
+    (most-supported value, ties broken lexicographically) with a generic
+    rationale. Deterministic.
+    """
+    if signal == "package_manager":
+        mgr, lockfile = _lockfile_backed_manager(root)
+        if mgr is not None and mgr in values:
+            return mgr, f"backed by the committed lockfile `{lockfile}`"
+    if signal == "node_version":
+        version, source = _ground_node_version(root)
+        if version is not None:
+            target = f"node {version}"
+            if target in values:
+                return target, f"matches `{source}`"
+    return recommend_conflict_value(values), "most configuration files agree; ties broken alphabetically"
+
+
 def _evidence_ref(entry):
     return f"{entry['path']}:{entry['line']}"
 
 
-def render_merge_suggestions(report):
+def render_merge_suggestions(report, root=None):
     """Concrete, actionable semi-automatic merge suggestions derived from scan results.
 
     Deterministic: overlaps and conflicts are already ordered by scan.py, and the
-    recommended conflict value is chosen by a stable rule (see recommend_conflict_value).
+    recommended conflict value is chosen by a stable, fact-aware rule (see
+    recommend_conflict_default). When ``root`` is provided the recommendation
+    prefers repository facts (lockfile, .nvmrc/engines.node) over vote counts.
     """
     lines = ["", "## Merge suggestions (semi-automatic)",
              "Canonical file: `AGENTS.md` (single source of truth)."]
@@ -137,7 +210,7 @@ def render_merge_suggestions(report):
     if report["conflicts"]:
         for c in report["conflicts"]:
             values = c["values"]
-            recommended = recommend_conflict_value(values)
+            recommended, rationale = recommend_conflict_default(c["signal"], values, root)
             rec_entries = values[recommended]
             rec_evidence = ", ".join(f"`{_evidence_ref(e)}`" for e in rec_entries)
             others = []
@@ -149,7 +222,7 @@ def render_merge_suggestions(report):
             other_text = "; ".join(others) if others else "none"
             lines.append(
                 f"- [ ] **{c['signal']}** \u2192 recommend `{recommended}` "
-                f"(evidence: {rec_evidence}); record it in `AGENTS.md` and drop conflicting "
+                f"(evidence: {rec_evidence}; rationale: {rationale}); record it in `AGENTS.md` and drop conflicting "
                 f"lines from the other files. Other candidates: {other_text}."
             )
     else:
@@ -159,10 +232,160 @@ def render_merge_suggestions(report):
 
 
 def write_plan(args):
-    report = scan.scan_repo(args.repo_root, args.max_bytes)
-    content = render_plan(report)
+    root = Path(args.repo_root).resolve()
+    report = scan.scan_repo(root, args.max_bytes)
+    content = render_plan(report, root)
     if args.output:
         Path(args.output).write_text(content, encoding="utf-8")
+    else:
+        print(content, end="")
+
+
+DRAFT_BANNER = [
+    "<!-- Auto-drafted by `ai-harness-doctor canonicalize.py --draft`. -->",
+    "<!-- Lines tagged \"(inferred — confirm)\" are mechanical guesses derived from repository facts; -->",
+    "<!-- lines tagged \"(suggested default)\" are safe conventions to keep. Replace every TODO, review -->",
+    "<!-- each inference, and delete this banner before committing. -->",
+]
+
+# package.json scripts worth surfacing in a Build & test draft, in a stable order.
+DRAFT_SCRIPT_ORDER = ["test", "build", "lint", "typecheck", "dev", "start"]
+DRAFT_MAKE_ORDER = ["test", "build", "lint"]
+
+INFERRED = "(inferred — confirm)"
+SUGGESTED = "(suggested default)"
+
+
+def _detected_package_manager(root):
+    """Return ``(manager, rationale)`` for the repo's primary Node package manager.
+
+    A committed lockfile wins; otherwise a bare ``package.json`` implies npm.
+    Returns ``(None, None)`` for non-Node repositories.
+    """
+    mgr, lockfile = _lockfile_backed_manager(root)
+    if mgr is not None:
+        return mgr, f"from the committed `{lockfile}` lockfile"
+    if (root / "package.json").is_file():
+        return "npm", "`package.json` present (no lockfile; npm assumed)"
+    return None, None
+
+
+def _draft_build_lines(root):
+    """Build a fact-derived Build & test command block (list of markdown lines)."""
+    lines = []
+    pm, pm_why = _detected_package_manager(root)
+    scripts = semantic.package_scripts(root)
+    targets = semantic.make_targets(root)
+    commands = []
+    if pm is not None:
+        commands.append((f"{pm} install", f"{INFERRED} package manager {pm_why}"))
+        for name in DRAFT_SCRIPT_ORDER:
+            if scripts and name in scripts:
+                commands.append((f"{pm} run {name}", f"{INFERRED} from package.json \"scripts\""))
+    if targets:
+        for name in DRAFT_MAKE_ORDER:
+            if name in targets:
+                commands.append((f"make {name}", f"{INFERRED} from a Makefile target"))
+    lines.append("```bash")
+    if commands:
+        width = max(len(cmd) for cmd, _ in commands)
+        for cmd, note in commands:
+            lines.append(f"{cmd.ljust(width)}  # {note}")
+    else:
+        lines.append("# TODO: no build/test commands could be inferred; add the exact commands agents must run.")
+    lines.append("```")
+    return lines
+
+
+def _draft_conflict_lines(report, root):
+    """Suggested default resolutions for every scan conflict (list of markdown lines)."""
+    conflicts = report.get("conflicts", [])
+    if not conflicts:
+        return []
+    lines = ["", f"Conflicting signals were detected across config files; suggested defaults {INFERRED}:"]
+    for c in conflicts:
+        recommended, rationale = recommend_conflict_default(c["signal"], c["values"], root)
+        lines.append(f"- `{c['signal']}` \u2192 `{recommended}` ({rationale})")
+    return lines
+
+
+def render_draft(report, root):
+    """Render a starter AGENTS.md filled with deterministic, fact-derived content.
+
+    Every canonical section from assets/AGENTS.template.md is present. Inferred
+    lines are tagged ``(inferred — confirm)`` and safe conventions ``(suggested
+    default)`` so a human can quickly separate mechanical guesses from prose they
+    must still write. Read-only with respect to the scanned repository.
+    """
+    root = Path(root)
+    snapshot = report.get("project_snapshot", {})
+    stack = snapshot.get("tech_stack", [])
+    existing = snapshot.get("existing_files", {})
+    ci = existing.get("ci", [])
+    lint_format = existing.get("lint_format", [])
+    typecheck = existing.get("typecheck", [])
+    scripts = semantic.package_scripts(root)
+
+    lines = list(DRAFT_BANNER)
+
+    lines += ["", "# Project overview", ""]
+    lines.append("TODO: Describe what this repository does, its main subsystems, and boundaries an agent cannot infer from code alone.")
+    if stack:
+        stack_text = "; ".join(
+            f"{s['language']} ({', '.join(f'`{m}`' for m in s['markers'])})" for s in stack
+        )
+        lines += ["", f"- Detected tech stack: {stack_text}. {INFERRED}"]
+
+    lines += ["", "# Build & test", ""]
+    lines.append("TODO: List only the commands agents must run and any required preconditions.")
+    lines += [""]
+    lines += _draft_build_lines(root)
+    if ci:
+        ci_text = ", ".join(f"`{c}`" for c in ci)
+        lines += ["", f"- Continuous integration: {ci_text}. {INFERRED}"]
+    lines += _draft_conflict_lines(report, root)
+
+    lines += ["", "# Conventions", ""]
+    lines.append("TODO: Document repository-specific conventions not already enforced by a formatter, linter, type checker, or manifest.")
+    if lint_format:
+        lf_text = ", ".join(f"`{c}`" for c in lint_format)
+        lines += ["", f"- Lint/format tooling is configured via {lf_text}; follow it rather than hand-formatting. {INFERRED}"]
+    if typecheck:
+        tc_text = ", ".join(f"`{c}`" for c in typecheck)
+        lines += [f"- Type checking is configured via {tc_text}. {INFERRED}"]
+
+    lines += ["", "# Testing requirements", ""]
+    lines.append("TODO: Explain when tests are required, where fixtures live, and which test scopes are safe to run locally.")
+    if scripts and "test" in scripts:
+        pm, _ = _detected_package_manager(root)
+        pm = pm or "npm"
+        lines += ["", f"- A `test` script is defined; run `{pm} run test` before pushing. {INFERRED}"]
+
+    lines += ["", "# Safety", ""]
+    lines.append("TODO: Call out secrets, production resources, data boundaries, and destructive commands.")
+    lines += ["", f"- Never commit secrets, tokens, or credentials. {SUGGESTED}",
+              f"- Treat the repository as read-only unless a change is explicitly requested. {SUGGESTED}"]
+
+    lines += ["", "# Commit & PR", ""]
+    lines.append("TODO: Document commit message style and PR validation expectations.")
+    lines += ["", f"- Land changes through pull requests; do not push directly to the default branch. {SUGGESTED}"]
+    if ci:
+        ci_text = ", ".join(f"`{c}`" for c in ci)
+        lines.append(f"- Ensure CI is green before merging (workflows: {ci_text}). {INFERRED}")
+
+    return "\n".join(lines) + "\n"
+
+
+def write_draft(args):
+    root = Path(args.repo_root).resolve()
+    report = scan.scan_repo(root, args.max_bytes)
+    content = render_draft(report, root)
+    if args.output:
+        out = Path(args.output)
+        if out.exists() and not args.force:
+            raise SystemExit(f"Refusing to overwrite existing {out}. Use --force to overwrite.")
+        out.write_text(content, encoding="utf-8")
+        print(f"Wrote draft AGENTS.md to {out}")
     else:
         print(content, end="")
 
@@ -272,6 +495,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Canonicalization mechanics for AGENTS.md.")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
+    mode.add_argument("--draft", action="store_true",
+                      help="Auto-draft a starter AGENTS.md filled with fact-derived content (write with -o).")
     mode.add_argument("--write-stubs", action="store_true")
     mode.add_argument("--validate", action="store_true")
     parser.add_argument("repo_root", nargs="?", default=".")
@@ -285,6 +510,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.plan:
         write_plan(args)
+        return 0
+    if args.draft:
+        write_draft(args)
         return 0
     if args.write_stubs:
         write_stubs(args)

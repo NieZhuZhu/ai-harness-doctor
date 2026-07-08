@@ -66,9 +66,18 @@ First generate the merge-plan skeleton:
 python3 scripts/canonicalize.py --plan /path/to/repo -o merge-plan.md
 ```
 
-The plan skeleton lists the inventory, overlap clusters, conflict list, and a TODO decision checklist. It also appends a **"Merge suggestions (semi-automatic)"** section derived from the scan: for each overlap cluster it recommends keeping content in the canonical `AGENTS.md` and reducing the other files to stubs (checkbox list), and for each conflict signal it proposes ONE recommended value with the supporting `path:line` evidence as an actionable checkbox item. The recommendation is deterministic (most-supported value, ties broken lexicographically) — it is a suggestion for human review, not an automatic adjudication.
+The plan skeleton lists the inventory, overlap clusters, conflict list, and a TODO decision checklist. It also appends a **"Merge suggestions (semi-automatic)"** section derived from the scan: for each overlap cluster it recommends keeping content in the canonical `AGENTS.md` and reducing the other files to stubs (checkbox list), and for each conflict signal it proposes ONE recommended value with the supporting `path:line` evidence and a short rationale as an actionable checkbox item. The recommendation is deterministic and fact-aware: `package_manager` prefers the manager backed by the committed lockfile, `node_version` prefers the version pinned by `.nvmrc` / `engines.node`, and otherwise it falls back to the most-supported value (ties broken lexicographically) — it is a suggestion for human review, not an automatic adjudication.
 
-Then the agent manually writes the root `AGENTS.md`. The scripts do not perform semantic merging.
+Optionally auto-draft a starter `AGENTS.md` instead of writing it from a blank template:
+
+```bash
+python3 scripts/canonicalize.py /path/to/repo --draft                 # print to stdout
+python3 scripts/canonicalize.py /path/to/repo --draft -o AGENTS.md    # write (refuses to overwrite without --force)
+```
+
+The draft fills every canonical section with deterministic, fact-derived starter content reused from `scan.py` / `semantic.py` — detected tech stack, build/test commands from `package.json` scripts and `Makefile` targets, the lockfile-backed package manager, detected CI/lint/type-check tooling, and default resolutions for every reported conflict. Inferred lines are tagged `(inferred — confirm)` and safe conventions `(suggested default)`; a banner reminds the human to review and edit every line before committing. The draft is a starting point, **not** a substitute for the human authoring step below.
+
+Then the agent manually writes (or reviews and edits the draft into) the root `AGENTS.md`. The scripts do not perform semantic merging.
 
 After `AGENTS.md` exists, preview or apply tool-stub downgrades:
 
