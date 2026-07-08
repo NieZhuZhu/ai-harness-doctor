@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | 步骤 | CI 安全？ | 会写入？ | 说明 |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集、一次安全体检、一次缺失基建的缺口分析，以及一份技术栈项目快照（可选 `--agent-gaps` agent 推断挂钩）。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出；`--fail-on-gaps` 在出现 ERROR 级缺口时以 3 退出。 |
+| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集、一次安全体检、一次缺失基建的缺口分析，以及一份技术栈项目快照。在 markdown 模式下还会把完整 JSON 报告写入临时文件并打印其路径。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出；`--fail-on-gaps` 在出现 ERROR 级缺口时以 3 退出。 |
 | `plan` | ✅ | 可选输出文件 | 搭建合并计划；不会执行合并。 |
 | Write `AGENTS.md` | ❌ | ✅ | 由人或 agent 完成的语义步骤。 |
 | `validate` | ✅ | ❌ | 检查 canonical `AGENTS.md` 是否包含必需章节。 |
@@ -267,9 +267,9 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 - `maintenance_contract`：`AGENTS.md` 是否内嵌了维护契约。
 - `mcp_tools` / `has_permissions`：已配置的 MCP server，以及是否存在权限规则。
 
-过去作为静态 `G5`–`G8` 缺口的、依赖技术栈的判断（pre-commit guard、维护契约、MCP 配置、权限配置）现在都成为该快照中的事实，交给 agent 推断处理。
+过去作为静态 `G5`–`G8` 缺口的、依赖技术栈的判断（pre-commit guard、维护契约、MCP 配置、权限配置）现在都成为该快照中的事实，交给 agent 自行推断。
 
-**Agent 推断（`--agent-gaps CMD`）** 会把项目快照通过管道传给外部 agent/LLM 命令，让它推断与技术栈相关的缺口（如「这是个没有 CI 的 Go module」「一个没有 lint 配置的 Node 仓库」等）。快照和静态缺口会以 JSON（`{"project_snapshot": {...}, "gaps": [...]}`）写入命令的 **stdin**；命令必须打印一个 JSON 数组的缺口对象（或一个带 `agent_gaps` 列表的对象）。结果会加到 `agent_gaps` key 下。失败会被捕获为 `{"agent_gaps": {"error": "…"}}`，绝不会导致 scan 崩溃。
+**给 agent 用的完整 JSON 报告。** 在 markdown 模式下，`scan` 会把完整的机器可读报告（files、surface、security、`project_snapshot`、`gaps`）写入一个稳定的临时文件——`${TMPDIR}/harness-scan-<hash>.json`，其中 `<hash>` 由解析后的仓库路径派生——并在末尾追加一节 `## Full JSON report` 指向它。驱动工作流的 agent 可以读取该文件，基于快照和缺口做推断与修复规划，而无需再解析 markdown。`--json` 模式已经把完整报告打印到 stdout，因此不会写临时文件。用 `--no-report-file` 可跳过写入。
 
 | Flag | 用途 |
 |---|---|
@@ -278,7 +278,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | `--no-gaps` | 跳过缺口分析（不输出 `gaps` key）。 |
 | `--fail-on-gaps` | 存在任意 ERROR 级 harness 缺口时以 `3` 退出。 |
 | `--no-snapshot` | 跳过项目快照（不输出 `project_snapshot` key）。 |
-| `--agent-gaps CMD` | 把快照通过 stdin JSON 传给 `CMD`，并把它推断出的缺口加到 `agent_gaps` 下。 |
+| `--no-report-file` | 不把完整 JSON 报告写入临时文件（仅 markdown 模式）。 |
 
 `--json` returns（已有的 key 保持不变——向后兼容）:
 
@@ -313,7 +313,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 }
 ```
 
-`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。使用 `--no-snapshot` 时会省略 `project_snapshot`；`agent_gaps` 仅在提供 `--agent-gaps` 时出现。
+`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。
 
 </details>
 
