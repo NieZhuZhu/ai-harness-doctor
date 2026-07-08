@@ -1,0 +1,83 @@
+# ai-harness-doctor:guard
+# Self-bootstrapped guard: this repo dogfoods the drift guard it ships. Unlike
+# the template in assets/guard/harness-drift.yml (which runs the published
+# `npx -y ai-harness-doctor`), this copy runs the repo's OWN local CLI/scripts so
+# a change to scripts/ is gated by the very code being changed.
+name: harness-drift
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+      - pnpm-lock.yaml
+      - Makefile
+      - pyproject.toml
+      - AGENTS.md
+      - CLAUDE.md
+      - .cursorrules
+      - .windsurfrules
+      - .github/copilot-instructions.md
+      - GEMINI.md
+      - .clinerules
+      - .cursor/rules/**
+      - scripts/**
+      - bin/**
+      - .github/workflows/**
+  workflow_dispatch:
+
+# The PR-review step needs write access to post inline review comments.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Dogfood: run this repo's local drift guard against itself (strict mode
+      # promotes NOTICE findings to blocking so the repo holds itself to grade A).
+      - name: Check AI harness drift (self)
+        run: node bin/cli.js drift . --strict
+      # Surface drift findings as inline PR review comments. check_drift.py --json
+      # emits a machine-readable report; pr_review.py turns located findings into
+      # inline comments. It runs even when the gate above failed so reviewers see
+      # the annotations. Located findings (D1/D2/D6/D7) are line-based against
+      # AGENTS.md, so --default-path attaches them there. The whole step is made
+      # tolerant of a missing/limited token (e.g. fork PRs) so it can never fail
+      # the job solely because the review API is unavailable.
+      - name: Post drift findings as PR review comments
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/check_drift.py . --json > drift-report.json || true
+          python3 scripts/pr_review.py \
+            --report drift-report.json \
+            --default-path AGENTS.md \
+            --post \
+            --pr "${{ github.event.number }}" \
+            --commit "${{ github.sha }}" \
+            || echo "pr_review: posting skipped (token/API unavailable)"
+      # Eval health-score gate: fail CI when committed eval results drop below the
+      # threshold. Kept soft (guarded by the file existing) so this repo is not
+      # blocked before an eval baseline is committed. Point RESULTS at a results
+      # JSON produced by eval_run.py once you commit one.
+      - name: Eval health-score gate
+        if: ${{ always() }}
+        run: |
+          RESULTS="benchmark/self-eval/results-after-graded.json"
+          if [ -f "$RESULTS" ]; then
+            python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
+          else
+            echo "No committed eval results at $RESULTS; skipping eval gate."
+            echo "Commit an eval results JSON and set --fail-under to enable it."
+          fi

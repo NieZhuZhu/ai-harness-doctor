@@ -131,8 +131,10 @@ Checks:
 - D4: `AGENTS.md` size.
 - D5: nested `AGENTS.md` inventory, informational and non-blocking.
 - D6: fact drift, cross-validating claims declared in `AGENTS.md` against repo ground truth — the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the lockfile that actually exists: `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent.
+- D7: Markdown-link drift, checking whether repo-relative Markdown link targets (`[text](path)`) in `AGENTS.md` still exist. Complements D2 (which only probes backtick-quoted tokens); URLs, anchors, and out-of-repo targets are ignored, so it never probes outside the repo.
+- D8: competing lockfiles, flagging when lockfiles for more than one package manager are committed together (e.g. both `package-lock.json` and `pnpm-lock.yaml`) so the intended manager is ambiguous. Reported for manual attention — the tool never guesses which lockfile to delete.
 
-All findings (D1..D6) roll up into a 0-100 **health score** with a letter grade (A/B/C/D/F), rendered as a `## Health score` section and exposed via the `score`/`grade` keys in `--json`. Use `--min-score N` to fail CI when the score drops below `N`; this gate is independent of `--strict` and both can apply together.
+All findings (D1..D8) roll up into a 0-100 **health score** with a letter grade (A/B/C/D/F), rendered as a `## Health score` section and exposed via the `score`/`grade` keys in `--json`. Use `--min-score N` to fail CI when the score drops below `N`; this gate is independent of `--strict` and both can apply together.
 
 #### Semi-automatic repair: `--fix`
 
@@ -145,7 +147,7 @@ python3 scripts/check_drift.py /path/to/repo --fix --apply  # actually rewrites 
 
 - Default `--fix` is a dry run: it prints a unified diff of what WOULD be rewritten and changes no files.
 - `--fix --apply` rewrites the regrown stub files in place.
-- Drift that is NOT safely auto-fixable (D1 command drift, D2 path drift, D4 size, and any other semantic drift) is never modified; instead it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
+- Drift that is NOT safely auto-fixable (D1 command drift, D2 path drift, D4 size, D7 Markdown-link drift, D8 competing lockfiles, and any other semantic drift) is never modified; instead it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
 - A summary line reports `N fixed/fixable, M need manual attention`. The command exits non-zero while any drift remains (pending fixes in dry run, or unresolved manual items after `--apply`).
 
 ### Outputs
@@ -167,6 +169,8 @@ The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (
 - `gitlab` → includable `.gitlab/harness-ci.yml` (add `include: { local: .gitlab/harness-ci.yml }`)
 - `codebase` → portable `.harness-ci/harness-guard.sh` + wiring `README.md` for internal Codebase / Bits / any runner
 Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cleans up all providers' CI files); Claude hooks are not integrated.
+
+> **Self-bootstrap:** this repository dogfoods its own guard. `.github/workflows/harness-drift.yml` and `harness-checkup.yml` are installed here too, adapted from the `assets/guard/` templates to run the repo's **local** CLI/scripts (`node bin/cli.js drift . --strict`) instead of the published `npx -y ai-harness-doctor`, so a change to `scripts/` is gated by the very code being changed. The eval gate stays soft (only active when a committed results JSON exists) and the PR-review step tolerates a missing/limited token, keeping this repo's CI green.
 
 #### PR review comments and CI eval gate
 

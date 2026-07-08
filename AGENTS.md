@@ -9,7 +9,7 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
   - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo.
   - `semantic.py` — Phase 0 helper: compares AGENTS.md declarations (commands/paths/package manager/Node version) against code facts.
   - `canonicalize.py` — Phase 1 Treat: merge-plan skeleton with fact-aware conflict-default suggestions, `--draft` AGENTS.md auto-drafting, tool-stub downgrades, and validation.
-  - `check_drift.py` — Phase 2 Follow-up: drift guard (D1–D6), health score, and `--fix`.
+  - `check_drift.py` — Phase 2 Follow-up: drift guard (D1–D8), health score, and `--fix`.
   - `eval_run.py` — Phase 3 Efficacy: before/after + matrix eval runner and LLM-as-judge grading.
   - `pr_review.py` — Phase 2/3 CI helper: turns `check_drift.py`/`scan.py --json` findings into GitHub PR review comments (inline + summary); `--dry-run` prints the payload, `--post` posts via the GitHub REST API (stdlib only).
 - `bin/cli.js` — npm CLI, installer, and forwarding entry point; `bin/mcp-server.js` — MCP stdio server.
@@ -36,7 +36,7 @@ node bin/cli.js help
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
 - Public documentation is kept in synchronized English, Simplified Chinese, and Japanese READMEs; code comments are English; `assets/AGENTS.template.md` is English. Beyond the shared heading skeleton, the three READMEs must also keep byte-identical fenced code blocks (commands, JSON, and their inline `#` comments included) and the same number of table rows and links. Prose is translated; code blocks, table structure, and link targets are not. `scripts/check_readme_sync.py` (run via `npm run lint:docs`) enforces all of this, so any change to one README must be mirrored in the other two.
-- Guard suite templates live under `assets/guard/`; keep the pre-commit, PR gate, weekly checkup, and maintenance contract templates synchronized with `bin/cli.js` behavior.
+- Guard suite templates live under `assets/guard/`; keep the pre-commit, PR gate, weekly checkup, and maintenance contract templates synchronized with `bin/cli.js` behavior. This repo self-bootstraps its own guard: `.github/workflows/harness-drift.yml` and `harness-checkup.yml` are adapted copies that run the local CLI (`node bin/cli.js drift . --strict`) against this repo; keep them in step with the templates.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
 
 # Testing requirements
