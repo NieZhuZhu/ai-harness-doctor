@@ -72,6 +72,148 @@ def regex_passes(pattern, answer):
     return re.search(pattern or "", answer or "") is not None
 
 
+def _as_pattern_list(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return []
+
+
+_STOPWORDS = {
+    "the", "and", "for", "with", "that", "this", "must", "should", "will", "have",
+    "from", "into", "your", "when", "then", "than", "each", "also", "such", "which",
+    "list", "explain", "describe", "mention", "answer", "correct", "correctly",
+    "include", "including", "provide", "using", "used", "note", "about", "these",
+    "there", "their", "does", "what", "where", "some", "only", "make", "sure",
+}
+
+
+def rubric_keywords(rubric):
+    """Extract salient terms an answer should contain from a free-text rubric.
+
+    Prefers explicit signals — backtick-quoted `code`, "double" / 'single' quoted
+    phrases — and otherwise falls back to distinctive words (>= 4 chars, minus a
+    small stopword list). Deterministic: no LLM required.
+    """
+    rubric = rubric or ""
+    keywords = []
+    seen = set()
+
+    def _add(term):
+        term = term.strip().lower()
+        if term and term not in seen and term not in _STOPWORDS:
+            seen.add(term)
+            keywords.append(term)
+
+    for m in re.findall(r"`([^`]+)`", rubric):
+        _add(m)
+    for m in re.findall(r"\"([^\"]+)\"|'([^']+)'", rubric):
+        _add(m[0] or m[1])
+    if not keywords:
+        for word in re.findall(r"[A-Za-z0-9_][A-Za-z0-9_.-]{3,}", rubric):
+            _add(word)
+    return keywords
+
+
+def builtin_judge(answer, check):
+    """Deterministic, dependency-free default judge.
+
+    Grades ``answer`` against the task's ``check`` without any external command:
+      - ``expect``: regex pattern(s) that MUST all match (case-insensitive).
+      - ``reject``: regex pattern(s) that must NOT match.
+      - otherwise: keyword coverage derived from the ``rubric`` / ``criteria`` text,
+        passing when coverage >= ``min_score`` (default 0.5).
+    Returns the same verdict shape as the external judge, tagged ``judge="builtin"``.
+    """
+    answer = answer or ""
+    expect = _as_pattern_list(check.get("expect"))
+    reject = _as_pattern_list(check.get("reject"))
+    rubric = check.get("rubric") or check.get("criteria") or ""
+    try:
+        threshold = float(check.get("min_score", 0.5))
+    except (TypeError, ValueError):
+        threshold = 0.5
+
+    criteria = []  # (label, satisfied)
+    for pat in expect:
+        criteria.append((f"expect:{pat}", re.search(pat, answer, re.I) is not None))
+    for pat in reject:
+        criteria.append((f"reject:{pat}", re.search(pat, answer, re.I) is None))
+
+    keyword_mode = not expect and not reject
+    if keyword_mode:
+        for kw in rubric_keywords(rubric):
+            criteria.append((f"keyword:{kw}", kw in answer.lower()))
+
+    if not criteria:
+        return {
+            "passed": False, "score": 0.0, "judge": "builtin",
+            "reason": "builtin judge needs `expect`/`reject`/`rubric` to grade; none provided",
+        }
+
+    satisfied = sum(1 for _, ok in criteria if ok)
+    total = len(criteria)
+    score = round(satisfied / total, 4)
+    if keyword_mode:
+        passed = score >= threshold
+    else:
+        passed = all(ok for _, ok in criteria)
+    unmet = [label for label, ok in criteria if not ok]
+    reason = f"builtin judge: {satisfied}/{total} criteria satisfied"
+    if unmet:
+        reason += "; unmet: " + ", ".join(unmet[:5])
+    return {"passed": bool(passed), "score": score, "reason": reason, "judge": "builtin"}
+
+
+HEALTH_GRADES = [(90, "A"), (80, "B"), (70, "C"), (60, "D"), (0, "F")]
+
+
+def health_grade(score):
+    for threshold, letter in HEALTH_GRADES:
+        if score >= threshold:
+            return letter
+    return "F"
+
+
+def _collect_records(data):
+    """Return the flat list of task records from a run-tasks or matrix result dict."""
+    if not isinstance(data, dict):
+        return []
+    if isinstance(data.get("agents"), dict):
+        records = []
+        for agent in data["agents"].values():
+            if isinstance(agent, dict):
+                records.extend(agent.get("tasks", []) or [])
+        return records
+    return data.get("tasks", []) or []
+
+
+def compute_health(data):
+    """Compute an automated efficacy health score (0-100) with a letter grade.
+
+    Works on both a single ``run`` result (``{"tasks": [...]}``) and a ``matrix``
+    result (``{"agents": {...}}``); the score is the pass rate across every task
+    record. Timeouts count as failures.
+    """
+    records = _collect_records(data)
+    total = len(records)
+    passed = sum(1 for r in records if r.get("passed"))
+    timed_out = sum(1 for r in records if r.get("timed_out"))
+    pass_rate = (passed / total) if total else 0.0
+    score = round(100 * pass_rate)
+    return {
+        "score": score,
+        "grade": health_grade(score),
+        "passed": passed,
+        "total": total,
+        "timed_out": timed_out,
+        "pass_rate": round(pass_rate, 4),
+    }
+
+
 def parse_judge_output(stdout):
     """Parse an LLM-as-judge verdict.
 
@@ -143,12 +285,17 @@ def run_judge(judge_cmd, answer, rubric, workdir, timeout):
             pass
 
 
-def grade_answer(task, answer, workdir, judge_cmd=None):
+def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True):
     """Grade an answer for a task, returning ``(passed, judge_info)``.
 
     Supports ``regex``, ``command`` and ``judge`` check types. ``judge_info`` is
     ``None`` for non-judge checks. Timeouts count as a failure (no exception is
     propagated) so a matrix run keeps going.
+
+    For ``judge`` checks an external ``--judge-cmd`` takes priority; when none is
+    supplied the deterministic built-in judge (:func:`builtin_judge`) grades the
+    answer so judge checks work out of the box. Pass ``default_judge=False`` to
+    restore the legacy "requires --judge-cmd" behavior.
     """
     check = task.get("check", {})
     ctype = check.get("type")
@@ -162,14 +309,17 @@ def grade_answer(task, answer, workdir, judge_cmd=None):
         except subprocess.TimeoutExpired:
             return False, None
     if ctype == "judge":
-        if not judge_cmd:
-            return False, {"passed": False, "score": None, "reason": "no --judge-cmd provided"}
         rubric = check.get("rubric") or check.get("criteria") or ""
-        try:
-            verdict = run_judge(judge_cmd, answer, rubric, workdir, timeout)
-        except subprocess.TimeoutExpired:
-            return False, {"passed": False, "score": None, "reason": "judge timed out"}
-        return verdict["passed"], verdict
+        if judge_cmd:
+            try:
+                verdict = run_judge(judge_cmd, answer, rubric, workdir, timeout)
+            except subprocess.TimeoutExpired:
+                return False, {"passed": False, "score": None, "reason": "judge timed out"}
+            return verdict["passed"], verdict
+        if default_judge:
+            verdict = builtin_judge(answer, check)
+            return verdict["passed"], verdict
+        return False, {"passed": False, "score": None, "reason": "no --judge-cmd provided"}
     return False, None
 
 
@@ -199,7 +349,7 @@ def run_tasks(args):
             continue
         duration = round(time.time() - start, 3)
         answer = extract_answer(proc.stdout)
-        passed, judge_info = grade_answer(task, answer, workdir, args.judge_cmd)
+        passed, judge_info = grade_answer(task, answer, workdir, args.judge_cmd, not args.no_default_judge)
         record = {
             "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
             "exit_code": proc.returncode, "stdout": proc.stdout, "answer": answer, "stderr": proc.stderr,
@@ -208,9 +358,16 @@ def run_tasks(args):
         if judge_info is not None:
             record["judge"] = judge_info
         results["tasks"].append(record)
+    results["health"] = compute_health(results)
     output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
+    health = results["health"]
+    print(f"health score: {health['score']}/100 (grade {health['grade']}), "
+          f"{health['passed']}/{health['total']} tasks passed")
+    if args.fail_under is not None and health["score"] < args.fail_under:
+        print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+        return 5
     return 0
 
 
@@ -292,7 +449,7 @@ def load_matrix(args):
     return runners
 
 
-def run_task_with_runner(runner, task, workdir, judge_cmd):
+def run_task_with_runner(runner, task, workdir, judge_cmd, default_judge=True):
     """Run a single task under a single runner and return a graded record."""
     prompt = task["prompt"]
     command = runner.replace("{prompt}", shlex.quote(prompt))
@@ -308,7 +465,7 @@ def run_task_with_runner(runner, task, workdir, judge_cmd):
         }
     duration = round(time.time() - start, 3)
     answer = extract_answer(proc.stdout)
-    passed, judge_info = grade_answer(task, answer, workdir, judge_cmd)
+    passed, judge_info = grade_answer(task, answer, workdir, judge_cmd, default_judge)
     record = {
         "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
         "exit_code": proc.returncode, "answer": answer, "usage": maybe_usage(proc.stdout),
@@ -358,7 +515,7 @@ def run_matrix(args, runners):
         if binary and shutil.which(binary) is None:
             print(manual_protocol(binary, args.tasks), file=sys.stderr)
             return 127
-        agent_records[name] = [run_task_with_runner(runner, task, workdir, args.judge_cmd) for task in tasks]
+        agent_records[name] = [run_task_with_runner(runner, task, workdir, args.judge_cmd, not args.no_default_judge) for task in tasks]
     summary = {}
     for name, recs in agent_records.items():
         total = len(recs)
@@ -369,12 +526,36 @@ def run_matrix(args, runners):
         "agents": {name: {"runner": runners[name], "tasks": recs, "summary": summary[name]} for name, recs in agent_records.items()},
         "summary": summary,
     }
+    matrix["health"] = compute_health(matrix)
     json_out = Path(args.matrix_json) if args.matrix_json else Path("matrix-results.json")
     json_out.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
     report_out = Path(args.matrix_report) if args.matrix_report else (Path(args.output) if args.output else Path("matrix-report.md"))
     report_out.write_text(render_matrix(tasks, agent_records, runners), encoding="utf-8")
     print(f"wrote {json_out}")
     print(f"wrote {report_out}")
+    health = matrix["health"]
+    print(f"health score: {health['score']}/100 (grade {health['grade']}), "
+          f"{health['passed']}/{health['total']} tasks passed")
+    if args.fail_under is not None and health["score"] < args.fail_under:
+        print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+        return 5
+    return 0
+
+
+def score_report(args):
+    """One-click health score from an existing results / matrix JSON file."""
+    data = json.loads(Path(args.score).read_text(encoding="utf-8"))
+    health = data.get("health") if isinstance(data, dict) else None
+    if not isinstance(health, dict) or "score" not in health:
+        health = compute_health(data)
+    if args.as_json:
+        print(json.dumps(health, ensure_ascii=False, indent=2))
+    else:
+        print(f"Health score: {health['score']}/100 (grade {health['grade']})")
+        print(f"{health['passed']}/{health['total']} tasks passed; {health.get('timed_out', 0)} timed out")
+    if args.fail_under is not None and health["score"] < args.fail_under:
+        print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+        return 5
     return 0
 
 
@@ -392,7 +573,15 @@ def main(argv=None):
     parser.add_argument("--runner-cmd", dest="runner_cmd", action="append", default=[], help="Repeatable NAME=CMD runner for the eval matrix.")
     parser.add_argument("--matrix-report", dest="matrix_report", help="Output path for the markdown matrix report.")
     parser.add_argument("--matrix-json", dest="matrix_json", help="Output path for the matrix JSON results.")
+    parser.add_argument("--no-default-judge", dest="no_default_judge", action="store_true",
+                        help="Disable the built-in judge; judge checks then require --judge-cmd (legacy behavior).")
+    parser.add_argument("--score", help="Print an automated health score for an existing results / matrix JSON file.")
+    parser.add_argument("--fail-under", dest="fail_under", type=float, default=None,
+                        help="Exit 5 when the health score is below this value (0-100).")
+    parser.add_argument("--json", dest="as_json", action="store_true", help="Emit machine-readable JSON (used by --score).")
     args = parser.parse_args(argv)
+    if args.score:
+        return score_report(args)
     if args.compare:
         return compare(args)
     if args.regrade:

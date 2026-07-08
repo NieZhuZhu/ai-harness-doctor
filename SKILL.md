@@ -246,6 +246,21 @@ python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/
   --judge-cmd "python3 my_judge.py"
 ```
 
+An external `--judge-cmd` always takes priority. When it is not supplied, `judge` checks are graded by a **built-in default judge** — deterministic and dependency-free — that emits a verdict `{passed, score, reason, judge: "builtin"}`. It grades in priority order: `check.expect` (a list of regex patterns that must ALL match, case-insensitive), then `check.reject` (a list of regex patterns that must NOT match), otherwise keyword coverage derived from the free-text `check.rubric` / `check.criteria`, passing when coverage `>= check.min_score` (default `0.5`). Pass `--no-default-judge` to restore the legacy behavior where `judge` checks require an external `--judge-cmd`.
+
+### Health score
+
+Every eval computes a one-click efficacy **health score** = pass rate across all task records, expressed `0-100` with an A-F letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F). It is embedded as a `health` key in both single-run results (`{"tasks": ...}`) and matrix results (`{"agents": ...}`), and printed as a summary line: `health score: N/100 (grade X), P/T tasks passed`. Timeouts count as failures.
+
+```bash
+# Print the health score for an existing results/matrix JSON
+python3 scripts/eval_run.py --score results-after.json        # human-readable
+python3 scripts/eval_run.py --score results-after.json --json  # machine-readable
+
+# CI gate: exit code 5 when the health score is below the threshold
+python3 scripts/eval_run.py --tasks tasks.json --workdir /path/to/repo -o results.json --fail-under 80
+```
+
 ## MCP server
 
 The core read-only capabilities are also exposed as an MCP (Model Context Protocol) stdio server so agents can call them as tools:

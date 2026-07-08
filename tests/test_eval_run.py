@@ -256,5 +256,97 @@ class EvalRunTests(unittest.TestCase):
             self.assertIn("answer", record)
 
 
+class BuiltinJudgeTests(unittest.TestCase):
+    def test_expect_all_must_match(self):
+        v = eval_run.builtin_judge("has canonical AGENTS.md", {"expect": ["canonical", "AGENTS.md"]})
+        self.assertTrue(v["passed"])
+        self.assertEqual(v["score"], 1.0)
+        self.assertEqual(v["judge"], "builtin")
+
+    def test_expect_missing_one_fails(self):
+        v = eval_run.builtin_judge("has canonical only", {"expect": ["canonical", "drift"]})
+        self.assertFalse(v["passed"])
+        self.assertEqual(v["score"], 0.5)
+
+    def test_reject_pattern_present_fails(self):
+        v = eval_run.builtin_judge("this has a TODO", {"expect": ["this"], "reject": ["TODO"]})
+        self.assertFalse(v["passed"])
+
+    def test_rubric_keyword_coverage(self):
+        check = {"rubric": "must mention `AGENTS.md` and `drift`"}
+        good = eval_run.builtin_judge("AGENTS.md prevents drift", check)
+        self.assertTrue(good["passed"])
+        bad = eval_run.builtin_judge("nothing relevant here", check)
+        self.assertFalse(bad["passed"])
+
+    def test_no_criteria_is_unpassable(self):
+        v = eval_run.builtin_judge("anything", {"type": "judge"})
+        self.assertFalse(v["passed"])
+        self.assertIn("needs", v["reason"])
+
+    def test_grade_answer_uses_builtin_judge_without_cmd(self):
+        task = {"id": "j", "check": {"type": "judge", "expect": ["ok"]}}
+        passed, info = eval_run.grade_answer(task, "ok answer", ".", None)
+        self.assertTrue(passed)
+        self.assertEqual(info["judge"], "builtin")
+
+    def test_grade_answer_legacy_no_default_judge(self):
+        task = {"id": "j", "check": {"type": "judge", "expect": ["ok"]}}
+        passed, info = eval_run.grade_answer(task, "ok answer", ".", None, default_judge=False)
+        self.assertFalse(passed)
+        self.assertIn("no --judge-cmd", info["reason"])
+
+
+class HealthScoreTests(unittest.TestCase):
+    def test_compute_health_from_tasks(self):
+        data = {"tasks": [{"passed": True}, {"passed": False}, {"passed": True}, {"passed": True}]}
+        health = eval_run.compute_health(data)
+        self.assertEqual(health["passed"], 3)
+        self.assertEqual(health["total"], 4)
+        self.assertEqual(health["score"], 75)
+        self.assertEqual(health["grade"], "C")
+
+    def test_compute_health_from_matrix(self):
+        data = {"agents": {"a": {"tasks": [{"passed": True}, {"passed": True}]},
+                           "b": {"tasks": [{"passed": False}, {"passed": True}]}}}
+        health = eval_run.compute_health(data)
+        self.assertEqual(health["total"], 4)
+        self.assertEqual(health["score"], 75)
+
+    def test_grade_boundaries(self):
+        self.assertEqual(eval_run.health_grade(90), "A")
+        self.assertEqual(eval_run.health_grade(89), "B")
+        self.assertEqual(eval_run.health_grade(0), "F")
+
+    def test_run_tasks_emits_health_and_fail_under_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(json.dumps([
+                {"id": "j", "prompt": "x", "check": {"type": "judge", "expect": ["never-there"]}, "timeout_s": 10},
+            ]), encoding="utf-8")
+            output = Path(td) / "results.json"
+            runner = f"{sys.executable} -c \"print('unrelated')\""
+            base = [sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "h", "--workdir", str(workdir), "--runner", runner, "-o", str(output)]
+            proc = subprocess.run(base, text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            self.assertIn("health", data)
+            self.assertEqual(data["health"]["score"], 0)
+            gated = subprocess.run(base + ["--fail-under", "50"], text=True, capture_output=True)
+            self.assertEqual(gated.returncode, 5, gated.stdout)
+
+    def test_score_subcommand_reads_existing_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            results = Path(td) / "r.json"
+            results.write_text(json.dumps({"tasks": [{"passed": True}, {"passed": True}]}), encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(EVAL), "--score", str(results), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(json.loads(proc.stdout)["score"], 100)
+            gated = subprocess.run([sys.executable, str(EVAL), "--score", str(results), "--fail-under", "100"], text=True, capture_output=True)
+            self.assertEqual(gated.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -186,7 +186,7 @@ Defense in depth、強い順です。
 | 0 — 健診 / scan | `scripts/scan.py` | 人間向けまたは JSON の health report | migration scope について user confirmation が得られたところで停止。 |
 | 1 — 治療 / canonicalize | `scripts/canonicalize.py --plan`, `--write-stubs`, `--validate` | Merge plan、正本 `AGENTS.md`、minimal stubs | すべての conflict が人間に裁定されるまで停止。 |
 | 2 — 経過観察 / drift guard | `scripts/check_drift.py` | Drift report と CI/pre-commit exit codes | checks が pass するか、修復アドバイスが出たところで停止。 |
-| 3 — 効果検証 | `scripts/eval_run.py` | Before/after JSON と Markdown report | metrics が出たところで停止。 |
+| 3 — 効果検証 | `scripts/eval_run.py` | Before/after JSON と Markdown report、加えて 0–100 の `health` スコア（A–F グレード） | metrics が出たところで停止。 |
 
 ## Command reference
 
@@ -433,7 +433,11 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
   --matrix-report matrix-report.md --matrix-json matrix-results.json
 ```
 
-**LLM-as-judge check.** task check は、regex では表現できない grading のために `{ "type": "judge", "rubric": "..." }` を使えます。grading は `--judge-cmd "CMD_TEMPLATE"` に委譲されます。judge は env `JUDGE_ANSWER`、`JUDGE_RUBRIC`、`JUDGE_INPUT`（一時 JSON `{answer, rubric}` へのパス）を受け取り、template placeholders `{answer}`/`{rubric}`/`{input}` が置換されます。judge は `{"passed": bool, "score": number, "reason": "..."}` を出力する必要があります。`passed` が省略された場合、`score >= 0.5` を pass とみなします。offline の決定的な judge は CI に適しています。
+**LLM-as-judge check.** task check は、regex では表現できない grading のために `{ "type": "judge", "rubric": "..." }` を使えます。`--judge-cmd "CMD_TEMPLATE"` が指定されている場合はそれが優先されます：judge は env `JUDGE_ANSWER`、`JUDGE_RUBRIC`、`JUDGE_INPUT`（一時 JSON `{answer, rubric}` へのパス）を受け取り、template placeholders `{answer}`/`{rubric}`/`{input}` が置換されます。judge は `{"passed": bool, "score": number, "reason": "..."}` を出力する必要があります。`passed` が省略された場合、`score >= 0.5` を pass とみなします。offline の決定的な judge は CI に適しています。
+
+**組み込みのデフォルト judge。** `--judge-cmd` が指定されない場合、`judge` check は決定的で依存関係のない組み込み judge によって採点されます（判定は `{passed, score, reason, judge:"builtin"}`）。優先順位で採点します：`check.expect` —— すべて一致（大文字小文字を区別しない）する必要がある regex のリスト；`check.reject` —— 一致してはならない regex のリスト；それ以外はフリーテキストの `check.rubric` / `check.criteria` から導出したキーワード網羅率で、網羅率が `>= check.min_score`（デフォルト `0.5`）のとき pass となります。`--no-default-judge` を渡すと、`judge` check が外部の `--judge-cmd` を必要とする従来の挙動に戻ります。
+
+**Health score.** すべての eval は、ワンクリックの効果 health score = すべての task record にわたる pass rate も計算します。`0–100` で表され、A–F の letter grade（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F）が付きます。これは single-run results（`{"tasks":...}`）と matrix results（`{"agents":...}`）の両方に `health` key として埋め込まれ、要約行（`health score: N/100 (grade X), P/T tasks passed`）として表示されます。timeout は failure として数えられます。`--score PATH` は既存の results/matrix JSON の health score を表示し（`--json` で機械可読出力）、`--fail-under N` は health score が `N` を下回ると exit code `5` で終了します（CI gate）。
 
 </details>
 
