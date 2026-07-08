@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, and a gap analysis of missing harness infrastructure. `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps. |
+| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, a gap analysis of missing harness infrastructure, and a tech-stack project snapshot (with an optional `--agent-gaps` agent-inference hook). `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -257,7 +257,19 @@ It also inventories the **extended harness surface** — MCP servers, subagents,
 
 It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-severity finding is present, which is handy as a CI gate.
 
-It also runs a **gap analysis** that diffs the repo against a harness completeness checklist and reports the infrastructure it is *missing* (not just what exists): a canonical root `AGENTS.md`, the required `AGENTS.md` sections (kept in sync with `assets/AGENTS.template.md`), tool stubs that should be minimal pointers to `AGENTS.md`, the drift-guard / weekly-checkup CI workflows, a pre-commit drift guard, the maintenance contract, and MCP / permission configuration. Each gap carries a `level` (`ERROR`/`WARN`/`NOTICE`), an `item`, a `message`, and an actionable `suggestion`. With `--fail-on-gaps` it exits `3` when any ERROR-level gap (e.g. a missing root `AGENTS.md`) is present.
+It also runs a **gap analysis** that diffs the repo against a harness completeness checklist and reports mandatory infrastructure it is *missing* (not just what exists). These static checks are limited to the pieces every healthy harness needs regardless of stack: a canonical root `AGENTS.md` (`G1`), the required `AGENTS.md` sections kept in sync with `assets/AGENTS.template.md` (`G2`), tool stubs that should be minimal pointers to `AGENTS.md` (`G3`), and the drift-guard / weekly-checkup CI workflows (`G4`). Each gap carries a `level` (`ERROR`/`WARN`/`NOTICE`), an `item`, a `message`, and an actionable `suggestion`. With `--fail-on-gaps` it exits `3` when any ERROR-level gap (e.g. a missing root `AGENTS.md`) is present.
+
+For everything that depends on the project's tech stack (rather than being universally required), scan emits a **project snapshot** — a compact, factual description of the repo that an agent/LLM can reason over:
+
+- `tech_stack`: languages / ecosystems detected from their manifests (`go.mod`, `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `pom.xml`, `Gemfile`, `composer.json`, …).
+- `existing_files`: CI, git-hook, lint/format, and typecheck config files present, plus whether a drift-guard pre-commit hook is installed.
+- `agents_sections`: the H1 sections currently in `AGENTS.md`.
+- `maintenance_contract`: whether `AGENTS.md` embeds the maintenance contract.
+- `mcp_tools` / `has_permissions`: configured MCP servers and whether permission rules exist.
+
+The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-commit guard, maintenance contract, MCP config, permission config) are now facts in this snapshot and left to agent inference.
+
+**Agent inference (`--agent-gaps CMD`)** pipes the project snapshot to an external agent/LLM command so it can infer stack-specific gaps ("this is a Go module with no CI", "a Node repo without a lint config", …). The snapshot and static gaps are sent to the command's **stdin** as JSON (`{"project_snapshot": {...}, "gaps": [...]}`); the command must print a JSON array of gap objects (or an object with an `agent_gaps` list). Results are added under the `agent_gaps` key. Failures are captured as `{"agent_gaps": {"error": "…"}}` and never crash the scan.
 
 | Flag | Purpose |
 |---|---|
@@ -265,6 +277,8 @@ It also runs a **gap analysis** that diffs the repo against a harness completene
 | `--fail-on-security` | Exit `2` when any HIGH-severity security finding is present. |
 | `--no-gaps` | Skip the missing / gap analysis (drops the `gaps` key). |
 | `--fail-on-gaps` | Exit `3` when any ERROR-level harness gap is present. |
+| `--no-snapshot` | Skip the project snapshot (drops the `project_snapshot` key). |
+| `--agent-gaps CMD` | Pipe the snapshot to `CMD` (stdin JSON) and add its inferred gaps under `agent_gaps`. |
 
 `--json` returns (existing keys are unchanged — backward compatible):
 
@@ -285,13 +299,21 @@ It also runs a **gap analysis** that diffs the repo against a harness completene
   "security": [
     { "level": "HIGH", "category": "secret", "path": "", "message": "" }
   ],
+  "project_snapshot": {
+    "tech_stack": [ { "language": "Go", "markers": ["go.mod"] } ],
+    "existing_files": { "ci": [], "hooks": [], "lint_format": [], "typecheck": [], "drift_guard_hook": null },
+    "agents_sections": [],
+    "maintenance_contract": false,
+    "mcp_tools": [],
+    "has_permissions": false
+  },
   "gaps": [
     { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
   ]
 }
 ```
 
-`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G8`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted.
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `project_snapshot` is omitted with `--no-snapshot`; `agent_gaps` is only present when `--agent-gaps` is supplied.
 
 </details>
 
