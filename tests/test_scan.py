@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "messy-repo"
+MONOREPO_FIXTURE = ROOT / "tests" / "fixtures" / "monorepo"
 SCAN = ROOT / "scripts" / "scan.py"
 
 
@@ -308,6 +309,106 @@ class ReportFileTests(unittest.TestCase):
                 text=True, capture_output=True)
             self.assertNotIn("Full JSON report", proc.stdout)
 
+
+
+class MonorepoTests(unittest.TestCase):
+    def run_json(self, repo, *extra):
+        proc = subprocess.run(
+            [sys.executable, str(SCAN), str(repo), "--json", *extra],
+            text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return json.loads(proc.stdout)
+
+    def test_workspaces_autodetected(self):
+        report = self.run_json(MONOREPO_FIXTURE)
+        self.assertIn("monorepo", report)
+        self.assertIn("packages", report)
+        self.assertEqual(report["monorepo"]["source"], "package.json workspaces")
+        self.assertEqual(report["monorepo"]["package_count"], 2)
+        paths = {p["path"] for p in report["packages"]}
+        self.assertEqual(paths, {"packages/app-a", "packages/app-b"})
+        names = {p["name"] for p in report["packages"]}
+        self.assertEqual(names, {"@mono/app-a", "@mono/app-b"})
+        # Each package carries a full single-repo scan report.
+        for pkg in report["packages"]:
+            self.assertIn("gaps", pkg["report"])
+            self.assertIn("files", pkg["report"])
+            self.assertIn("summary", pkg)
+
+    def test_aggregate_present_and_consistent(self):
+        report = self.run_json(MONOREPO_FIXTURE)
+        agg = report["monorepo"]["aggregate"]
+        # app-a has an AGENTS.md, app-b does not.
+        self.assertEqual(agg["packages_with_agents_md"], 1)
+        # The aggregate equals the sum of per-package summaries.
+        self.assertEqual(agg["files"], sum(p["summary"]["files"] for p in report["packages"]))
+        self.assertEqual(agg["gaps"], sum(p["summary"]["gaps"] for p in report["packages"]))
+
+    def test_single_repo_unchanged_when_no_workspace(self):
+        # A plain package.json without `workspaces` must NOT enter monorepo mode.
+        report = self.run_json(FIXTURE)
+        self.assertNotIn("monorepo", report)
+        self.assertNotIn("packages", report)
+
+    def test_no_monorepo_flag_forces_single(self):
+        report = self.run_json(MONOREPO_FIXTURE, "--no-monorepo")
+        self.assertNotIn("monorepo", report)
+        self.assertNotIn("packages", report)
+
+    def test_markdown_has_monorepo_section(self):
+        proc = subprocess.run(
+            [sys.executable, str(SCAN), str(MONOREPO_FIXTURE), "--no-report-file"],
+            text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("## Monorepo", proc.stdout)
+        self.assertIn("packages/app-a", proc.stdout)
+        self.assertIn("packages/app-b", proc.stdout)
+
+    def test_pnpm_workspace_detected(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "pnpm-workspace.yaml", "packages:\n  - 'apps/*'\n")
+            _write(repo / "apps" / "web" / "package.json", '{"name": "web"}')
+            _write(repo / "apps" / "web" / "AGENTS.md", "# Project overview\nx\n")
+            report = self.run_json(repo)
+            self.assertEqual(report["monorepo"]["source"], "pnpm-workspace.yaml")
+            self.assertEqual({p["path"] for p in report["packages"]}, {"apps/web"})
+
+    def test_force_flag_discovers_nested_packages(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            # No workspace config at all — only nested package.json subtrees.
+            _write(repo / "services" / "api" / "package.json", '{"name": "api"}')
+            _write(repo / "services" / "worker" / "package.json", '{"name": "worker"}')
+            # Auto mode must stay single-repo (no explicit workspace config).
+            auto = self.run_json(repo)
+            self.assertNotIn("monorepo", auto)
+            # --monorepo forces nested discovery.
+            forced = self.run_json(repo, "--monorepo")
+            self.assertEqual(forced["monorepo"]["source"], "nested packages")
+            self.assertEqual(
+                {p["path"] for p in forced["packages"]},
+                {"services/api", "services/worker"},
+            )
+
+    def test_fail_on_gaps_considers_packages(self):
+        # app-b has no AGENTS.md → a G1 ERROR gap inside a package.
+        proc = subprocess.run(
+            [sys.executable, str(SCAN), str(MONOREPO_FIXTURE), "--fail-on-gaps"],
+            text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 3, proc.stdout)
+
+
+class DetectPackagesUnitTests(unittest.TestCase):
+    def test_detect_off_mode_returns_nothing(self):
+        dirs, source = scan.detect_packages(MONOREPO_FIXTURE, mode="off")
+        self.assertEqual(dirs, {})
+        self.assertIsNone(source)
+
+    def test_detect_auto_reads_workspaces(self):
+        dirs, source = scan.detect_packages(MONOREPO_FIXTURE, mode="auto")
+        self.assertEqual(source, "package.json workspaces")
+        self.assertEqual(set(dirs), {"packages/app-a", "packages/app-b"})
 
 
 if __name__ == "__main__":

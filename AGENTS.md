@@ -6,7 +6,7 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
 
 - `SKILL.md` — the skill contract and the four-phase workflow (Checkup → Treat → Follow-up → Efficacy).
 - `scripts/` — the deterministic Python engines, one per phase:
-  - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo.
+  - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo. Monorepo-aware (`--monorepo` / auto-detects npm/yarn/pnpm workspaces) with per-package results and a top-level aggregate.
   - `semantic.py` — Phase 0 helper: compares AGENTS.md declarations (commands/paths/package manager/Node version) against code facts.
   - `canonicalize.py` — Phase 1 Treat: merge-plan skeleton with fact-aware conflict-default suggestions, `--draft` AGENTS.md auto-drafting, tool-stub downgrades, and validation.
   - `check_drift.py` — Phase 2 Follow-up: drift guard (D1–D8), health score, and `--fix`.
