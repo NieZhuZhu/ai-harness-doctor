@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | Always exits 0; inventory and evidence only. |
+| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, and a security checkup. `--fail-on-security` exits 2 on HIGH findings. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -146,6 +146,8 @@ Install after the treat phase has produced a canonical root `AGENTS.md`:
 npx ai-harness-doctor guard . --apply
 ```
 
+The CI gate is provider-aware: pass `--provider github|gitlab|codebase` (default `auto`) to install the matching CI files. See the [`guard`](#command-reference) command reference for the per-provider file layout.
+
 Defense in depth, strongest to weakest:
 
 1. **Pre-commit hard block** — defends against local edits that make `AGENTS.md` stale before they leave the machine. `AI_HARNESS_DOCTOR_SKIP=1` is an explicit, auditable bypass, not a silent pass.
@@ -159,6 +161,7 @@ Defense in depth, strongest to weakest:
 | Move/delete documented paths | D2 path drift |
 | Sneak rules back into `CLAUDE.md` or `.cursorrules` | D3 stub regrowth |
 | Let `AGENTS.md` bloat past useful context size | D4 size/context risk |
+| Bump Node version or switch package manager without updating `AGENTS.md` | D6 fact drift |
 
 Why detection over regeneration? Silently “fixing” drift removes human awareness. AI Harness Doctor surfaces drift instead, because the important part is not rewriting files; it is making the team notice that repo truth and agent truth diverged. See [Positioning & Non-goals & Comparison](#positioning--non-goals--comparison).
 
@@ -222,23 +225,44 @@ Redeploys every manifest-tracked copy install to the current package version. Li
 
 Dry-run by default; use `--apply` to write. Requirements: target is a git repo and `AGENTS.md` already exists.
 
-It manages four artifacts:
+It manages a provider-agnostic core plus a **provider-aware CI gate**:
 
 1. `.git/hooks/pre-commit` drift block.
-2. `.github/workflows/harness-drift.yml` path-aware PR gate.
-3. `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue.
-4. A marked maintenance contract in `AGENTS.md`.
+2. A CI drift/checkup gate whose files depend on `--provider` (see below).
+3. A marked maintenance contract in `AGENTS.md`.
 
-`AI_HARNESS_DOCTOR_SKIP=1` is the explicit auditable escape hatch for the local hook. `guard --remove --apply` removes managed snippets and restores byte-exact pre-existing hook content when possible.
+`--provider github|gitlab|codebase|auto` (default `auto`) selects which CI files to install. `auto` detects the provider from `.gitlab-ci.yml` and the `origin` remote (github.com → `github`, a host containing `gitlab` → `gitlab`, any other enterprise host such as internal Codebase → `codebase`, no remote → `github`):
+
+| Provider | CI files installed | Wiring note |
+|---|---|---|
+| `github` | `.github/workflows/harness-drift.yml` path-aware PR gate + `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue. | Runs automatically on GitHub Actions. |
+| `gitlab` | An includable `.gitlab/harness-ci.yml` (`harness-drift` on MRs, `harness-checkup` on schedules with an artifact). | Add `include: { local: .gitlab/harness-ci.yml }` to `.gitlab-ci.yml`. |
+| `codebase` | A portable `.harness-ci/harness-guard.sh` (`drift`/`checkup` modes) + a wiring `README.md`. | Register the script as an MR check and a scheduled pipeline step. |
+
+`AI_HARNESS_DOCTOR_SKIP=1` is the explicit auditable escape hatch for the local hook. `guard --remove --apply` removes managed snippets, cleans up **all providers'** CI files (so switching providers leaves nothing behind), and restores byte-exact pre-existing hook content when possible.
 
 </details>
 
 <details>
 <summary><code>scan</code></summary>
 
-Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files. It always exits 0.
+Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files.
 
-`--json` returns:
+It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags severity-ranked findings (HIGH/MEDIUM):
+
+- Plaintext secrets (AWS / GitHub / OpenAI / Google / Slack / Anthropic keys, private-key blocks, generic `api_key/secret/token=...`) across instruction and MCP/settings config files.
+- Over-broad permissions such as `Bash(*)`, `*`, and `defaultMode: bypassPermissions`.
+- MCP hygiene issues: insecure `http://` transports and credential-shaped env literals.
+- Risky hook/command bodies: `curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`, and similar.
+
+It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-severity finding is present, which is handy as a CI gate.
+
+| Flag | Purpose |
+|---|---|
+| `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
+| `--fail-on-security` | Exit `2` when any HIGH-severity security finding is present. |
+
+`--json` returns (existing keys are unchanged — backward compatible):
 
 ```json
 {
@@ -246,9 +270,21 @@ Detects five classes: config inventory, size/truncation risk, overlap candidates
   "warnings": [],
   "overlaps": [],
   "conflicts": [],
-  "nested": []
+  "nested": [],
+  "surface": {
+    "mcp_servers": [],
+    "subagents": [],
+    "commands": [],
+    "hooks": [],
+    "permissions": []
+  },
+  "security": [
+    { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ]
 }
 ```
+
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted.
 
 </details>
 
@@ -256,6 +292,13 @@ Detects five classes: config inventory, size/truncation risk, overlap candidates
 <summary><code>plan</code></summary>
 
 Scaffolds a Phase 1 merge plan from scan output: inventory, overlap clusters, conflict list, and a TODO decision checklist. It explicitly does **not** merge content or choose a side.
+
+It also appends a **"Merge suggestions (semi-automatic)"** section derived from the scan:
+
+- **Overlap consolidation** — each overlap cluster names the canonical file (`AGENTS.md`) and lists the files to reduce to stubs as a checkbox list.
+- **Conflict resolutions** — each conflict signal gets ONE recommended value plus its supporting `path:line` evidence as a tickable item. The recommendation is deterministic (most-supported value, ties broken lexicographically).
+
+These are suggestions for human review, not automatic adjudication; the existing inventory/overlap/conflict/TODO sections are preserved.
 
 </details>
 
@@ -296,6 +339,25 @@ Example finding lines:
 - D3: `Tool stub CLAUDE.md regrew or lost AGENTS.md pointer`
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
+- D6: `AGENTS.md declares Node 18 but .nvmrc pins 20` (fact drift)
+
+**D6 fact drift** cross-validates the *facts* declared in `AGENTS.md` against repo ground truth: the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the actual lockfile — `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent, so silence never produces a false positive.
+
+**Health score.** All findings (D1..D6) roll up into a 0–100 health score with a letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F), rendered as a `## Health score` section (e.g. `Score: 85/100 (grade B)`). With `--json` the report gains `score` and `grade` keys alongside the existing fields.
+
+`--min-score N` exits non-zero when the score is below `N` — a CI gate that is independent of `--strict`, so both can apply together.
+
+**Semi-automatic repair: `--fix`.** `--fix` auto-repairs only the safe, mechanical subset of drift — currently **D3 stub regrowth**. Any tool stub that grew real content or lost its `AGENTS.md` pointer is rewritten back to its minimal canonical import-stub form (the stub bodies are reused from `canonicalize.py`, so `--fix` and `stubs`/`--write-stubs` stay in sync).
+
+```bash
+npx ai-harness-doctor drift . --fix          # DRY RUN: prints the diff, writes nothing
+npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stubs
+```
+
+- Default `--fix` is a dry run: it prints a unified diff of what would be rewritten and changes no files.
+- `--fix --apply` rewrites the regrown stub files in place.
+- Non-safe drift (D1 command drift, D2 path drift, D4 size, and any other semantic drift) is never modified; it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
+- A summary line reports `N fixed/fixable, M need manual attention`. The command exits non-zero while any drift remains.
 
 </details>
 
