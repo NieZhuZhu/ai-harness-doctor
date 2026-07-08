@@ -1,0 +1,19 @@
+{
+  "label": "before",
+  "workdir": ".",
+  "note": "Answers produced by an agent given ONLY the current AGENTS.md (v1), no repo browsing.",
+  "tasks": [
+    {"id": "test-suite", "stdout": "python3 -m unittest discover -s tests -v"},
+    {"id": "python-version", "stdout": "3.9+"},
+    {"id": "python-deps", "stdout": "No — Python scripts must use the Python 3.9+ standard library only."},
+    {"id": "node-version", "stdout": "Node >=16"},
+    {"id": "npm-deps", "stdout": "No, do not add npm runtime dependencies; bin/cli.js must use the Node standard library only."},
+    {"id": "semantic-merging", "stdout": "No. Scripts stay deterministic; semantic merging decisions belong in the SKILL.md workflow and human review."},
+    {"id": "guard-templates", "stdout": "assets/guard/"},
+    {"id": "doc-languages", "stdout": "English, Simplified Chinese, and Japanese."},
+    {"id": "drift-script", "stdout": "Not specified in AGENTS.md. I cannot determine which script runs the drift guard from this file."},
+    {"id": "scan-script", "stdout": "Not specified in AGENTS.md. The checkup/scan script is not named here."},
+    {"id": "eval-script", "stdout": "Not specified in AGENTS.md. No eval script is named in this file."},
+    {"id": "commit-convention", "stdout": "The CLI entry point is bin/cli.js. AGENTS.md does not otherwise describe the directory layout."}
+  ]
+}
