@@ -111,23 +111,29 @@ def iter_matches(root):
 
 
 def file_info(root, tool, path, max_bytes):
-    data = path.read_bytes()
-    text = data.decode("utf-8", errors="replace")
-    size = len(data)
-    warnings = []
     rp = rel(path, root)
+    warnings = []
+    # Stat the file first so an oversize (accidentally matched) file is not
+    # fully read into memory before the size check. We still read the body for
+    # normally-sized files; oversize files are read only up to max_bytes.
+    size = path.stat().st_size
     if size > max_bytes:
         warnings.append({
             "level": "WARN",
             "path": rp,
             "message": f"{rp} is {size} bytes, above {max_bytes}; Codex project_doc_max_bytes defaults to 32KB and may silently truncate context.",
         })
-    elif size > 12 * 1024:
-        warnings.append({
-            "level": "NOTICE",
-            "path": rp,
-            "message": f"{rp} is {size} bytes; this may cause context bloat.",
-        })
+        with path.open("rb") as fh:
+            data = fh.read(max_bytes)
+    else:
+        if size > 12 * 1024:
+            warnings.append({
+                "level": "NOTICE",
+                "path": rp,
+                "message": f"{rp} is {size} bytes; this may cause context bloat.",
+            })
+        data = path.read_bytes()
+    text = data.decode("utf-8", errors="replace")
     return {
         "path": rp,
         "tool": tool,
