@@ -35,10 +35,11 @@ Run the read-only scan:
 python3 scripts/scan.py /path/to/repo
 python3 scripts/scan.py /path/to/repo --json
 python3 scripts/scan.py /path/to/repo --fail-on-security   # non-zero exit on HIGH findings
+python3 scripts/scan.py /path/to/repo --fail-on-semantic   # non-zero exit on declaration/code mismatch
 python3 scripts/scan.py /path/to/repo --no-security        # inventory only
 ```
 
-The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`).
+The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`). It additionally runs a **semantic consistency** check (via `scripts/semantic.py`) that cross-checks the concrete claims in `AGENTS.md` — build/test commands, repo-relative paths, the package manager, and the Node.js version — against ground truth in `package.json`, `Makefile`, the filesystem, lockfiles, and `.nvmrc` / `engines.node`, surfacing declaration-vs-code mismatches at checkup time.
 
 ### Outputs
 

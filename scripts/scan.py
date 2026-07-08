@@ -17,6 +17,7 @@ from pathlib import Path
 # files exist and how to detect them; see assets/agent-tools.json and registry.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import registry  # noqa: E402
+import semantic  # noqa: E402  # declaration-vs-fact consistency engine
 
 
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
@@ -709,6 +710,7 @@ def scan_repo(repo_root, max_bytes):
         "surface": surface,
         "security": security_findings(root, files, mcp, hooks, permissions),
         "project_snapshot": build_project_snapshot(root, surface, agents_text),
+        "semantic": semantic.analyze(root, agents_text),
         "gaps": find_gaps(root, surface),
     }
 
@@ -752,6 +754,8 @@ def render_markdown(report, report_path=None):
         render_security(lines, report["security"])
     if "project_snapshot" in report:
         render_snapshot(lines, report["project_snapshot"])
+    if "semantic" in report:
+        render_semantic(lines, report["semantic"])
     if "gaps" in report:
         render_gaps(lines, report["gaps"])
     if report_path:
@@ -811,6 +815,34 @@ def render_gaps(lines, gaps):
         lines.append(f"  - Suggestion: {g['suggestion']}")
 
 
+CATEGORY_LABELS = {
+    "command": "Command",
+    "path": "Path",
+    "package_manager": "Package manager",
+    "node_version": "Node version",
+}
+
+
+def render_semantic(lines, semantic_report):
+    lines.extend(["", "## Semantic consistency (declaration vs code)"])
+    findings = semantic_report.get("findings", [])
+    checked = semantic_report.get("checked", 0)
+    if not findings:
+        if checked:
+            lines.append(f"All {checked} AGENTS.md declaration(s) match repository facts.")
+        else:
+            lines.append("No verifiable AGENTS.md declarations were found to cross-check.")
+        return
+    lines.append(
+        f"{len(findings)} of {checked} checked AGENTS.md declaration(s) do not match the code:"
+    )
+    for f in findings:
+        label = CATEGORY_LABELS.get(f["category"], f["category"])
+        loc = f":{f['line']}" if "line" in f else ""
+        lines.append(f"- **{f['level']}** [{label}]{loc} {f['message']}")
+        lines.append(f"  - Suggestion: {f['suggestion']}")
+
+
 def render_snapshot(lines, snapshot):
     lines.extend(["", "## Project snapshot"])
     stack = snapshot.get("tech_stack", [])
@@ -849,6 +881,10 @@ def main(argv=None):
                         help="Skip the missing / gap analysis section.")
     parser.add_argument("--fail-on-gaps", action="store_true",
                         help="Exit non-zero when any ERROR-level harness gap is present.")
+    parser.add_argument("--no-semantic", action="store_true",
+                        help="Skip the semantic consistency section (drops the `semantic` key).")
+    parser.add_argument("--fail-on-semantic", action="store_true",
+                        help="Exit non-zero when any AGENTS.md declaration contradicts the code.")
     parser.add_argument("--no-snapshot", action="store_true",
                         help="Skip the project snapshot section (drops the `project_snapshot` key).")
     parser.add_argument("--no-report-file", action="store_true",
@@ -861,6 +897,8 @@ def main(argv=None):
         report.pop("security", None)
     if args.no_gaps:
         report.pop("gaps", None)
+    if args.no_semantic:
+        report.pop("semantic", None)
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
@@ -870,6 +908,8 @@ def main(argv=None):
         return 2
     if args.fail_on_gaps and any(g["level"] == "ERROR" for g in report.get("gaps", [])):
         return 3
+    if args.fail_on_semantic and report.get("semantic", {}).get("findings"):
+        return 4
     return 0
 
 
