@@ -516,6 +516,16 @@ RELEASING.md                     # Tag-driven release checklist
 python3 -m unittest discover -s tests -v
 ```
 
+仓库还提供一套基于 npm 的 lint/format/test 工作流（仅用于开发，不会打包进发布产物）。CI 会在 Python（3.9/3.10/3.12）与 Node（16/20/22）版本矩阵上运行完整套件：
+
+```bash
+npm test            # Python unittest + node --test CLI 套件
+npm run lint        # eslint (bin) + ruff (scripts/tests) + 三语 README 标题同步检查
+npm run format      # prettier --write .   （npm run format:py 运行 ruff format）
+```
+
+`npm run lint:docs`（即 `scripts/check_readme_sync.py`）会强制 `README.md`、`README.zh-CN.md`、`README.ja.md` 保持完全一致的标题骨架，因此对任一 README 的结构改动都必须同步到另外两个。
+
 ## License
 
 MIT. Copyright (c) NieZhuZhu.
