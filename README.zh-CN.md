@@ -298,6 +298,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 **Monorepo / 多包感知。** `scan` 支持 monorepo。当它检测到工作区（`package.json` 中的 npm/yarn/pnpm `workspaces`、`pnpm-workspace.yaml`，或在 `--monorepo` 下的多个嵌套 `package.json` / `AGENTS.md` 子树）时，会额外扫描每个检测到的包子目录，并报告每个包的结果以及一个顶层聚合。markdown 报告会新增一节 `## Monorepo`（每个包一行的表格加一行聚合），`--json` 会新增顶层 `packages` 数组（每个包一条，`report` 下是相同结构的扫描结果，另有 `summary`）和一个 `monorepo` 对象（`source`、`package_count`、`aggregate`）。未检测到工作区时单仓行为保持不变；用 `--no-monorepo` 强制只扫描根目录，用 `--monorepo` 强制检测。
 
+**自定义规则插件。** `scan`（以及 `drift`）可以用你自己的确定性规则来扩展。把 Python 模块放到目标仓库的 `.ai-harness-doctor/rules/*.py` 目录，和/或传入 `--rules DIR`（可重复）。每个模块暴露一个 `def check(root, context) -> list[dict]:`，返回发现项（`level`、`message`，可选的 `path`/`line`/`suggestion`，以及一个 `rule` id）；`context` 携带本次运行的 `phase` 和 `AGENTS.md` 文本。这些发现会被合并进 `custom` 一节（markdown 的 `## Custom rule plugins` 和 `--json` 的 `custom` 数组）。插件是可选加入的——没有规则目录也没有 `--rules` 时，行为保持不变。导入失败或运行时抛异常的插件会被隔离，并作为一个 `level: "ERROR"` 发现项报告，而不会让扫描崩溃；模板见 `references/example-rule-plugin.py`。
+
 | Flag | 用途 |
 |---|---|
 | `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |
@@ -310,6 +312,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | `--no-report-file` | 不把完整 JSON 报告写入临时文件（仅 markdown 模式）。 |
 | `--monorepo` | 强制 monorepo 模式：即使没有工作区配置也扫描每个包子目录（回退到嵌套的 `package.json` / `AGENTS.md` 子树）。 |
 | `--no-monorepo` | 关闭 monorepo 检测；只扫描仓库根目录。 |
+| `--rules DIR` | 从 `DIR` 加载自定义规则插件（可重复）；与 `.ai-harness-doctor/rules/` 一起合并进 `custom` 一节。 |
+| `--no-custom` | 跳过自定义规则插件（不输出 `custom` key）。 |
 
 `--json` returns（已有的 key 保持不变——向后兼容）:
 
@@ -341,6 +345,9 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
   "gaps": [
     { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
   ],
+  "custom": [
+    { "level": "ERROR", "rule": "plugin-load", "plugin": ".ai-harness-doctor/rules/broken.py", "message": "", "suggestion": "" }
+  ],
   "semantic": {
     "checked": 0,
     "mismatches": 0,
@@ -351,7 +358,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 }
 ```
 
-`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。`semantic` 带有 `checked`（已核对的声明数）、`mismatches` 和 `findings`（每条含 `category`、`level`、可选 `line`、`declared`、`actual`、`message`、`suggestion`）；使用 `--no-semantic` 时会省略 `semantic` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。在 monorepo 模式下，报告还会新增顶层 `packages` 数组和一个 `monorepo` 概要。
+`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。`semantic` 带有 `checked`（已核对的声明数）、`mismatches` 和 `findings`（每条含 `category`、`level`、可选 `line`、`declared`、`actual`、`message`、`suggestion`）；使用 `--no-semantic` 时会省略 `semantic` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。`custom` 保存来自用户规则插件的发现（每条含 `level`、`message`、`plugin`、`rule`，以及可选的 `path`/`line`/`suggestion`）；使用 `--no-custom` 时会省略 `custom` key。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。在 monorepo 模式下，报告还会新增顶层 `packages` 数组和一个 `monorepo` 概要。
 
 </details>
 

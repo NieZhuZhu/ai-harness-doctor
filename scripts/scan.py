@@ -16,6 +16,7 @@ from pathlib import Path
 # The shared agent-config registry is the single source of truth for which config
 # files exist and how to detect them; see assets/agent-tools.json and registry.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import plugins  # noqa: E402  # user-extensible deterministic rule plugins
 import registry  # noqa: E402
 import semantic  # noqa: E402  # declaration-vs-fact consistency engine
 
@@ -680,7 +681,7 @@ def find_gaps(root, surface):
     return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
 
 
-def scan_repo(repo_root, max_bytes):
+def scan_repo(repo_root, max_bytes, rules_dirs=None):
     root = Path(repo_root).resolve()
     files = []
     warnings = []
@@ -701,7 +702,7 @@ def scan_repo(repo_root, max_bytes):
     }
     agents_path = root / "AGENTS.md"
     agents_text = agents_path.read_text(encoding="utf-8", errors="replace") if agents_path.is_file() else ""
-    return {
+    report = {
         "files": result_files,
         "warnings": warnings,
         "overlaps": find_overlaps(files),
@@ -713,6 +714,14 @@ def scan_repo(repo_root, max_bytes):
         "semantic": semantic.analyze(root, agents_text),
         "gaps": find_gaps(root, surface),
     }
+    # User-extensible deterministic rule plugins (opt-in). Discovered from
+    # <root>/.ai-harness-doctor/rules/*.py plus any --rules DIR; each plugin is
+    # isolated so a broken one is reported as an ERROR finding, never a crash.
+    # The key is always present (empty list when no plugins) and rendered under
+    # its own "Custom rule plugins" section.
+    context = {"phase": "scan", "agents_text": agents_text}
+    report["custom"] = plugins.run_plugins(root, context, rules_dirs)
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -864,7 +873,7 @@ def _aggregate_packages(packages):
     return aggregate
 
 
-def scan_monorepo(root, max_bytes, package_dirs, source):
+def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None):
     """Scan every detected package subdirectory and build the aggregate.
 
     Returns ``(monorepo_summary, packages)`` where ``packages`` is a list of
@@ -873,7 +882,7 @@ def scan_monorepo(root, max_bytes, package_dirs, source):
     """
     packages = []
     for relpath, pdir in package_dirs.items():
-        sub = scan_repo(pdir, max_bytes)
+        sub = scan_repo(pdir, max_bytes, rules_dirs)
         packages.append({
             "path": relpath,
             "name": _package_name(pdir),
@@ -934,6 +943,8 @@ def render_markdown(report, report_path=None):
         render_semantic(lines, report["semantic"])
     if "gaps" in report:
         render_gaps(lines, report["gaps"])
+    if "custom" in report:
+        render_custom(lines, report["custom"])
     if report_path:
         lines.extend([
             "",
@@ -1022,6 +1033,18 @@ def render_gaps(lines, gaps):
         lines.append(f"  - Suggestion: {g['suggestion']}")
 
 
+def render_custom(lines, findings):
+    lines.extend(["", "## Custom rule plugins"])
+    if not findings:
+        lines.append("No custom rule plugins loaded (see `.ai-harness-doctor/rules/` or `--rules DIR`).")
+        return
+    for f in findings:
+        loc = f":{f['line']}" if "line" in f else (f" `{f['path']}`" if "path" in f else "")
+        lines.append(f"- **{f['level']}** [{f.get('plugin', '?')}:{f.get('rule', 'custom')}]{loc} {f['message']}")
+        if f.get("suggestion"):
+            lines.append(f"  - Suggestion: {f['suggestion']}")
+
+
 CATEGORY_LABELS = {
     "command": "Command",
     "path": "Path",
@@ -1085,6 +1108,8 @@ def _apply_section_flags(report, args):
         report.pop("gaps", None)
     if args.no_semantic:
         report.pop("semantic", None)
+    if args.no_custom:
+        report.pop("custom", None)
 
 
 def main(argv=None):
@@ -1106,6 +1131,11 @@ def main(argv=None):
                         help="Exit non-zero when any AGENTS.md declaration contradicts the code.")
     parser.add_argument("--no-snapshot", action="store_true",
                         help="Skip the project snapshot section (drops the `project_snapshot` key).")
+    parser.add_argument("--no-custom", action="store_true",
+                        help="Skip custom rule plugins (drops the `custom` key).")
+    parser.add_argument("--rules", action="append", default=None, metavar="DIR", dest="rules",
+                        help="Directory of custom rule plugins (`*.py` exposing `check(root, context)`). "
+                             "Repeatable; searched in addition to `<repo>/.ai-harness-doctor/rules/`.")
     parser.add_argument("--no-report-file", action="store_true",
                         help="Do not write the full JSON report to a temp file (markdown mode only).")
     parser.add_argument("--monorepo", action="store_true",
@@ -1115,12 +1145,12 @@ def main(argv=None):
                         help="Disable monorepo detection; scan only the repo root.")
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
-    report = scan_repo(root, args.max_bytes)
+    report = scan_repo(root, args.max_bytes, args.rules)
 
     mode = "force" if args.monorepo else ("off" if args.no_monorepo else "auto")
     package_dirs, source = detect_packages(root, mode)
     if package_dirs:
-        monorepo, packages = scan_monorepo(root, args.max_bytes, package_dirs, source)
+        monorepo, packages = scan_monorepo(root, args.max_bytes, package_dirs, source, args.rules)
         report["monorepo"] = monorepo
         report["packages"] = packages
         for pkg in packages:

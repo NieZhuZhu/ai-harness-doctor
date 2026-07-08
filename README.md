@@ -298,6 +298,8 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
 
 **Monorepo / multi-package awareness.** `scan` is monorepo-aware. When it detects a workspace — npm/yarn/pnpm `workspaces` in `package.json`, a `pnpm-workspace.yaml`, or (with `--monorepo`) multiple nested `package.json` / `AGENTS.md` subtrees — it additionally scans each detected package subdirectory and reports per-package results plus a top-level aggregate. The markdown report gains a `## Monorepo` section (a per-package table plus an aggregate line), and `--json` gains a top-level `packages` array (one entry per package, each with the same scan shape under `report`, plus a `summary`) and a `monorepo` object (`source`, `package_count`, `aggregate`). Single-repo behavior is unchanged when no workspace is detected; use `--no-monorepo` to force a root-only scan, or `--monorepo` to force detection.
 
+**Custom rule plugins.** `scan` (and `drift`) can be extended with your own DETERMINISTIC rules. Drop Python modules in the target repo's `.ai-harness-doctor/rules/*.py` directory and/or pass `--rules DIR` (repeatable). Each module exposes `def check(root, context) -> list[dict]:` returning findings (`level`, `message`, optional `path`/`line`/`suggestion`, and a `rule` id); `context` carries the run `phase` and the `AGENTS.md` text. Findings are merged into a `custom` section (markdown `## Custom rule plugins` and the `--json` `custom` array). Plugins are opt-in — with no rules directory and no `--rules`, behavior is unchanged. A plugin that fails to import or raises at runtime is isolated and reported as a `level: "ERROR"` finding instead of crashing the scan; see `references/example-rule-plugin.py` for a template.
+
 | Flag | Purpose |
 |---|---|
 | `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
@@ -310,6 +312,8 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
 | `--no-report-file` | Do not write the full JSON report to a temp file (markdown mode only). |
 | `--monorepo` | Force monorepo mode: scan each package subdir even without a workspace config (falls back to nested `package.json` / `AGENTS.md` subtrees). |
 | `--no-monorepo` | Disable monorepo detection; scan only the repo root. |
+| `--rules DIR` | Load custom rule plugins from `DIR` (repeatable); merged into the `custom` section alongside `.ai-harness-doctor/rules/`. |
+| `--no-custom` | Skip custom rule plugins (drops the `custom` key). |
 
 `--json` returns (existing keys are unchanged — backward compatible):
 
@@ -341,6 +345,9 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
   "gaps": [
     { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
   ],
+  "custom": [
+    { "level": "ERROR", "rule": "plugin-load", "plugin": ".ai-harness-doctor/rules/broken.py", "message": "", "suggestion": "" }
+  ],
   "semantic": {
     "checked": 0,
     "mismatches": 0,
@@ -351,7 +358,7 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
 }
 ```
 
-`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `semantic` carries `checked` (declarations verified), `mismatches`, and `findings` (each with `category`, `level`, optional `line`, `declared`, `actual`, `message`, `suggestion`); with `--no-semantic` the `semantic` key is omitted. `project_snapshot` is omitted with `--no-snapshot`. In markdown mode the same JSON object is also written to `${TMPDIR}/harness-scan-<hash>.json` (unless `--no-report-file` is given). In monorepo mode the report also gains a top-level `packages` array and a `monorepo` summary.
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `semantic` carries `checked` (declarations verified), `mismatches`, and `findings` (each with `category`, `level`, optional `line`, `declared`, `actual`, `message`, `suggestion`); with `--no-semantic` the `semantic` key is omitted. `project_snapshot` is omitted with `--no-snapshot`. `custom` holds findings from user rule plugins (each with `level`, `message`, `plugin`, `rule`, and optional `path`/`line`/`suggestion`); with `--no-custom` the `custom` key is omitted. In markdown mode the same JSON object is also written to `${TMPDIR}/harness-scan-<hash>.json` (unless `--no-report-file` is given). In monorepo mode the report also gains a top-level `packages` array and a `monorepo` summary.
 
 </details>
 
