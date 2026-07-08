@@ -258,6 +258,84 @@ def d6_fact_drift(root, text):
     return findings
 
 
+# Markdown inline links: [label](target) and [label](target "title"). We only
+# probe the target, and only when it is a repo-relative filesystem path (never a
+# URL, anchor, template placeholder, or path outside the repo — see _within_root).
+_MD_LINK_RE = re.compile(r"\[[^\]]*\]\(\s*([^)]+?)\s*\)")
+
+
+def _link_target_is_probeable(target):
+    """Return the repo-relative path to probe, or None if the target must be skipped."""
+    if not target:
+        return None
+    # Strip a bracketed <...> target and any optional "title" suffix.
+    if target.startswith("<") and target.endswith(">"):
+        target = target[1:-1].strip()
+    else:
+        target = target.split(" ", 1)[0].strip()
+    if not target or target.startswith("#"):
+        return None
+    if target.startswith(("http://", "https://", "mailto:", "tel:")) or "://" in target:
+        return None
+    if "<" in target or "{" in target or "*" in target or "?" in target:
+        return None
+    if target.startswith(("~", "/", "$")) or ":" in target:
+        # Home-relative, absolute, env-var or scheme/drive-like targets are not
+        # repo-relative paths; skip them exactly like d2_path_drift does.
+        return None
+    # Drop any in-page fragment so `references/foo.md#section` probes the file.
+    target = target.split("#", 1)[0].strip()
+    return target or None
+
+
+def d7_markdown_link_drift(root, text):
+    """Broken relative Markdown-link targets in AGENTS.md.
+
+    D2 only probes backtick-quoted tokens; a canonical section that links to a
+    config file or reference doc via Markdown link syntax (`[text](path)`) is not
+    covered by D2. This flags link targets that resolve inside the repo but point
+    at a file/dir that no longer exists — a documented path that drifted away.
+    """
+    findings = []
+    if not text:
+        return findings
+    for lineno, line in enumerate(text.splitlines(), 1):
+        for m in _MD_LINK_RE.finditer(line):
+            target = _link_target_is_probeable(m.group(1))
+            if target is None:
+                continue
+            if not _within_root(root, target):
+                continue
+            if not (root / target).exists():
+                findings.append({
+                    "check": "D7", "level": "ERROR", "line": lineno,
+                    "message": f"Markdown link target `{target}` does not exist",
+                    "suggestion": "Fix or remove the Markdown link to the missing path.",
+                })
+    return findings
+
+
+def d8_competing_lockfiles(root):
+    """Competing package-manager lockfiles committed to the same repo.
+
+    If lockfiles for more than one package manager are present (e.g. both
+    `package-lock.json` and `pnpm-lock.yaml`), the intended package manager is
+    ambiguous and downstream tooling (and AGENTS.md fact checks) cannot pick a
+    ground truth. This is not mechanically auto-fixable — a human must decide
+    which manager wins — so it is reported for manual attention.
+    """
+    present = [(name, mgr) for name, mgr in LOCKFILE_MANAGERS.items() if (root / name).is_file()]
+    managers = sorted({mgr for _, mgr in present})
+    if len(managers) <= 1:
+        return []
+    names = ", ".join(f"`{name}`" for name, _ in sorted(present))
+    return [{
+        "check": "D8", "level": "ERROR",
+        "message": f"Competing package-manager lockfiles committed ({names}); intended manager is ambiguous",
+        "suggestion": "Keep exactly one lockfile for the chosen package manager and delete the rest.",
+    }]
+
+
 def nested_agents(root):
     out = []
     # Walk with os.walk so we can prune vendored dirs in place and avoid
@@ -305,6 +383,8 @@ def run_checks(root, max_bytes, strict=False):
     findings.extend(d3_stub_regrowth(root))
     findings.extend(d4_size(root, max_bytes))
     findings.extend(d6_fact_drift(root, text))
+    findings.extend(d7_markdown_link_drift(root, text))
+    findings.extend(d8_competing_lockfiles(root))
     if strict:
         for f in findings:
             if f.get("level") == "NOTICE":
@@ -319,7 +399,7 @@ def render(report):
     lines = ["# Phase 2 — Follow-up Drift Guard Report", ""]
     if report["ok"]:
         lines.append("No blocking drift found.")
-    for check in ["D1", "D2", "D3", "D4", "D6"]:
+    for check in ["D1", "D2", "D3", "D4", "D6", "D7", "D8"]:
         items = [f for f in report["findings"] if f["check"] == check]
         if not items:
             continue

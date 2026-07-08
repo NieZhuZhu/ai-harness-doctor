@@ -261,6 +261,104 @@ class DriftTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("Score:", proc.stdout)
 
+    def test_broken_markdown_link_triggers_d7(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        body = CLEAN_AGENTS + "\nSee the [runbook](references/missing.md) for details.\n"
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d7 = [f for f in report["findings"] if f["check"] == "D7"]
+        self.assertEqual(len(d7), 1)
+        self.assertIn("references/missing.md", d7[0]["message"])
+        self.assertEqual(d7[0]["level"], "ERROR")
+
+    def test_existing_markdown_link_and_url_do_not_trigger_d7(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "docs").mkdir()
+        (repo / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+        body = (
+            CLEAN_AGENTS
+            + "\nSee the [guide](docs/guide.md) and the [site](https://example.com/x).\n"
+            + "Jump to the [top](#project-overview) or email [us](mailto:a@b.com).\n"
+        )
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D7"])
+
+    def test_out_of_repo_markdown_link_does_not_probe(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        body = (
+            CLEAN_AGENTS
+            + "\nAbsolute: [x](/etc/hostname). Escaping: [y](../outside.md).\n"
+        )
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D7"])
+
+    def test_d7_is_reported_as_manual_by_fix(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        body = CLEAN_AGENTS + "\nSee the [runbook](references/missing.md).\n"
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("needs manual attention", proc.stdout)
+        self.assertIn("D7", proc.stdout)
+        # AGENTS.md is never rewritten by --fix.
+        self.assertEqual(body, (repo / "AGENTS.md").read_text(encoding="utf-8"))
+
+    def test_competing_lockfiles_trigger_d8(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        self._stub_pointers(repo)
+        (repo / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
+        (repo / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d8 = [f for f in report["findings"] if f["check"] == "D8"]
+        self.assertEqual(len(d8), 1)
+        self.assertIn("package-lock.json", d8[0]["message"])
+        self.assertIn("pnpm-lock.yaml", d8[0]["message"])
+
+    def test_single_lockfile_does_not_trigger_d8(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        self._stub_pointers(repo)
+        (repo / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
+        (repo / "npm-shrinkwrap.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        # Both lockfiles map to npm -> only one manager -> no ambiguity.
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D8"])
+
+    def test_d8_is_reported_as_manual_by_fix(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        self._stub_pointers(repo)
+        (repo / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
+        (repo / "yarn.lock").write_text("# yarn lockfile v1\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("needs manual attention", proc.stdout)
+        self.assertIn("D8", proc.stdout)
+
 
 class NestedAgentsWalkTests(unittest.TestCase):
     def test_prunes_vendored_dirs_but_finds_real_nested(self):
