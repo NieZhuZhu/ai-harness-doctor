@@ -322,8 +322,11 @@ Downgrades existing tool files to minimal pointers after `AGENTS.md` exists.
 | Copilot | `.github/copilot-instructions.md` becomes a pointer. |
 | Gemini | `GEMINI.md` becomes a pointer and recommends `contextFileName`. |
 | Cline | `.clinerules` becomes a pointer. |
+| Roo | Detected by `scan` (`.roo/rules/*.md`) but **not** downgraded — a rules-directory tool with no single conventional stub location, so it stays scan-only. |
 
 Dry-run by default. `--apply` requires a clean git tree; `--force` overrides that safety check.
+
+Known tool config files are defined once in `assets/agent-tools.json`, the single registry that `scan`, `stubs`/`canonicalize`, and `drift` all read, so adding a new tool means editing that one file.
 
 </details>
 
