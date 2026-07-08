@@ -173,22 +173,6 @@ def grade_answer(task, answer, workdir, judge_cmd=None):
     return False, None
 
 
-def check_task(task, stdout, workdir=None):
-    check = task.get("check", {})
-    answer = extract_answer(stdout)
-    passed = False
-    regraded = True
-    if check.get("type") == "regex":
-        passed = regex_passes(check.get("value", ""), answer)
-    elif check.get("type") == "command":
-        regraded = False
-        if workdir is not None:
-            cproc = subprocess.run(check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
-            passed = cproc.returncode == 0
-            regraded = True
-    return answer, passed, regraded
-
-
 def run_tasks(args):
     tasks_path = Path(args.tasks)
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
@@ -214,26 +198,8 @@ def run_tasks(args):
             })
             continue
         duration = round(time.time() - start, 3)
-        check = task.get("check", {})
-        passed = False
-        judge_info = None
         answer = extract_answer(proc.stdout)
-        if check.get("type") == "regex":
-            passed = regex_passes(check.get("value", ""), answer)
-        elif check.get("type") == "command":
-            try:
-                cproc = subprocess.run(check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
-            except subprocess.TimeoutExpired as exc:
-                duration = round(time.time() - start, 3)
-                results["tasks"].append({
-                    "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
-                    "exit_code": None, "stdout": proc.stdout, "answer": answer, "stderr": timeout_output(exc.stderr),
-                    "usage": maybe_usage(proc.stdout),
-                })
-                continue
-            passed = cproc.returncode == 0
-        elif check.get("type") == "judge":
-            passed, judge_info = grade_answer(task, answer, workdir, args.judge_cmd)
+        passed, judge_info = grade_answer(task, answer, workdir, args.judge_cmd)
         record = {
             "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
             "exit_code": proc.returncode, "stdout": proc.stdout, "answer": answer, "stderr": proc.stderr,
