@@ -164,6 +164,8 @@ Defense in depth, strongest to weakest:
 | Sneak rules back into `CLAUDE.md` or `.cursorrules` | D3 stub regrowth |
 | Let `AGENTS.md` bloat past useful context size | D4 size/context risk |
 | Bump Node version or switch package manager without updating `AGENTS.md` | D6 fact drift |
+| Delete a doc/config file that `AGENTS.md` still links to | D7 Markdown-link drift |
+| Commit lockfiles for two different package managers | D8 competing lockfiles |
 
 Why detection over regeneration? Silently “fixing” drift removes human awareness. AI Harness Doctor surfaces drift instead, because the important part is not rewriting files; it is making the team notice that repo truth and agent truth diverged. See [Positioning & Non-goals & Comparison](#positioning--non-goals--comparison).
 
@@ -242,6 +244,8 @@ It manages a provider-agnostic core plus a **provider-aware CI gate**:
 | `codebase` | A portable `.harness-ci/harness-guard.sh` (`drift`/`checkup` modes) + a wiring `README.md`. | Register the script as an MR check and a scheduled pipeline step. |
 
 `AI_HARNESS_DOCTOR_SKIP=1` is the explicit auditable escape hatch for the local hook. `guard --remove --apply` removes managed snippets, cleans up **all providers'** CI files (so switching providers leaves nothing behind), and restores byte-exact pre-existing hook content when possible. Both install and remove are non-destructive: every managed file carries an `ai-harness-doctor:guard` marker, so `guard --apply` never overwrites a user-edited CI file that lacks the marker (it reports a `manual-merge` and leaves your file untouched), and `--remove` only deletes a managed file when it is byte-identical to what the tool shipped — a hand-extended hook has just its own guard block stripped out, and a modified block is skipped rather than destroyed.
+
+**Self-bootstrap:** this repository runs its own guard. `.github/workflows/harness-drift.yml` and `.github/workflows/harness-checkup.yml` are adapted from the `assets/guard/` templates to run the repo's **local** CLI (`node bin/cli.js drift . --strict`) instead of the published `npx -y ai-harness-doctor`, so any change to `scripts/` is gated by the very code being changed. The eval gate stays soft (active only when a committed results JSON exists) and the PR-review step tolerates a missing/limited token, so the guard never turns this repo's own CI red.
 
 </details>
 
@@ -401,10 +405,16 @@ Example finding lines:
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
 - D6: `AGENTS.md declares Node 18 but .nvmrc pins 20` (fact drift)
+- D7: `Markdown link target references/runbook.md does not exist` (Markdown-link drift)
+- D8: `Competing package-manager lockfiles committed (package-lock.json, pnpm-lock.yaml)`
 
 **D6 fact drift** cross-validates the *facts* declared in `AGENTS.md` against repo ground truth: the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the actual lockfile — `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent, so silence never produces a false positive.
 
-**Health score.** All findings (D1..D6) roll up into a 0–100 health score with a letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F), rendered as a `## Health score` section (e.g. `Score: 85/100 (grade B)`). With `--json` the report gains `score` and `grade` keys alongside the existing fields.
+**D7 Markdown-link drift** probes repo-relative Markdown link targets (`[text](path)`) in `AGENTS.md` and flags those pointing at a file or directory that no longer exists. It complements D2 (which only checks backtick-quoted tokens); URLs, in-page anchors, and out-of-repo targets are ignored, so it never probes outside the repo.
+
+**D8 competing lockfiles** flags a repo that commits lockfiles for more than one package manager (e.g. both `package-lock.json` and `pnpm-lock.yaml`), which makes the intended manager ambiguous. It is reported for manual attention — the tool never guesses which lockfile to delete.
+
+**Health score.** All findings (D1..D8) roll up into a 0–100 health score with a letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F), rendered as a `## Health score` section (e.g. `Score: 85/100 (grade B)`). With `--json` the report gains `score` and `grade` keys alongside the existing fields.
 
 `--min-score N` exits non-zero when the score is below `N` — a CI gate that is independent of `--strict`, so both can apply together.
 
@@ -417,7 +427,7 @@ npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stu
 
 - Default `--fix` is a dry run: it prints a unified diff of what would be rewritten and changes no files.
 - `--fix --apply` rewrites the regrown stub files in place.
-- Non-safe drift (D1 command drift, D2 path drift, D4 size, and any other semantic drift) is never modified; it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
+- Non-safe drift (D1 command drift, D2 path drift, D4 size, D7 Markdown-link drift, D8 competing lockfiles, and any other semantic drift) is never modified; it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
 - A summary line reports `N fixed/fixable, M need manual attention`. The command exits non-zero while any drift remains.
 
 </details>
