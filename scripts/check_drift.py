@@ -135,6 +135,99 @@ def d4_size(root, max_bytes):
     return []
 
 
+LOCKFILE_MANAGERS = {
+    "package-lock.json": "npm",
+    "npm-shrinkwrap.json": "npm",
+    "pnpm-lock.yaml": "pnpm",
+    "yarn.lock": "yarn",
+}
+
+
+def declared_node_version(text):
+    """Return (major_version, lineno) for a node version declared in AGENTS.md, else (None, None)."""
+    for lineno, line in enumerate(text.splitlines(), 1):
+        m = re.search(r"\bnode(?:\.js)?\s*(?:version)?\s*(?:>=?|<=?|==?|\^|~)?\s*v?(\d+)(?:\.\d+|\.x)*", line, re.I)
+        if m:
+            return int(m.group(1)), lineno
+    return None, None
+
+
+def nvmrc_node_version(root):
+    path = root / ".nvmrc"
+    if not path.is_file():
+        return None
+    m = re.search(r"v?(\d+)", path.read_text(encoding="utf-8", errors="replace").strip())
+    return int(m.group(1)) if m else None
+
+
+def engines_node_version(root):
+    path = root / "package.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    engines = data.get("engines")
+    node = engines.get("node") if isinstance(engines, dict) else None
+    if not node:
+        return None
+    m = re.search(r"(\d+)", str(node))
+    return int(m.group(1)) if m else None
+
+
+def declared_package_managers(text):
+    pms = set()
+    for _lineno, code in line_collected_code(text):
+        for m in re.finditer(r"\b(npm|pnpm|yarn)\b", code):
+            pms.add(m.group(1))
+    return pms
+
+
+def lockfile_managers(root):
+    return {mgr for name, mgr in LOCKFILE_MANAGERS.items() if (root / name).is_file()}
+
+
+def d6_fact_drift(root, text):
+    """Cross-validate factual claims in AGENTS.md against repo ground-truth files."""
+    findings = []
+    if not text:
+        return findings
+
+    # Node version: declared claim vs .nvmrc and package.json engines.node.
+    declared_node, node_line = declared_node_version(text)
+    if declared_node is not None:
+        nvmrc = nvmrc_node_version(root)
+        if nvmrc is not None and nvmrc != declared_node:
+            findings.append({
+                "check": "D6", "level": "ERROR", "line": node_line,
+                "message": f"AGENTS.md claims Node {declared_node} but `.nvmrc` pins Node {nvmrc}",
+                "suggestion": "Align AGENTS.md with `.nvmrc` or update `.nvmrc`.",
+            })
+        engines = engines_node_version(root)
+        if engines is not None and engines != declared_node:
+            findings.append({
+                "check": "D6", "level": "ERROR", "line": node_line,
+                "message": f"AGENTS.md claims Node {declared_node} but `package.json` engines.node requires Node {engines}",
+                "suggestion": "Align AGENTS.md with `package.json` engines.node or update engines.node.",
+            })
+
+    # Package manager: declared claim vs the lockfile that actually exists.
+    declared_pms = declared_package_managers(text)
+    ground_pms = lockfile_managers(root)
+    if len(declared_pms) == 1 and len(ground_pms) == 1:
+        declared_pm = next(iter(declared_pms))
+        ground_pm = next(iter(ground_pms))
+        if declared_pm != ground_pm:
+            lockfile = next(name for name, mgr in LOCKFILE_MANAGERS.items() if mgr == ground_pm and (root / name).is_file())
+            findings.append({
+                "check": "D6", "level": "ERROR",
+                "message": f"AGENTS.md uses `{declared_pm}` but the repo has `{lockfile}` implying `{ground_pm}`",
+                "suggestion": f"Align AGENTS.md with `{ground_pm}` or replace the lockfile to match `{declared_pm}`.",
+            })
+    return findings
+
+
 def nested_agents(root):
     out = []
     for p in root.rglob("AGENTS.md"):
@@ -142,6 +235,28 @@ def nested_agents(root):
             continue
         out.append(p.relative_to(root).as_posix())
     return out
+
+
+SCORE_WEIGHTS = {"ERROR": 15, "NOTICE": 5}
+
+
+def health_score(findings):
+    """Aggregate findings into a 0-100 score and a letter grade."""
+    score = 100
+    for f in findings:
+        score -= SCORE_WEIGHTS.get(f.get("level"), 0)
+    score = max(0, score)
+    if score >= 90:
+        grade = "A"
+    elif score >= 80:
+        grade = "B"
+    elif score >= 70:
+        grade = "C"
+    elif score >= 60:
+        grade = "D"
+    else:
+        grade = "F"
+    return score, grade
 
 
 def run_checks(root, max_bytes, strict=False):
@@ -152,20 +267,22 @@ def run_checks(root, max_bytes, strict=False):
     findings.extend(d2_path_drift(root, text))
     findings.extend(d3_stub_regrowth(root))
     findings.extend(d4_size(root, max_bytes))
+    findings.extend(d6_fact_drift(root, text))
     if strict:
         for f in findings:
             if f.get("level") == "NOTICE":
                 f["level"] = "ERROR"
     info = [{"check": "D5", "level": "INFO", "path": p, "message": "Nested AGENTS.md inventory"} for p in nested_agents(root)]
     failures = [f for f in findings if f.get("level") == "ERROR"]
-    return {"ok": not failures, "findings": findings, "info": info}
+    score, grade = health_score(findings)
+    return {"ok": not failures, "findings": findings, "info": info, "score": score, "grade": grade}
 
 
 def render(report):
     lines = ["# Phase 2 — Follow-up Drift Guard Report", ""]
     if report["ok"]:
         lines.append("No blocking drift found.")
-    for check in ["D1", "D2", "D3", "D4"]:
+    for check in ["D1", "D2", "D3", "D4", "D6"]:
         items = [f for f in report["findings"] if f["check"] == check]
         if not items:
             continue
@@ -178,6 +295,7 @@ def render(report):
         lines.extend(f"- `{i['path']}`" for i in report["info"])
     else:
         lines.append("None.")
+    lines.extend(["", "## Health score", f"Score: {report['score']}/100 (grade {report['grade']})"])
     return "\n".join(lines) + "\n"
 
 
@@ -275,6 +393,7 @@ def main(argv=None):
     parser.add_argument("--fix", action="store_true", help="Auto-repair the safe subset (D3 stub regrowth); dry run unless --apply.")
     parser.add_argument("--apply", action="store_true", help="With --fix, actually rewrite files instead of a dry run.")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
+    parser.add_argument("--min-score", type=int, default=None, help="Exit non-zero if the health score is below N (CI gating).")
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
     if args.fix:
@@ -286,7 +405,10 @@ def main(argv=None):
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         print(render(report), end="")
-    return 0 if report["ok"] else 1
+    exit_code = 0 if report["ok"] else 1
+    if args.min_score is not None and report["score"] < args.min_score:
+        exit_code = exit_code or 2
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -34,14 +34,16 @@ Run the read-only scan:
 ```bash
 python3 scripts/scan.py /path/to/repo
 python3 scripts/scan.py /path/to/repo --json
+python3 scripts/scan.py /path/to/repo --fail-on-security   # non-zero exit on HIGH findings
+python3 scripts/scan.py /path/to/repo --no-security        # inventory only
 ```
 
-The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files.
+The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`).
 
 ### Outputs
 
 - A human-readable Checkup report.
-- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, and `nested`.
+- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), and `security` (severity-ranked findings).
 
 ### Explicit stop condition
 
@@ -108,6 +110,7 @@ Run the drift guard:
 python3 scripts/check_drift.py /path/to/repo
 python3 scripts/check_drift.py /path/to/repo --json
 python3 scripts/check_drift.py /path/to/repo --strict
+python3 scripts/check_drift.py /path/to/repo --min-score 80
 ```
 
 Checks:
@@ -117,6 +120,9 @@ Checks:
 - D3: stub re-divergence, checking size and the `AGENTS.md` pointer.
 - D4: `AGENTS.md` size.
 - D5: nested `AGENTS.md` inventory, informational and non-blocking.
+- D6: fact drift, cross-validating claims declared in `AGENTS.md` against repo ground truth — the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the lockfile that actually exists: `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent.
+
+All findings (D1..D6) roll up into a 0-100 **health score** with a letter grade (A/B/C/D/F), rendered as a `## Health score` section and exposed via the `score`/`grade` keys in `--json`. Use `--min-score N` to fail CI when the score drops below `N`; this gate is independent of `--strict` and both can apply together.
 
 #### Semi-automatic repair: `--fix`
 
@@ -145,8 +151,12 @@ Stop when checks pass or repair advice has been provided. Do not rewrite semanti
 ### Long-term follow-up
 
 After Treat completes and root `AGENTS.md` exists, install the long-term guard suite with `npx ai-harness-doctor guard /path/to/repo --apply`.
-It installs only the core suite: pre-commit drift hook, path-aware PR gate, weekly checkup issue workflow, and `AGENTS.md` maintenance contract.
-Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply`; Claude hooks are not integrated.
+It installs only the core suite: pre-commit drift hook, CI drift/checkup gate, and `AGENTS.md` maintenance contract.
+The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (default `auto`, detected from the git remote / `.gitlab-ci.yml`):
+- `github` → `.github/workflows/harness-drift.yml` + `harness-checkup.yml`
+- `gitlab` → includable `.gitlab/harness-ci.yml` (add `include: { local: .gitlab/harness-ci.yml }`)
+- `codebase` → portable `.harness-ci/harness-guard.sh` + wiring `README.md` for internal Codebase / Bits / any runner
+Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cleans up all providers' CI files); Claude hooks are not integrated.
 
 ## Phase 3 — Efficacy (Eval)
 

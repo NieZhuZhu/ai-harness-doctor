@@ -32,7 +32,7 @@ Usage:
   ai-harness-doctor stubs [...args]
   ai-harness-doctor drift [...args]
   ai-harness-doctor eval [...args]
-  ai-harness-doctor guard [target-repo] [--apply] [--remove]
+  ai-harness-doctor guard [target-repo] [--apply] [--remove] [--provider github|gitlab|codebase|auto]
   ai-harness-doctor help
 
 Examples:
@@ -44,6 +44,7 @@ Examples:
   npx ai-harness-doctor validate .
   npx ai-harness-doctor drift . --strict
   npx ai-harness-doctor guard . --apply
+  npx ai-harness-doctor guard . --apply --provider gitlab
 `);
 }
 
@@ -545,13 +546,54 @@ function parseGuardArgs(argv) {
   let target = '.';
   let apply = false;
   let remove = false;
-  for (const arg of argv) {
+  let provider = 'auto';
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === '--apply') apply = true;
     else if (arg === '--remove') remove = true;
+    else if (arg === '--provider') { provider = argv[i + 1]; i += 1; }
+    else if (arg.startsWith('--provider=')) provider = arg.slice('--provider='.length);
     else if (arg.startsWith('--')) fail(`Unknown option: ${arg}`);
     else target = arg;
   }
-  return { target: path.resolve(process.cwd(), target), apply, remove };
+  const allowed = ['auto', 'github', 'gitlab', 'codebase'];
+  if (!allowed.includes(provider)) fail(`Unknown provider: ${provider} (expected ${allowed.join(', ')})`);
+  return { target: path.resolve(process.cwd(), target), apply, remove, provider };
+}
+
+// CI provider adapter layer: each provider maps to a set of [repoRelativePath,
+// templateName] pairs under assets/guard/. The pre-commit hook and the AGENTS.md
+// maintenance contract are provider-agnostic and installed for every provider.
+const GUARD_CI_FILES = {
+  github: [
+    ['.github/workflows/harness-drift.yml', 'harness-drift.yml'],
+    ['.github/workflows/harness-checkup.yml', 'harness-checkup.yml'],
+  ],
+  gitlab: [
+    ['.gitlab/harness-ci.yml', 'gitlab/harness-ci.yml'],
+  ],
+  codebase: [
+    ['.harness-ci/harness-guard.sh', 'codebase/harness-guard.sh'],
+    ['.harness-ci/README.md', 'codebase/README.md'],
+    ['.codebase/pipelines/harness-guard.yaml', 'codebase/harness-guard.yaml'],
+  ],
+};
+
+const GUARD_PROVIDER_NOTES = {
+  gitlab: 'Add `include: { local: .gitlab/harness-ci.yml }` to your .gitlab-ci.yml to activate the drift/checkup jobs.',
+  codebase: 'Installed `.codebase/pipelines/harness-guard.yaml` (change=drift, cron=checkup) wired to `.harness-ci/harness-guard.sh`. Register the cron schedule in Codebase CI \u2192 Schedules; the runner must have `ai-harness-doctor` pre-installed or npm pointed at the internal mirror. See .harness-ci/README.md.',
+};
+
+function detectProvider(target) {
+  if (fs.existsSync(path.join(target, '.gitlab-ci.yml'))) return 'gitlab';
+  const remote = (commandOutput('git', ['remote', 'get-url', 'origin'], target) || '').toLowerCase();
+  if (remote) {
+    if (remote.includes('github')) return 'github';
+    if (remote.includes('gitlab')) return 'gitlab';
+    // Any other enterprise git host (e.g. internal Codebase) → portable script.
+    return 'codebase';
+  }
+  return 'github';
 }
 
 function guardTemplate(name) {
@@ -661,7 +703,7 @@ function describeChange(change) {
   console.log('```');
 }
 
-function plannedGuardInstallChanges(target) {
+function plannedGuardInstallChanges(target, provider) {
   const changes = [];
   const marker = '# ai-harness-doctor:guard';
   const hookPath = gitPath(target, 'hooks/pre-commit');
@@ -681,14 +723,12 @@ function plannedGuardInstallChanges(target) {
     changes.push({ action: hookBefore === null ? 'create' : 'overwrite', path: hookPath, before: hookBefore, after: hookAfter, mode: 0o755, write: true });
   }
 
-  for (const [name, template] of [
-    ['.github/workflows/harness-drift.yml', 'harness-drift.yml'],
-    ['.github/workflows/harness-checkup.yml', 'harness-checkup.yml'],
-  ]) {
+  for (const [name, template] of GUARD_CI_FILES[provider]) {
     const file = path.join(target, name);
     const before = readTextIfExists(file);
     const after = guardTemplate(template);
-    if (before !== after) changes.push({ action: before === null ? 'create' : 'overwrite', path: file, before, after, write: true });
+    const mode = name.endsWith('.sh') ? 0o755 : undefined;
+    if (before !== after) changes.push({ action: before === null ? 'create' : 'overwrite', path: file, before, after, write: true, ...(mode ? { mode } : {}) });
   }
 
   const agentsPath = path.join(target, 'AGENTS.md');
@@ -705,7 +745,11 @@ function plannedGuardRemoveChanges(target) {
   const hookBefore = readTextIfExists(hookPath);
   if (hookBefore !== null && hookBefore.includes(marker)) changes.push({ action: 'remove', path: hookPath, before: hookBefore, after: null, remove: true });
 
-  for (const name of ['.github/workflows/harness-drift.yml', '.github/workflows/harness-checkup.yml']) {
+  // Remove CI files from every known provider so `guard --remove` cleans up
+  // regardless of which provider originally installed them.
+  const ciNames = new Set();
+  for (const files of Object.values(GUARD_CI_FILES)) for (const [name] of files) ciNames.add(name);
+  for (const name of ciNames) {
     const file = path.join(target, name);
     const before = readTextIfExists(file);
     if (before !== null) changes.push({ action: 'remove', path: file, before, after: null, remove: true });
@@ -731,16 +775,19 @@ function applyGuardChanges(changes) {
 }
 
 function guard(argv) {
-  const { target, apply, remove } = parseGuardArgs(argv);
+  const { target, apply, remove, provider } = parseGuardArgs(argv);
   if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) fail(`Target is not a directory: ${target}`);
   if (!isGitRepo(target)) fail(`Target must be a git repo: ${target}`);
   if (!fs.existsSync(path.join(target, 'AGENTS.md'))) fail('run the treat phase first');
 
-  const changes = remove ? plannedGuardRemoveChanges(target) : plannedGuardInstallChanges(target);
+  const resolvedProvider = provider === 'auto' ? detectProvider(target) : provider;
+  const changes = remove ? plannedGuardRemoveChanges(target) : plannedGuardInstallChanges(target, resolvedProvider);
   console.log(`Guard ${remove ? 'remove' : 'install'} plan for ${target}`);
+  if (!remove) console.log(`CI provider: ${resolvedProvider}${provider === 'auto' ? ' (auto-detected)' : ''}`);
   console.log(apply ? 'Mode: apply' : 'Mode: dry-run (use --apply to write)');
   if (!changes.length) console.log('\nNo changes needed.');
   for (const change of changes) describeChange(change);
+  if (!remove && GUARD_PROVIDER_NOTES[resolvedProvider]) console.log(`\nNote: ${GUARD_PROVIDER_NOTES[resolvedProvider]}`);
   if (apply) {
     applyGuardChanges(changes);
     console.log(`\nApplied ${changes.filter((change) => change.write || change.remove).length} change(s).`);

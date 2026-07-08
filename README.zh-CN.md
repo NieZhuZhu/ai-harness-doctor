@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | 步骤 | CI 安全？ | 会写入？ | 说明 |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | 始终以 0 退出；只做清单和证据收集。 |
+| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集和一次安全体检。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出。 |
 | `plan` | ✅ | 可选输出文件 | 搭建合并计划；不会执行合并。 |
 | Write `AGENTS.md` | ❌ | ✅ | 由人或 agent 完成的语义步骤。 |
 | `validate` | ✅ | ❌ | 检查 canonical `AGENTS.md` 是否包含必需章节。 |
@@ -146,6 +146,8 @@ npm update -g ai-harness-doctor
 npx ai-harness-doctor guard . --apply
 ```
 
+CI 卡点是 provider 感知的：传入 `--provider github|gitlab|codebase`（默认 `auto`）以安装匹配的 CI 文件。各 provider 的文件布局见 [`guard`](#command-reference) 命令参考。
+
 纵深防御，从强到弱：
 
 1. **Pre-commit hard block** — 防止本地改动在离开机器前就让 `AGENTS.md` 过期。`AI_HARNESS_DOCTOR_SKIP=1` 是显式、可审计的绕过，而不是静默放行。
@@ -159,6 +161,7 @@ npx ai-harness-doctor guard . --apply
 | 移动/删除已文档化路径 | D2 path drift |
 | 把规则偷偷写回 `CLAUDE.md` 或 `.cursorrules` | D3 stub regrowth |
 | 让 `AGENTS.md` 膨胀到超过有用上下文大小 | D4 size/context risk |
+| 升级 Node 版本或切换包管理器却不更新 `AGENTS.md` | D6 fact drift |
 
 为什么选择检测而不是再生成？静默“修复”drift 会拿走人的知情权。AI Harness Doctor 选择把 drift 暴露出来，因为重点不是重写文件，而是让团队注意到 repo truth 和 agent truth 已经分叉。见 [定位、非目标与对比](#定位非目标与对比)。
 
@@ -221,23 +224,44 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 默认 dry-run；使用 `--apply` 写入。要求：目标是 git repo，且 `AGENTS.md` 已存在。
 
-它管理四个产物：
+它管理一个与 provider 无关的核心，外加一个 **provider 感知的 CI 卡点**：
 
 1. `.git/hooks/pre-commit` drift block。
-2. `.github/workflows/harness-drift.yml` path-aware PR gate。
-3. `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue。
-4. `AGENTS.md` 中带 marker 的 maintenance contract。
+2. 一个 CI drift/checkup 卡点，其文件取决于 `--provider`（见下文）。
+3. `AGENTS.md` 中带 marker 的 maintenance contract。
 
-`AI_HARNESS_DOCTOR_SKIP=1` 是本地 hook 显式且可审计的逃生口。`guard --remove --apply` 会移除托管片段，并在可能时按字节精确恢复此前已存在的 hook 内容。
+`--provider github|gitlab|codebase|auto`（默认 `auto`）选择安装哪些 CI 文件。`auto` 会从 `.gitlab-ci.yml` 和 `origin` remote 探测 provider（github.com → `github`，主机名含 `gitlab` → `gitlab`，其他企业主机（如内部 Codebase）→ `codebase`，无 remote → `github`）：
+
+| Provider | 安装的 CI 文件 | 接线说明 |
+|---|---|---|
+| `github` | `.github/workflows/harness-drift.yml` path-aware PR gate + `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue。 | 在 GitHub Actions 上自动运行。 |
+| `gitlab` | 一个可 include 的 `.gitlab/harness-ci.yml`（`harness-drift` 跑在 MR 上，`harness-checkup` 跑在 schedule 上并产出 artifact）。 | 在 `.gitlab-ci.yml` 中加入 `include: { local: .gitlab/harness-ci.yml }`。 |
+| `codebase` | 一个可移植的 `.harness-ci/harness-guard.sh`（`drift`/`checkup` 模式）+ 一个接线用的 `README.md`。 | 将该脚本注册为 MR 检查和定时 pipeline 步骤。 |
+
+`AI_HARNESS_DOCTOR_SKIP=1` 是本地 hook 显式且可审计的逃生口。`guard --remove --apply` 会移除托管片段、清理**所有 provider** 的 CI 文件（这样切换 provider 不会残留任何东西），并在可能时按字节精确恢复此前已存在的 hook 内容。
 
 </details>
 
 <details>
 <summary><code>scan</code></summary>
 
-检测五类问题：配置清单、体积/截断风险、重叠候选、带 file:line 证据的冲突候选，以及 nested `AGENTS.md` 文件。它始终以 0 退出。
+检测五类问题：配置清单、体积/截断风险、重叠候选、带 file:line 证据的冲突候选，以及 nested `AGENTS.md` 文件。
 
-`--json` returns:
+它还会盘点**扩展的 harness surface**——MCP 服务器、subagents、slash 命令、hooks 和权限规则——并运行一次**安全体检**，标记按严重程度排序的发现（HIGH/MEDIUM）：
+
+- 明文密钥（AWS / GitHub / OpenAI / Google / Slack / Anthropic 密钥、私钥块、通用的 `api_key/secret/token=...`），覆盖指令类和 MCP/settings 配置文件。
+- 过于宽泛的权限，例如 `Bash(*)`、`*` 和 `defaultMode: bypassPermissions`。
+- MCP 卫生问题：不安全的 `http://` 传输以及形似凭据的 env 字面量。
+- 有风险的 hook/命令体：`curl … | bash`、`rm -rf`、`--dangerously-skip-permissions` 等。
+
+默认以 0 退出。加上 `--fail-on-security` 后，只要存在任意 HIGH 级发现就以 `2` 退出，很适合作为 CI 卡点。
+
+| Flag | 用途 |
+|---|---|
+| `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |
+| `--fail-on-security` | 存在任意 HIGH 级安全发现时以 `2` 退出。 |
+
+`--json` returns（已有的 key 保持不变——向后兼容）:
 
 ```json
 {
@@ -245,9 +269,21 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
   "warnings": [],
   "overlaps": [],
   "conflicts": [],
-  "nested": []
+  "nested": [],
+  "surface": {
+    "mcp_servers": [],
+    "subagents": [],
+    "commands": [],
+    "hooks": [],
+    "permissions": []
+  },
+  "security": [
+    { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ]
 }
 ```
+
+`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。
 
 </details>
 
@@ -302,6 +338,13 @@ Example finding lines:
 - D3: `Tool stub CLAUDE.md regrew or lost AGENTS.md pointer`
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
+- D6: `AGENTS.md declares Node 18 but .nvmrc pins 20` (fact drift)
+
+**D6 fact drift** 会把 `AGENTS.md` 中声明的*事实*与 repo 实际情况交叉验证：Node 版本（对比 `.nvmrc` 和 `package.json` 的 `engines.node`）以及包管理器（对比实际的 lockfile——`package-lock.json`→npm、`pnpm-lock.yaml`→pnpm、`yarn.lock`→yarn）。它只标记明确的矛盾，当 `AGENTS.md` 未声明时保持沉默，因此沉默永远不会产生误报。
+
+**Health score。** 所有发现（D1..D6）汇总为一个 0–100 的健康分，并带字母等级（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F），以 `## Health score` 章节呈现（如 `Score: 85/100 (grade B)`）。加上 `--json` 后，报告会在既有字段之外新增 `score` 和 `grade` key。
+
+`--min-score N` 在分数低于 `N` 时以非零退出——这是一个独立于 `--strict` 的 CI 卡点，两者可同时生效。
 
 **半自动修复：`--fix`。** `--fix` 只自动修复 drift 中安全、机械化的那一部分——目前是 **D3 stub regrowth**。任何长出真实内容或丢失 `AGENTS.md` 指针的工具 stub，都会被重写回其最小的 canonical import-stub 形式（stub 主体复用自 `canonicalize.py`，因此 `--fix` 与 `stubs`/`--write-stubs` 保持同步）。
 
