@@ -171,6 +171,7 @@ Defense in depth、強い順です。
 | Cursor | `.cursor/commands/` 向け command adapters。 |
 | Gemini CLI | `~/.gemini/commands/harness/` 向け TOML custom command adapters。Google は 2026-06-18 に個人 tier 向け Gemini CLI を retired しました。enterprise Gemini Code Assist は影響を受けず、これらの adapters は enterprise/existing installs で引き続き動作します。 |
 | Windsurf / Cline / others | Universal mode: agent にインストール済み playbook を示し、「run phase N」と伝えます。 |
+| MCP clients | `ai-harness-doctor mcp` は `harness_scan`/`drift`/`validate`/`plan` を stdio 経由の MCP tools として公開します。 |
 | Humans & CI | 素の `npx ai-harness-doctor ...`。agent は不要です。 |
 
 正直な注記: Claude 以外の adapters は薄いポインタで、検証は軽めです。command format が変わっていた場合は issue を立ててください。
@@ -316,7 +317,38 @@ before/after agent tasks を実行または比較します。
 ]
 ```
 
-Checks は extracted answer に対する `regex`、または workdir で実行する `command` にできます。Claude CLI JSON output の場合、grading は matching の前に `result` field を抽出します。Usage/cost fields は存在する場合に捕捉されます。`--compare before.json after.json` は Markdown comparison を書きます。`--regrade results.json --tasks tasks.json` は recorded outputs を offline で再採点します。runner binary がない場合、この command は実行したふりをせず、manual protocol fallback を表示します。
+Checks は extracted answer に対する `regex`、workdir で実行する `command`、または open-ended な LLM-as-judge grading のための `judge` にできます。Claude CLI JSON output の場合、grading は matching の前に `result` field を抽出します。Usage/cost fields は存在する場合に捕捉されます。`--compare before.json after.json` は Markdown comparison を書きます。`--regrade results.json --tasks tasks.json` は recorded outputs を offline で再採点します。runner binary がない場合、この command は実行したふりをせず、manual protocol fallback を表示します。
+
+**Multi-agent matrix.** 同じ task set を複数の runner（"agents"）で実行し、並べて比較します。runner は繰り返し可能な `--runner-cmd NAME=CMD` でインラインに、または `--matrix agents.json`（agent 名 → runner command template の mapping）で指定します。`--matrix-report FILE` は Markdown matrix（行 = tasks、列 = agents、cell = pass/fail + duration、加えて agent ごとの pass-rate summary）を書き、`--matrix-json FILE` は agent ごとの task records を `summary` block（`passed`、`total`、`pass_rate`）付きで書きます。single-runner の before/after/compare フローは変わりません。matrix mode は `--matrix` および/または `--runner-cmd` が指定された場合にのみ有効化されます。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . \
+  --runner-cmd "claude=claude -p {prompt} --output-format json" \
+  --runner-cmd "codex=codex exec {prompt}" \
+  --matrix-report matrix-report.md --matrix-json matrix-results.json
+```
+
+**LLM-as-judge check.** task check は、regex では表現できない grading のために `{ "type": "judge", "rubric": "..." }` を使えます。grading は `--judge-cmd "CMD_TEMPLATE"` に委譲されます。judge は env `JUDGE_ANSWER`、`JUDGE_RUBRIC`、`JUDGE_INPUT`（一時 JSON `{answer, rubric}` へのパス）を受け取り、template placeholders `{answer}`/`{rubric}`/`{input}` が置換されます。judge は `{"passed": bool, "score": number, "reason": "..."}` を出力する必要があります。`passed` が省略された場合、`score >= 0.5` を pass とみなします。offline の決定的な judge は CI に適しています。
+
+</details>
+
+<details>
+<summary><code>mcp</code></summary>
+
+MCP（Model Context Protocol）stdio server を起動し、agents が doctor の read-only な機能を tools として呼び出せるようにします。
+
+```bash
+npx ai-harness-doctor mcp   # or directly: node bin/mcp-server.js
+```
+
+Transport は newline-delimited JSON 上の JSON-RPC 2.0 です（stdin/stdout で 1 行につき 1 つの JSON object）。サポートされる methods:
+
+- `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`。
+- `notifications/initialized` → notification、response なし。
+- `tools/list` → `harness_scan`、`harness_drift`、`harness_validate`、`harness_plan` を、それぞれ input schema `{ repo: string (default "."), ... }` 付きで広告します。
+- `tools/call` → 対応する Python script へ dispatch し、`{ content: [{ type: "text", text }] }` を返します。
+
+Tool booleans: `harness_scan`（`json`）、`harness_drift`（`json`、`strict`）、`harness_validate`（`json`）、`harness_plan`。未知の methods と tools は JSON-RPC error object を返します。
 
 </details>
 
@@ -393,6 +425,7 @@ As of 2026-07, based on each project's public documentation — see their repos 
 ```text
 SKILL.md                         # Skill playbook and phase stop conditions
 bin/cli.js                       # npm CLI and installer
+bin/mcp-server.js                # MCP stdio server (harness_scan/drift/validate/plan)
 commands/                        # Claude Code slash commands
 adapters/                        # Codex, Cursor, Gemini, universal pointers
 scripts/                         # Python stdlib deterministic mechanics
