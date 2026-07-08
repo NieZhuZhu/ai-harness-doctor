@@ -67,6 +67,21 @@ class DriftTests(unittest.TestCase):
         report = json.loads(proc.stdout)
         self.assertFalse([f for f in report["findings"] if f["check"] == "D2"])
 
+    def test_home_relative_backtick_does_not_trigger_d2(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "Never write into the real `~/.claude`, `~/.codex`, or `/etc/hosts`.\n",
+            encoding="utf-8",
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D2"])
+
     def test_clean_fixture_exit_zero(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
