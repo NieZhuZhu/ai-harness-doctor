@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import canonicalize  # noqa: E402
 import registry  # noqa: E402
+import scan  # noqa: E402  # reuse scan.SKIP_DIRS so the drift walk prunes the same vendored dirs
 
 
 DEFAULT_MAX_BYTES = 32768
@@ -255,11 +256,18 @@ def d6_fact_drift(root, text):
 
 def nested_agents(root):
     out = []
-    for p in root.rglob("AGENTS.md"):
-        if ".git" in p.parts or p == root / "AGENTS.md":
+    # Walk with os.walk so we can prune vendored dirs in place and avoid
+    # following directory symlinks (which can loop). Reuse scan.SKIP_DIRS so
+    # scan.py and check_drift.py never maintain divergent skip sets.
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in scan.SKIP_DIRS]
+        if "AGENTS.md" not in filenames:
+            continue
+        p = Path(dirpath) / "AGENTS.md"
+        if p == root / "AGENTS.md":
             continue
         out.append(p.relative_to(root).as_posix())
-    return out
+    return sorted(out)
 
 
 SCORE_WEIGHTS = {"ERROR": 15, "NOTICE": 5}
