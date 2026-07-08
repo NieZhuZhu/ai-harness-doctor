@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | Always exits 0; inventory and evidence only. |
+| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, and a security checkup. `--fail-on-security` exits 2 on HIGH findings. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -235,9 +235,23 @@ It manages four artifacts:
 <details>
 <summary><code>scan</code></summary>
 
-Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files. It always exits 0.
+Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files.
 
-`--json` returns:
+It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags severity-ranked findings (HIGH/MEDIUM):
+
+- Plaintext secrets (AWS / GitHub / OpenAI / Google / Slack / Anthropic keys, private-key blocks, generic `api_key/secret/token=...`) across instruction and MCP/settings config files.
+- Over-broad permissions such as `Bash(*)`, `*`, and `defaultMode: bypassPermissions`.
+- MCP hygiene issues: insecure `http://` transports and credential-shaped env literals.
+- Risky hook/command bodies: `curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`, and similar.
+
+It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-severity finding is present, which is handy as a CI gate.
+
+| Flag | Purpose |
+|---|---|
+| `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
+| `--fail-on-security` | Exit `2` when any HIGH-severity security finding is present. |
+
+`--json` returns (existing keys are unchanged — backward compatible):
 
 ```json
 {
@@ -245,9 +259,21 @@ Detects five classes: config inventory, size/truncation risk, overlap candidates
   "warnings": [],
   "overlaps": [],
   "conflicts": [],
-  "nested": []
+  "nested": [],
+  "surface": {
+    "mcp_servers": [],
+    "subagents": [],
+    "commands": [],
+    "hooks": [],
+    "permissions": []
+  },
+  "security": [
+    { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ]
 }
 ```
+
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted.
 
 </details>
 
