@@ -23,3 +23,16 @@ node bin/cli.js help
 - Public documentation is kept in synchronized English, Simplified Chinese, and Japanese READMEs; code comments are English; `assets/AGENTS.template.md` is English.
 - Guard suite templates live under `assets/guard/`; keep the pre-commit, PR gate, weekly checkup, and maintenance contract templates synchronized with `bin/cli.js` behavior.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
+
+# Testing requirements
+
+- Any change to `scripts/*.py` or `bin/cli.js` must ship with matching tests in the same commit; do not land behavior changes without test coverage.
+- Test fixtures live under `tests/fixtures/` and are read-only inputs — never modify or regenerate them to make a test pass.
+- Installer smoke tests must run against an isolated `HOME` temp directory so they never touch the real user environment (see Safety).
+
+# Safety
+
+- The installer must never write into the real `~/.claude`, `~/.codex`, or other user config directories; always target an isolated `HOME` during tests.
+- Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
+- Never commit secrets, tokens, or credentials.
+- The eval / LLM-as-judge harness makes external model calls — be mindful of cost and token usage when running or expanding it.
