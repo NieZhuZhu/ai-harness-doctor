@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | 步骤 | CI 安全？ | 会写入？ | 说明 |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集、一次安全体检、一次缺失基建的缺口分析，以及一份技术栈项目快照。在 markdown 模式下还会把完整 JSON 报告写入临时文件并打印其路径。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出；`--fail-on-gaps` 在出现 ERROR 级缺口时以 3 退出。 |
+| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集、一次安全体检、一次缺失基建的缺口分析、一次语义一致性检查（AGENTS.md 声明 vs 代码事实），以及一份技术栈项目快照。在 markdown 模式下还会把完整 JSON 报告写入临时文件并打印其路径。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出；`--fail-on-gaps` 在出现 ERROR 级缺口时以 3 退出；`--fail-on-semantic` 在声明与代码矛盾时以 4 退出。 |
 | `plan` | ✅ | 可选输出文件 | 搭建合并计划；不会执行合并。 |
 | Write `AGENTS.md` | ❌ | ✅ | 由人或 agent 完成的语义步骤。 |
 | `validate` | ✅ | ❌ | 检查 canonical `AGENTS.md` 是否包含必需章节。 |
@@ -269,7 +269,9 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 过去作为静态 `G5`–`G8` 缺口的、依赖技术栈的判断（pre-commit guard、维护契约、MCP 配置、权限配置）现在都成为该快照中的事实，交给 agent 自行推断。
 
-**给 agent 用的完整 JSON 报告。** 在 markdown 模式下，`scan` 会把完整的机器可读报告（files、surface、security、`project_snapshot`、`gaps`）写入一个稳定的临时文件——`${TMPDIR}/harness-scan-<hash>.json`，其中 `<hash>` 由解析后的仓库路径派生——并在末尾追加一节 `## Full JSON report` 指向它。驱动工作流的 agent 可以读取该文件，基于快照和缺口做推断与修复规划，而无需再解析 markdown。`--json` 模式已经把完整报告打印到 stdout，因此不会写临时文件。用 `--no-report-file` 可跳过写入。
+它还会运行一次**语义一致性（semantic consistency）**检查，把 `AGENTS.md` 中*声明*的内容与代码*事实*做比对，让过时的说明在体检阶段就暴露出来（而不是等到 Phase 2 的 drift 门禁）。它会交叉核对：构建/测试命令（`npm run <script>` / `make <target>`）与 `package.json` scripts、`Makefile` targets；反引号包裹的仓库相对路径与文件系统；声明的包管理器与 lockfile；声明的 Node.js 版本与 `.nvmrc` / `engines.node`。每条发现带有 `category`（`command`/`path`/`package_manager`/`node_version`）、`level`（`MISMATCH`/`MISSING`）、`declared`（声明值）、`actual`（真实事实）、可选的 `line` 和 `suggestion`。加上 `--fail-on-semantic` 后，只要有任何声明与代码矛盾就以 `4` 退出。
+
+**给 agent 用的完整 JSON 报告。** 在 markdown 模式下，`scan` 会把完整的机器可读报告（files、surface、security、`project_snapshot`、`semantic`、`gaps`）写入一个稳定的临时文件——`${TMPDIR}/harness-scan-<hash>.json`，其中 `<hash>` 由解析后的仓库路径派生——并在末尾追加一节 `## Full JSON report` 指向它。驱动工作流的 agent 可以读取该文件，基于快照和缺口做推断与修复规划，而无需再解析 markdown。`--json` 模式已经把完整报告打印到 stdout，因此不会写临时文件。用 `--no-report-file` 可跳过写入。
 
 | Flag | 用途 |
 |---|---|
@@ -277,6 +279,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | `--fail-on-security` | 存在任意 HIGH 级安全发现时以 `2` 退出。 |
 | `--no-gaps` | 跳过缺口分析（不输出 `gaps` key）。 |
 | `--fail-on-gaps` | 存在任意 ERROR 级 harness 缺口时以 `3` 退出。 |
+| `--no-semantic` | 跳过语义一致性检查（不输出 `semantic` key）。 |
+| `--fail-on-semantic` | 存在任意 AGENTS.md 声明与代码矛盾时以 `4` 退出。 |
 | `--no-snapshot` | 跳过项目快照（不输出 `project_snapshot` key）。 |
 | `--no-report-file` | 不把完整 JSON 报告写入临时文件（仅 markdown 模式）。 |
 
@@ -309,11 +313,18 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
   },
   "gaps": [
     { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
-  ]
+  ],
+  "semantic": {
+    "checked": 0,
+    "mismatches": 0,
+    "findings": [
+      { "category": "command", "level": "MISMATCH", "line": 12, "declared": "npm run lint", "actual": "no such package.json script", "message": "", "suggestion": "" }
+    ]
+  }
 }
 ```
 
-`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。
+`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。`semantic` 带有 `checked`（已核对的声明数）、`mismatches` 和 `findings`（每条含 `category`、`level`、可选 `line`、`declared`、`actual`、`message`、`suggestion`）；使用 `--no-semantic` 时会省略 `semantic` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。
 
 </details>
 

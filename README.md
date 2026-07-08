@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, a gap analysis of missing harness infrastructure, and a tech-stack project snapshot. In markdown mode it also writes the full JSON report to a temp file and prints its path. `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps. |
+| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, a gap analysis of missing harness infrastructure, a semantic consistency check (AGENTS.md declarations vs code facts), and a tech-stack project snapshot. In markdown mode it also writes the full JSON report to a temp file and prints its path. `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps; `--fail-on-semantic` exits 4 on declaration/code mismatches. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -269,7 +269,9 @@ For everything that depends on the project's tech stack (rather than being unive
 
 The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-commit guard, maintenance contract, MCP config, permission config) are now facts in this snapshot, left for an agent to reason about.
 
-**Full JSON report for agents.** In markdown mode `scan` writes the complete machine-readable report (files, surface, security, `project_snapshot`, and `gaps`) to a stable temp file — `${TMPDIR}/harness-scan-<hash>.json`, where `<hash>` is derived from the resolved repo path — and appends a `## Full JSON report` section pointing to it. An agent driving the workflow can read that file to reason over the snapshot and gaps and plan fixes, without re-parsing the markdown. The `--json` mode already prints the full report to stdout, so no temp file is written there. Use `--no-report-file` to skip writing it.
+It also runs a **semantic consistency** check that compares what `AGENTS.md` *declares* against what the code actually *is*, so stale instructions surface at checkup time (not just in the Phase 2 drift gate). It cross-checks build/test commands (`npm run <script>` / `make <target>`) against `package.json` scripts and `Makefile` targets, backtick-quoted repo-relative paths against the filesystem, the declared package manager against the lockfile, and the declared Node.js version against `.nvmrc` / `engines.node`. Each finding carries a `category` (`command`/`path`/`package_manager`/`node_version`), a `level` (`MISMATCH`/`MISSING`), the `declared` value, the `actual` fact, an optional `line`, and a `suggestion`. With `--fail-on-semantic` it exits `4` when any declaration contradicts the code.
+
+**Full JSON report for agents.** In markdown mode `scan` writes the complete machine-readable report (files, surface, security, `project_snapshot`, `semantic`, and `gaps`) to a stable temp file — `${TMPDIR}/harness-scan-<hash>.json`, where `<hash>` is derived from the resolved repo path — and appends a `## Full JSON report` section pointing to it. An agent driving the workflow can read that file to reason over the snapshot and gaps and plan fixes, without re-parsing the markdown. The `--json` mode already prints the full report to stdout, so no temp file is written there. Use `--no-report-file` to skip writing it.
 
 | Flag | Purpose |
 |---|---|
@@ -277,6 +279,8 @@ The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-comm
 | `--fail-on-security` | Exit `2` when any HIGH-severity security finding is present. |
 | `--no-gaps` | Skip the missing / gap analysis (drops the `gaps` key). |
 | `--fail-on-gaps` | Exit `3` when any ERROR-level harness gap is present. |
+| `--no-semantic` | Skip the semantic consistency check (drops the `semantic` key). |
+| `--fail-on-semantic` | Exit `4` when any AGENTS.md declaration contradicts the code. |
 | `--no-snapshot` | Skip the project snapshot (drops the `project_snapshot` key). |
 | `--no-report-file` | Do not write the full JSON report to a temp file (markdown mode only). |
 
@@ -309,11 +313,18 @@ The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-comm
   },
   "gaps": [
     { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
-  ]
+  ],
+  "semantic": {
+    "checked": 0,
+    "mismatches": 0,
+    "findings": [
+      { "category": "command", "level": "MISMATCH", "line": 12, "declared": "npm run lint", "actual": "no such package.json script", "message": "", "suggestion": "" }
+    ]
+  }
 }
 ```
 
-`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `project_snapshot` is omitted with `--no-snapshot`. In markdown mode the same JSON object is also written to `${TMPDIR}/harness-scan-<hash>.json` (unless `--no-report-file` is given).
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `semantic` carries `checked` (declarations verified), `mismatches`, and `findings` (each with `category`, `level`, optional `line`, `declared`, `actual`, `message`, `suggestion`); with `--no-semantic` the `semantic` key is omitted. `project_snapshot` is omitted with `--no-snapshot`. In markdown mode the same JSON object is also written to `${TMPDIR}/harness-scan-<hash>.json` (unless `--no-report-file` is given).
 
 </details>
 
