@@ -715,8 +715,184 @@ def scan_repo(repo_root, max_bytes):
     }
 
 
+# ---------------------------------------------------------------------------
+# Monorepo / multi-package awareness. A single repository frequently hosts many
+# packages (npm/yarn/pnpm workspaces, or simply several nested package.json /
+# AGENTS.md subtrees). The classic scan only ever looks at one root; monorepo
+# mode additionally scans each detected package subdirectory and reports
+# per-package results plus a top-level aggregate. Single-repo behavior is
+# unchanged whenever no workspace is detected.
+# ---------------------------------------------------------------------------
+
+
+def _read_root_workspaces(root):
+    """npm/yarn workspace globs declared in the root package.json, if any."""
+    path = root / "package.json"
+    data = load_json(path) if path.is_file() else None
+    if not isinstance(data, dict):
+        return []
+    ws = data.get("workspaces")
+    if isinstance(ws, list):
+        return [str(x) for x in ws]
+    if isinstance(ws, dict) and isinstance(ws.get("packages"), list):
+        return [str(x) for x in ws["packages"]]
+    return []
+
+
+def _read_pnpm_workspaces(root):
+    """pnpm workspace globs from pnpm-workspace.yaml (minimal stdlib parser)."""
+    path = root / "pnpm-workspace.yaml"
+    if not path.is_file():
+        path = root / "pnpm-workspace.yml"
+    if not path.is_file():
+        return []
+    globs = []
+    in_packages = False
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not in_packages:
+            if re.match(r"^packages\s*:", stripped):
+                after = stripped.split(":", 1)[1].strip()
+                if after.startswith("["):
+                    globs.extend(re.findall(r"['\"]([^'\"]+)['\"]", after))
+                else:
+                    in_packages = True
+            continue
+        m = re.match(r"^-\s*(.+)$", stripped)
+        if m:
+            val = m.group(1).strip().strip("'\"")
+            if val:
+                globs.append(val)
+        elif not raw.startswith((" ", "\t")):
+            # Dedented back to a new top-level key; the packages block ended.
+            in_packages = False
+    return globs
+
+
+def _expand_workspace_globs(root, globs):
+    """Expand workspace globs to concrete package directories under ``root``.
+
+    A directory qualifies as a package when it holds its own ``package.json`` or
+    ``AGENTS.md``. Negation entries (``!pkg``) and vendored dirs are ignored.
+    Returns an ordered ``{relative_path: Path}`` mapping.
+    """
+    dirs = {}
+    for glob in globs:
+        glob = str(glob).strip().strip("/")
+        if not glob or glob.startswith("!"):
+            continue
+        for path in sorted(root.glob(glob)):
+            if not path.is_dir() or is_skipped(path, root):
+                continue
+            if (path / "package.json").is_file() or (path / "AGENTS.md").is_file():
+                dirs[rel(path, root)] = path
+    return dict(sorted(dirs.items()))
+
+
+def _discover_nested_packages(root):
+    """Heuristic package discovery when no workspace config exists.
+
+    Finds the shallowest subdirectories that contain a ``package.json`` or a
+    ``AGENTS.md`` (never descending into an already-detected package), pruning
+    the same vendored dirs the rest of the scan skips.
+    """
+    dirs = {}
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        p = Path(dirpath)
+        if p == root:
+            continue
+        if "package.json" in filenames or "AGENTS.md" in filenames:
+            dirs[rel(p, root)] = p
+            dirnames[:] = []  # do not descend into a detected package subtree
+    return dict(sorted(dirs.items()))
+
+
+def detect_packages(root, mode="auto"):
+    """Detect workspace/monorepo packages under ``root``.
+
+    ``mode`` is one of ``"auto"`` (explicit workspace config only — the default,
+    so single repos are never treated as monorepos), ``"force"`` (also fall back
+    to nested-package discovery), or ``"off"`` (never a monorepo). Returns
+    ``(ordered {rel: Path}, source_label|None)``.
+    """
+    if mode == "off":
+        return {}, None
+    dirs = _expand_workspace_globs(root, _read_root_workspaces(root))
+    if dirs:
+        return dirs, "package.json workspaces"
+    dirs = _expand_workspace_globs(root, _read_pnpm_workspaces(root))
+    if dirs:
+        return dirs, "pnpm-workspace.yaml"
+    if mode == "force":
+        dirs = _discover_nested_packages(root)
+        if dirs:
+            return dirs, "nested packages"
+    return {}, None
+
+
+def _package_name(path):
+    data = load_json(path / "package.json") if (path / "package.json").is_file() else None
+    if isinstance(data, dict) and isinstance(data.get("name"), str):
+        return data["name"]
+    return None
+
+
+def _package_summary(report):
+    return {
+        "files": len(report.get("files", [])),
+        "gaps": len(report.get("gaps", [])),
+        "security_high": sum(1 for s in report.get("security", []) if s.get("level") == "HIGH"),
+        "overlaps": len(report.get("overlaps", [])),
+        "conflicts": len(report.get("conflicts", [])),
+        "semantic_mismatches": (report.get("semantic") or {}).get("mismatches", 0),
+    }
+
+
+def _aggregate_packages(packages):
+    """Sum the per-package summaries into a single top-level aggregate."""
+    keys = ["files", "gaps", "security_high", "overlaps", "conflicts", "semantic_mismatches"]
+    aggregate = {k: 0 for k in keys}
+    aggregate["packages_with_agents_md"] = 0
+    for pkg in packages:
+        for k in keys:
+            aggregate[k] += pkg["summary"].get(k, 0)
+        if pkg.get("has_agents_md"):
+            aggregate["packages_with_agents_md"] += 1
+    return aggregate
+
+
+def scan_monorepo(root, max_bytes, package_dirs, source):
+    """Scan every detected package subdirectory and build the aggregate.
+
+    Returns ``(monorepo_summary, packages)`` where ``packages`` is a list of
+    ``{path, name, has_agents_md, summary, report}`` (each ``report`` is a plain
+    single-repo :func:`scan_repo` result so there is never nested recursion).
+    """
+    packages = []
+    for relpath, pdir in package_dirs.items():
+        sub = scan_repo(pdir, max_bytes)
+        packages.append({
+            "path": relpath,
+            "name": _package_name(pdir),
+            "has_agents_md": (pdir / "AGENTS.md").is_file(),
+            "summary": _package_summary(sub),
+            "report": sub,
+        })
+    monorepo = {
+        "source": source,
+        "package_count": len(packages),
+        "aggregate": _aggregate_packages(packages),
+    }
+    return monorepo, packages
+
+
 def render_markdown(report, report_path=None):
     lines = ["# Phase 0 — Checkup Report", ""]
+    if "monorepo" in report:
+        render_monorepo(lines, report["monorepo"], report.get("packages", []))
     lines.append("## Configuration file inventory")
     if not report["files"]:
         lines.append("No known AI harness configuration files were found.")
@@ -768,6 +944,37 @@ def render_markdown(report, report_path=None):
         ])
     lines.extend(["", "> Stop condition: confirm the migration scope (whole repository / subdirectory / selected files) before entering Phase 1 — Treat."])
     return "\n".join(lines) + "\n"
+
+
+def render_monorepo(lines, monorepo, packages):
+    lines.extend(["", "## Monorepo"])
+    source = monorepo.get("source") or "unknown"
+    lines.append(f"Detected {monorepo.get('package_count', 0)} package(s) via {source}.")
+    agg = monorepo.get("aggregate", {})
+    lines.append(
+        "Aggregate across packages: "
+        f"{agg.get('files', 0)} config file(s), "
+        f"{agg.get('gaps', 0)} gap(s), "
+        f"{agg.get('security_high', 0)} HIGH security finding(s), "
+        f"{agg.get('overlaps', 0)} overlap(s), "
+        f"{agg.get('conflicts', 0)} conflict(s), "
+        f"{agg.get('packages_with_agents_md', 0)} package(s) with AGENTS.md."
+    )
+    if packages:
+        lines.append("")
+        lines.append("| Package | Name | AGENTS.md | Config files | Gaps | HIGH sec |")
+        lines.append("|---|---|:---:|---:|---:|---:|")
+        for pkg in packages:
+            summary = pkg.get("summary", {})
+            lines.append(
+                f"| `{pkg['path']}` | {pkg.get('name') or '—'} | "
+                f"{'yes' if pkg.get('has_agents_md') else 'no'} | "
+                f"{summary.get('files', 0)} | {summary.get('gaps', 0)} | "
+                f"{summary.get('security_high', 0)} |"
+            )
+    lines.append("")
+    lines.append("> Per-package details are in the `packages` array of the JSON report (`--json`).")
+    lines.append("")
 
 
 def render_surface(lines, surface):
@@ -868,6 +1075,18 @@ def render_snapshot(lines, snapshot):
     lines.append(f"- Permission configuration: {'present' if snapshot.get('has_permissions') else 'absent'}")
 
 
+def _apply_section_flags(report, args):
+    """Drop optional report sections per the --no-* flags (in place)."""
+    if args.no_snapshot:
+        report.pop("project_snapshot", None)
+    if args.no_security:
+        report.pop("security", None)
+    if args.no_gaps:
+        report.pop("gaps", None)
+    if args.no_semantic:
+        report.pop("semantic", None)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Scan AI harness config files.")
     parser.add_argument("repo_root", nargs="?", default=".")
@@ -889,26 +1108,41 @@ def main(argv=None):
                         help="Skip the project snapshot section (drops the `project_snapshot` key).")
     parser.add_argument("--no-report-file", action="store_true",
                         help="Do not write the full JSON report to a temp file (markdown mode only).")
+    parser.add_argument("--monorepo", action="store_true",
+                        help="Force monorepo mode: scan each package subdir even without a "
+                             "workspace config (falls back to nested package.json / AGENTS.md subtrees).")
+    parser.add_argument("--no-monorepo", action="store_true",
+                        help="Disable monorepo detection; scan only the repo root.")
     args = parser.parse_args(argv)
-    report = scan_repo(args.repo_root, args.max_bytes)
-    if args.no_snapshot:
-        report.pop("project_snapshot", None)
-    if args.no_security:
-        report.pop("security", None)
-    if args.no_gaps:
-        report.pop("gaps", None)
-    if args.no_semantic:
-        report.pop("semantic", None)
+    root = Path(args.repo_root).resolve()
+    report = scan_repo(root, args.max_bytes)
+
+    mode = "force" if args.monorepo else ("off" if args.no_monorepo else "auto")
+    package_dirs, source = detect_packages(root, mode)
+    if package_dirs:
+        monorepo, packages = scan_monorepo(root, args.max_bytes, package_dirs, source)
+        report["monorepo"] = monorepo
+        report["packages"] = packages
+        for pkg in packages:
+            _apply_section_flags(pkg["report"], args)
+
+    _apply_section_flags(report, args)
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         report_path = None if args.no_report_file else write_report_file(report, args.repo_root)
         print(render_markdown(report, report_path), end="")
-    if args.fail_on_security and any(s["level"] == "HIGH" for s in report.get("security", [])):
+    # Fail-on gates consider the root report and every package report so a
+    # monorepo run cannot hide a failing package. In single-repo mode this is
+    # exactly the previous behavior (only the root report is present).
+    reports = [report] + [pkg["report"] for pkg in report.get("packages", [])]
+    if args.fail_on_security and any(
+            any(s["level"] == "HIGH" for s in r.get("security", [])) for r in reports):
         return 2
-    if args.fail_on_gaps and any(g["level"] == "ERROR" for g in report.get("gaps", [])):
+    if args.fail_on_gaps and any(
+            any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in reports):
         return 3
-    if args.fail_on_semantic and report.get("semantic", {}).get("findings"):
+    if args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in reports):
         return 4
     return 0
 
