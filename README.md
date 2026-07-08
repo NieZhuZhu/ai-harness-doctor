@@ -186,7 +186,7 @@ Honest note: non-Claude adapters are thin pointers and lightly verified. If a co
 | 0 — Checkup / scan | `scripts/scan.py` | Human or JSON health report | Stop at user confirmation of migration scope. |
 | 1 — Treat / canonicalize | `scripts/canonicalize.py --plan`, `--write-stubs`, `--validate` | Merge plan, canonical `AGENTS.md`, minimal stubs | Stop until every conflict has human adjudication. |
 | 2 — Follow-up / drift guard | `scripts/check_drift.py` | Drift report and CI/pre-commit exit codes | Stop when checks pass or repair advice is given. |
-| 3 — Efficacy eval | `scripts/eval_run.py` | Before/after JSON and Markdown report | Stop when metrics are produced. |
+| 3 — Efficacy eval | `scripts/eval_run.py` | Before/after JSON and Markdown report plus a 0–100 `health` score (A–F grade) | Stop when metrics are produced. |
 
 ## Command reference
 
@@ -433,7 +433,11 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
   --matrix-report matrix-report.md --matrix-json matrix-results.json
 ```
 
-**LLM-as-judge check.** A task check may use `{ "type": "judge", "rubric": "..." }` for grading that regex cannot express. Grading is delegated to `--judge-cmd "CMD_TEMPLATE"`. The judge receives env `JUDGE_ANSWER`, `JUDGE_RUBRIC`, and `JUDGE_INPUT` (path to a temp JSON `{answer, rubric}`), and template placeholders `{answer}`/`{rubric}`/`{input}` are substituted. It must print `{"passed": bool, "score": number, "reason": "..."}`; if `passed` is omitted, `score >= 0.5` counts as a pass. An offline deterministic judge works for CI.
+**LLM-as-judge check.** A task check may use `{ "type": "judge", "rubric": "..." }` for grading that regex cannot express. When `--judge-cmd "CMD_TEMPLATE"` is provided it takes priority: the judge receives env `JUDGE_ANSWER`, `JUDGE_RUBRIC`, and `JUDGE_INPUT` (path to a temp JSON `{answer, rubric}`), and template placeholders `{answer}`/`{rubric}`/`{input}` are substituted. It must print `{"passed": bool, "score": number, "reason": "..."}`; if `passed` is omitted, `score >= 0.5` counts as a pass. An offline deterministic judge works for CI.
+
+**Built-in default judge.** When no `--judge-cmd` is supplied, `judge` checks are graded by a deterministic, dependency-free built-in judge (verdict `{passed, score, reason, judge:"builtin"}`). It grades an answer in priority order: `check.expect` — a list of regex patterns that must ALL match (case-insensitive); `check.reject` — a list of regex patterns that must NOT match; otherwise keyword coverage derived from the free-text `check.rubric` / `check.criteria`, passing when coverage `>= check.min_score` (default `0.5`). Pass `--no-default-judge` to restore the legacy behavior where `judge` checks require an external `--judge-cmd`.
+
+**Health score.** Every eval also computes a one-click efficacy health score = pass rate across all task records, expressed `0–100` with an A–F letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F). It is embedded as a `health` key in both single-run results (`{"tasks":...}`) and matrix results (`{"agents":...}`), and printed as a summary line (`health score: N/100 (grade X), P/T tasks passed`). Timeouts count as failures. `--score PATH` prints the health score for an existing results/matrix JSON (add `--json` for machine output), and `--fail-under N` exits code `5` when the health score is below `N` (a CI gate).
 
 </details>
 
