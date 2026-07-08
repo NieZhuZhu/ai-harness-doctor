@@ -49,3 +49,11 @@ node bin/cli.js help
 - Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
 - Never commit secrets, tokens, or credentials.
 - The eval / LLM-as-judge harness makes external model calls — be mindful of cost and token usage when running or expanding it.
+
+# Commit & PR
+
+- Use Conventional Commits for messages, e.g. `feat(scan): ...`, `fix(drift): ...`, `docs(agents): ...`, `refactor(...)`, `chore(...)`. Commit messages are written in English.
+- Land changes through pull requests; do not push directly to `main`.
+- Every behavior change to `scripts/*.py` or `bin/cli.js` must ship with matching tests in the same commit/PR (see Testing requirements).
+- Before opening a PR, run the full test suite (see Build & test) and a self-checkup with `python3 scripts/scan.py .` and `python3 scripts/check_drift.py .`; keep the drift health score at grade A.
+- Keep the English, Simplified Chinese, and Japanese READMEs in sync within the same PR when user-facing behavior changes.
