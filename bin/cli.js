@@ -602,6 +602,35 @@ function guardTemplate(name) {
   return fs.readFileSync(path.join(PACKAGE_ROOT, 'assets', 'guard', name), 'utf8');
 }
 
+// Marker embedded in every managed guard template. Presence signals a file is
+// (or was) tool-managed; byte-identity to the shipped template signals it is
+// pristine and therefore safe to remove/overwrite without losing user edits.
+const GUARD_MARKER = 'ai-harness-doctor:guard';
+
+// Map every repo-relative CI file name (across all providers) to its template,
+// so remove/re-install can compare on-disk content against what we would ship.
+const GUARD_CI_TEMPLATE_BY_NAME = (() => {
+  const map = new Map();
+  for (const files of Object.values(GUARD_CI_FILES)) {
+    for (const [name, template] of files) map.set(name, template);
+  }
+  return map;
+})();
+
+function isPristineManaged(currentContent, templateContent) {
+  if (currentContent == null) return false;
+  return currentContent === templateContent;
+}
+
+// Remove the exact shipped guard template block from a hand-extended hook,
+// preserving any user-authored content around it. Returns null when the shipped
+// block is not present contiguously (so the caller can avoid destroying it).
+function stripGuardBlock(content, template) {
+  const idx = content.indexOf(template);
+  if (idx === -1) return null;
+  return content.slice(0, idx) + content.slice(idx + template.length);
+}
+
 function commandOutput(command, args, cwd) {
   const result = childProcess.spawnSync(command, args, { cwd, encoding: 'utf8' });
   if (result.error || result.status !== 0) return null;
@@ -730,7 +759,22 @@ function plannedGuardInstallChanges(target, provider) {
     const before = readTextIfExists(file);
     const after = guardTemplate(template);
     const mode = name.endsWith('.sh') ? 0o755 : undefined;
-    if (before !== after) changes.push({ action: before === null ? 'create' : 'overwrite', path: file, before, after, write: true, ...(mode ? { mode } : {}) });
+    if (before === after) continue;
+    // Refuse to clobber a user-edited CI file that carries no guard marker:
+    // mirror the pre-commit "manual-merge" behavior and leave it untouched.
+    if (before !== null && !before.includes(GUARD_MARKER)) {
+      changes.push({
+        action: 'manual-merge',
+        path: file,
+        before,
+        after: before,
+        note: `Existing ${name} has no ai-harness-doctor marker; leaving it unchanged.`,
+        manualSnippet: after,
+        write: false,
+      });
+      continue;
+    }
+    changes.push({ action: before === null ? 'create' : 'overwrite', path: file, before, after, write: true, ...(mode ? { mode } : {}) });
   }
 
   const agentsPath = path.join(target, 'AGENTS.md');
@@ -745,16 +789,42 @@ function plannedGuardRemoveChanges(target) {
   const marker = '# ai-harness-doctor:guard';
   const hookPath = gitPath(target, 'hooks/pre-commit');
   const hookBefore = readTextIfExists(hookPath);
-  if (hookBefore !== null && hookBefore.includes(marker)) changes.push({ action: 'remove', path: hookPath, before: hookBefore, after: null, remove: true });
+  const hookTemplate = guardTemplate('pre-commit.sh');
+  if (hookBefore !== null && hookBefore.includes(marker)) {
+    if (isPristineManaged(hookBefore, hookTemplate)) {
+      // Pristine managed hook — safe to delete outright.
+      changes.push({ action: 'remove', path: hookPath, before: hookBefore, after: null, remove: true });
+    } else {
+      const stripped = stripGuardBlock(hookBefore, hookTemplate);
+      if (stripped === null) {
+        // Marker present but the shipped block was hand-modified; do not destroy.
+        changes.push({ action: 'skip', path: hookPath, before: hookBefore, after: hookBefore, note: 'Pre-commit hook was hand-modified; leaving it in place. Remove the ai-harness-doctor guard lines manually if desired.' });
+      } else if (stripped.trim() === '') {
+        // Nothing but the guard block remained — remove the now-empty hook.
+        changes.push({ action: 'remove', path: hookPath, before: hookBefore, after: null, remove: true });
+      } else {
+        // User-merged hook: strip only the guard block, keep the rest.
+        changes.push({ action: 'strip', path: hookPath, before: hookBefore, after: stripped, write: true, mode: 0o755 });
+      }
+    }
+  }
 
   // Remove CI files from every known provider so `guard --remove` cleans up
-  // regardless of which provider originally installed them.
+  // regardless of which provider originally installed them. Only delete a file
+  // when it is byte-identical to the shipped template; otherwise leave the
+  // user-edited file untouched and report it as skipped.
   const ciNames = new Set();
   for (const files of Object.values(GUARD_CI_FILES)) for (const [name] of files) ciNames.add(name);
   for (const name of ciNames) {
     const file = path.join(target, name);
     const before = readTextIfExists(file);
-    if (before !== null) changes.push({ action: 'remove', path: file, before, after: null, remove: true });
+    if (before === null) continue;
+    const template = guardTemplate(GUARD_CI_TEMPLATE_BY_NAME.get(name));
+    if (isPristineManaged(before, template)) {
+      changes.push({ action: 'remove', path: file, before, after: null, remove: true });
+    } else {
+      changes.push({ action: 'skip', path: file, before, after: before, note: `${name} was edited after install; leaving it in place. Remove it manually if desired.` });
+    }
   }
 
   const agentsPath = path.join(target, 'AGENTS.md');

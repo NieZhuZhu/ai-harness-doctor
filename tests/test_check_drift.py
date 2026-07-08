@@ -10,6 +10,21 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "messy-repo"
 DRIFT = ROOT / "scripts" / "check_drift.py"
 
+sys.path.insert(0, str(ROOT / "scripts"))
+import check_drift  # noqa: E402
+
+
+def _can_symlink_dirs():
+    with tempfile.TemporaryDirectory() as td:
+        target = Path(td) / "target"
+        target.mkdir()
+        link = Path(td) / "link"
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            return False
+        return link.is_symlink()
+
 
 CLEAN_AGENTS = """# Project overview
 Fixture repo.
@@ -156,6 +171,28 @@ class DriftTests(unittest.TestCase):
         # AGENTS.md is not modified by --fix for D1 command drift.
         self.assertEqual(agents, (repo / "AGENTS.md").read_text(encoding="utf-8"))
 
+    def test_out_of_repo_tokens_do_not_probe_but_in_repo_missing_does(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        body = (
+            CLEAN_AGENTS
+            + "\nAbsolute: `/etc/hostname`.\n"
+            + "Escaping: `../outside.txt`.\n"
+            + "In-repo: `docs/missing.md`.\n"
+        )
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d2 = [f for f in report["findings"] if f["check"] == "D2"]
+        messages = " ".join(f["message"] for f in d2)
+        # Out-of-repo tokens are ignored entirely (no filesystem probing).
+        self.assertNotIn("/etc/hostname", messages)
+        self.assertNotIn("../outside.txt", messages)
+        # The in-repo missing path is still reported.
+        self.assertTrue(any("docs/missing.md" in f["message"] for f in d2))
+
     def _stub_pointers(self, repo):
         (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
@@ -208,6 +245,37 @@ class DriftTests(unittest.TestCase):
         proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--min-score", "101"], text=True, capture_output=True)
         self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("Score:", proc.stdout)
+
+
+class NestedAgentsWalkTests(unittest.TestCase):
+    def test_prunes_vendored_dirs_but_finds_real_nested(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            (repo / "node_modules" / "pkg").mkdir(parents=True)
+            (repo / "node_modules" / "pkg" / "AGENTS.md").write_text("vendored\n", encoding="utf-8")
+            (repo / "dist").mkdir()
+            (repo / "dist" / "AGENTS.md").write_text("built\n", encoding="utf-8")
+            (repo / ".git").mkdir()
+            (repo / ".git" / "AGENTS.md").write_text("git\n", encoding="utf-8")
+            (repo / "sub").mkdir()
+            (repo / "sub" / "AGENTS.md").write_text("real nested\n", encoding="utf-8")
+            (repo / "AGENTS.md").write_text("root\n", encoding="utf-8")
+            found = check_drift.nested_agents(repo)
+            self.assertIn("sub/AGENTS.md", found)
+            self.assertNotIn("node_modules/pkg/AGENTS.md", found)
+            self.assertFalse([p for p in found if "node_modules" in p or "dist" in p or ".git" in p])
+            self.assertNotIn("AGENTS.md", found)  # root itself excluded
+
+    @unittest.skipUnless(_can_symlink_dirs(), "directory symlinks unsupported on this platform")
+    def test_symlink_loop_terminates(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            (repo / "sub").mkdir(parents=True)
+            (repo / "sub" / "AGENTS.md").write_text("nested\n", encoding="utf-8")
+            # Create a self-referential directory symlink cycle.
+            (repo / "sub" / "loop").symlink_to(repo / "sub", target_is_directory=True)
+            found = check_drift.nested_agents(repo)  # must terminate, not loop forever
+            self.assertIn("sub/AGENTS.md", found)
 
 
 if __name__ == "__main__":
