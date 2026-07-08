@@ -1,6 +1,6 @@
 {
   "name": "ai-harness-doctor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI Harness Doctor — audit, consolidate & guard your repo's AI agent configs (AGENTS.md, CLAUDE.md, .cursorrules, ...) with a checkup→treat→follow-up→efficacy pipeline",
   "bin": {
     "ai-harness-doctor": "bin/cli.js"
