@@ -159,6 +159,21 @@ The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (
 - `codebase` → portable `.harness-ci/harness-guard.sh` + wiring `README.md` for internal Codebase / Bits / any runner
 Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cleans up all providers' CI files); Claude hooks are not integrated.
 
+#### PR review comments and CI eval gate
+
+On a pull request, the GitHub guard template (`.github/workflows/harness-drift.yml`) additionally surfaces drift findings as **inline PR review comments** and gates CI on the eval **health score**:
+
+```bash
+# Turn a check_drift.py (or scan.py) --json report into a GitHub PR review.
+python3 scripts/check_drift.py . --json | python3 scripts/pr_review.py --default-path AGENTS.md   # DRY RUN: prints the payload as JSON, never posts
+python3 scripts/pr_review.py --report drift-report.json --post --pr 42 --commit "$SHA"            # posts inline comments + a summary review
+```
+
+`pr_review.py` (Python 3.9 stdlib only) reads a findings report from `--report PATH` or stdin. Findings that carry a repo-relative `path` become inline review comments (`{path, line, body}`); findings without a location roll up into a single summary body carrying the `<!-- ai-harness-doctor:pr-review -->` marker so re-runs are recognizable. `--dry-run` (the default) prints the assembled payload and never touches the network; `--post` uses the GitHub REST API (`urllib`) with `GITHUB_TOKEN` / `GITHUB_REPOSITORY` from the environment. Line-based drift findings (D1/D2/D6, which are about `AGENTS.md`) can be attached to a file with `--default-path AGENTS.md`. Inline review comments are GitHub-only; the GitLab/Codebase templates only gain the eval gate.
+
+The same template runs an **eval health-score gate** — `python3 scripts/eval_run.py --score <committed results.json> --fail-under <N>` (exit 5 when the score is below `N`) — so CI fails when efficacy regresses.
+
+
 ## Phase 3 — Efficacy (Eval)
 
 ### Inputs

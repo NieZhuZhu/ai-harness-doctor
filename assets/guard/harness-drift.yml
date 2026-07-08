@@ -20,6 +20,11 @@ on:
       - .github/workflows/**
   workflow_dispatch:
 
+# The PR-review step needs write access to post inline review comments.
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   drift:
     runs-on: ubuntu-latest
@@ -28,5 +33,46 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Check AI harness drift
         run: npx -y ai-harness-doctor drift . --strict
+      # On a pull request, surface drift findings as inline PR review comments.
+      # check_drift.py --json emits a machine-readable report; pr_review.py turns
+      # located findings into inline comments and posts a single review. It runs
+      # even when the gate above failed so reviewers see the annotations. Drift
+      # findings (D1/D2/D6) are line-based against AGENTS.md, so --default-path
+      # attaches them to that file.
+      - name: Post drift findings as PR review comments
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/check_drift.py . --json > drift-report.json || true
+          python3 scripts/pr_review.py \
+            --report drift-report.json \
+            --default-path AGENTS.md \
+            --post \
+            --pr ${{ github.event.number }} \
+            --commit ${{ github.sha }}
+      # Eval health-score gate: fail CI when the committed eval results drop
+      # below the threshold. Point --score at a results JSON produced by
+      # `eval_run.py` (or its --matrix mode) and committed to the repo; the gate
+      # exits code 5 when the health score is under --fail-under.
+      #
+      # The path below is an EXAMPLE — replace it with your repo's committed
+      # results file (e.g. benchmark/results-after.json). Kept as a soft gate
+      # (`|| true`-free but guarded by the file existing) so a repo without an
+      # eval baseline is not blocked; delete the guard once you commit results.
+      - name: Eval health-score gate
+        if: ${{ always() }}
+        run: |
+          RESULTS="benchmark/self-eval/results-after-graded.json"
+          if [ -f "$RESULTS" ]; then
+            python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
+          else
+            echo "No committed eval results at $RESULTS; skipping eval gate."
+            echo "Commit an eval results JSON and set --fail-under to enable it."
+          fi

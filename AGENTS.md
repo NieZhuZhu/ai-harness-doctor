@@ -11,6 +11,7 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
   - `canonicalize.py` — Phase 1 Treat: merge-plan skeleton, tool-stub downgrades, and validation.
   - `check_drift.py` — Phase 2 Follow-up: drift guard (D1–D6), health score, and `--fix`.
   - `eval_run.py` — Phase 3 Efficacy: before/after + matrix eval runner and LLM-as-judge grading.
+  - `pr_review.py` — Phase 2/3 CI helper: turns `check_drift.py`/`scan.py --json` findings into GitHub PR review comments (inline + summary); `--dry-run` prints the payload, `--post` posts via the GitHub REST API (stdlib only).
 - `bin/cli.js` — npm CLI, installer, and forwarding entry point; `bin/mcp-server.js` — MCP stdio server.
 - `assets/` — templates: `assets/AGENTS.template.md` and the `assets/guard/` suite; `references/` — progressive-disclosure docs.
 - `commands/`, `adapters/` — Claude slash commands and Codex/Cursor/Gemini/universal pointer templates.
