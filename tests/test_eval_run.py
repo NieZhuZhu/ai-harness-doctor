@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from shlex import quote as shlex_quote
 
 ROOT = Path(__file__).resolve().parents[1]
 EVAL = ROOT / "scripts" / "eval_run.py"
@@ -346,6 +347,144 @@ class HealthScoreTests(unittest.TestCase):
             self.assertEqual(json.loads(proc.stdout)["score"], 100)
             gated = subprocess.run([sys.executable, str(EVAL), "--score", str(results), "--fail-under", "100"], text=True, capture_output=True)
             self.assertEqual(gated.returncode, 0)
+
+
+class MultiRoundStatsTests(unittest.TestCase):
+    """Deterministic multi-round runs: one stable task, one flaky task."""
+
+    def _write_scenario(self, td):
+        # A runner that keeps a per-prompt counter file so behaviour is fully
+        # deterministic across rounds: `stable` always passes; `flaky` passes on
+        # the first round and fails on every later round.
+        runner_py = Path(td) / "runner.py"
+        runner_py.write_text(
+            "import sys, os\n"
+            "prompt = sys.argv[1]\n"
+            "state = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'count-' + prompt + '.txt')\n"
+            "count = int(open(state).read()) if os.path.exists(state) else 0\n"
+            "open(state, 'w').write(str(count + 1))\n"
+            "if prompt == 'flaky' and count > 0:\n"
+            "    print('no')\n"
+            "else:\n"
+            "    print('ok')\n",
+            encoding="utf-8",
+        )
+        tasks = Path(td) / "tasks.json"
+        tasks.write_text(json.dumps([
+            {"id": "stable", "prompt": "stable", "check": {"type": "regex", "value": "^ok$"}, "timeout_s": 10},
+            {"id": "flaky", "prompt": "flaky", "check": {"type": "regex", "value": "^ok$"}, "timeout_s": 10},
+        ]), encoding="utf-8")
+        runner = f"{sys.executable} {shlex_quote(str(runner_py))} {{prompt}}"
+        return tasks, runner
+
+    def test_rounds_produces_task_stats_and_summary(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks, runner = self._write_scenario(td)
+            output = Path(td) / "results.json"
+            proc = subprocess.run([
+                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "multi",
+                "--workdir", str(workdir), "--runner", runner, "--rounds", "2", "-o", str(output),
+            ], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(data["rounds"], 2)
+            self.assertEqual(len(data["round_results"]), 2)
+            stats_by_id = {t["id"]: t for t in data["task_stats"]}
+            self.assertEqual(stats_by_id["stable"]["runs"], 2)
+            self.assertEqual(stats_by_id["stable"]["passed"], 2)
+            self.assertFalse(stats_by_id["stable"]["flaky"])
+            self.assertEqual(stats_by_id["flaky"]["runs"], 2)
+            self.assertEqual(stats_by_id["flaky"]["passed"], 1)
+            self.assertEqual(stats_by_id["flaky"]["failed"], 1)
+            self.assertEqual(stats_by_id["flaky"]["pass_rate"], 0.5)
+            self.assertTrue(stats_by_id["flaky"]["flaky"])
+            stats = data["stats"]
+            self.assertEqual(stats["rounds"], 2)
+            self.assertEqual(stats["health_scores"], [100, 50])
+            self.assertEqual(stats["mean_health"], 75.0)
+            self.assertEqual(stats["stddev"], 25.0)
+            self.assertEqual(stats["flaky_tasks"], ["flaky"])
+            self.assertEqual(stats["flaky_count"], 1)
+            # Overall health is the pass rate across all task-runs (3/4).
+            self.assertEqual(data["health"]["score"], 75)
+            self.assertIn("flaky tasks (1): flaky", proc.stdout)
+
+    def test_single_round_default_output_unchanged(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks, runner = self._write_scenario(td)
+            output = Path(td) / "results.json"
+            proc = subprocess.run([
+                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "single",
+                "--workdir", str(workdir), "--runner", runner, "-o", str(output),
+            ], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            # Legacy shape: top-level tasks + health, no rounds/stats keys.
+            self.assertIn("tasks", data)
+            self.assertIn("health", data)
+            self.assertNotIn("rounds", data)
+            self.assertNotIn("round_results", data)
+            self.assertNotIn("stats", data)
+
+    def test_rounds_one_is_single_round(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks, runner = self._write_scenario(td)
+            output = Path(td) / "results.json"
+            proc = subprocess.run([
+                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "one",
+                "--workdir", str(workdir), "--runner", runner, "--rounds", "1", "-o", str(output),
+            ], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            self.assertNotIn("round_results", data)
+            self.assertIn("tasks", data)
+
+    def test_stats_subcommand_reads_existing_multi_round_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            multi = Path(td) / "multi.json"
+            multi.write_text(json.dumps({
+                "round_results": [
+                    {"round": 1, "tasks": [{"id": "a", "passed": True}, {"id": "b", "passed": True}]},
+                    {"round": 2, "tasks": [{"id": "a", "passed": True}, {"id": "b", "passed": False}]},
+                ]
+            }), encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(EVAL), "--stats", str(multi), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            out = json.loads(proc.stdout)
+            self.assertEqual(out["stats"]["flaky_tasks"], ["b"])
+            self.assertEqual(out["stats"]["health_scores"], [100, 50])
+            self.assertEqual(out["health"]["score"], 75)
+
+    def test_stats_fail_under_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            multi = Path(td) / "multi.json"
+            multi.write_text(json.dumps({
+                "round_results": [
+                    {"round": 1, "tasks": [{"id": "a", "passed": False}]},
+                ]
+            }), encoding="utf-8")
+            gated = subprocess.run([sys.executable, str(EVAL), "--stats", str(multi), "--fail-under", "50"], text=True, capture_output=True)
+            self.assertEqual(gated.returncode, 5, gated.stdout)
+
+    def test_summarize_rounds_unit(self):
+        round_results = [
+            {"tasks": [{"id": "a", "passed": True}, {"id": "b", "passed": True}]},
+            {"tasks": [{"id": "a", "passed": False}, {"id": "b", "passed": True}]},
+        ]
+        task_stats, stats = eval_run.summarize_rounds(round_results)
+        by_id = {t["id"]: t for t in task_stats}
+        self.assertTrue(by_id["a"]["flaky"])
+        self.assertFalse(by_id["b"]["flaky"])
+        self.assertEqual(stats["mean_health"], 75.0)
+        self.assertEqual(stats["min_health"], 50)
+        self.assertEqual(stats["max_health"], 100)
+        self.assertEqual(stats["flaky_tasks"], ["a"])
 
 
 if __name__ == "__main__":
