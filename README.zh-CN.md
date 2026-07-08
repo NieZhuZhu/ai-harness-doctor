@@ -338,9 +338,25 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 它还会基于 scan 追加一个 **“Merge suggestions (semi-automatic)”** 章节：
 
 - **Overlap consolidation** —— 每个重叠 cluster 会指明 canonical 文件（`AGENTS.md`），并以复选框列表列出要降级为 stub 的文件。
-- **Conflict resolutions** —— 每个冲突信号给出一个推荐值，并附上其支撑性的 `path:line` 证据，作为可勾选项。推荐是确定性的（得到最多支撑的值，平票时按字典序决定）。
+- **Conflict resolutions** —— 每个冲突信号给出一个推荐值，并附上其支撑性的 `path:line` 证据（作为可勾选项），以及一句简短的**理由**。推荐是确定性且基于事实的：`package_manager` 优先选择由已提交 lockfile 支撑的包管理器，`node_version` 优先选择 `.nvmrc` / `engines.node` 固定的版本，其余情况回退到得到最多支撑的值（平票时按字典序决定）。
 
 这些是供人工审阅的建议，而非自动裁决；既有的 inventory/overlap/conflict/TODO 章节都会保留。
+
+</details>
+
+<details>
+<summary><code>draft</code></summary>
+
+自动起草一份填充了具体、基于事实内容的**初始 `AGENTS.md`**，而不是空骨架。调用方式为 `python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]`（对 scan 的只读透传，绝不修改被扫描的仓库）。
+
+草稿会复用 `scan.py` / `semantic.py` 的确定性仓库事实，填充每个 canonical 章节（`Project overview`、`Build & test`、`Conventions`、`Testing requirements`、`Safety`、`Commit & PR`）：
+
+- 检测到的技术栈（来自 `package.json`、`pyproject.toml` 等清单文件）；
+- 从 `package.json` `scripts` 和 `Makefile` targets 推导的构建/测试命令，并使用由已提交 lockfile 支撑的包管理器；
+- 检测到的 CI、lint/format 与类型检查工具；
+- 为 scan 报告的**每个冲突**给出默认解决方案（例如优先选择 lockfile 支撑的包管理器），并附上理由。
+
+每条推断行都标记 `(inferred — confirm)`，安全默认约定标记 `(suggested default)`，顶部横幅提醒人工在提交前审阅并修改。不带 `-o` 时打印到 stdout；带 `-o PATH` 时写入文件，且在文件已存在时拒绝覆盖，除非提供 `--force`。
 
 </details>
 

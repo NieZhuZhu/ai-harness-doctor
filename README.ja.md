@@ -338,9 +338,25 @@ scan output から Phase 1 の merge plan を組み立てます。inventory、ov
 さらに、scan から導出した **「Merge suggestions (semi-automatic)」** section を追記します:
 
 - **Overlap consolidation** —— 各 overlap cluster は canonical file（`AGENTS.md`）を示し、stub に落とすべき files を checkbox list で列挙します。
-- **Conflict resolutions** —— 各 conflict signal に推奨値を 1 つ与え、それを裏付ける `path:line` evidence を tick 可能な item として付けます。推奨は決定的です（最も支持された値、同点の場合は辞書順）。
+- **Conflict resolutions** —— 各 conflict signal に推奨値を 1 つ与え、それを裏付ける `path:line` evidence を tick 可能な item として付け、短い **rationale**（根拠）も添えます。推奨は決定的かつ事実ベースです。`package_manager` は committed lockfile が裏付ける manager を優先し、`node_version` は `.nvmrc` / `engines.node` が固定するバージョンを優先し、それ以外は最も支持された値にフォールバックします（同点の場合は辞書順）。
 
 これらは人間のレビュー用の suggestions であり、自動裁定ではありません。既存の inventory/overlap/conflict/TODO sections は保持されます。
+
+</details>
+
+<details>
+<summary><code>draft</code></summary>
+
+空の skeleton ではなく、具体的で事実由来の内容を埋めた **スターター `AGENTS.md`** を自動ドラフトします。`python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]` として起動します（scan の read-only passthrough で、スキャン対象 repo を一切変更しません）。
+
+ドラフトは `scan.py` / `semantic.py` の決定的な repository facts を再利用し、すべての canonical section（`Project overview`、`Build & test`、`Conventions`、`Testing requirements`、`Safety`、`Commit & PR`）を埋めます:
+
+- 検出された tech stack（`package.json`、`pyproject.toml` などの manifest から）;
+- `package.json` の `scripts` と `Makefile` targets から導出した build/test コマンド（committed lockfile が裏付ける package manager を使用）;
+- 検出された CI、lint/format、type-check ツール;
+- scan が報告する **すべての conflict の default 解決策**（例: lockfile が裏付ける package manager を優先）と、その rationale。
+
+推論された行はすべて `(inferred — confirm)`、安全な既定の慣習は `(suggested default)` とタグ付けされ、先頭の banner が commit 前のレビュー・編集を促します。`-o` なしでは stdout に出力し、`-o PATH` ではファイルに書き込みますが、既存ファイルは `--force` を付けない限り上書きを拒否します。
 
 </details>
 
