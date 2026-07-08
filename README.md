@@ -516,6 +516,16 @@ Bug reports and focused PRs are welcome. Keep scripts deterministic, stdlib-only
 python3 -m unittest discover -s tests -v
 ```
 
+The repo also ships an npm-driven lint/format/test workflow (dev-only; none of it is bundled into the published package). CI runs the full suite across a Python (3.9/3.10/3.12) and Node (16/20/22) version matrix:
+
+```bash
+npm test            # Python unittest + node --test CLI suite
+npm run lint        # eslint (bin) + ruff (scripts/tests) + trilingual README heading sync
+npm run format      # prettier --write .   (npm run format:py for ruff format)
+```
+
+`npm run lint:docs` (aka `scripts/check_readme_sync.py`) enforces that `README.md`, `README.zh-CN.md`, and `README.ja.md` keep an identical heading skeleton, so any structural change to one README must be mirrored in the other two.
+
 ## License
 
 MIT. Copyright (c) NieZhuZhu.

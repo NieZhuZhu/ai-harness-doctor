@@ -15,7 +15,6 @@ import canonicalize  # noqa: E402
 import registry  # noqa: E402
 import scan  # noqa: E402  # reuse scan.SKIP_DIRS so the drift walk prunes the same vendored dirs
 
-
 DEFAULT_MAX_BYTES = 32768
 # Flat list of every canonical stub path, derived (in registry order) from the
 # shared agent-config registry so the drift guard tracks exactly the same stubs

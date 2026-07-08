@@ -7,7 +7,9 @@
   },
   "files": [
     "bin",
+    "!bin/*.test.js",
     "scripts/*.py",
+    "!scripts/check_readme_sync.py",
     "commands",
     "adapters",
     "references",
@@ -46,6 +48,19 @@
   "author": "NieZhuZhu",
   "license": "MIT",
   "scripts": {
-    "test": "python3 -m unittest discover -s tests"
+    "test": "python3 -m unittest discover -s tests && node --test bin/*.test.js",
+    "test:py": "python3 -m unittest discover -s tests",
+    "test:js": "node --test bin/*.test.js",
+    "lint": "npm run lint:js && npm run lint:py && npm run lint:docs",
+    "lint:js": "eslint bin",
+    "lint:py": "ruff check scripts tests",
+    "lint:docs": "python3 scripts/check_readme_sync.py",
+    "format": "prettier --write .",
+    "format:py": "ruff format scripts tests"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.6.0",
+    "prettier": "^3.9.4"
   }
 }
