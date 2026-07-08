@@ -256,6 +256,13 @@ manifest で追跡されているすべての copy install を、現在の packa
 
 scan output から Phase 1 の merge plan を組み立てます。inventory、overlap clusters、conflict list、TODO decision checklist を含みます。content を merge したり、どちらかを選んだりは明示的に **しません**。
 
+さらに、scan から導出した **「Merge suggestions (semi-automatic)」** section を追記します:
+
+- **Overlap consolidation** —— 各 overlap cluster は canonical file（`AGENTS.md`）を示し、stub に落とすべき files を checkbox list で列挙します。
+- **Conflict resolutions** —— 各 conflict signal に推奨値を 1 つ与え、それを裏付ける `path:line` evidence を tick 可能な item として付けます。推奨は決定的です（最も支持された値、同点の場合は辞書順）。
+
+これらは人間のレビュー用の suggestions であり、自動裁定ではありません。既存の inventory/overlap/conflict/TODO sections は保持されます。
+
 </details>
 
 <details>
@@ -295,6 +302,18 @@ Example finding lines:
 - D3: `Tool stub CLAUDE.md regrew or lost AGENTS.md pointer`
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
+
+**半自動修復: `--fix`。** `--fix` は drift のうち安全で機械的な subset のみを自動修復します——現在は **D3 stub regrowth** です。real content が育ってしまった、あるいは `AGENTS.md` pointer を失った tool stub は、最小の canonical import-stub の形に書き戻されます（stub 本体は `canonicalize.py` から再利用されるため、`--fix` と `stubs`/`--write-stubs` は同期を保ちます）。
+
+```bash
+npx ai-harness-doctor drift . --fix          # DRY RUN: prints the diff, writes nothing
+npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stubs
+```
+
+- デフォルトの `--fix` は dry run です。書き換え対象の unified diff を出力し、ファイルは変更しません。
+- `--fix --apply` は育ってしまった stub files をその場で書き換えます。
+- 安全でない drift（D1 command drift、D2 path drift、D4 size、その他あらゆる semantic drift）は決して変更されません。**「needs manual attention」** の下に、コピペ可能な repair guidance 付きで列挙されます。
+- summary line が `N fixed/fixable, M need manual attention` を報告します。drift が残っている限り、command は non-zero で終了します。
 
 </details>
 

@@ -256,6 +256,13 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 从 scan 输出搭建 Phase 1 合并计划：清单、重叠 clusters、冲突列表，以及 TODO 决策清单。它明确**不会**合并内容或替你选边。
 
+它还会基于 scan 追加一个 **“Merge suggestions (semi-automatic)”** 章节：
+
+- **Overlap consolidation** —— 每个重叠 cluster 会指明 canonical 文件（`AGENTS.md`），并以复选框列表列出要降级为 stub 的文件。
+- **Conflict resolutions** —— 每个冲突信号给出一个推荐值，并附上其支撑性的 `path:line` 证据，作为可勾选项。推荐是确定性的（得到最多支撑的值，平票时按字典序决定）。
+
+这些是供人工审阅的建议，而非自动裁决；既有的 inventory/overlap/conflict/TODO 章节都会保留。
+
 </details>
 
 <details>
@@ -295,6 +302,18 @@ Example finding lines:
 - D3: `Tool stub CLAUDE.md regrew or lost AGENTS.md pointer`
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
+
+**半自动修复：`--fix`。** `--fix` 只自动修复 drift 中安全、机械化的那一部分——目前是 **D3 stub regrowth**。任何长出真实内容或丢失 `AGENTS.md` 指针的工具 stub，都会被重写回其最小的 canonical import-stub 形式（stub 主体复用自 `canonicalize.py`，因此 `--fix` 与 `stubs`/`--write-stubs` 保持同步）。
+
+```bash
+npx ai-harness-doctor drift . --fix          # DRY RUN: prints the diff, writes nothing
+npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stubs
+```
+
+- 默认 `--fix` 是 dry run：它打印将被重写内容的 unified diff，不改动任何文件。
+- `--fix --apply` 会就地重写重新长出的 stub 文件。
+- 不安全的 drift（D1 命令 drift、D2 path drift、D4 size，以及任何其他语义 drift）永远不会被修改；它们会列在 **“needs manual attention”** 下，并附上可复制粘贴的修复指引。
+- 一行汇总会报告 `N fixed/fixable, M need manual attention`。只要还有 drift 残留，命令就以非零退出。
 
 </details>
 
