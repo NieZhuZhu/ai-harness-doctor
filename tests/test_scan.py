@@ -51,6 +51,25 @@ class ScanTests(unittest.TestCase):
         g1 = next(g for g in report["gaps"] if g["check"] == "G1")
         self.assertEqual(g1["level"], "ERROR")
 
+    def test_semantic_section_present_and_flags_mismatch(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            (tmp / "package.json").write_text('{"scripts": {"build": "tsc"}}', encoding="utf-8")
+            (tmp / "AGENTS.md").write_text("# Project overview\n\nRun `npm run build` then `npm run lint`.\n", encoding="utf-8")
+            report = self.run_json(tmp)
+            self.assertIn("semantic", report)
+            self.assertEqual(report["semantic"]["mismatches"], 1)
+            proc = subprocess.run([sys.executable, str(SCAN), str(tmp), "--json", "--fail-on-semantic"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 4, proc.stdout)
+
+    def test_no_semantic_flag_drops_section(self):
+        report = self.run_json(FIXTURE)
+        self.assertIn("semantic", report)
+        proc = subprocess.run([sys.executable, str(SCAN), str(FIXTURE), "--json", "--no-semantic"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertNotIn("semantic", json.loads(proc.stdout))
+
     def test_gaps_clean_when_harness_complete(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td) / "repo"
