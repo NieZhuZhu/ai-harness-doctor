@@ -107,6 +107,11 @@ def d2_path_drift(root, text):
             token = m.group(1).strip()
             if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
                 continue
+            if token.startswith(("~", "/", "$")) or ":" in token:
+                # Home-relative (~/.claude), absolute (/etc/...), env-var ($HOME/...),
+                # or scheme/drive-like paths reference locations outside the repo tree;
+                # they are never repo-relative paths, so skip them.
+                continue
             if token.startswith(("npm ", "pnpm ", "yarn ", "make ", "python", "git ")):
                 continue
             if "*" in token or "?" in token:
