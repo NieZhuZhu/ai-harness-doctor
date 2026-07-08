@@ -166,6 +166,77 @@ If the runner is missing, the script prints a manual protocol instead of pretend
 
 Stop when metrics have been produced. The report should answer whether this `AGENTS.md` made agent behavior more stable.
 
+### Multi-agent eval matrix
+
+Run the same task set across several runners ("agents") and compare them side by side. Provide runners either inline or via a matrix file:
+
+```bash
+# Inline, repeatable NAME=CMD runners
+python3 scripts/eval_run.py --tasks tasks.json --workdir /path/to/repo \
+  --runner-cmd "claude=claude -p {prompt} --output-format json" \
+  --runner-cmd "codex=codex exec {prompt}" \
+  --matrix-report matrix-report.md --matrix-json matrix-results.json
+
+# Or a matrix file mapping agent name -> runner command template
+python3 scripts/eval_run.py --tasks tasks.json --workdir /path/to/repo \
+  --matrix agents.json --matrix-report matrix-report.md --matrix-json matrix-results.json
+```
+
+`agents.json` shape (a flat mapping, or `{ "agents": { ... } }`):
+
+```json
+{ "claude": "claude -p {prompt} --output-format json", "codex": "codex exec {prompt}" }
+```
+
+Outputs:
+
+- A markdown matrix report: rows are tasks, columns are agents, each cell shows pass/fail and duration, plus a per-agent pass-rate summary.
+- A JSON file with per-agent task records and a `summary` block (`passed`, `total`, `pass_rate`).
+
+The single-runner before/after flow (`--label` + `-o` + `--compare`) is unchanged; matrix mode activates only when `--matrix` and/or `--runner-cmd` are supplied.
+
+### LLM-as-judge check type
+
+In addition to `regex` and `command`, a task check may use `type: "judge"` for open-ended grading:
+
+```json
+{ "id": "explain", "prompt": "Explain the install command.",
+  "check": { "type": "judge", "rubric": "Answer must name pnpm as the package manager." } }
+```
+
+Grading is delegated to a configurable command supplied via `--judge-cmd "CMD_TEMPLATE"`. The judge contract:
+
+- Env `JUDGE_ANSWER`: the produced answer text.
+- Env `JUDGE_RUBRIC`: the task's `rubric` (or `criteria`) string.
+- Env `JUDGE_INPUT`: path to a temp JSON file `{"answer": ..., "rubric": ...}`.
+- Template placeholders `{answer}` / `{rubric}` / `{input}` are substituted (shell-quoted).
+
+The command MUST print a single JSON object: `{"passed": bool, "score": number, "reason": "..."}`. If `passed` is omitted but a numeric `score` is present, `score >= 0.5` counts as a pass. For offline/deterministic testing, a simple script or `printf '{"passed":true,"score":1.0}'` works as the judge.
+
+```bash
+python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/repo \
+  --runner "claude -p {prompt} --output-format json" \
+  --judge-cmd "python3 my_judge.py"
+```
+
+## MCP server
+
+The core read-only capabilities are also exposed as an MCP (Model Context Protocol) stdio server so agents can call them as tools:
+
+```bash
+npx ai-harness-doctor mcp
+# or directly: node bin/mcp-server.js
+```
+
+Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line on stdin/stdout). Supported methods:
+
+- `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
+- `notifications/initialized` → notification, no response.
+- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, each with an input schema `{ repo: string (default "."), ... }`.
+- `tools/call` → dispatches to the matching Python script and returns `{ content: [{ type: "text", text }] }`.
+
+Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`. Unknown methods and tools return a JSON-RPC error object.
+
 ## Decision rules
 
 ### What belongs in AGENTS.md
@@ -236,3 +307,4 @@ Correction: proceed strictly through Checkup, Treat, Follow-up, and Efficacy, wi
 - `commands/`: Claude Code slash commands routed to this skill by phase.
 - `adapters/`: thin pointer templates for Codex, Cursor, Gemini, and universal agents.
 - `bin/cli.js`: npm CLI, installer, and forwarding entry point for Python scripts.
+- `bin/mcp-server.js`: MCP stdio server exposing `harness_scan`, `harness_drift`, `harness_validate`, and `harness_plan`.
