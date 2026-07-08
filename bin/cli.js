@@ -32,6 +32,7 @@ Usage:
   ai-harness-doctor stubs [...args]
   ai-harness-doctor drift [...args]
   ai-harness-doctor eval [...args]
+  ai-harness-doctor mcp
   ai-harness-doctor guard [target-repo] [--apply] [--remove] [--provider github|gitlab|codebase|auto]
   ai-harness-doctor help
 
@@ -44,6 +45,7 @@ Examples:
   npx ai-harness-doctor validate .
   npx ai-harness-doctor drift . --strict
   npx ai-harness-doctor guard . --apply
+  npx ai-harness-doctor mcp   # start the MCP stdio server (JSON-RPC over newline-delimited JSON)
   npx ai-harness-doctor guard . --apply --provider gitlab
 `);
 }
@@ -796,6 +798,16 @@ function guard(argv) {
   }
 }
 
+function runMcpServer() {
+  // Launch the MCP stdio server, inheriting stdio so the parent process becomes the
+  // transport. JSON-RPC 2.0 messages are exchanged as newline-delimited JSON.
+  const server = path.join(__dirname, 'mcp-server.js');
+  if (!fs.existsSync(server)) fail(`MCP server not found: ${server}`);
+  const result = childProcess.spawnSync(process.execPath, [server], { stdio: 'inherit' });
+  if (result.error) fail(result.error.message);
+  process.exit(result.status === null ? 1 : result.status);
+}
+
 function main() {
   const [command, ...rest] = process.argv.slice(2);
   if (!command || command === 'help' || command === '--help' || command === '-h') {
@@ -807,6 +819,7 @@ function main() {
   if (command === 'uninstall') return uninstall(rest);
   if (command === 'update') return updateInstalled();
   if (command === 'guard') return guard(rest);
+  if (command === 'mcp') return runMcpServer();
   if (['scan', 'plan', 'validate', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
   fail(`Unknown command: ${command}`);
 }
