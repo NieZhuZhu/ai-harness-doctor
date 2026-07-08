@@ -53,6 +53,15 @@ python3 scripts/eval_run.py --tasks benchmark/tasks.json --label after-run2 --wo
 python3 scripts/eval_run.py --compare benchmark/results/results-before.json benchmark/results/results-after.json -o benchmark/results/report.md
 ```
 
+## Multi-agent matrix and judge (methodology note)
+
+The eval harness now also supports running the same task set across several runners ("agents") in one pass and grading open-ended answers with an LLM-as-judge check. This is a methodology extension only — the headline numbers below are still the single-runner before/after comparison and are **not** regenerated with these modes.
+
+- **Matrix mode**: `eval_run.py --matrix agents.json` (or repeatable `--runner-cmd NAME=CMD`) runs each task against every agent and emits a Markdown matrix (`--matrix-report`) and JSON (`--matrix-json`) with a per-agent `summary` (`passed`, `total`, `pass_rate`). It lets a repo compare, e.g., `claude` vs `codex` on the same before/after documentation without changing the tasks or grading.
+- **Judge check**: a task check of `type: "judge"` delegates grading to `--judge-cmd`, which returns `{"passed", "score", "reason"}`. This is intended for semantically-graded prompts that regex cannot capture; it does not replace the objective regex tasks used for the headline results.
+
+To keep the reported numbers reproducible and honest, the tables in this file continue to use the objective regex tasks and the single `claude -p` runner described above; matrix/judge results, if run, should be reported separately with their own runner and judge configuration.
+
 ## Actual results
 
 | Side | Runs | Passed | Flip-flop tasks | Avg duration/task | Total captured cost (USD) |

@@ -171,6 +171,7 @@ npx ai-harness-doctor guard . --apply
 | Cursor | 面向 `.cursor/commands/` 的 command adapters。 |
 | Gemini CLI | 面向 `~/.gemini/commands/harness/` 的 TOML custom command adapters。Google 已于 2026-06-18 面向个人 tiers retired Gemini CLI；企业版 Gemini Code Assist 不受影响，这些 adapters 仍适用于企业/既有安装。 |
 | Windsurf / Cline / others | 通用模式：让 agent 指向已安装的 playbook，并说 “run phase N”。 |
+| MCP clients | `ai-harness-doctor mcp` 通过 stdio 将 `harness_scan`/`drift`/`validate`/`plan` 暴露为 MCP 工具。 |
 | Humans & CI | 直接运行 `npx ai-harness-doctor ...`；不需要 agent。 |
 
 诚实说明：非 Claude adapters 是薄指针，只做过轻量验证。如果某个命令格式变了，请提交 issue。
@@ -316,7 +317,38 @@ Example finding lines:
 ]
 ```
 
-Checks 可以是对提取答案执行的 `regex`，也可以是在 workdir 中执行的 `command`。对于 Claude CLI JSON 输出，评分会先提取 `result` 字段再匹配。Usage/cost 字段存在时会被捕获。`--compare before.json after.json` 会写出 Markdown 对比。`--regrade results.json --tasks tasks.json` 会离线重新评分已记录输出。如果 runner binary 缺失，命令会打印手动协议 fallback，而不是假装已经运行。
+Checks 可以是对提取答案执行的 `regex`、在 workdir 中执行的 `command`，也可以是用于开放式 LLM-as-judge 评分的 `judge`。对于 Claude CLI JSON 输出，评分会先提取 `result` 字段再匹配。Usage/cost 字段存在时会被捕获。`--compare before.json after.json` 会写出 Markdown 对比。`--regrade results.json --tasks tasks.json` 会离线重新评分已记录输出。如果 runner binary 缺失，命令会打印手动协议 fallback，而不是假装已经运行。
+
+**Multi-agent matrix。** 在多个 runner（“agents”）上运行同一套任务集并并排对比。可用可重复的 `--runner-cmd NAME=CMD` 内联提供 runner，或通过 `--matrix agents.json`（agent 名称 → runner 命令模板的映射）。`--matrix-report FILE` 写出一个 Markdown 矩阵（行 = 任务，列 = agents，单元格 = pass/fail + 时长，外加每个 agent 的通过率汇总），`--matrix-json FILE` 写出每个 agent 的任务记录并带一个 `summary` 块（`passed`、`total`、`pass_rate`）。单 runner 的 before/after/compare 流程保持不变；只有在提供了 `--matrix` 和/或 `--runner-cmd` 时才会激活矩阵模式。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . \
+  --runner-cmd "claude=claude -p {prompt} --output-format json" \
+  --runner-cmd "codex=codex exec {prompt}" \
+  --matrix-report matrix-report.md --matrix-json matrix-results.json
+```
+
+**LLM-as-judge check。** 一个任务 check 可以使用 `{ "type": "judge", "rubric": "..." }` 来完成 regex 无法表达的评分。评分委托给 `--judge-cmd "CMD_TEMPLATE"`。judge 会收到环境变量 `JUDGE_ANSWER`、`JUDGE_RUBRIC` 和 `JUDGE_INPUT`（一个临时 JSON `{answer, rubric}` 的路径），且模板占位符 `{answer}`/`{rubric}`/`{input}` 会被替换。它必须打印 `{"passed": bool, "score": number, "reason": "..."}`；若省略 `passed`，则 `score >= 0.5` 记为通过。一个离线的确定性 judge 适用于 CI。
+
+</details>
+
+<details>
+<summary><code>mcp</code></summary>
+
+启动一个 MCP（Model Context Protocol）stdio 服务器，让 agents 可以把 doctor 的只读能力当作工具来调用。
+
+```bash
+npx ai-harness-doctor mcp   # or directly: node bin/mcp-server.js
+```
+
+Transport 是基于换行分隔 JSON 的 JSON-RPC 2.0（stdin/stdout 上每行一个 JSON 对象）。支持的方法：
+
+- `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`。
+- `notifications/initialized` → 通知，无响应。
+- `tools/list` → 公布 `harness_scan`、`harness_drift`、`harness_validate`、`harness_plan`，各自带一个输入 schema `{ repo: string (default "."), ... }`。
+- `tools/call` → 分派到匹配的 Python 脚本并返回 `{ content: [{ type: "text", text }] }`。
+
+工具布尔值：`harness_scan`（`json`）、`harness_drift`（`json`、`strict`）、`harness_validate`（`json`）、`harness_plan`。未知的方法和工具会返回一个 JSON-RPC error 对象。
 
 </details>
 
@@ -393,6 +425,7 @@ Regeneration 和 guarding 是两种有效哲学。Ruler/rulesync 让生成输出
 ```text
 SKILL.md                         # Skill playbook and phase stop conditions
 bin/cli.js                       # npm CLI and installer
+bin/mcp-server.js                # MCP stdio server (harness_scan/drift/validate/plan)
 commands/                        # Claude Code slash commands
 adapters/                        # Codex, Cursor, Gemini, universal pointers
 scripts/                         # Python stdlib deterministic mechanics
