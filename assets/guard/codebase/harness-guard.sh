@@ -7,6 +7,13 @@ set -eu
 
 MODE="${1:-drift}"
 
+# Escape hatch: set AI_HARNESS_DOCTOR_SKIP=1 to bypass the guard for a run
+# (mirrors the local pre-commit hook). Kept auditable via the log line below.
+if [ "${AI_HARNESS_DOCTOR_SKIP:-}" = "1" ]; then
+  echo "ai-harness-doctor guard skipped by AI_HARNESS_DOCTOR_SKIP=1 (mode=$MODE)"
+  exit 0
+fi
+
 run() {
   if command -v ai-harness-doctor >/dev/null 2>&1; then
     ai-harness-doctor "$@"

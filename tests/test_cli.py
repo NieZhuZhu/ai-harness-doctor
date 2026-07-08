@@ -194,6 +194,18 @@ class CliInstallerTests(unittest.TestCase):
             self.assertTrue(script.exists())
             self.assertTrue(os.access(script, os.X_OK))
             self.assertTrue((repo / ".harness-ci" / "README.md").exists())
+            pipeline = repo / ".codebase" / "pipelines" / "harness-guard.yaml"
+            self.assertTrue(pipeline.exists())
+            pipeline_text = pipeline.read_text(encoding="utf-8")
+            self.assertIn("trigger:", pipeline_text)
+            self.assertIn("cron:", pipeline_text)
+            self.assertIn("harness-guard.sh", pipeline_text)
+            # The portable script honours the AI_HARNESS_DOCTOR_SKIP escape hatch.
+            self.assertIn("AI_HARNESS_DOCTOR_SKIP", script.read_text(encoding="utf-8"))
+            # remove cleans up the codebase files too.
+            self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
+            self.assertFalse(script.exists())
+            self.assertFalse(pipeline.exists())
 
     def test_guard_auto_detects_gitlab_from_ci_file(self):
         with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:

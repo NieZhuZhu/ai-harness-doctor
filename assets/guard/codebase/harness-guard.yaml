@@ -1,0 +1,41 @@
+# ai-harness-doctor guard — Codebase / Bits pipeline
+#
+# Installed by `ai-harness-doctor guard --provider codebase` at
+# `.codebase/pipelines/harness-guard.yaml`. It delegates to the portable
+# entrypoint `.harness-ci/harness-guard.sh` (installed alongside), so the guard
+# logic lives in a single, runner-agnostic place.
+#
+# Triggers (Codebase CI applies triggers at the pipeline level, so one job
+# branches on the trigger type):
+#   - change (MR): fast drift gate — fails the check when AGENTS.md has drifted.
+#   - cron (schedule): deep checkup — publishes a scan + drift report.
+#     Register the cron schedule in the repo's Codebase CI → Schedules UI; only
+#     pipelines whose YAML declares a `cron` trigger are eligible.
+#
+# Runner requirement: the runner must be able to resolve `ai-harness-doctor`.
+# Public npm is usually unreachable from internal runners, so either
+#   (a) pre-install it on the image / runner (`npm i -g ai-harness-doctor`), or
+#   (b) point npm at the internal mirror, e.g.
+#       `npm config set registry https://bnpm.byted.org`.
+# The image below already ships Node 20+; swap it for your team's base image.
+
+name: Harness Guard
+trigger:
+  change:
+  cron:
+jobs:
+  harness-guard:
+    image: hub.byted.org/base/ci_debian11_node_22:latest
+    steps:
+      - name: harness guard (drift on MR, checkup on schedule)
+        commands:
+          - |
+            # CI_EVENT_CHANGE_* is populated for MR/change events; its absence
+            # means this run came from the cron schedule.
+            if [ -n "${CI_EVENT_CHANGE_SOURCE_SHA:-}" ]; then
+              MODE=drift
+            else
+              MODE=checkup
+            fi
+            echo "harness-guard mode: $MODE"
+            sh .harness-ci/harness-guard.sh "$MODE"
