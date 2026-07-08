@@ -323,6 +323,17 @@ Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line 
 
 Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`. Unknown methods and tools return a JSON-RPC error object.
 
+## Runtime & self-test
+
+The CLI is a dual Node + Python runtime: the Node entrypoint dispatches every Python-backed subcommand (`scan`, `plan`, `validate`, `stubs`, `drift`, `eval`) and the MCP server through one shared Python resolver. Python is discovered in priority order — `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python` — and only a Python **3** interpreter is accepted. When no interpreter is found, every subcommand fails with the same clean, actionable message (install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON`) rather than leaking a raw stack trace.
+
+Use `doctor --self-test` to verify the runtime before running the pipeline:
+
+```bash
+npx ai-harness-doctor doctor --self-test   # table: node, python, each engine, mcp-server
+npx ai-harness-doctor doctor --json        # machine-readable runtime report (exit 1 if any check fails)
+```
+
 ## Decision rules
 
 ### What belongs in AGENTS.md
