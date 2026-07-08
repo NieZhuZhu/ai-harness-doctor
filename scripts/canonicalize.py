@@ -12,40 +12,27 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import scan  # noqa: E402
+import registry  # noqa: E402
 
 
-STUBS = {
-    "claude": {
-        "paths": ["CLAUDE.md", ".claude/CLAUDE.md"],
-        "content": "@AGENTS.md\n<!-- Canonical instructions live in AGENTS.md. Keep this file as an import stub only. -->\n",
-        "marker": "AGENTS.md",
-    },
-    "cursor": {
-        "paths": [".cursorrules"],
-        "content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
-        "marker": "AGENTS.md",
-    },
-    "windsurf": {
-        "paths": [".windsurfrules"],
-        "content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
-        "marker": "AGENTS.md",
-    },
-    "copilot": {
-        "paths": [".github/copilot-instructions.md"],
-        "content": "# GitHub Copilot instructions\n\nCanonical agent instructions live in `AGENTS.md`. Keep this stub minimal; do not duplicate rules here.\n",
-        "marker": "AGENTS.md",
-    },
-    "gemini": {
-        "paths": ["GEMINI.md"],
-        "content": "# Gemini instructions\n\nCanonical agent instructions live in `AGENTS.md`. Prefer configuring Gemini CLI `contextFileName` to `AGENTS.md`; keep this file as a pointer only.\n",
-        "marker": "AGENTS.md",
-    },
-    "cline": {
-        "paths": [".clinerules"],
-        "content": "Canonical agent instructions live in AGENTS.md. Keep this Cline pointer minimal and do not duplicate rules here.\n",
-        "marker": "AGENTS.md",
-    },
-}
+def _build_stubs():
+    """Derive the STUBS mapping from the shared agent-config registry.
+
+    Only tools flagged ``canonicalizable`` with declared ``stub_paths`` get a stub
+    spec; the ``content`` mirrors the registry byte-for-byte so downgraded stub
+    output is unchanged for tools that already worked. See assets/agent-tools.json.
+    """
+    stubs = {}
+    for tool in registry.canonicalizable_tools():
+        stubs[tool["id"]] = {
+            "paths": list(tool["stub_paths"]),
+            "content": tool["stub_content"],
+            "marker": "AGENTS.md",
+        }
+    return stubs
+
+
+STUBS = _build_stubs()
 
 CURSOR_RULE_STUB = "---\nalwaysApply: true\n---\n\nCanonical agent instructions live in `AGENTS.md` (single source of truth). Do not duplicate rules here.\n"
 
