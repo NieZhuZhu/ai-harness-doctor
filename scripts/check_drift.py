@@ -12,10 +12,14 @@ from pathlib import Path
 # content/logic instead of duplicating it here.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import canonicalize  # noqa: E402
+import registry  # noqa: E402
 
 
 DEFAULT_MAX_BYTES = 32768
-STUB_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", ".cursorrules", ".windsurfrules", ".github/copilot-instructions.md", "GEMINI.md", ".clinerules"]
+# Flat list of every canonical stub path, derived (in registry order) from the
+# shared agent-config registry so the drift guard tracks exactly the same stubs
+# canonicalize.py writes. See assets/agent-tools.json.
+STUB_FILES = [p for tool in registry.canonicalizable_tools() for p in tool["stub_paths"]]
 PACKAGE_MANAGER_BUILTINS = {
     "install", "ci", "i", "init", "add", "remove", "rm", "uninstall", "update", "up", "upgrade",
     "exec", "dlx", "create", "audit", "link", "unlink", "publish", "outdated", "config", "cache",
