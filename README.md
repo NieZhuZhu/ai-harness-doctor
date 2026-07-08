@@ -2,13 +2,23 @@
 
 # 🩺 AI Harness Doctor
 
-Doctor for your repo's AI harness: audit, merge, guard, and evaluate scattered agent configs into one canonical `AGENTS.md`.
+**Your AI coding agent is confidently following stale instructions.** `CLAUDE.md`, `.cursorrules`, `GEMINI.md`, and `AGENTS.md` quietly drift apart until agents run scripts that no longer exist, edit paths that already moved, and teach `npm` in a repo that switched to `pnpm`.
+
+AI Harness Doctor makes that drift visible, consolidates every scattered agent config into one canonical `AGENTS.md`, and guards it so your repo forgets less silently — for Claude Code, Codex, Cursor, Gemini, and plain CI. One zero-install `scan` gives you a full checkup: inventory, conflict evidence, a security audit, missing-infrastructure gaps, and a tech-stack snapshot.
 
 [![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml)
 [![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
 ![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
+
+> **In our 14-task benchmark, canonicalizing one repo took agents from 6/28 → 28/28 correct answers — and eliminated the flip-flopping where the same question got different answers on different runs.** [See the numbers ↓](#benchmark)
+
+Try it in one command — no install, nothing written to your repo:
+
+```bash
+npx ai-harness-doctor scan .
+```
 
 ## Why
 
@@ -34,7 +44,13 @@ In our 14-task benchmark, a canonicalized repo took agents from 6/28 to 28/28 co
 
 ### Fastest path
 
-Install the Claude Code skill and run the doctor in your target repo:
+Zero-install, read-only checkup — one command surfaces your harness's inventory, conflict evidence (with file:line), security findings, missing-infrastructure gaps, and a tech-stack snapshot, in seconds:
+
+```bash
+npx ai-harness-doctor scan .
+```
+
+Ready to fix it? Install the Claude Code skill and let the agent drive the full flow:
 
 ```bash
 npx ai-harness-doctor install
