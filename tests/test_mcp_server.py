@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import unittest
 import tempfile
@@ -10,7 +11,7 @@ SERVER = ROOT / "bin" / "mcp-server.js"
 
 
 class McpServerTests(unittest.TestCase):
-    def _exchange(self, messages, cwd=None):
+    def _exchange(self, messages, cwd=None, env=None):
         """Send newline-delimited JSON messages to the MCP server and parse responses."""
         payload = "".join(json.dumps(m) + "\n" for m in messages)
         proc = subprocess.run(
@@ -19,6 +20,7 @@ class McpServerTests(unittest.TestCase):
             text=True,
             capture_output=True,
             cwd=str(cwd) if cwd else None,
+            env=env,
             timeout=60,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -90,6 +92,31 @@ class McpServerTests(unittest.TestCase):
         by_id = {r.get("id"): r for r in responses if "id" in r}
         self.assertEqual(by_id[1]["error"]["code"], -32601)
         self.assertEqual(by_id[2]["error"]["code"], -32602)
+
+
+    def test_tool_call_times_out_cleanly(self):
+        # With a 1ms budget, spawning the Python interpreter always exceeds the
+        # timeout, so the tool must return a clean JSON-RPC tool error (isError)
+        # rather than hanging, crashing, or leaking a traceback.
+        env = dict(os.environ)
+        env["AHD_TOOL_TIMEOUT_MS"] = "1"
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
+            messages = [
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                 "params": {"name": "harness_scan", "arguments": {"repo": str(repo)}}},
+            ]
+            responses = self._exchange(messages, env=env)
+            by_id = {r.get("id"): r for r in responses if "id" in r}
+            call = by_id[2]["result"]
+            self.assertTrue(call.get("isError"))
+            text = call["content"][0]["text"]
+            self.assertIn("timed out", text)
+            # No raw traceback / internal path leakage.
+            self.assertNotIn("Traceback", text)
+            self.assertNotIn("scripts/scan.py", text)
 
 
 if __name__ == "__main__":

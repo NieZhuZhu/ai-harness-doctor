@@ -239,7 +239,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | `gitlab` | 一个可 include 的 `.gitlab/harness-ci.yml`（`harness-drift` 跑在 MR 上，`harness-checkup` 跑在 schedule 上并产出 artifact）。 | 在 `.gitlab-ci.yml` 中加入 `include: { local: .gitlab/harness-ci.yml }`。 |
 | `codebase` | 一个可移植的 `.harness-ci/harness-guard.sh`（`drift`/`checkup` 模式）+ 一个接线用的 `README.md`。 | 将该脚本注册为 MR 检查和定时 pipeline 步骤。 |
 
-`AI_HARNESS_DOCTOR_SKIP=1` 是本地 hook 显式且可审计的逃生口。`guard --remove --apply` 会移除托管片段、清理**所有 provider** 的 CI 文件（这样切换 provider 不会残留任何东西），并在可能时按字节精确恢复此前已存在的 hook 内容。
+`AI_HARNESS_DOCTOR_SKIP=1` 是本地 hook 显式且可审计的逃生口。`guard --remove --apply` 会移除托管片段、清理**所有 provider** 的 CI 文件（这样切换 provider 不会残留任何东西），并在可能时按字节精确恢复此前已存在的 hook 内容。安装与移除都是非破坏性的：每个托管文件都带有 `ai-harness-doctor:guard` 标记，因此 `guard --apply` 绝不会覆盖缺少该标记的用户自改 CI 文件（会报告 `manual-merge` 并保持你的文件不动）；而 `--remove` 仅在托管文件与工具原始产物逐字节一致时才删除——对于被手工扩展的 hook，只会剥离它自己的 guard 块，若该块已被修改则跳过而非销毁。
 
 </details>
 
@@ -322,8 +322,11 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | Copilot | `.github/copilot-instructions.md` becomes a pointer. |
 | Gemini | `GEMINI.md` becomes a pointer and recommends `contextFileName`. |
 | Cline | `.clinerules` becomes a pointer. |
+| Roo | 由 `scan` 识别（`.roo/rules/*.md`），但**不会**被降级——它是 rules-directory 类工具，没有单一的常规 stub 位置，因此保持为仅扫描（scan-only）。 |
 
 默认 dry-run。`--apply` 要求 git tree 干净；`--force` 会覆盖该安全检查。
+
+已知的工具 config 文件在 `assets/agent-tools.json` 中统一定义，这是 `scan`、`stubs`/`canonicalize` 和 `drift` 共同读取的唯一 registry，因此新增一个工具只需修改这一个文件。
 
 </details>
 

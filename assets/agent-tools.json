@@ -1,0 +1,73 @@
+{
+  "$comment": "Single source of truth for known AI-agent config files. scan.py (detection), canonicalize.py (stub writing) and check_drift.py (stub drift guard) all derive their lists from this file so a new tool is added in exactly one place. Node reads it too where it needs the config-file list. scan_patterns are the richer detection globs; stub_paths/stub_content mirror the byte-exact stubs canonicalize.py writes today. canonicalizable:false means a scan-only tool that is intentionally not migrated (see roo).",
+  "canonical": [
+    "AGENTS.md",
+    "AGENT.md"
+  ],
+  "tools": [
+    {
+      "id": "claude",
+      "label": "Claude Code",
+      "scan_patterns": ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md", "**/CLAUDE.md"],
+      "stub_paths": ["CLAUDE.md", ".claude/CLAUDE.md"],
+      "stub_kind": "import",
+      "stub_content": "@AGENTS.md\n<!-- Canonical instructions live in AGENTS.md. Keep this file as an import stub only. -->\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "scan_patterns": [".cursorrules", ".cursor/rules/*.mdc", ".cursor/rules/*.md"],
+      "stub_paths": [".cursorrules"],
+      "stub_kind": "pointer",
+      "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "windsurf",
+      "label": "Windsurf",
+      "scan_patterns": [".windsurfrules", ".windsurf/rules/*"],
+      "stub_paths": [".windsurfrules"],
+      "stub_kind": "pointer",
+      "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "copilot",
+      "label": "GitHub Copilot",
+      "scan_patterns": [".github/copilot-instructions.md", ".github/instructions/*.instructions.md"],
+      "stub_paths": [".github/copilot-instructions.md"],
+      "stub_kind": "pointer",
+      "stub_content": "# GitHub Copilot instructions\n\nCanonical agent instructions live in `AGENTS.md`. Keep this stub minimal; do not duplicate rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "gemini",
+      "label": "Gemini CLI",
+      "scan_patterns": ["GEMINI.md", "**/GEMINI.md"],
+      "stub_paths": ["GEMINI.md"],
+      "stub_kind": "pointer",
+      "stub_content": "# Gemini instructions\n\nCanonical agent instructions live in `AGENTS.md`. Prefer configuring Gemini CLI `contextFileName` to `AGENTS.md`; keep this file as a pointer only.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "cline",
+      "label": "Cline",
+      "scan_patterns": [".clinerules", ".clinerules/*.md", ".clinerules/**/*.md"],
+      "stub_paths": [".clinerules"],
+      "stub_kind": "pointer",
+      "stub_content": "Canonical agent instructions live in AGENTS.md. Keep this Cline pointer minimal and do not duplicate rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "roo",
+      "label": "Roo",
+      "scan_patterns": [".roo/rules/*.md", ".roo/rules/*.mdc"],
+      "stub_paths": [],
+      "stub_kind": "none",
+      "stub_content": "",
+      "canonicalizable": false,
+      "canonicalizable_note": "Roo is a rules-directory tool (.roo/rules/*.md) with no single conventional stub-file location (no flat .roorules is scanned). Collapsing a rules directory into one canonical pointer requires the same bespoke directory-handling Cursor has, which is semantic-merge logic that belongs in SKILL.md and is out of scope for this refactor. Marked canonicalizable:false so it is an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
+    }
+  ]
+}

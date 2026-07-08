@@ -12,20 +12,32 @@ import sys
 from itertools import combinations
 from pathlib import Path
 
+# The shared agent-config registry is the single source of truth for which config
+# files exist and how to detect them; see assets/agent-tools.json and registry.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import registry  # noqa: E402
+
 
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
 
-CONFIG_PATTERNS = [
-    ("AGENTS.md", ["AGENTS.md", "**/AGENTS.md"]),
-    ("AGENT.md", ["AGENT.md", "**/AGENT.md"]),
-    ("Claude Code", ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md", "**/CLAUDE.md"]),
-    ("Cursor", [".cursorrules", ".cursor/rules/*.mdc", ".cursor/rules/*.md"]),
-    ("Windsurf", [".windsurfrules", ".windsurf/rules/*"]),
-    ("GitHub Copilot", [".github/copilot-instructions.md", ".github/instructions/*.instructions.md"]),
-    ("Gemini CLI", ["GEMINI.md", "**/GEMINI.md"]),
-    ("Cline", [".clinerules", ".clinerules/*.md", ".clinerules/**/*.md"]),
-    ("Roo", [".roo/rules/*.md", ".roo/rules/*.mdc"]),
-]
+
+def _build_config_patterns():
+    """Derive (label, glob-patterns) pairs from the shared registry.
+
+    Canonical files (AGENTS.md / AGENT.md) come first and use the conventional
+    ``[name, "**/name"]`` pair; tool entries follow in registry order with their
+    richer scan_patterns. Order is preserved so scan output is byte-stable.
+    """
+    reg = registry.load_registry()
+    patterns = []
+    for name in reg.get("canonical", []):
+        patterns.append((name, [name, f"**/{name}"]))
+    for tool in reg.get("tools", []):
+        patterns.append((tool["label"], list(tool["scan_patterns"])))
+    return patterns
+
+
+CONFIG_PATTERNS = _build_config_patterns()
 
 # Extended harness surfaces beyond plain instruction/rule files. The classic scan
 # only looked at the CONFIG_PATTERNS above; these describe the rest of the agent
