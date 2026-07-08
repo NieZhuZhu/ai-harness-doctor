@@ -173,6 +173,28 @@ class DriftTests(unittest.TestCase):
         # AGENTS.md is not modified by --fix for D1 command drift.
         self.assertEqual(agents, (repo / "AGENTS.md").read_text(encoding="utf-8"))
 
+    def test_out_of_repo_tokens_do_not_probe_but_in_repo_missing_does(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        body = (
+            CLEAN_AGENTS
+            + "\nAbsolute: `/etc/hostname`.\n"
+            + "Escaping: `../outside.txt`.\n"
+            + "In-repo: `docs/missing.md`.\n"
+        )
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d2 = [f for f in report["findings"] if f["check"] == "D2"]
+        messages = " ".join(f["message"] for f in d2)
+        # Out-of-repo tokens are ignored entirely (no filesystem probing).
+        self.assertNotIn("/etc/hostname", messages)
+        self.assertNotIn("../outside.txt", messages)
+        # The in-repo missing path is still reported.
+        self.assertTrue(any("docs/missing.md" in f["message"] for f in d2))
+
     def _stub_pointers(self, repo):
         (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")

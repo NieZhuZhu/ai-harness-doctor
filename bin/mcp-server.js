@@ -85,6 +85,25 @@ const TOOLS = [
 
 const TOOL_BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));
 
+// Hard cap on how long a single Python tool subprocess may run. Without this,
+// a script that blocks (e.g. drift/scan walking a huge or symlink-looped tree)
+// would wedge the stdio server with no way to cancel. Overridable via env for
+// tests and slow environments.
+function toolTimeoutMs() {
+  const raw = Number(process.env.AHD_TOOL_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 60000;
+}
+
+// Keep raw Python stderr/tracebacks from leaking verbatim to the MCP client;
+// trim to a short, single-message summary (info-leak hardening).
+function summarizeStderr(stderr) {
+  const cleaned = String(stderr || '').trim();
+  if (!cleaned) return '';
+  const lines = cleaned.split(/\r?\n/).filter((l) => l.trim().length);
+  const last = lines.length ? lines[lines.length - 1] : cleaned;
+  return last.length > 300 ? `${last.slice(0, 300)}…` : last;
+}
+
 function resolvePython() {
   for (const candidate of ['python3', 'python']) {
     const found = childProcess.spawnSync(candidate, ['--version'], { stdio: 'ignore' });
@@ -128,8 +147,14 @@ function callTool(tool, argsObj) {
   if (!fs.existsSync(scriptPath)) {
     return { isError: true, text: `Script not found: ${scriptPath}` };
   }
-  const result = childProcess.spawnSync(python, argv, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  const timeoutMs = toolTimeoutMs();
+  const result = childProcess.spawnSync(python, argv, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: timeoutMs });
   if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      // Return a clean tool error instead of hanging/throwing. Do not leak argv
+      // or internal paths — just report the timeout budget.
+      return { isError: true, text: `Tool ${tool.name} timed out after ${timeoutMs}ms and was terminated.` };
+    }
     return { isError: true, text: `Failed to run ${tool.name}: ${result.error.message}` };
   }
   const stdout = result.stdout || '';
@@ -137,7 +162,7 @@ function callTool(tool, argsObj) {
   // Some tools (e.g. drift) return a non-zero exit code to signal findings; that is not a
   // transport error. Surface the output as tool content and let the caller interpret it.
   let text = stdout;
-  if (!text && stderr) text = stderr;
+  if (!text && stderr) text = summarizeStderr(stderr);
   return { isError: false, text, exitCode: result.status };
 }
 
