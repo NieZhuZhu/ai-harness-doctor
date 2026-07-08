@@ -375,6 +375,6 @@ Correction: proceed strictly through Checkup, Treat, Follow-up, and Efficacy, wi
 - `assets/AGENTS.template.md`: English `AGENTS.md` template.
 - `assets/guard/`: long-term follow-up guard suite templates: pre-commit, PR gate, weekly checkup, and maintenance contract.
 - `commands/`: Claude Code slash commands routed to this skill by phase.
-- `adapters/`: thin pointer templates for Codex, Cursor, Gemini, and universal agents.
+- `adapters/`: thin pointer templates for Codex, Cursor, Gemini, and universal agents. The per-command adapters are generated from a single source by `scripts/gen_adapters.py`; run `python3 scripts/gen_adapters.py` to regenerate and `python3 scripts/gen_adapters.py --check` (or `npm run lint:adapters`) to verify they match in CI.
 - `bin/cli.js`: npm CLI, installer, and forwarding entry point for Python scripts.
 - `bin/mcp-server.js`: MCP stdio server exposing `harness_scan`, `harness_drift`, `harness_validate`, and `harness_plan`.
