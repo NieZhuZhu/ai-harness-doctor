@@ -322,8 +322,11 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | Copilot | `.github/copilot-instructions.md` becomes a pointer. |
 | Gemini | `GEMINI.md` becomes a pointer and recommends `contextFileName`. |
 | Cline | `.clinerules` becomes a pointer. |
+| Roo | 由 `scan` 识别（`.roo/rules/*.md`），但**不会**被降级——它是 rules-directory 类工具，没有单一的常规 stub 位置，因此保持为仅扫描（scan-only）。 |
 
 默认 dry-run。`--apply` 要求 git tree 干净；`--force` 会覆盖该安全检查。
+
+已知的工具 config 文件在 `assets/agent-tools.json` 中统一定义，这是 `scan`、`stubs`/`canonicalize` 和 `drift` 共同读取的唯一 registry，因此新增一个工具只需修改这一个文件。
 
 </details>
 
