@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, and a security checkup. `--fail-on-security` exits 2 on HIGH findings. |
+| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, a gap analysis of missing harness infrastructure, and a tech-stack project snapshot. In markdown mode it also writes the full JSON report to a temp file and prints its path. `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -246,7 +246,7 @@ It manages a provider-agnostic core plus a **provider-aware CI gate**:
 <details>
 <summary><code>scan</code></summary>
 
-Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files.
+Detects five classes: config inventory, size/truncation risk, overlap candidates, conflict candidates with file:line evidence, and nested `AGENTS.md` files. On top of that it answers the complementary question — *what is missing* — via a gap analysis (see below).
 
 It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags severity-ranked findings (HIGH/MEDIUM):
 
@@ -257,10 +257,28 @@ It also inventories the **extended harness surface** — MCP servers, subagents,
 
 It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-severity finding is present, which is handy as a CI gate.
 
+It also runs a **gap analysis** that diffs the repo against a harness completeness checklist and reports mandatory infrastructure it is *missing* (not just what exists). These static checks are limited to the pieces every healthy harness needs regardless of stack: a canonical root `AGENTS.md` (`G1`), the required `AGENTS.md` sections kept in sync with `assets/AGENTS.template.md` (`G2`), tool stubs that should be minimal pointers to `AGENTS.md` (`G3`), and the drift-guard / weekly-checkup CI workflows (`G4`). Each gap carries a `level` (`ERROR`/`WARN`/`NOTICE`), an `item`, a `message`, and an actionable `suggestion`. With `--fail-on-gaps` it exits `3` when any ERROR-level gap (e.g. a missing root `AGENTS.md`) is present.
+
+For everything that depends on the project's tech stack (rather than being universally required), scan emits a **project snapshot** — a compact, factual description of the repo that an agent/LLM can reason over:
+
+- `tech_stack`: languages / ecosystems detected from their manifests (`go.mod`, `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `pom.xml`, `Gemfile`, `composer.json`, …).
+- `existing_files`: CI, git-hook, lint/format, and typecheck config files present, plus whether a drift-guard pre-commit hook is installed.
+- `agents_sections`: the H1 sections currently in `AGENTS.md`.
+- `maintenance_contract`: whether `AGENTS.md` embeds the maintenance contract.
+- `mcp_tools` / `has_permissions`: configured MCP servers and whether permission rules exist.
+
+The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-commit guard, maintenance contract, MCP config, permission config) are now facts in this snapshot, left for an agent to reason about.
+
+**Full JSON report for agents.** In markdown mode `scan` writes the complete machine-readable report (files, surface, security, `project_snapshot`, and `gaps`) to a stable temp file — `${TMPDIR}/harness-scan-<hash>.json`, where `<hash>` is derived from the resolved repo path — and appends a `## Full JSON report` section pointing to it. An agent driving the workflow can read that file to reason over the snapshot and gaps and plan fixes, without re-parsing the markdown. The `--json` mode already prints the full report to stdout, so no temp file is written there. Use `--no-report-file` to skip writing it.
+
 | Flag | Purpose |
 |---|---|
 | `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
 | `--fail-on-security` | Exit `2` when any HIGH-severity security finding is present. |
+| `--no-gaps` | Skip the missing / gap analysis (drops the `gaps` key). |
+| `--fail-on-gaps` | Exit `3` when any ERROR-level harness gap is present. |
+| `--no-snapshot` | Skip the project snapshot (drops the `project_snapshot` key). |
+| `--no-report-file` | Do not write the full JSON report to a temp file (markdown mode only). |
 
 `--json` returns (existing keys are unchanged — backward compatible):
 
@@ -280,11 +298,22 @@ It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-seve
   },
   "security": [
     { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ],
+  "project_snapshot": {
+    "tech_stack": [ { "language": "Go", "markers": ["go.mod"] } ],
+    "existing_files": { "ci": [], "hooks": [], "lint_format": [], "typecheck": [], "drift_guard_hook": null },
+    "agents_sections": [],
+    "maintenance_contract": false,
+    "mcp_tools": [],
+    "has_permissions": false
+  },
+  "gaps": [
+    { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
   ]
 }
 ```
 
-`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted.
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `project_snapshot` is omitted with `--no-snapshot`. In markdown mode the same JSON object is also written to `${TMPDIR}/harness-scan-<hash>.json` (unless `--no-report-file` is given).
 
 </details>
 

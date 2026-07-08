@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | 步骤 | CI 安全？ | 会写入？ | 说明 |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集和一次安全体检。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出。 |
+| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集、一次安全体检、一次缺失基建的缺口分析，以及一份技术栈项目快照。在 markdown 模式下还会把完整 JSON 报告写入临时文件并打印其路径。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出；`--fail-on-gaps` 在出现 ERROR 级缺口时以 3 退出。 |
 | `plan` | ✅ | 可选输出文件 | 搭建合并计划；不会执行合并。 |
 | Write `AGENTS.md` | ❌ | ✅ | 由人或 agent 完成的语义步骤。 |
 | `validate` | ✅ | ❌ | 检查 canonical `AGENTS.md` 是否包含必需章节。 |
@@ -246,7 +246,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 <details>
 <summary><code>scan</code></summary>
 
-检测五类问题：配置清单、体积/截断风险、重叠候选、带 file:line 证据的冲突候选，以及 nested `AGENTS.md` 文件。
+检测五类问题：配置清单、体积/截断风险、重叠候选、带 file:line 证据的冲突候选，以及 nested `AGENTS.md` 文件。在此之上，它还回答一个互补的问题——*缺了什么*——通过缺口分析给出（见下文）。
 
 它还会盘点**扩展的 harness surface**——MCP 服务器、subagents、slash 命令、hooks 和权限规则——并运行一次**安全体检**，标记按严重程度排序的发现（HIGH/MEDIUM）：
 
@@ -257,10 +257,28 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 默认以 0 退出。加上 `--fail-on-security` 后，只要存在任意 HIGH 级发现就以 `2` 退出，很适合作为 CI 卡点。
 
+它还会运行一次**缺口分析（gap analysis）**，把仓库与一份 harness 完整性清单做 diff，报告仓库*缺失*的基建（而不仅仅是已有的）。这些静态检查只覆盖任何健康 harness 都必须具备、与技术栈无关的部分：canonical 的根 `AGENTS.md`（`G1`）、`AGENTS.md` 必备章节（与 `assets/AGENTS.template.md` 保持同步，`G2`）、应当是指向 `AGENTS.md` 的最小 pointer 的 tool stub（`G3`）、以及 drift-guard / 周度 checkup 的 CI workflow（`G4`）。每条缺口带有 `level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和可执行的 `suggestion`。加上 `--fail-on-gaps` 后，只要存在任意 ERROR 级缺口（例如缺少根 `AGENTS.md`）就以 `3` 退出。
+
+对于所有依赖具体技术栈（而非普遍必备）的部分，scan 会输出一份**项目快照（project snapshot）**——一份紧凑、事实性的仓库描述，供 agent/LLM 推断：
+
+- `tech_stack`：从 manifest 探测出的语言/生态（`go.mod`、`package.json`、`pyproject.toml`、`requirements.txt`、`Cargo.toml`、`pom.xml`、`Gemfile`、`composer.json` 等）。
+- `existing_files`：已存在的 CI、git hook、lint/format、typecheck 配置文件，以及是否安装了 drift-guard 的 pre-commit hook。
+- `agents_sections`：`AGENTS.md` 当前的 H1 章节。
+- `maintenance_contract`：`AGENTS.md` 是否内嵌了维护契约。
+- `mcp_tools` / `has_permissions`：已配置的 MCP server，以及是否存在权限规则。
+
+过去作为静态 `G5`–`G8` 缺口的、依赖技术栈的判断（pre-commit guard、维护契约、MCP 配置、权限配置）现在都成为该快照中的事实，交给 agent 自行推断。
+
+**给 agent 用的完整 JSON 报告。** 在 markdown 模式下，`scan` 会把完整的机器可读报告（files、surface、security、`project_snapshot`、`gaps`）写入一个稳定的临时文件——`${TMPDIR}/harness-scan-<hash>.json`，其中 `<hash>` 由解析后的仓库路径派生——并在末尾追加一节 `## Full JSON report` 指向它。驱动工作流的 agent 可以读取该文件，基于快照和缺口做推断与修复规划，而无需再解析 markdown。`--json` 模式已经把完整报告打印到 stdout，因此不会写临时文件。用 `--no-report-file` 可跳过写入。
+
 | Flag | 用途 |
 |---|---|
 | `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |
 | `--fail-on-security` | 存在任意 HIGH 级安全发现时以 `2` 退出。 |
+| `--no-gaps` | 跳过缺口分析（不输出 `gaps` key）。 |
+| `--fail-on-gaps` | 存在任意 ERROR 级 harness 缺口时以 `3` 退出。 |
+| `--no-snapshot` | 跳过项目快照（不输出 `project_snapshot` key）。 |
+| `--no-report-file` | 不把完整 JSON 报告写入临时文件（仅 markdown 模式）。 |
 
 `--json` returns（已有的 key 保持不变——向后兼容）:
 
@@ -280,11 +298,22 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
   },
   "security": [
     { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ],
+  "project_snapshot": {
+    "tech_stack": [ { "language": "Go", "markers": ["go.mod"] } ],
+    "existing_files": { "ci": [], "hooks": [], "lint_format": [], "typecheck": [], "drift_guard_hook": null },
+    "agents_sections": [],
+    "maintenance_contract": false,
+    "mcp_tools": [],
+    "has_permissions": false
+  },
+  "gaps": [
+    { "check": "G1", "level": "ERROR", "item": "Root AGENTS.md", "message": "", "suggestion": "" }
   ]
 }
 ```
 
-`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。
+`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。
 
 </details>
 
