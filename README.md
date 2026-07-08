@@ -161,6 +161,7 @@ Defense in depth, strongest to weakest:
 | Move/delete documented paths | D2 path drift |
 | Sneak rules back into `CLAUDE.md` or `.cursorrules` | D3 stub regrowth |
 | Let `AGENTS.md` bloat past useful context size | D4 size/context risk |
+| Bump Node version or switch package manager without updating `AGENTS.md` | D6 fact drift |
 
 Why detection over regeneration? Silently “fixing” drift removes human awareness. AI Harness Doctor surfaces drift instead, because the important part is not rewriting files; it is making the team notice that repo truth and agent truth diverged. See [Positioning & Non-goals & Comparison](#positioning--non-goals--comparison).
 
@@ -330,6 +331,13 @@ Example finding lines:
 - D3: `Tool stub CLAUDE.md regrew or lost AGENTS.md pointer`
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
+- D6: `AGENTS.md declares Node 18 but .nvmrc pins 20` (fact drift)
+
+**D6 fact drift** cross-validates the *facts* declared in `AGENTS.md` against repo ground truth: the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the actual lockfile — `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent, so silence never produces a false positive.
+
+**Health score.** All findings (D1..D6) roll up into a 0–100 health score with a letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F), rendered as a `## Health score` section (e.g. `Score: 85/100 (grade B)`). With `--json` the report gains `score` and `grade` keys alongside the existing fields.
+
+`--min-score N` exits non-zero when the score is below `N` — a CI gate that is independent of `--strict`, so both can apply together.
 
 </details>
 

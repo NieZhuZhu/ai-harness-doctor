@@ -161,6 +161,7 @@ Defense in depth、強い順です。
 | 文書化された paths を移動/削除する | D2 path drift |
 | `CLAUDE.md` や `.cursorrules` に rules をこっそり戻す | D3 stub regrowth |
 | `AGENTS.md` を有用な context size を超えて肥大化させる | D4 size/context risk |
+| `AGENTS.md` を更新せずに Node version を上げたり package manager を切り替えたりする | D6 fact drift |
 
 なぜ regeneration ではなく detection なのか。ドリフトを静かに「修正」すると、人間の認識が消えてしまいます。AI Harness Doctor は代わりに drift を表面化します。大事なのはファイルを書き換えることではなく、repo の真実と agent の真実がズレたことにチームが気づくことだからです。[Positioning & Non-goals & Comparison](#positioning--non-goals--comparison) も参照してください。
 
@@ -330,6 +331,13 @@ Example finding lines:
 - D3: `Tool stub CLAUDE.md regrew or lost AGENTS.md pointer`
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
+- D6: `AGENTS.md declares Node 18 but .nvmrc pins 20` (fact drift)
+
+**D6 fact drift** は `AGENTS.md` で宣言された *facts* を repo の ground truth と cross-validate します。Node version（`.nvmrc` と `package.json` の `engines.node` と照合）と package manager（実際の lockfile と照合——`package-lock.json`→npm、`pnpm-lock.yaml`→pnpm、`yarn.lock`→yarn）です。明確な矛盾のみを flag し、`AGENTS.md` が沈黙している場合は沈黙するため、沈黙が false positive を生むことはありません。
+
+**Health score.** すべての findings（D1..D6）を 0–100 の health score に集約し、letter grade（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F）を付け、`## Health score` section として表示します（例: `Score: 85/100 (grade B)`）。`--json` を付けると、report は既存の fields に加えて `score` と `grade` keys を持ちます。
+
+`--min-score N` は score が `N` を下回ると non-zero で終了します——`--strict` から独立した CI gate なので、両方を同時に適用できます。
 
 </details>
 
