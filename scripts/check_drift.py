@@ -3,7 +3,6 @@
 
 import argparse
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -12,7 +11,6 @@ from pathlib import Path
 # content/logic instead of duplicating it here.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import canonicalize  # noqa: E402
-
 
 DEFAULT_MAX_BYTES = 32768
 STUB_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", ".cursorrules", ".windsurfrules", ".github/copilot-instructions.md", "GEMINI.md", ".clinerules"]

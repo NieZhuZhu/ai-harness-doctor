@@ -2,16 +2,13 @@
 """Scan AI harness configuration files and report overlap/conflicts."""
 
 import argparse
-import fnmatch
 import hashlib
 import json
-import os
 import re
 import string
 import sys
 from itertools import combinations
 from pathlib import Path
-
 
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
 
