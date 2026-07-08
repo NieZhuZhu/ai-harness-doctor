@@ -1,0 +1,91 @@
+{
+  "label": "after",
+  "workdir": ".",
+  "note": "Answers produced by an agent given the UPDATED AGENTS.md (with Project structure section), no repo browsing.",
+  "tasks": [
+    {
+      "id": "test-suite",
+      "stdout": "python3 -m unittest discover -s tests -v",
+      "answer": "python3 -m unittest discover -s tests -v",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "python-version",
+      "stdout": "3.9+",
+      "answer": "3.9+",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "python-deps",
+      "stdout": "No — Python scripts must use the Python 3.9+ standard library only.",
+      "answer": "No — Python scripts must use the Python 3.9+ standard library only.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "node-version",
+      "stdout": "Node >=16",
+      "answer": "Node >=16",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "npm-deps",
+      "stdout": "No, do not add npm runtime dependencies; bin/cli.js must use the Node standard library only.",
+      "answer": "No, do not add npm runtime dependencies; bin/cli.js must use the Node standard library only.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "semantic-merging",
+      "stdout": "No. Scripts stay deterministic; semantic merging decisions belong in the SKILL.md workflow and human review.",
+      "answer": "No. Scripts stay deterministic; semantic merging decisions belong in the SKILL.md workflow and human review.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "guard-templates",
+      "stdout": "assets/guard/",
+      "answer": "assets/guard/",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "doc-languages",
+      "stdout": "English, Simplified Chinese, and Japanese.",
+      "answer": "English, Simplified Chinese, and Japanese.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "drift-script",
+      "stdout": "scripts/check_drift.py",
+      "answer": "scripts/check_drift.py",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "scan-script",
+      "stdout": "scripts/scan.py",
+      "answer": "scripts/scan.py",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "eval-script",
+      "stdout": "scripts/eval_run.py",
+      "answer": "scripts/eval_run.py",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "commit-convention",
+      "stdout": "The CLI entry point is bin/cli.js and the deterministic engines live in scripts/ (scan.py, canonicalize.py, check_drift.py, eval_run.py).",
+      "answer": "The CLI entry point is bin/cli.js and the deterministic engines live in scripts/ (scan.py, canonicalize.py, check_drift.py, eval_run.py).",
+      "passed": true,
+      "regraded": true
+    }
+  ]
+}

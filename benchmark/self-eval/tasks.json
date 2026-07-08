@@ -1,0 +1,74 @@
+[
+  {
+    "id": "test-suite",
+    "prompt": "How do I run the full test suite in this repository? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "unittest\\s+discover"}
+  },
+  {
+    "id": "python-version",
+    "prompt": "Which minimum Python version must scripts target? Answer with ONLY the version, no explanation.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "3\\.9"}
+  },
+  {
+    "id": "python-deps",
+    "prompt": "May Python scripts depend on third-party (non-standard-library) packages? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)standard library|stdlib|no\\b|only"}
+  },
+  {
+    "id": "node-version",
+    "prompt": "Which minimum Node.js version does bin/cli.js require? Answer with ONLY the version.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "\\b16\\b"}
+  },
+  {
+    "id": "npm-deps",
+    "prompt": "Am I allowed to add npm runtime dependencies to bin/cli.js? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)\\bno\\b|do not|don't|must not|not add"}
+  },
+  {
+    "id": "semantic-merging",
+    "prompt": "Should the Python scripts implement semantic merging of agent config files? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)\\bno\\b|human|SKILL\\.md|review"}
+  },
+  {
+    "id": "guard-templates",
+    "prompt": "In which directory do the guard suite templates live? Answer with ONLY the relative path.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "assets/guard"}
+  },
+  {
+    "id": "doc-languages",
+    "prompt": "In which languages must the public README documentation be kept synchronized? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)japanese"}
+  },
+  {
+    "id": "drift-script",
+    "prompt": "Which script runs the Phase 2 drift guard / drift check? Answer with ONLY the script path or filename.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "check_drift\\.py"}
+  },
+  {
+    "id": "scan-script",
+    "prompt": "Which script performs the Phase 0 read-only checkup scan of a target repository? Answer with ONLY the script path or filename.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "scan\\.py"}
+  },
+  {
+    "id": "eval-script",
+    "prompt": "Which script runs the Phase 3 efficacy eval (before/after task comparison)? Answer with ONLY the script path or filename.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "eval_run\\.py"}
+  },
+  {
+    "id": "commit-convention",
+    "prompt": "What is the directory layout / where do the CLI entry point and the deterministic Python scripts live in this repo? Answer briefly with the relevant directories.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)\\bbin/\\b|scripts/"}
+  }
+]

@@ -2,6 +2,19 @@
 
 This repository contains the `ai-harness-doctor` Claude Code skill. It audits, consolidates, guards, and evaluates AI harness configuration files around a canonical `AGENTS.md`.
 
+# Project structure
+
+- `SKILL.md` — the skill contract and the four-phase workflow (Checkup → Treat → Follow-up → Efficacy).
+- `scripts/` — the deterministic Python engines, one per phase:
+  - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo.
+  - `canonicalize.py` — Phase 1 Treat: merge-plan skeleton, tool-stub downgrades, and validation.
+  - `check_drift.py` — Phase 2 Follow-up: drift guard (D1–D6), health score, and `--fix`.
+  - `eval_run.py` — Phase 3 Efficacy: before/after + matrix eval runner and LLM-as-judge grading.
+- `bin/cli.js` — npm CLI, installer, and forwarding entry point; `bin/mcp-server.js` — MCP stdio server.
+- `assets/` — templates: `assets/AGENTS.template.md` and the `assets/guard/` suite; `references/` — progressive-disclosure docs.
+- `commands/`, `adapters/` — Claude slash commands and Codex/Cursor/Gemini/universal pointer templates.
+- `tests/` — Python unittest + Node CLI smoke tests; `benchmark/` — self-benchmark and efficacy eval fixtures.
+
 # Build & test
 
 Run the full test suite from the repository root:
