@@ -159,6 +159,7 @@ npx ai-harness-doctor guard . --apply
 | 移动/删除已文档化路径 | D2 path drift |
 | 把规则偷偷写回 `CLAUDE.md` 或 `.cursorrules` | D3 stub regrowth |
 | 让 `AGENTS.md` 膨胀到超过有用上下文大小 | D4 size/context risk |
+| 升级 Node 版本或切换包管理器却不更新 `AGENTS.md` | D6 fact drift |
 
 为什么选择检测而不是再生成？静默“修复”drift 会拿走人的知情权。AI Harness Doctor 选择把 drift 暴露出来，因为重点不是重写文件，而是让团队注意到 repo truth 和 agent truth 已经分叉。见 [定位、非目标与对比](#定位非目标与对比)。
 
@@ -295,6 +296,13 @@ Example finding lines:
 - D3: `Tool stub CLAUDE.md regrew or lost AGENTS.md pointer`
 - D4: `AGENTS.md is 41000 bytes, above 32768`
 - D5: `Nested AGENTS.md inventory` (informational, non-blocking)
+- D6: `AGENTS.md declares Node 18 but .nvmrc pins 20` (fact drift)
+
+**D6 fact drift** 会把 `AGENTS.md` 中声明的*事实*与 repo 实际情况交叉验证：Node 版本（对比 `.nvmrc` 和 `package.json` 的 `engines.node`）以及包管理器（对比实际的 lockfile——`package-lock.json`→npm、`pnpm-lock.yaml`→pnpm、`yarn.lock`→yarn）。它只标记明确的矛盾，当 `AGENTS.md` 未声明时保持沉默，因此沉默永远不会产生误报。
+
+**Health score。** 所有发现（D1..D6）汇总为一个 0–100 的健康分，并带字母等级（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F），以 `## Health score` 章节呈现（如 `Score: 85/100 (grade B)`）。加上 `--json` 后，报告会在既有字段之外新增 `score` 和 `grade` key。
+
+`--min-score N` 在分数低于 `N` 时以非零退出——这是一个独立于 `--strict` 的 CI 卡点，两者可同时生效。
 
 </details>
 
