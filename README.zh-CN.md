@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | 步骤 | CI 安全？ | 会写入？ | 说明 |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | 始终以 0 退出；只做清单和证据收集。 |
+| `scan` | ✅ | ❌ | 默认以 0 退出；做清单、证据收集和一次安全体检。`--fail-on-security` 在出现 HIGH 级发现时以 2 退出。 |
 | `plan` | ✅ | 可选输出文件 | 搭建合并计划；不会执行合并。 |
 | Write `AGENTS.md` | ❌ | ✅ | 由人或 agent 完成的语义步骤。 |
 | `validate` | ✅ | ❌ | 检查 canonical `AGENTS.md` 是否包含必需章节。 |
@@ -235,9 +235,23 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 <details>
 <summary><code>scan</code></summary>
 
-检测五类问题：配置清单、体积/截断风险、重叠候选、带 file:line 证据的冲突候选，以及 nested `AGENTS.md` 文件。它始终以 0 退出。
+检测五类问题：配置清单、体积/截断风险、重叠候选、带 file:line 证据的冲突候选，以及 nested `AGENTS.md` 文件。
 
-`--json` returns:
+它还会盘点**扩展的 harness surface**——MCP 服务器、subagents、slash 命令、hooks 和权限规则——并运行一次**安全体检**，标记按严重程度排序的发现（HIGH/MEDIUM）：
+
+- 明文密钥（AWS / GitHub / OpenAI / Google / Slack / Anthropic 密钥、私钥块、通用的 `api_key/secret/token=...`），覆盖指令类和 MCP/settings 配置文件。
+- 过于宽泛的权限，例如 `Bash(*)`、`*` 和 `defaultMode: bypassPermissions`。
+- MCP 卫生问题：不安全的 `http://` 传输以及形似凭据的 env 字面量。
+- 有风险的 hook/命令体：`curl … | bash`、`rm -rf`、`--dangerously-skip-permissions` 等。
+
+默认以 0 退出。加上 `--fail-on-security` 后，只要存在任意 HIGH 级发现就以 `2` 退出，很适合作为 CI 卡点。
+
+| Flag | 用途 |
+|---|---|
+| `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |
+| `--fail-on-security` | 存在任意 HIGH 级安全发现时以 `2` 退出。 |
+
+`--json` returns（已有的 key 保持不变——向后兼容）:
 
 ```json
 {
@@ -245,9 +259,21 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
   "warnings": [],
   "overlaps": [],
   "conflicts": [],
-  "nested": []
+  "nested": [],
+  "surface": {
+    "mcp_servers": [],
+    "subagents": [],
+    "commands": [],
+    "hooks": [],
+    "permissions": []
+  },
+  "security": [
+    { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ]
 }
 ```
+
+`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。
 
 </details>
 
