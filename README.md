@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, a gap analysis of missing harness infrastructure, and a tech-stack project snapshot (with an optional `--agent-gaps` agent-inference hook). `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps. |
+| `scan` | ✅ | ❌ | Exits 0 by default; inventory, evidence, a security checkup, a gap analysis of missing harness infrastructure, and a tech-stack project snapshot. In markdown mode it also writes the full JSON report to a temp file and prints its path. `--fail-on-security` exits 2 on HIGH findings; `--fail-on-gaps` exits 3 on ERROR gaps. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -267,9 +267,9 @@ For everything that depends on the project's tech stack (rather than being unive
 - `maintenance_contract`: whether `AGENTS.md` embeds the maintenance contract.
 - `mcp_tools` / `has_permissions`: configured MCP servers and whether permission rules exist.
 
-The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-commit guard, maintenance contract, MCP config, permission config) are now facts in this snapshot and left to agent inference.
+The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-commit guard, maintenance contract, MCP config, permission config) are now facts in this snapshot, left for an agent to reason about.
 
-**Agent inference (`--agent-gaps CMD`)** pipes the project snapshot to an external agent/LLM command so it can infer stack-specific gaps ("this is a Go module with no CI", "a Node repo without a lint config", …). The snapshot and static gaps are sent to the command's **stdin** as JSON (`{"project_snapshot": {...}, "gaps": [...]}`); the command must print a JSON array of gap objects (or an object with an `agent_gaps` list). Results are added under the `agent_gaps` key. Failures are captured as `{"agent_gaps": {"error": "…"}}` and never crash the scan.
+**Full JSON report for agents.** In markdown mode `scan` writes the complete machine-readable report (files, surface, security, `project_snapshot`, and `gaps`) to a stable temp file — `${TMPDIR}/harness-scan-<hash>.json`, where `<hash>` is derived from the resolved repo path — and appends a `## Full JSON report` section pointing to it. An agent driving the workflow can read that file to reason over the snapshot and gaps and plan fixes, without re-parsing the markdown. The `--json` mode already prints the full report to stdout, so no temp file is written there. Use `--no-report-file` to skip writing it.
 
 | Flag | Purpose |
 |---|---|
@@ -278,7 +278,7 @@ The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-comm
 | `--no-gaps` | Skip the missing / gap analysis (drops the `gaps` key). |
 | `--fail-on-gaps` | Exit `3` when any ERROR-level harness gap is present. |
 | `--no-snapshot` | Skip the project snapshot (drops the `project_snapshot` key). |
-| `--agent-gaps CMD` | Pipe the snapshot to `CMD` (stdin JSON) and add its inferred gaps under `agent_gaps`. |
+| `--no-report-file` | Do not write the full JSON report to a temp file (markdown mode only). |
 
 `--json` returns (existing keys are unchanged — backward compatible):
 
@@ -313,7 +313,7 @@ The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-comm
 }
 ```
 
-`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `project_snapshot` is omitted with `--no-snapshot`; `agent_gaps` is only present when `--agent-gaps` is supplied.
+`security` findings carry `level` (`HIGH`/`MEDIUM`), `category` (`secret`/`mcp`/`permission`/`hook`/`instruction`), `path`, and a human-readable `message`. With `--no-security` the `security` key is omitted. `gaps` entries carry `check` (`G1`–`G4`), `level` (`ERROR`/`WARN`/`NOTICE`), `item`, `message`, and `suggestion`; with `--no-gaps` the `gaps` key is omitted. `project_snapshot` is omitted with `--no-snapshot`. In markdown mode the same JSON object is also written to `${TMPDIR}/harness-scan-<hash>.json` (unless `--no-report-file` is given).
 
 </details>
 

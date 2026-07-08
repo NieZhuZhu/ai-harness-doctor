@@ -1,6 +1,6 @@
 import json
+import re
 import shutil
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -220,51 +220,46 @@ class ProjectSnapshotTests(unittest.TestCase):
             self.assertNotIn("G8", checks)
 
 
-class AgentGapsTests(unittest.TestCase):
-    def run_json(self, repo, *extra):
+class ReportFileTests(unittest.TestCase):
+    def run_md(self, repo, *extra):
         return subprocess.run(
-            [sys.executable, str(SCAN), str(repo), "--json", *extra],
+            [sys.executable, str(SCAN), str(repo), *extra],
             text=True, capture_output=True)
 
-    def test_agent_gaps_pipes_snapshot_and_parses_output(self):
+    def test_markdown_writes_temp_report_and_points_to_it(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             _write(repo / "AGENTS.md", "# Project overview\nx\n")
             _write(repo / "go.mod", "module x\n")
-            # Fake agent: reads the piped JSON, asserts it has the snapshot,
-            # and emits one inferred gap.
-            agent = Path(td) / "agent.py"
-            _write(agent, (
-                "import json, sys\n"
-                "data = json.load(sys.stdin)\n"
-                "assert 'project_snapshot' in data, data\n"
-                "assert data['project_snapshot']['tech_stack'], data\n"
-                "print(json.dumps([{'level': 'WARN', 'item': 'CI for Go',\n"
-                "  'message': 'Go repo has no CI', 'suggestion': 'add a workflow'}]))\n"
-            ))
-            cmd = f"{shlex.quote(sys.executable)} {shlex.quote(str(agent))}"
-            report = json.loads(self.run_json(repo, "--agent-gaps", cmd).stdout)
-            self.assertIn("agent_gaps", report)
-            self.assertEqual(len(report["agent_gaps"]), 1)
-            self.assertEqual(report["agent_gaps"][0]["item"], "CI for Go")
+            proc = self.run_md(repo)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("## Full JSON report", proc.stdout)
+            # Extract the referenced path and verify the JSON file exists and matches.
+            m = re.search(r"`(/[^`]*harness-scan-[0-9a-f]+\.json)`", proc.stdout)
+            self.assertIsNotNone(m, proc.stdout)
+            report_path = Path(m.group(1))
+            self.addCleanup(lambda: report_path.exists() and report_path.unlink())
+            self.assertTrue(report_path.is_file())
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertIn("project_snapshot", data)
+            self.assertIn("gaps", data)
 
-    def test_agent_gaps_reports_error_on_bad_output(self):
+    def test_no_report_file_flag_skips_pointer(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             _write(repo / "AGENTS.md", "# Project overview\nx\n")
-            agent = Path(td) / "agent.py"
-            _write(agent, "print('not json')\n")
-            cmd = f"{shlex.quote(sys.executable)} {shlex.quote(str(agent))}"
-            report = json.loads(self.run_json(repo, "--agent-gaps", cmd).stdout)
-            self.assertIn("agent_gaps", report)
-            self.assertIn("error", report["agent_gaps"])
+            proc = self.run_md(repo, "--no-report-file")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn("## Full JSON report", proc.stdout)
 
-    def test_no_agent_gaps_key_without_flag(self):
+    def test_json_mode_has_no_pointer_line(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             _write(repo / "AGENTS.md", "# Project overview\nx\n")
-            report = json.loads(self.run_json(repo).stdout)
-            self.assertNotIn("agent_gaps", report)
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--json"],
+                text=True, capture_output=True)
+            self.assertNotIn("Full JSON report", proc.stdout)
 
 
 

@@ -7,10 +7,9 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import string
-import subprocess
 import sys
+import tempfile
 from itertools import combinations
 from pathlib import Path
 
@@ -214,40 +213,18 @@ def build_project_snapshot(root, surface, agents_text):
     }
 
 
-def run_agent_gaps(command, report):
-    """Pipe the project snapshot (as JSON) to an external agent/LLM command and
-    parse its stdout as inferred gaps.
-
-    The command receives, on stdin, a JSON object of the form
-    `{"project_snapshot": {...}, "gaps": [...]}` and is expected to print a JSON
-    array of gap objects (or an object with an `agent_gaps` array). Returns a
-    dict with either `agent_gaps` or `error` so failures never crash the scan.
-    """
-    payload = json.dumps({
-        "project_snapshot": report.get("project_snapshot", {}),
-        "gaps": report.get("gaps", []),
-    }, ensure_ascii=False)
+def write_report_file(report, repo_root):
+    """Dump the full JSON report to a stable temp file so an agent can read it
+    back and reason over the machine-readable data (snapshot, gaps, surface,
+    security) rather than re-parsing the markdown. Returns the file path, or
+    None if writing failed (writing must never break the scan output)."""
+    digest = hashlib.sha256(str(Path(repo_root).resolve()).encode("utf-8")).hexdigest()[:12]
+    path = Path(tempfile.gettempdir()) / f"harness-scan-{digest}.json"
     try:
-        argv = shlex.split(command)
-        proc = subprocess.run(
-            argv, input=payload, text=True, capture_output=True, timeout=120,
-        )
-    except Exception as exc:  # noqa: BLE001 - report, never crash the scan
-        return {"error": f"failed to invoke agent command: {exc}"}
-    if proc.returncode != 0:
-        return {"error": f"agent command exited {proc.returncode}: {proc.stderr.strip()[:500]}"}
-    out = proc.stdout.strip()
-    if not out:
-        return {"agent_gaps": []}
-    try:
-        parsed = json.loads(out)
-    except json.JSONDecodeError as exc:
-        return {"error": f"agent command did not return valid JSON: {exc}"}
-    if isinstance(parsed, dict):
-        parsed = parsed.get("agent_gaps", parsed.get("gaps", []))
-    if not isinstance(parsed, list):
-        return {"error": "agent command JSON must be a list of gaps or an object with an `agent_gaps` list"}
-    return {"agent_gaps": parsed}
+        path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        return None
+    return str(path)
 
 
 def rel(path, root):
@@ -678,8 +655,8 @@ def find_gaps(root, surface):
     # G5-G8 (pre-commit drift guard, maintenance contract, MCP configuration,
     # permission configuration) used to be reported here as static gaps. They
     # are stack-dependent judgement calls rather than mandatory infrastructure,
-    # so they are now surfaced as facts in `project_snapshot` and left to the
-    # agent inference layer (`--agent-gaps`) to reason about.
+    # so they are now surfaced as facts in `project_snapshot`, which an agent can
+    # read from the full JSON report (see write_report_file) to reason about.
     order = {"ERROR": 0, "WARN": 1, "NOTICE": 2}
     return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
 
@@ -718,7 +695,7 @@ def scan_repo(repo_root, max_bytes):
     }
 
 
-def render_markdown(report):
+def render_markdown(report, report_path=None):
     lines = ["# Phase 0 — Checkup Report", ""]
     lines.append("## Configuration file inventory")
     if not report["files"]:
@@ -759,8 +736,14 @@ def render_markdown(report):
         render_snapshot(lines, report["project_snapshot"])
     if "gaps" in report:
         render_gaps(lines, report["gaps"])
-    if "agent_gaps" in report:
-        render_agent_gaps(lines, report["agent_gaps"])
+    if report_path:
+        lines.extend([
+            "",
+            "## Full JSON report",
+            f"The complete machine-readable report was written to `{report_path}`. "
+            "An agent can read this file to reason over the project snapshot, gaps, "
+            "surface, and security findings, and to plan fixes.",
+        ])
     lines.extend(["", "> Stop condition: confirm the migration scope (whole repository / subdirectory / selected files) before entering Phase 1 — Treat."])
     return "\n".join(lines) + "\n"
 
@@ -835,26 +818,6 @@ def render_snapshot(lines, snapshot):
     lines.append(f"- Permission configuration: {'present' if snapshot.get('has_permissions') else 'absent'}")
 
 
-def render_agent_gaps(lines, agent_gaps):
-    lines.extend(["", "## Agent-inferred gaps"])
-    if isinstance(agent_gaps, dict):
-        lines.append(f"- Agent inference failed: {agent_gaps.get('error', 'unknown error')}")
-        return
-    if not agent_gaps:
-        lines.append("The agent inferred no additional gaps.")
-        return
-    for g in agent_gaps:
-        if isinstance(g, dict):
-            item = g.get("item") or g.get("check") or "gap"
-            level = g.get("level", "NOTICE")
-            message = g.get("message", "")
-            lines.append(f"- **{level}** {item}: {message}")
-            if g.get("suggestion"):
-                lines.append(f"  - Suggestion: {g['suggestion']}")
-        else:
-            lines.append(f"- {g}")
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Scan AI harness config files.")
     parser.add_argument("repo_root", nargs="?", default=".")
@@ -870,16 +833,10 @@ def main(argv=None):
                         help="Exit non-zero when any ERROR-level harness gap is present.")
     parser.add_argument("--no-snapshot", action="store_true",
                         help="Skip the project snapshot section (drops the `project_snapshot` key).")
-    parser.add_argument("--agent-gaps", metavar="CMD", default=None,
-                        help="Invoke an external agent/LLM command to infer stack-specific gaps. "
-                             "The project snapshot is piped to the command on stdin as JSON; the "
-                             "command must print a JSON array of gaps (or an object with an "
-                             "`agent_gaps` list). Results are added under the `agent_gaps` key.")
+    parser.add_argument("--no-report-file", action="store_true",
+                        help="Do not write the full JSON report to a temp file (markdown mode only).")
     args = parser.parse_args(argv)
     report = scan_repo(args.repo_root, args.max_bytes)
-    if args.agent_gaps:
-        result = run_agent_gaps(args.agent_gaps, report)
-        report["agent_gaps"] = result if "error" in result else result["agent_gaps"]
     if args.no_snapshot:
         report.pop("project_snapshot", None)
     if args.no_security:
@@ -889,7 +846,8 @@ def main(argv=None):
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
-        print(render_markdown(report), end="")
+        report_path = None if args.no_report_file else write_report_file(report, args.repo_root)
+        print(render_markdown(report, report_path), end="")
     if args.fail_on_security and any(s["level"] == "HIGH" for s in report.get("security", [])):
         return 2
     if args.fail_on_gaps and any(g["level"] == "ERROR" for g in report.get("gaps", [])):
