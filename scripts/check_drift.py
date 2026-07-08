@@ -78,6 +78,23 @@ def d1_command_drift(root, text):
     return findings
 
 
+def _within_root(root, token):
+    """Return True only if `token` resolves to a path contained in `root`.
+
+    The drift gate reads backtick tokens from an untrusted AGENTS.md and probes
+    them on disk. `pathlib` happily lets an absolute (`/etc/hostname`) or
+    `../`-escaping token point outside the repo, which would let a malicious
+    AGENTS.md infer the existence of arbitrary filesystem paths. Reject anything
+    that does not stay under the repo root before calling `.exists()`.
+    """
+    try:
+        candidate = (root / token).resolve()
+        candidate.relative_to(root.resolve())  # raises ValueError if outside root
+        return True
+    except (ValueError, OSError):
+        return False
+
+
 def d2_path_drift(root, text):
     findings = []
     known = {"package.json", "Makefile", "AGENTS.md", "README.md"}
@@ -93,6 +110,10 @@ def d2_path_drift(root, text):
             if "/" not in token and token not in known:
                 continue
             if any(ch.isspace() for ch in token):
+                continue
+            # Never probe outside the repo root: an absolute or `../`-escaping
+            # token is not repo drift and must not be stat()'d (info-leak guard).
+            if not _within_root(root, token):
                 continue
             if not (root / token).exists():
                 findings.append({"check": "D2", "level": "ERROR", "line": lineno, "message": f"Referenced path `{token}` does not exist", "suggestion": "Fix or remove the backtick-quoted path."})
