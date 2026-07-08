@@ -73,6 +73,45 @@ RISKY_COMMAND_RES = [
     ("permission bypass flag", re.compile(r"--dangerously-skip-permissions|--yolo\b", re.I)),
 ]
 
+# ---------------------------------------------------------------------------
+# Gap analysis: what a healthy harness *should* have but this repo is missing.
+# The classic scan only reports what already exists (files, overlaps, conflicts,
+# extended surface). Gap analysis diffs the repo against a completeness
+# checklist so users can see what infrastructure is absent, not just present.
+# ---------------------------------------------------------------------------
+
+# Fallback list used when assets/AGENTS.template.md cannot be read. Kept in sync
+# with the H1 headings of that template.
+DEFAULT_REQUIRED_SECTIONS = [
+    "Project overview",
+    "Build & test",
+    "Conventions",
+    "Testing requirements",
+    "Safety",
+    "Commit & PR",
+]
+
+# Tool stub files that, once an AGENTS.md exists, should be minimal pointers back
+# to it rather than full duplicated instruction sets. Mirrors check_drift.py.
+GAP_STUB_FILES = [
+    "CLAUDE.md",
+    ".claude/CLAUDE.md",
+    ".cursorrules",
+    ".windsurfrules",
+    ".github/copilot-instructions.md",
+    "GEMINI.md",
+    ".clinerules",
+]
+STUB_POINTER_MAX_BYTES = 600
+
+# Guard / CI templates the `ai-harness-doctor guard` installer writes.
+GUARD_CI_WORKFLOWS = [
+    (".github/workflows/harness-drift.yml", "WARN", "drift guard CI workflow"),
+    (".github/workflows/harness-checkup.yml", "NOTICE", "weekly checkup CI workflow"),
+]
+GUARD_MARKER = "ai-harness-doctor:guard"
+PRECOMMIT_HOOK_PATHS = [".git/hooks/pre-commit", ".githooks/pre-commit"]
+
 
 def rel(path, root):
     return path.relative_to(root).as_posix()
@@ -404,6 +443,143 @@ def security_findings(root, files, mcp, hooks, permissions):
     return sorted(findings, key=lambda x: (order.get(x["level"], 3), x["category"], x["path"]))
 
 
+def required_sections():
+    """H1 headings the canonical AGENTS.md is expected to contain.
+
+    Prefers the bundled assets/AGENTS.template.md so the checklist stays in sync
+    with the template shipped by this skill; falls back to a built-in list."""
+    template = Path(__file__).resolve().parent.parent / "assets" / "AGENTS.template.md"
+    try:
+        heads = [h for h in markdown_headings(template.read_text(encoding="utf-8"), levels=(1,))]
+        if heads:
+            return heads
+    except Exception:
+        pass
+    return list(DEFAULT_REQUIRED_SECTIONS)
+
+
+def markdown_headings(text, levels=None):
+    """Return heading titles, ignoring lines inside fenced code blocks.
+
+    `levels` optionally restricts to specific heading depths (e.g. (1,) for H1).
+    """
+    heads = []
+    in_fence = False
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = re.match(r"^(#+)\s+(\S.*)$", line)
+        if not m:
+            continue
+        if levels and len(m.group(1)) not in levels:
+            continue
+        heads.append(m.group(2).strip())
+    return heads
+
+
+def gap(check, level, item, message, suggestion):
+    return {"check": check, "level": level, "item": item, "message": message, "suggestion": suggestion}
+
+
+def find_gaps(root, surface):
+    """Diff the repo against a harness completeness checklist and report what is
+    missing. Read-only: never writes or mutates the target repository."""
+    gaps = []
+    agents = root / "AGENTS.md"
+
+    # 1) Canonical root AGENTS.md must exist — the single source of truth.
+    if not agents.is_file():
+        gaps.append(gap(
+            "G1", "ERROR", "Root AGENTS.md",
+            "No canonical `AGENTS.md` at the repository root.",
+            "Create a root AGENTS.md (see assets/AGENTS.template.md), then run canonicalize.py --write-stubs.",
+        ))
+        agents_text = ""
+    else:
+        agents_text = agents.read_text(encoding="utf-8", errors="replace")
+
+    # 2) Required sections present in AGENTS.md.
+    if agents.is_file():
+        present = [h.lower() for h in markdown_headings(agents_text)]
+        for section in required_sections():
+            needle = section.lower()
+            if not any(needle == h or needle in h for h in present):
+                gaps.append(gap(
+                    "G2", "WARN", f"Section: {section}",
+                    f"AGENTS.md is missing the `{section}` section.",
+                    f"Add a `# {section}` section describing what agents cannot infer from code alone.",
+                ))
+
+    # 3) Tool stubs should be minimal pointers to AGENTS.md, not full duplicates.
+    if agents.is_file():
+        for rel_path in GAP_STUB_FILES:
+            path = root / rel_path
+            if not path.is_file():
+                continue
+            data = path.read_bytes()
+            text = data.decode("utf-8", errors="replace")
+            if len(data) > STUB_POINTER_MAX_BYTES or "AGENTS.md" not in text:
+                gaps.append(gap(
+                    "G3", "WARN", f"Stub pointer: {rel_path}",
+                    f"`{rel_path}` exists but is not a minimal pointer to AGENTS.md "
+                    f"({len(data)} bytes; pointer must be <= {STUB_POINTER_MAX_BYTES} bytes and reference AGENTS.md).",
+                    "Run canonicalize.py --write-stubs to downgrade it to a pointer.",
+                ))
+
+    # 4) Drift guard / checkup CI workflows.
+    for rel_path, level, item in GUARD_CI_WORKFLOWS:
+        if not (root / rel_path).is_file():
+            gaps.append(gap(
+                "G4", level, item,
+                f"`{rel_path}` is not installed.",
+                "Run `ai-harness-doctor guard . --apply` to install the guard suite.",
+            ))
+
+    # 5) Pre-commit drift guard hook.
+    hook_installed = False
+    for rel_path in PRECOMMIT_HOOK_PATHS:
+        path = root / rel_path
+        if path.is_file() and GUARD_MARKER in path.read_text(encoding="utf-8", errors="replace"):
+            hook_installed = True
+            break
+    if not hook_installed:
+        gaps.append(gap(
+            "G5", "NOTICE", "Pre-commit drift guard",
+            f"No pre-commit hook carrying the `{GUARD_MARKER}` marker was found.",
+            "Run `ai-harness-doctor guard . --apply` to install the local pre-commit guard.",
+        ))
+
+    # 6) Maintenance contract embedded in AGENTS.md.
+    if agents.is_file() and "maintenance contract" not in agents_text.lower():
+        gaps.append(gap(
+            "G6", "NOTICE", "Maintenance contract",
+            "AGENTS.md has no maintenance contract section.",
+            "Run `ai-harness-doctor guard . --apply` to append the maintenance contract to AGENTS.md.",
+        ))
+
+    # 7) MCP configuration (informational — only relevant if the repo uses MCP).
+    if not surface.get("mcp_servers"):
+        gaps.append(gap(
+            "G7", "NOTICE", "MCP configuration",
+            "No MCP server configuration was found (`.mcp.json`, `.cursor/mcp.json`, etc.).",
+            "Add an MCP config only if your agents rely on MCP servers; otherwise ignore.",
+        ))
+
+    # 8) Permission configuration.
+    if not surface.get("permissions"):
+        gaps.append(gap(
+            "G8", "NOTICE", "Permission configuration",
+            "No permission configuration was found (`.claude/settings.json` permissions block).",
+            "Define explicit allow/deny permission rules to constrain agent execution.",
+        ))
+
+    order = {"ERROR": 0, "WARN": 1, "NOTICE": 2}
+    return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
+
+
 def scan_repo(repo_root, max_bytes):
     root = Path(repo_root).resolve()
     files = []
@@ -416,20 +592,22 @@ def scan_repo(repo_root, max_bytes):
     mcp = scan_mcp(root)
     hooks = scan_hooks(root)
     permissions = scan_permissions(root)
+    surface = {
+        "mcp_servers": mcp,
+        "subagents": scan_subagents(root),
+        "commands": scan_commands(root),
+        "hooks": hooks,
+        "permissions": permissions,
+    }
     return {
         "files": result_files,
         "warnings": warnings,
         "overlaps": find_overlaps(files),
         "conflicts": find_conflicts(files),
         "nested": nested_agents(result_files),
-        "surface": {
-            "mcp_servers": mcp,
-            "subagents": scan_subagents(root),
-            "commands": scan_commands(root),
-            "hooks": hooks,
-            "permissions": permissions,
-        },
+        "surface": surface,
         "security": security_findings(root, files, mcp, hooks, permissions),
+        "gaps": find_gaps(root, surface),
     }
 
 
@@ -470,6 +648,8 @@ def render_markdown(report):
     render_surface(lines, report.get("surface", {}))
     if "security" in report:
         render_security(lines, report["security"])
+    if "gaps" in report:
+        render_gaps(lines, report["gaps"])
     lines.extend(["", "> Stop condition: confirm the migration scope (whole repository / subdirectory / selected files) before entering Phase 1 — Treat."])
     return "\n".join(lines) + "\n"
 
@@ -507,6 +687,18 @@ def render_security(lines, findings):
         lines.append(f"- **{s['level']}** [{s['category']}] `{s['path']}`: {s['message']}")
 
 
+def render_gaps(lines, gaps):
+    lines.extend(["", "## Missing / Gap Analysis"])
+    if not gaps:
+        lines.append("No harness infrastructure gaps detected.")
+        return
+    lines.append("Checklist items this repository is missing (compared with a complete harness):")
+    lines.append("")
+    for g in gaps:
+        lines.append(f"- **{g['level']}** {g['item']}: {g['message']}")
+        lines.append(f"  - Suggestion: {g['suggestion']}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Scan AI harness config files.")
     parser.add_argument("repo_root", nargs="?", default=".")
@@ -516,16 +708,24 @@ def main(argv=None):
                         help="Skip the security checkup section.")
     parser.add_argument("--fail-on-security", action="store_true",
                         help="Exit non-zero when any HIGH-severity security finding is present.")
+    parser.add_argument("--no-gaps", action="store_true",
+                        help="Skip the missing / gap analysis section.")
+    parser.add_argument("--fail-on-gaps", action="store_true",
+                        help="Exit non-zero when any ERROR-level harness gap is present.")
     args = parser.parse_args(argv)
     report = scan_repo(args.repo_root, args.max_bytes)
     if args.no_security:
         report.pop("security", None)
+    if args.no_gaps:
+        report.pop("gaps", None)
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         print(render_markdown(report), end="")
     if args.fail_on_security and any(s["level"] == "HIGH" for s in report.get("security", [])):
         return 2
+    if args.fail_on_gaps and any(g["level"] == "ERROR" for g in report.get("gaps", [])):
+        return 3
     return 0
 
 
