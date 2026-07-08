@@ -148,6 +148,8 @@ npx ai-harness-doctor guard . --apply
 
 CI gate は provider-aware です。`--provider github|gitlab|codebase`（デフォルト `auto`）を渡すと、対応する CI files をインストールします。provider ごとの file layout は [`guard`](#command-reference) の command reference を参照してください。
 
+pull request では、GitHub guard テンプレートはさらに 2 つのことを行います。1 つ目は、drift の検出結果を**インライン PR review コメント**として表示することです。`scripts/pr_review.py` は `check_drift.py --json`（または `scan.py --json`）のレポートを読み取り、1 つの PR review を投稿します。repo 相対の `path` を持つ検出結果はインラインの `{path, line, body}` コメントになり、位置のない検出結果は安定したマーカー `<!-- ai-harness-doctor:pr-review -->` を含むサマリーにまとめられます。デフォルトは dry-run（JSON payload を出力し、ネットワークには一切触れません）で、`--post` 時のみ `GITHUB_TOKEN` を使って投稿します。2 つ目は、**eval health-score gate** の実行です。`python3 scripts/eval_run.py --score <コミット済み results.json> --fail-under <N>` により、eval health score が閾値を下回ると CI を失敗（exit 5）させます。インライン review コメントは GitHub 限定で、GitLab/Codebase テンプレートは eval gate のみを得ます。
+
 Defense in depth、強い順です。
 
 1. **Pre-commit hard block** — ローカル編集がマシンを出る前に `AGENTS.md` を古くしてしまうことを防ぎます。`AI_HARNESS_DOCTOR_SKIP=1` は明示的で監査可能な bypass であり、静かな pass ではありません。
