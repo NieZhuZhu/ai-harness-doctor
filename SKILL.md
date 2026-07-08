@@ -34,14 +34,16 @@ Run the read-only scan:
 ```bash
 python3 scripts/scan.py /path/to/repo
 python3 scripts/scan.py /path/to/repo --json
+python3 scripts/scan.py /path/to/repo --fail-on-security   # non-zero exit on HIGH findings
+python3 scripts/scan.py /path/to/repo --no-security        # inventory only
 ```
 
-The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files.
+The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`).
 
 ### Outputs
 
 - A human-readable Checkup report.
-- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, and `nested`.
+- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), and `security` (severity-ranked findings).
 
 ### Explicit stop condition
 

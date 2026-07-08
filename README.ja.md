@@ -89,7 +89,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
-| `scan` | ✅ | ❌ | 常に 0 で終了します。inventory と evidence のみです。 |
+| `scan` | ✅ | ❌ | デフォルトで 0 で終了します。inventory、evidence、security checkup を行います。`--fail-on-security` は HIGH の findings があれば 2 で終了します。 |
 | `plan` | ✅ | Optional output file | merge plan の土台を作ります。merge はしません。 |
 | Write `AGENTS.md` | ❌ | ✅ | 人間または agent による意味判断のステップです。 |
 | `validate` | ✅ | ❌ | 正本 `AGENTS.md` に必要な sections が含まれているか確認します。 |
@@ -235,9 +235,23 @@ manifest で追跡されているすべての copy install を、現在の packa
 <details>
 <summary><code>scan</code></summary>
 
-5 つのクラスを検出します。config inventory、size/truncation risk、overlap candidates、file:line evidence 付き conflict candidates、nested `AGENTS.md` files です。常に 0 で終了します。
+5 つのクラスを検出します。config inventory、size/truncation risk、overlap candidates、file:line evidence 付き conflict candidates、nested `AGENTS.md` files です。
 
-`--json` returns:
+さらに、**拡張された harness surface**——MCP servers、subagents、slash commands、hooks、permission rules——を inventory し、深刻度でランク付けした findings（HIGH/MEDIUM）を報告する **security checkup** を実行します:
+
+- 平文の secrets（AWS / GitHub / OpenAI / Google / Slack / Anthropic の keys、private-key blocks、汎用の `api_key/secret/token=...`）を instruction および MCP/settings config files 全体で検出。
+- `Bash(*)`、`*`、`defaultMode: bypassPermissions` などの過度に広い permissions。
+- MCP の hygiene 問題: 安全でない `http://` transports と、credential 形式の env literals。
+- 危険な hook/command 本文: `curl … | bash`、`rm -rf`、`--dangerously-skip-permissions` など。
+
+デフォルトで 0 で終了します。`--fail-on-security` を付けると、HIGH-severity の finding が 1 つでもあれば `2` で終了し、CI gate として便利です。
+
+| Flag | Purpose |
+|---|---|
+| `--no-security` | inventory のみ。security checkup をスキップします（`security` key を出力しません）。 |
+| `--fail-on-security` | HIGH-severity の security finding があれば `2` で終了します。 |
+
+`--json` returns（既存の keys は変更なし——後方互換）:
 
 ```json
 {
@@ -245,9 +259,21 @@ manifest で追跡されているすべての copy install を、現在の packa
   "warnings": [],
   "overlaps": [],
   "conflicts": [],
-  "nested": []
+  "nested": [],
+  "surface": {
+    "mcp_servers": [],
+    "subagents": [],
+    "commands": [],
+    "hooks": [],
+    "permissions": []
+  },
+  "security": [
+    { "level": "HIGH", "category": "secret", "path": "", "message": "" }
+  ]
 }
 ```
+
+`security` の findings は `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path`、および人間が読める `message` を持ちます。`--no-security` では `security` key は省略されます。
 
 </details>
 

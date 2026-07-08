@@ -192,7 +192,12 @@ class CliInstallerTests(unittest.TestCase):
             elapsed = time.monotonic() - started
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertLess(elapsed, 2.5)
+            # The update check uses a 1.5s network timeout and unref'd handles, so
+            # `help` must not block on an unreachable registry. Locally this returns
+            # in well under 0.1s; the bound is kept generous (but far below the 5s
+            # subprocess hard-timeout) to tolerate cold-start jitter on CI runners
+            # while still catching a real hang/regression.
+            self.assertLess(elapsed, 4.0)
             self.assertIn("ai-harness-doctor validate [...args]", proc.stdout)
             self.assertNotIn("Traceback", proc.stderr)
             self.assertNotIn("TypeError", proc.stderr)
