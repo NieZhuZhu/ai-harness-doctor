@@ -750,12 +750,28 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True, judg
     if ctype == "regex":
         return regex_passes(check.get("value", ""), answer), None
     if ctype == "command":
+        # SEC-04: ``check.value`` is untrusted task data from tasks.json. Never
+        # hand it to a shell (shell=True) — that lets metacharacters such as
+        # ``;``/``|``/``$()``/backticks run arbitrary extra commands. Tokenize
+        # with ``shlex.split`` and exec the argv directly (shell=False) so shell
+        # metacharacters are treated as literal arguments, not injection.
+        raw = check.get("value", "")
+        try:
+            argv = shlex.split(raw)
+        except ValueError:
+            # Unbalanced quotes etc. — treat as a plain, non-crashing fail.
+            return False, None
+        if not argv:
+            return False, None
         try:
             cproc = subprocess.run(
-                check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=timeout
+                argv, cwd=str(workdir), text=True, capture_output=True, timeout=timeout
             )
             return cproc.returncode == 0, None
         except subprocess.TimeoutExpired:
+            return False, None
+        except (FileNotFoundError, OSError):
+            # Missing binary / not executable — a failed check, not a crash.
             return False, None
     if ctype == "judge":
         rubric = check.get("rubric") or check.get("criteria") or ""
