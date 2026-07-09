@@ -88,6 +88,7 @@ Three ways to write `AGENTS.md`:
 - Target must be a git repo.
 - Node >=16 for the `ai-harness-doctor` CLI.
 - Python >=3.9, stdlib-only, for deterministic scan/plan/validate/stubs/drift/eval scripts.
+- Run `ai-harness-doctor doctor --self-test` to verify the Node + Python runtime; set `AI_HARNESS_DOCTOR_PYTHON` to pin a specific interpreter.
 - `AGENTS.md` must exist before `stubs` or `guard` writes anything.
 
 ### Install matrix
@@ -518,6 +519,20 @@ Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `har
 
 </details>
 
+<details>
+<summary><code>doctor</code></summary>
+
+Single-entrypoint runtime self-test for the dual Node + Python runtime. It resolves the Python interpreter through the same shared resolver the Python-backed subcommands use, then reports Node, the resolved Python 3 interpreter, every Python engine, and the MCP server file. It exits non-zero when any check fails.
+
+```bash
+npx ai-harness-doctor doctor --self-test   # human-readable runtime table
+npx ai-harness-doctor doctor --json        # machine-readable runtime report
+```
+
+Python is discovered in priority order: `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python`; only a Python **3** interpreter is accepted. When it is missing, every Python-backed subcommand (`scan`, `plan`, `validate`, `stubs`, `drift`, `eval`) fails with the same clean, actionable message — install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON` — instead of a raw stack trace.
+
+</details>
+
 Slash command quick refs: `/harness-doctor` full pipeline; `/harness-scan` Phase 0; `/harness-treat` Phase 1; `/harness-drift` Phase 2; `/harness-eval` Phase 3.
 
 Environment variables:
@@ -526,6 +541,7 @@ Environment variables:
 |---|---|
 | `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1` | Disable the once-daily npm update nudge. |
 | `AI_HARNESS_DOCTOR_SKIP=1` | Explicitly bypass the local pre-commit drift hook. |
+| `AI_HARNESS_DOCTOR_PYTHON` | Pin the Python 3 interpreter used by every Python-backed subcommand. |
 
 `AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK` and `AI_HARNESS_DOCTOR_REGISTRY` are internal/testing knobs.
 
