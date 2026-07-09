@@ -32,6 +32,60 @@ class PackageManagerConflictTests(unittest.TestCase):
         )
 
 
+class NodeVersionConflictTests(unittest.TestCase):
+    """CORR-05: Node version conflicts must be compared as normalized semantic
+    versions, so a bare major is compatible with a fuller version and only a
+    differing MAJOR is a genuine conflict."""
+
+    def _node_conflict(self, files):
+        conflicts = scan.find_conflicts(files)
+        return [c for c in conflicts if c["signal"] == "node_version"]
+
+    def test_bare_major_compatible_with_full_version_no_conflict(self):
+        # `node 18` vs `node 18.17.0` — same major, compatible: NOT a conflict.
+        files = [
+            {"path": "AGENTS.md", "text": "Use node 18 for this project."},
+            {"path": "CLAUDE.md", "text": "Requires node 18.17.0 runtime."},
+        ]
+        self.assertEqual(self._node_conflict(files), [])
+
+    def test_same_major_different_minor_no_conflict(self):
+        files = [
+            {"path": "AGENTS.md", "text": "Target node 18.17."},
+            {"path": "CLAUDE.md", "text": "Pin node 18.20.2."},
+        ]
+        self.assertEqual(self._node_conflict(files), [])
+
+    def test_node_x_suffix_compatible_with_major(self):
+        files = [
+            {"path": "AGENTS.md", "text": "Use node 20.x."},
+            {"path": "CLAUDE.md", "text": "Requires node 20.11.1."},
+        ]
+        self.assertEqual(self._node_conflict(files), [])
+
+    def test_different_major_is_a_genuine_conflict(self):
+        # `node 18` vs `node 20` — different major: this IS a real conflict.
+        files = [
+            {"path": "AGENTS.md", "text": "Use node 18."},
+            {"path": "CLAUDE.md", "text": "Requires node 20.11.0."},
+        ]
+        conflicts = self._node_conflict(files)
+        self.assertEqual(len(conflicts), 1)
+        keys = set(conflicts[0]["values"].keys())
+        # The real declared versions are preserved in the report.
+        self.assertEqual(keys, {"node 18", "node 20.11.0"})
+
+    def test_full_version_preserved_in_signal_value(self):
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": "Requires node 18.17.0 runtime."})
+            if s["signal"] == "node_version"
+        ]
+        self.assertEqual(len(sigs), 1)
+        # Full version kept for display (not collapsed to the bare major).
+        self.assertEqual(sigs[0]["value"], "node 18.17.0")
+
+
 class ScanTests(unittest.TestCase):
     def run_json(self, repo):
         proc = subprocess.run([sys.executable, str(SCAN), str(repo), "--json"], text=True, capture_output=True)
