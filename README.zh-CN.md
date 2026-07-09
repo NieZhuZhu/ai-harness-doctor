@@ -489,6 +489,13 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 
 **健康分（Health score）。** 每次 eval 还会计算一个一键式疗效健康分 = 所有任务记录的通过率，以 `0–100` 表示并带 A–F 字母等级（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F）。它以 `health` key 嵌入单次运行结果（`{"tasks":...}`）和矩阵结果（`{"agents":...}`），并打印为一行摘要（`health score: N/100 (grade X), P/T tasks passed`）。超时计为失败。`--score PATH` 会打印某个已有 results/matrix JSON 的健康分（加 `--json` 输出机器可读格式），`--fail-under N` 会在健康分低于 `N` 时以退出码 `5` 退出（作为 CI 门禁）。
 
+**多轮稳定性（`--rounds`）。** `--rounds N`（N > 1）会将整个任务集运行 N 次并汇总稳定性统计，用于暴露那些有时通过、有时失败的 *flaky*（不稳定）任务。此时结果 JSON 会带上 `rounds`、`round_results`（每一轮的完整任务记录及该轮的 `health`）、一个 per-task 的 `task_stats` 数组（`runs`、`passed`、`failed`、`timed_out`、`pass_rate`、`flaky`），以及一个 `stats` 摘要（`mean_health`、`variance`、`stddev`、`min_health`、`max_health`、`health_scores`、`flaky_tasks`、`flaky_count`）。当某任务既非每轮都通过、也非每轮都失败时即为 `flaky`。总体 `health` 为所有 task-run 的通过率，`--fail-under N` 以其为门禁。`--rounds 1`（默认）会逐字节保持旧的单轮输出结构不变。`--stats PATH` 可离线重新汇总一个已有的多轮结果文件（加 `--json` 输出机器可读格式，`--fail-under N` 作为门禁）。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --rounds 5   # run 5x, aggregate stability stats
+npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
+```
+
 </details>
 
 <details>

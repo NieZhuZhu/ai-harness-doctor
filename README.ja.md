@@ -489,6 +489,13 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 
 **Health score.** すべての eval は、ワンクリックの効果 health score = すべての task record にわたる pass rate も計算します。`0–100` で表され、A–F の letter grade（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F）が付きます。これは single-run results（`{"tasks":...}`）と matrix results（`{"agents":...}`）の両方に `health` key として埋め込まれ、要約行（`health score: N/100 (grade X), P/T tasks passed`）として表示されます。timeout は failure として数えられます。`--score PATH` は既存の results/matrix JSON の health score を表示し（`--json` で機械可読出力）、`--fail-under N` は health score が `N` を下回ると exit code `5` で終了します（CI gate）。
 
+**マルチラウンド安定性（`--rounds`）。** `--rounds N`（N > 1）はタスクセット全体を N 回実行し、安定性統計を集計します。これにより、一部の実行では pass し他では fail する *flaky*（不安定）なタスクを可視化できます。この場合、results JSON には `rounds`、`round_results`（各ラウンドの完全な task record とラウンドごとの `health`）、per-task の `task_stats` 配列（`runs`、`passed`、`failed`、`timed_out`、`pass_rate`、`flaky`）、および `stats` 要約（`mean_health`、`variance`、`stddev`、`min_health`、`max_health`、`health_scores`、`flaky_tasks`、`flaky_count`）が含まれます。あるタスクは、全ラウンドで pass するわけでも全ラウンドで fail するわけでもないとき `flaky` になります。全体の `health` はすべての task-run にわたる pass rate であり、`--fail-under N` はこれに対する gate です。`--rounds 1`（デフォルト）は従来の single-round 出力構造をバイト単位で変更しません。`--stats PATH` は既存のマルチラウンド results ファイルをオフラインで再集計します（`--json` で機械可読出力、`--fail-under N` で gate）。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --rounds 5   # run 5x, aggregate stability stats
+npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
+```
+
 </details>
 
 <details>
