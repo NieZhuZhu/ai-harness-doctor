@@ -26,12 +26,16 @@
     "node": ">=16"
   },
   "keywords": [
+    "ai-harness",
+    "harness",
     "agents-md",
+    "AGENTS.md",
     "claude-code",
     "claude",
     "skill",
     "ai-agents",
     "agent-config",
+    "llm-config",
     "cursor",
     "codex",
     "gemini-cli",
