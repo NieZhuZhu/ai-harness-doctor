@@ -252,6 +252,24 @@ DRAFT_BANNER = [
 DRAFT_SCRIPT_ORDER = ["test", "build", "lint", "typecheck", "dev", "start"]
 DRAFT_MAKE_ORDER = ["test", "build", "lint"]
 
+# Python package-manager -> (install command, run-prefix). ``run_prefix`` is
+# prepended to tool invocations (e.g. ``uv run pytest``); pip has no run wrapper.
+PYTHON_MANAGER_COMMANDS = {
+    "uv": ("uv sync", "uv run "),
+    "poetry": ("poetry install", "poetry run "),
+    "pdm": ("pdm install", "pdm run "),
+    "pipenv": ("pipenv install", "pipenv run "),
+    "pip": ("pip install -e .", ""),
+}
+
+# A backtick/fenced token from a CLAUDE.md is treated as a real Python
+# build/test/lint command only when its first token is one of these runners.
+_PY_CLAUDE_CMD_RE = re.compile(
+    r"^(?:(?:uv|poetry|pdm|pipenv)\s+run\s+\S+"
+    r"|pytest\b|ruff\b|pyright\b|mypy\b|tox\b|nox\b|pre-commit\b"
+    r"|python3?\s+-m\s+\S+)"
+)
+
 INFERRED = "(inferred — confirm)"
 SUGGESTED = "(suggested default)"
 
@@ -270,6 +288,112 @@ def _detected_package_manager(root):
     return None, None
 
 
+def _detected_python_manager(root):
+    """Return ``(manager, rationale)`` for the repo's Python package manager, or
+    ``(None, None)`` for non-Python repositories.
+
+    Reuses ``semantic._python_ground_pm`` (lockfile / ``[tool.*]`` table /
+    requirements.txt precedence) so the draft and the semantic checks agree.
+    """
+    mgr, source = semantic._python_ground_pm(root)
+    if mgr is not None:
+        return mgr, f"from `{source}`"
+    return None, None
+
+
+def _has_pytest(root):
+    """True when the repo shows evidence of a pytest-based test setup."""
+    if (root / "tests").is_dir() or (root / "test").is_dir():
+        return True
+    for name in ("pytest.ini", "conftest.py", "tox.ini"):
+        if (root / name).is_file():
+            return True
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file() and "pytest" in pyproject.read_text(encoding="utf-8", errors="replace"):
+        return True
+    return False
+
+
+def _has_ruff(root):
+    """True when the repo shows evidence of ruff being configured."""
+    if (root / "ruff.toml").is_file() or (root / ".ruff.toml").is_file():
+        return True
+    pyproject = root / "pyproject.toml"
+    if pyproject.is_file() and "ruff" in pyproject.read_text(encoding="utf-8", errors="replace"):
+        return True
+    return False
+
+
+def _claude_documented_commands(root):
+    """Return build/test/lint commands documented in an existing ``CLAUDE.md``.
+
+    Scans the same fenced-code and inline-backtick tokens as the semantic engine
+    (``semantic.iter_code_tokens``) and keeps only tokens whose first word is a
+    recognized Python runner (``uv run``/``poetry run``/``pytest``/``ruff``/...).
+    Returns a de-duplicated, appearance-ordered list of command strings. These
+    are the most reliable signal because the project already documents them for
+    humans. Read-only; empty list when there is no ``CLAUDE.md``.
+    """
+    path = root / "CLAUDE.md"
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    commands = []
+    seen = set()
+    for _lineno, token in semantic.iter_code_tokens(text):
+        candidate = token.strip()
+        # Drop trailing inline comments (e.g. "uv run pytest  # CI tests").
+        candidate = re.split(r"\s{2,}#|\s+#\s", candidate, maxsplit=1)[0].strip()
+        if not candidate or not _PY_CLAUDE_CMD_RE.match(candidate):
+            continue
+        if candidate not in seen:
+            seen.add(candidate)
+            commands.append(candidate)
+    return commands
+
+
+def _draft_python_commands(root):
+    """Return ``[(command, note), ...]`` inferred build/test/lint commands for a
+    Python repo, or ``[]`` for a non-Python repo.
+
+    Sources, in order: the detected Python package manager install command,
+    commands already documented in an existing ``CLAUDE.md``, and common
+    test/lint runners (pytest, ruff) when the repo shows evidence of them. Every
+    command is tagged ``(inferred — confirm)`` to match the Node/Make style.
+    """
+    pm, pm_why = _detected_python_manager(root)
+    if pm is None:
+        return []
+    install_cmd, run_prefix = PYTHON_MANAGER_COMMANDS[pm]
+    if pm == "pip" and not (root / "pyproject.toml").is_file() and (root / "requirements.txt").is_file():
+        install_cmd = "pip install -r requirements.txt"
+    commands = [(install_cmd, f"{INFERRED} Python package manager {pm_why}")]
+    seen = {install_cmd}
+
+    # Commands the project already documents for humans are the strongest signal.
+    for cmd in _claude_documented_commands(root):
+        if cmd not in seen:
+            seen.add(cmd)
+            commands.append((cmd, f"{INFERRED} documented in CLAUDE.md"))
+
+    # Fall back to common runners only when there is evidence of them AND the
+    # project did not already document a command for that tool, so a bare library
+    # without a test/lint setup gets no spurious commands and we avoid emitting a
+    # near-duplicate of a CLAUDE.md command.
+    already = " ".join(cmd for cmd, _ in commands)
+    for tool, cmd_suffix, present, label in (
+        ("pytest", "pytest", _has_pytest(root), "common Python test runner"),
+        ("ruff", "ruff check", _has_ruff(root), "common Python lint runner"),
+    ):
+        if not present or re.search(rf"\b{re.escape(tool)}\b", already):
+            continue
+        cmd = f"{run_prefix}{cmd_suffix}".strip()
+        if cmd not in seen:
+            seen.add(cmd)
+            commands.append((cmd, f"{INFERRED} {label}"))
+    return commands
+
+
 def _draft_build_lines(root):
     """Build a fact-derived Build & test command block (list of markdown lines)."""
     lines = []
@@ -286,6 +410,8 @@ def _draft_build_lines(root):
         for name in DRAFT_MAKE_ORDER:
             if name in targets:
                 commands.append((f"make {name}", f"{INFERRED} from a Makefile target"))
+    # Python repos (pyproject + uv/poetry/pdm/pip) infer their own command set.
+    commands.extend(_draft_python_commands(root))
     lines.append("```bash")
     if commands:
         width = max(len(cmd) for cmd, _ in commands)
@@ -294,6 +420,12 @@ def _draft_build_lines(root):
     else:
         lines.append("# TODO: no build/test commands could be inferred; add the exact commands agents must run.")
     lines.append("```")
+    # Surface pyproject console scripts as a note so agents know the entry points
+    # without cluttering the command block (a package can declare many aliases).
+    py_scripts = semantic.python_scripts(root)
+    if py_scripts:
+        names = ", ".join(f"`{n}`" for n in sorted(py_scripts))
+        lines += ["", f"- Console scripts declared in `pyproject.toml`: {names}. {INFERRED}"]
     return lines
 
 
@@ -451,6 +583,47 @@ def heading_present(text, requirement):
     return any(any(v in h for v in variants) for h in headings)
 
 
+# Heuristic signal families that a large AGENTS.md is actually end-user
+# *library / reference documentation* (installation + usage/API reference aimed
+# at consumers of the package) rather than a *contributor guide* (build/test
+# workflow + repo conventions aimed at people changing this repo). Each family
+# is matched independently; the classifier below only trusts the "library doc"
+# verdict when several families agree, so a normal contributor guide — even a
+# long one — is never misclassified and keeps the strict section/size checks.
+_LIBRARY_DOC_SIGNALS = (
+    # 1. Installation / quickstart aimed at consumers of the package.
+    re.compile(
+        r"(?im)^\s{0,3}#{1,6}\s+.*\b(quick\s?start|getting\s+started|installation|install)\b"
+        r"|\b(?:pip|pipx|uv|poetry|pdm)\s+(?:install|add|sync)\b",
+    ),
+    # 2. API / parameter / usage reference sections (documentation for callers).
+    re.compile(
+        r"(?im)^\s{0,3}#{1,6}\s+.*\b(parameters?|api|usage|examples?|reference|available\s+\w+|configuration)\b",
+    ),
+    # 3. End-user support / operational sections, not contributor workflow.
+    re.compile(
+        r"(?im)^\s{0,3}#{1,6}\s+.*\b(get\s+help|telemetry|faq|troubleshooting|support"
+        r"|supported\s+models|going\s+to\s+production)\b",
+    ),
+    # 4. Library import/usage code examples (consumer-facing snippets).
+    re.compile(r"(?im)^\s*(?:from\s+[\w.]+\s+import\b|import\s+[\w.]+)"),
+)
+
+
+def _looks_like_library_doc(text):
+    """Return True when this AGENTS.md reads as end-user library/reference
+    documentation rather than a contributor guide.
+
+    Conservative on purpose: it requires at least three of the four independent
+    signal families in ``_LIBRARY_DOC_SIGNALS`` to match, so we only relax the
+    strict contributor-guide checks when we are confident the file is a library
+    doc. A conventional contributor guide (Build & test / Conventions / Testing)
+    matches at most one or two families and stays under strict validation.
+    """
+    matched = sum(1 for pattern in _LIBRARY_DOC_SIGNALS if pattern.search(text))
+    return matched >= 3
+
+
 def validate(args):
     root = Path(args.repo_root).resolve()
     findings = []
@@ -460,11 +633,19 @@ def validate(args):
     else:
         data = agents.read_bytes()
         text = data.decode("utf-8", errors="replace")
+        # A large end-user library/reference AGENTS.md is not a contributor guide,
+        # so it must not be hard-failed for lacking contributor-guide sections or
+        # for exceeding the contributor-guide size budget. When we are confident it
+        # is a library doc, downgrade those two checks from blocking ERROR to a
+        # non-blocking WARN so validate reports them without failing (exit 0).
+        library_doc = _looks_like_library_doc(text)
+        soft_level = "WARN" if library_doc else "ERROR"
+        note = " (library/reference doc: relaxed to non-blocking)" if library_doc else ""
         if len(data) > args.max_bytes:
-            findings.append({"level": "ERROR", "check": "SIZE", "message": f"AGENTS.md is {len(data)} bytes, above {args.max_bytes}"})
+            findings.append({"level": soft_level, "check": "SIZE", "message": f"AGENTS.md is {len(data)} bytes, above {args.max_bytes}{note}"})
         for req in args.require_sections.split(","):
             if req.strip() and not heading_present(text, req.strip()):
-                findings.append({"level": "ERROR", "check": "SECTION", "message": f"Missing required heading: {req.strip()}"})
+                findings.append({"level": soft_level, "check": "SECTION", "message": f"Missing required heading: {req.strip()}{note}"})
     if agents.is_file():
         for change in collect_stub_targets(root, ["claude", "cursor", "windsurf", "copilot", "gemini", "cline"]):
             path = change["path"]
