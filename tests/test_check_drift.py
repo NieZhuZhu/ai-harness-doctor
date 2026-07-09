@@ -110,10 +110,45 @@ class DriftTests(unittest.TestCase):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
         (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
-        (repo / "CLAUDE.md").write_text("lots\n" * 200, encoding="utf-8")
+        # A genuine pointer stub that regrew: it still references AGENTS.md as a
+        # pointer but has grown far past the minimal-stub size budget.
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n" + "lots\n" * 200, encoding="utf-8")
         proc = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 1)
         self.assertIn("D3", proc.stdout)
+
+    def test_independent_doc_without_pointer_not_flagged_d3(self):
+        # An independent, hand-authored CLAUDE.md (substantial standalone content
+        # with NO AGENTS.md pointer) is not a managed pointer stub, so D3 must not
+        # flag it as regrown/broken. This mirrors browser-use's standalone
+        # CLAUDE.md and keeps D3 consistent with the overlap subsystem.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        independent = (
+            "# CLAUDE.md\n\n"
+            "This file provides guidance to Claude Code when working with this repo.\n\n"
+            + "Standalone documentation paragraph.\n" * 200
+        )
+        (repo / "CLAUDE.md").write_text(independent, encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D3"])
+
+    def test_regrown_pointer_stub_still_flagged_d3(self):
+        # The counterpart guarantee: a genuine pointer stub that references
+        # AGENTS.md but exceeds the size budget IS still flagged by D3.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n" + "extra guidance line\n" * 100, encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d3 = [f for f in report["findings"] if f["check"] == "D3"]
+        self.assertTrue(any(f["path"] == "CLAUDE.md" for f in d3))
 
     def test_pre_migration_without_agents_suppresses_d3_but_reports_d4(self):
         td, repo = self.copy_repo()
@@ -133,7 +168,7 @@ class DriftTests(unittest.TestCase):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
         (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
-        (repo / "CLAUDE.md").write_text("lots\n" * 200, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n" + "lots\n" * 200, encoding="utf-8")
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
         (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
         before = (repo / "CLAUDE.md").read_text(encoding="utf-8")
@@ -151,7 +186,7 @@ class DriftTests(unittest.TestCase):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
         (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
-        (repo / "CLAUDE.md").write_text("lots\n" * 200, encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n" + "lots\n" * 200, encoding="utf-8")
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
         (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
 
