@@ -705,5 +705,39 @@ class ScannerPerformanceTests(unittest.TestCase):
         self.assertEqual(json.dumps(via_sub, sort_keys=True), json.dumps(standalone, sort_keys=True))
 
 
+class RenderModuleSplitTests(unittest.TestCase):
+    """ARCH-07: markdown rendering lives in scan_render and is re-exported by scan."""
+
+    def test_scan_reexports_render_functions_from_scan_render(self):
+        import scan_render
+
+        for name in (
+            "render_markdown",
+            "render_monorepo",
+            "render_surface",
+            "render_security",
+            "render_gaps",
+            "render_custom",
+            "render_semantic",
+            "render_snapshot",
+            "CATEGORY_LABELS",
+        ):
+            self.assertIs(getattr(scan, name), getattr(scan_render, name))
+
+    def test_scan_render_has_no_scan_dependency(self):
+        # The rendering module must stay a leaf: importing it should not pull in
+        # the scanner module (no circular / scan-internal coupling).
+        import scan_render
+
+        self.assertNotIn("scan", getattr(scan_render, "__dict__", {}))
+        self.assertNotIn("import scan\n", (ROOT / "scripts" / "scan_render.py").read_text())
+
+    def test_render_markdown_output_matches_via_both_entrypoints(self):
+        import scan_render
+
+        report = scan.scan_repo(str(FIXTURE), 32768)
+        self.assertEqual(scan.render_markdown(report), scan_render.render_markdown(report))
+
+
 if __name__ == "__main__":
     unittest.main()
