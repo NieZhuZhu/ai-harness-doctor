@@ -406,6 +406,8 @@ scan output から Phase 1 の merge plan を組み立てます。inventory、ov
 
 既知のツール config ファイルは `assets/agent-tools.json` に一元定義されています。これは `scan`、`stubs`/`canonicalize`、`drift` がすべて読み込む唯一の registry なので、新しいツールの追加はこのファイル 1 つを編集するだけで済みます。
 
+同じ考え方で、`adapters/` 配下のコマンド別 Codex/Cursor/Gemini アダプターは単一ソースから生成されます。`scripts/gen_adapters.py` が 1 つのコマンド表から全 15 ファイル（5 コマンド × 3 フレーバー）を描画し、`python3 scripts/gen_adapters.py --check`（`npm run lint:adapters` も同じ）は commit 済みのアダプターがそのソースからドリフトすると CI を失敗させ、`npm run gen:adapters` で再生成します。
+
 </details>
 
 <details>

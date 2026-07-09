@@ -406,6 +406,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 已知的工具 config 文件在 `assets/agent-tools.json` 中统一定义，这是 `scan`、`stubs`/`canonicalize` 和 `drift` 共同读取的唯一 registry，因此新增一个工具只需修改这一个文件。
 
+本着同样的精神，`adapters/` 下按命令划分的 Codex/Cursor/Gemini 适配器由单一来源生成：`scripts/gen_adapters.py` 从一张命令表渲染出全部 15 个文件（5 个命令 × 3 种风格），`python3 scripts/gen_adapters.py --check`（亦即 `npm run lint:adapters`）会在任一已提交的适配器与该来源发生漂移时让 CI 失败，`npm run gen:adapters` 则用于重新生成它们。
+
 </details>
 
 <details>
