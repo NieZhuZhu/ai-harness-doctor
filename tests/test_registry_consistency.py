@@ -121,6 +121,20 @@ class SharedConstantConsistencyTests(unittest.TestCase):
         for lockfile in ("bun.lockb", "bun.lock"):
             self.assertEqual(registry.LOCKFILE_MANAGERS.get(lockfile), "bun")
 
+    def test_gap_stub_files_derived_from_registry(self):
+        # TD-04: scan.GAP_STUB_FILES must be derived from the shared registry, not
+        # a hardcoded literal, so adding a tool to the registry auto-updates gap
+        # detection. Assert it equals the registry-derived stub-path list and the
+        # exact same list check_drift.py guards, so the two stages cannot drift.
+        expected = [p for tool in registry.canonicalizable_tools() for p in tool["stub_paths"]]
+        self.assertEqual(scan.GAP_STUB_FILES, expected)
+        self.assertEqual(scan.GAP_STUB_FILES, check_drift.STUB_FILES)
+        # Sanity: every entry is a real canonicalizable stub path in the registry.
+        registry_stub_paths = {
+            p for tool in registry.load_tools() if tool["canonicalizable"] for p in tool["stub_paths"]
+        }
+        self.assertEqual(set(scan.GAP_STUB_FILES), registry_stub_paths)
+
     def test_stub_at_threshold_boundary_classified_consistently(self):
         # A pointer stub at the byte boundary must be classified the same way by
         # the scan gap analysis and the drift D3 gate: <= threshold is fine,
