@@ -260,6 +260,69 @@ class ExtendedSurfaceTests(unittest.TestCase):
             self.assertIn("surface", report)
 
 
+class SecretRecallTests(unittest.TestCase):
+    """SEC-03: the secret scanner must catch common credential shapes it used to
+    miss (unquoted KEY=value, JWTs, Stripe live keys, MCP env secrets) without
+    flagging benign, non-secret text."""
+
+    # Built by concatenation so no contiguous "sk_live_..." literal lives in the
+    # source tree (avoids tripping platform secret-scanning push protection on a
+    # test fixture). Still matches the scanner's Stripe pattern at runtime.
+    STRIPE_KEY = "sk_" + "live_" + "0FAKEfakeFAKE0123456789abcd"
+
+    def test_unquoted_key_value_secret_is_detected(self):
+        self.assertIn(
+            "Generic hardcoded secret",
+            scan.secret_hits("SECRET_KEY=s3cr3t-value-not-quoted-1234"),
+        )
+
+    def test_jwt_is_detected(self):
+        jwt = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        )
+        self.assertIn("JSON Web Token", scan.secret_hits(f"AUTH={jwt}"))
+
+    def test_stripe_live_key_is_detected(self):
+        self.assertIn("Stripe secret key", scan.secret_hits(self.STRIPE_KEY))
+
+    def test_benign_text_is_not_flagged(self):
+        for benign in (
+            "This section explains how to configure your token before running.",
+            "Set the API_KEY environment variable to your own value.",
+            "password: enabled",
+        ):
+            self.assertEqual(scan.secret_hits(benign), [], benign)
+
+    def test_mcp_env_secret_value_is_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Overview\nx\n")
+            _write(
+                repo / ".mcp.json",
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "stripe": {"command": "npx", "env": {"STRIPE_KEY": self.STRIPE_KEY}}
+                        }
+                    }
+                ),
+            )
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--json"], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads(proc.stdout)
+            secret_findings = [f for f in report["security"] if f["category"] == "secret"]
+            self.assertTrue(
+                any("MCP server `stripe` env `STRIPE_KEY`" in f["message"] for f in secret_findings),
+                secret_findings,
+            )
+            # The raw secret value must NOT leak into the machine-readable surface.
+            self.assertNotIn(self.STRIPE_KEY, json.dumps(report["surface"]))
+
+
 class ProjectSnapshotTests(unittest.TestCase):
     def build_repo(self, td):
         repo = Path(td) / "repo"
@@ -328,11 +391,15 @@ class ReportFileTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("## Full JSON report", proc.stdout)
             # Extract the referenced path and verify the JSON file exists and matches.
-            m = re.search(r"`(/[^`]*harness-scan-[0-9a-f]+\.json)`", proc.stdout)
+            # SEC-02: the report is written via tempfile.mkstemp, so the name is
+            # an unpredictable mix of [A-Za-z0-9_], not a stable digest.
+            m = re.search(r"`(/[^`]*harness-scan-[A-Za-z0-9_]+\.json)`", proc.stdout)
             self.assertIsNotNone(m, proc.stdout)
             report_path = Path(m.group(1))
             self.addCleanup(lambda: report_path.exists() and report_path.unlink())
             self.assertTrue(report_path.is_file())
+            # SEC-02: created with 0600 perms (owner-only), never world/group readable.
+            self.assertEqual(report_path.stat().st_mode & 0o077, 0)
             data = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertIn("project_snapshot", data)
             self.assertIn("gaps", data)
