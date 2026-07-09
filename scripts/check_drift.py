@@ -105,14 +105,23 @@ def line_collected_code(text):
 
 
 def package_scripts(root):
+    """Return the set of package.json script names.
+
+    ``None`` when there is nothing to verify against: either no package.json
+    exists, or it is present but could not be read/parsed. Returning ``None``
+    (rather than an empty ``set()``) on a parse failure keeps "invalid JSON"
+    distinct from "valid JSON with no scripts", so callers skip the unknown-
+    script check instead of falsely reporting every referenced script as unknown
+    (CORR-01).
+    """
     path = root / "package.json"
     if not path.is_file():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return set((data.get("scripts") or {}).keys())
     except Exception:
-        return set()
+        return None
+    return set((data.get("scripts") or {}).keys())
 
 
 def make_targets(root):

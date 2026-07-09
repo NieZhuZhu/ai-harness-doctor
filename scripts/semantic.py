@@ -540,13 +540,22 @@ def _java_major(s):
 
 
 def package_scripts(root):
+    """Return the set of package.json script names.
+
+    ``None`` when there is nothing to verify against: either no package.json
+    exists, or it is present but could not be read/parsed. Returning ``None``
+    (rather than an empty ``set()``) on a parse failure keeps "invalid JSON"
+    distinct from "valid JSON with no scripts", so :func:`compare_commands`
+    skips the unknown-script check instead of falsely reporting every referenced
+    script as a missing script (CORR-01).
+    """
     path = root / "package.json"
     if not path.is_file():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return set()
+        return None
     scripts = data.get("scripts")
     return set(scripts.keys()) if isinstance(scripts, dict) else set()
 

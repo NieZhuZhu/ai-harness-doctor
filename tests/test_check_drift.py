@@ -250,6 +250,31 @@ class DriftTests(unittest.TestCase):
         self.assertIn("deploy", messages)
         self.assertNotIn("sure", messages)
 
+    def test_invalid_package_json_does_not_produce_false_unknown_script_d1(self):
+        # A present-but-unparseable package.json must not be treated as "no
+        # scripts": package_scripts returns None so D1 skips the unknown-script
+        # check instead of flagging every referenced script (CORR-01).
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS.replace("npm run test", "npm run build"), encoding="utf-8")
+        (repo / "package.json").write_text("{ this is not valid json ", encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        report = json.loads(proc.stdout)
+        d1 = [f for f in report["findings"] if f["check"] == "D1"]
+        self.assertEqual(d1, [])
+
+    def test_package_scripts_none_on_invalid_and_absent_but_set_on_valid(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self.assertIsNone(check_drift.package_scripts(root))  # absent
+            (root / "package.json").write_text("{ invalid", encoding="utf-8")
+            self.assertIsNone(check_drift.package_scripts(root))  # invalid JSON
+            (root / "package.json").write_text('{"scripts": {"build": "x"}}', encoding="utf-8")
+            self.assertEqual(check_drift.package_scripts(root), {"build"})
+            (root / "package.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(check_drift.package_scripts(root), set())  # valid, no scripts
+
     def test_out_of_repo_tokens_do_not_probe_but_in_repo_missing_does(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
