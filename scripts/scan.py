@@ -242,13 +242,14 @@ SNAPSHOT_FILE_GROUPS = [
 ]
 
 
-def snapshot_tech_stack(root):
+def snapshot_tech_stack(root, ctx=None):
     """Detect the languages / ecosystems present via their manifest files."""
+    ctx = ctx or ScanContext(root)
     stack = []
     for language, patterns in TECH_STACK_MARKERS:
         markers = []
         for pattern in patterns:
-            for path in root.glob(pattern):
+            for path in ctx.glob(pattern):
                 if is_skipped(path, root) or not path.is_file():
                     continue
                 markers.append(rel(path, root))
@@ -257,13 +258,14 @@ def snapshot_tech_stack(root):
     return stack
 
 
-def snapshot_existing_files(root):
+def snapshot_existing_files(root, ctx=None):
     """Inventory CI / hook / lint / typecheck config files present in the repo."""
+    ctx = ctx or ScanContext(root)
     groups = {}
     for group, patterns in SNAPSHOT_FILE_GROUPS:
         found = []
         for pattern in patterns:
-            for path in root.glob(pattern):
+            for path in ctx.glob(pattern):
                 if is_skipped(path, root) or not path.is_file():
                     continue
                 found.append(rel(path, root))
@@ -272,19 +274,22 @@ def snapshot_existing_files(root):
     guard_hook = None
     for rel_path in PRECOMMIT_HOOK_PATHS:
         path = root / rel_path
-        if path.is_file() and GUARD_MARKER in path.read_text(encoding="utf-8", errors="replace"):
-            guard_hook = rel_path
-            break
+        if path.is_file():
+            text = ctx.read_text(path)
+            if text is not None and GUARD_MARKER in text:
+                guard_hook = rel_path
+                break
     groups["drift_guard_hook"] = guard_hook
     return groups
 
 
-def build_project_snapshot(root, surface, agents_text):
+def build_project_snapshot(root, surface, agents_text, ctx=None):
     """Compact, factual description of the repo for agent-based gap inference."""
+    ctx = ctx or ScanContext(root)
     sections = markdown_headings(agents_text, levels=(1,)) if agents_text else []
     return {
-        "tech_stack": snapshot_tech_stack(root),
-        "existing_files": snapshot_existing_files(root),
+        "tech_stack": snapshot_tech_stack(root, ctx),
+        "existing_files": snapshot_existing_files(root, ctx),
         "agents_sections": sections,
         "maintenance_contract": bool(agents_text) and "maintenance contract" in agents_text.lower(),
         "mcp_tools": [s["name"] for s in surface.get("mcp_servers", [])],
@@ -333,11 +338,148 @@ def is_skipped(path, root):
     return any(part in SKIP_DIRS for part in parts)
 
 
-def iter_matches(root):
+def build_file_index(root):
+    """Walk ``root`` ONCE (pruning vendored dirs) and return every file under it.
+
+    Returns a sorted list of ``(relposix, Path)`` for each regular file, with
+    ``SKIP_DIRS`` (``.git`` / ``node_modules`` / ``dist`` / ``build`` /
+    ``__pycache__``) pruned at the directory level so their — often enormous —
+    subtrees are never descended. Every glob matcher in the scanner then runs
+    against this single inventory (see :func:`index_glob`) instead of calling
+    ``Path.glob`` once per pattern, which re-walked (and re-filtered) the whole
+    tree ~90 times per scan (PERF-01).
+    """
+    root = Path(root)
+    index = []
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        base = Path(dirpath)
+        for name in filenames:
+            path = base / name
+            index.append((path.relative_to(root).as_posix(), path))
+    index.sort(key=lambda item: item[0])
+    return index
+
+
+_GLOB_RE_CACHE = {}
+
+
+def _compile_glob(pattern):
+    """Translate a ``Path.glob``-style pattern to an anchored regex (cached).
+
+    Supports the only wildcard features the scanner's patterns use: ``**``
+    (zero or more path segments), ``*`` (any run of non-separator chars) and
+    ``?`` (a single non-separator char); everything else is matched literally.
+    Patterns are static, so compiled regexes are memoized for the process.
+    """
+    regex = _GLOB_RE_CACHE.get(pattern)
+    if regex is not None:
+        return regex
+    segments = pattern.split("/")
+    parts = ["^"]
+    for i, seg in enumerate(segments):
+        last = i == len(segments) - 1
+        if seg == "**":
+            # ``**`` matches this directory and any number of nested ones, so
+            # ``a/**/b`` matches ``a/b`` as well as ``a/x/y/b``.
+            parts.append("(?:[^/]+/)*")
+        else:
+            for ch in seg:
+                if ch == "*":
+                    parts.append("[^/]*")
+                elif ch == "?":
+                    parts.append("[^/]")
+                else:
+                    parts.append(re.escape(ch))
+            if not last:
+                parts.append("/")
+    parts.append("$")
+    regex = re.compile("".join(parts))
+    _GLOB_RE_CACHE[pattern] = regex
+    return regex
+
+
+def index_glob(index, pattern):
+    """Return the Paths in a file ``index`` matching a ``Path.glob`` pattern."""
+    regex = _compile_glob(pattern)
+    return [path for relposix, path in index if regex.match(relposix)]
+
+
+class ScanContext:
+    """Per-scan shared state so the repo tree is walked once and each config
+    file is read/parsed at most once.
+
+    - ``index`` is the single pruned file inventory (:func:`build_file_index`),
+      reused by every glob matcher instead of re-walking the tree per pattern
+      (PERF-01).
+    - ``read_bytes`` / ``read_text`` / ``load_json`` memoize file reads and JSON
+      parses, so a settings/MCP file consumed by ``scan_mcp``, ``scan_hooks``,
+      ``scan_permissions`` and ``security_findings`` is only touched once, and
+      ``AGENTS.md`` is not re-read by both ``scan_repo`` and ``find_gaps``
+      (PERF-02).
+    - :meth:`subcontext` slices the parent inventory (and shares the read/parse
+      caches) for a package subdirectory so monorepo mode never re-walks a
+      subtree the root scan already inventoried (PERF-03).
+    """
+
+    def __init__(self, root, index=None):
+        self.root = Path(root)
+        self.index = build_file_index(self.root) if index is None else index
+        self._bytes = {}
+        self._json = {}
+
+    def glob(self, pattern):
+        return index_glob(self.index, pattern)
+
+    def read_bytes(self, path):
+        key = str(path)
+        if key not in self._bytes:
+            try:
+                self._bytes[key] = Path(path).read_bytes()
+            except OSError:
+                self._bytes[key] = None
+        return self._bytes[key]
+
+    def read_text(self, path, errors="replace"):
+        data = self.read_bytes(path)
+        if data is None:
+            return None
+        return data.decode("utf-8", errors=errors)
+
+    def load_json(self, path):
+        key = str(path)
+        if key not in self._json:
+            self._json[key] = load_json(path, ctx=self)
+        return self._json[key]
+
+    def subcontext(self, subroot):
+        """Return a context scoped to ``subroot`` reusing this walk and caches."""
+        subroot = Path(subroot).resolve()
+        try:
+            prefix = subroot.relative_to(self.root).as_posix()
+        except ValueError:
+            # Not under this root (should not happen): fall back to a fresh walk.
+            return ScanContext(subroot)
+        prefix = "" if prefix == "." else prefix + "/"
+        sub_index = [
+            (relposix[len(prefix):], path)
+            for relposix, path in self.index
+            if not prefix or relposix.startswith(prefix)
+        ]
+        sub = ScanContext.__new__(ScanContext)
+        sub.root = subroot
+        sub.index = sub_index
+        sub._bytes = self._bytes  # share read cache across the whole scan
+        sub._json = self._json
+        return sub
+
+
+def iter_matches(root, ctx=None):
+    ctx = ctx or ScanContext(root)
     seen = {}
     for tool, patterns in CONFIG_PATTERNS:
         for pattern in patterns:
-            for path in root.glob(pattern):
+            for path in ctx.glob(pattern):
                 if is_skipped(path, root) or not path.is_file():
                     continue
                 rp = rel(path, root)
@@ -548,30 +690,39 @@ def nested_agents(files):
     return [f["path"] for f in files if f["path"].endswith("AGENTS.md") and "/" in f["path"]]
 
 
-def load_json(path):
+def load_json(path, ctx=None):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        if ctx is not None:
+            data = ctx.read_bytes(path)
+            if data is None:
+                return None
+            text = data.decode("utf-8")
+        else:
+            text = Path(path).read_text(encoding="utf-8")
+        return json.loads(text)
     except Exception:
         return None
 
 
-def glob_files(root, patterns):
+def glob_files(root, patterns, ctx=None):
+    ctx = ctx or ScanContext(root)
     seen = {}
     for pattern in patterns:
-        for path in root.glob(pattern):
+        for path in ctx.glob(pattern):
             if is_skipped(path, root) or not path.is_file():
                 continue
             seen.setdefault(rel(path, root), path)
     return [seen[k] for k in sorted(seen)]
 
 
-def scan_mcp(root):
+def scan_mcp(root, ctx=None):
+    ctx = ctx or ScanContext(root)
     servers = []
     for rel_path in MCP_CONFIG_FILES:
         path = root / rel_path
         if not path.is_file():
             continue
-        data = load_json(path)
+        data = ctx.load_json(path)
         if not isinstance(data, dict):
             continue
         block = data.get("mcpServers") or data.get("servers") or {}
@@ -595,12 +746,14 @@ def scan_mcp(root):
     return servers
 
 
-def scan_subagents(root):
-    return [rel(p, root) for p in glob_files(root, SUBAGENT_PATTERNS)]
+def scan_subagents(root, ctx=None):
+    ctx = ctx or ScanContext(root)
+    return [rel(p, root) for p in glob_files(root, SUBAGENT_PATTERNS, ctx)]
 
 
-def scan_commands(root):
-    return [rel(p, root) for p in glob_files(root, COMMAND_PATTERNS)]
+def scan_commands(root, ctx=None):
+    ctx = ctx or ScanContext(root)
+    return [rel(p, root) for p in glob_files(root, COMMAND_PATTERNS, ctx)]
 
 
 def iter_hook_commands(entries):
@@ -620,13 +773,14 @@ def iter_hook_commands(entries):
     return out
 
 
-def scan_hooks(root):
+def scan_hooks(root, ctx=None):
+    ctx = ctx or ScanContext(root)
     hooks = []
     for rel_path in SETTINGS_FILES:
         path = root / rel_path
         if not path.is_file():
             continue
-        data = load_json(path)
+        data = ctx.load_json(path)
         if not isinstance(data, dict):
             continue
         hook_block = data.get("hooks")
@@ -642,13 +796,14 @@ def scan_hooks(root):
     return hooks
 
 
-def scan_permissions(root):
+def scan_permissions(root, ctx=None):
+    ctx = ctx or ScanContext(root)
     perms = []
     for rel_path in SETTINGS_FILES:
         path = root / rel_path
         if not path.is_file():
             continue
-        data = load_json(path)
+        data = ctx.load_json(path)
         if not isinstance(data, dict):
             continue
         block = data.get("permissions")
@@ -669,7 +824,8 @@ def secret_hits(text):
     return [label for label, pattern in SECRET_PATTERNS if pattern.search(text)]
 
 
-def security_findings(root, files, mcp, hooks, permissions):
+def security_findings(root, files, mcp, hooks, permissions, ctx=None):
+    ctx = ctx or ScanContext(root)
     findings = []
     # 1) Plaintext secrets in instruction/rule files.
     for f in files:
@@ -687,7 +843,9 @@ def security_findings(root, files, mcp, hooks, permissions):
         path = root / rel_path
         if not path.is_file():
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = ctx.read_text(path)
+        if text is None:
+            continue
         for label in secret_hits(text):
             findings.append(
                 {
@@ -706,7 +864,7 @@ def security_findings(root, files, mcp, hooks, permissions):
         path = root / rel_path
         if not path.is_file():
             continue
-        data = load_json(path)
+        data = ctx.load_json(path)
         if not isinstance(data, dict):
             continue
         block = data.get("mcpServers") or data.get("servers") or {}
@@ -854,9 +1012,10 @@ def gap(check, level, item, message, suggestion):
     return {"check": check, "level": level, "item": item, "message": message, "suggestion": suggestion}
 
 
-def find_gaps(root, surface):
+def find_gaps(root, surface, ctx=None):
     """Diff the repo against a harness completeness checklist and report what is
     missing. Read-only: never writes or mutates the target repository."""
+    ctx = ctx or ScanContext(root)
     gaps = []
     agents = root / "AGENTS.md"
 
@@ -873,7 +1032,7 @@ def find_gaps(root, surface):
         )
         agents_text = ""
     else:
-        agents_text = agents.read_text(encoding="utf-8", errors="replace")
+        agents_text = ctx.read_text(agents) or ""
 
     # 2) Required sections present in AGENTS.md.
     if agents.is_file():
@@ -897,7 +1056,9 @@ def find_gaps(root, surface):
             path = root / rel_path
             if not path.is_file():
                 continue
-            data = path.read_bytes()
+            data = ctx.read_bytes(path)
+            if data is None:
+                continue
             text = data.decode("utf-8", errors="replace")
             if len(data) > STUB_POINTER_MAX_BYTES or "AGENTS.md" not in text:
                 gaps.append(
@@ -934,27 +1095,31 @@ def find_gaps(root, surface):
     return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
 
 
-def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False):
+def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=None):
     root = Path(repo_root).resolve()
+    # Walk the tree once and share the read/parse cache across every stage below
+    # (PERF-01/PERF-02). In monorepo mode the caller passes a subcontext sliced
+    # from the parent inventory so package subtrees are not re-walked (PERF-03).
+    ctx = ctx or ScanContext(root)
     files = []
     warnings = []
-    for tool, path in iter_matches(root):
+    for tool, path in iter_matches(root, ctx):
         info = file_info(root, tool, path, max_bytes)
         warnings.extend(info.pop("warnings"))
         files.append(info)
     result_files = [{k: v for k, v in f.items() if k != "text"} for f in files]
-    mcp = scan_mcp(root)
-    hooks = scan_hooks(root)
-    permissions = scan_permissions(root)
+    mcp = scan_mcp(root, ctx)
+    hooks = scan_hooks(root, ctx)
+    permissions = scan_permissions(root, ctx)
     surface = {
         "mcp_servers": mcp,
-        "subagents": scan_subagents(root),
-        "commands": scan_commands(root),
+        "subagents": scan_subagents(root, ctx),
+        "commands": scan_commands(root, ctx),
         "hooks": hooks,
         "permissions": permissions,
     }
     agents_path = root / "AGENTS.md"
-    agents_text = agents_path.read_text(encoding="utf-8", errors="replace") if agents_path.is_file() else ""
+    agents_text = (ctx.read_text(agents_path) or "") if agents_path.is_file() else ""
     report = {
         "files": result_files,
         "warnings": warnings,
@@ -962,10 +1127,10 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False):
         "conflicts": find_conflicts(files),
         "nested": nested_agents(result_files),
         "surface": surface,
-        "security": security_findings(root, files, mcp, hooks, permissions),
-        "project_snapshot": build_project_snapshot(root, surface, agents_text),
+        "security": security_findings(root, files, mcp, hooks, permissions, ctx),
+        "project_snapshot": build_project_snapshot(root, surface, agents_text, ctx),
         "semantic": semantic.analyze(root, agents_text),
-        "gaps": find_gaps(root, surface),
+        "gaps": find_gaps(root, surface, ctx),
     }
     # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
     # files live inside the scanned repo, so importing them runs arbitrary code
@@ -1129,16 +1294,19 @@ def _aggregate_packages(packages):
     return aggregate
 
 
-def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_plugins=False):
+def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_plugins=False, ctx=None):
     """Scan every detected package subdirectory and build the aggregate.
 
     Returns ``(monorepo_summary, packages)`` where ``packages`` is a list of
     ``{path, name, has_agents_md, summary, report}`` (each ``report`` is a plain
     single-repo :func:`scan_repo` result so there is never nested recursion).
     """
+    ctx = ctx or ScanContext(root)
     packages = []
     for relpath, pdir in package_dirs.items():
-        sub = scan_repo(pdir, max_bytes, rules_dirs, allow_plugins=allow_plugins)
+        # Reuse the root walk + read cache by slicing a subcontext for the
+        # package instead of re-walking (and re-reading) its subtree (PERF-03).
+        sub = scan_repo(pdir, max_bytes, rules_dirs, allow_plugins=allow_plugins, ctx=ctx.subcontext(pdir))
         packages.append(
             {
                 "path": relpath,
@@ -1441,6 +1609,9 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
+    # Single shared scan context: the repo tree is walked once here and the same
+    # read/parse cache is reused by the root scan and every package scan below.
+    ctx = ScanContext(root)
     # Executing plugins runs untrusted code from the scanned repo; warn loudly.
     if args.allow_plugins:
         print(
@@ -1448,13 +1619,13 @@ def main(argv=None):
             "scanned repository (<repo>/.ai-harness-doctor/rules/ and any --rules DIR).",
             file=sys.stderr,
         )
-    report = scan_repo(root, args.max_bytes, args.rules, allow_plugins=args.allow_plugins)
+    report = scan_repo(root, args.max_bytes, args.rules, allow_plugins=args.allow_plugins, ctx=ctx)
 
     mode = "force" if args.monorepo else ("off" if args.no_monorepo else "auto")
     package_dirs, source = detect_packages(root, mode)
     if package_dirs:
         monorepo, packages = scan_monorepo(
-            root, args.max_bytes, package_dirs, source, args.rules, allow_plugins=args.allow_plugins
+            root, args.max_bytes, package_dirs, source, args.rules, allow_plugins=args.allow_plugins, ctx=ctx
         )
         report["monorepo"] = monorepo
         report["packages"] = packages
