@@ -3,9 +3,14 @@
 
 Reads a JSON findings report produced by ``check_drift.py --json`` and/or
 ``scan.py --json`` and assembles a GitHub pull-request review payload: findings
-that carry a repo-relative ``path`` become inline review comments
-(``{path, line, body}``); findings without a file location are collected into a
-single summary body.
+that carry BOTH a repo-relative ``path`` and a concrete ``line`` become inline
+review comments (``{path, line, body}``); every other finding — including one
+that has a ``path`` but no ``line`` — is collected into a single summary body.
+
+The ``path``-without-``line`` case matters: GitHub's "create review" endpoint
+rejects the ENTIRE review with HTTP 422 if any single inline comment lacks a
+valid ``line``/``position``. Routing such findings to the summary body instead
+guarantees one unlocatable finding can never nuke the whole review.
 
 Two modes:
 
@@ -115,11 +120,17 @@ def build_review(report, default_path=None, marker=MARKER, event=REVIEW_EVENT):
     """Build a GitHub PR review payload from a findings report.
 
     Pure function (no I/O, no network): given a parsed report it returns the
-    dict that ``--post`` would send. Findings carrying a repo-relative ``path``
-    become inline review ``comments`` (``{path, line?, body}``, with ``line``
-    included only when the finding has one); findings without a location — or
-    that only carry a ``line`` and no ``path`` unless ``default_path`` is given —
-    are collected into the review ``body`` summary.
+    dict that ``--post`` would send. A finding becomes an inline review
+    ``comment`` (``{path, line, body}``) ONLY when it carries both a
+    repo-relative ``path`` and a concrete ``line``. Every other finding — one
+    with no location at all, one that carries a ``line`` but no ``path`` (unless
+    ``default_path`` supplies one), or one that carries a ``path`` but no
+    ``line`` — is collected into the review ``body`` summary.
+
+    Requiring a ``line`` on every inline comment is deliberate: GitHub's
+    "create review" endpoint 422-rejects the WHOLE review if a single comment
+    lacks a valid ``line``/``position``, so a ``path``-only finding that slipped
+    through as an inline comment would silently discard the entire review.
 
     Args:
       report: parsed JSON report (dict) or list of findings / reports.
@@ -140,12 +151,11 @@ def build_review(report, default_path=None, marker=MARKER, event=REVIEW_EVENT):
         line = _coerce_line(finding.get("line"))
         if not path and line is not None and default_path:
             path = default_path
-        if path:
-            comment = {"path": str(path)}
-            if line is not None:
-                comment["line"] = line
-            comment["body"] = format_body(finding)
-            comments.append(comment)
+        # An inline comment is only safe to post when it has BOTH a path and a
+        # concrete line; otherwise GitHub 422-rejects the entire review. Route
+        # everything else (no location, or path-without-line) to the summary.
+        if path and line is not None:
+            comments.append({"path": str(path), "line": line, "body": format_body(finding)})
         else:
             summary_findings.append(finding)
 
@@ -180,7 +190,12 @@ def build_summary(summary_findings, inline_count, marker=MARKER):
     if summary_findings:
         lines.append("### Findings without a file location")
         for finding in summary_findings:
-            lines.append(f"- {format_body(finding)}")
+            # Preserve the file path when the finding has one but no line (it
+            # could not become an inline comment) so the summary still points at
+            # the right file.
+            path = finding.get("path")
+            location = f"`{path}`: " if path else ""
+            lines.append(f"- {location}{format_body(finding)}")
     return "\n".join(lines) + "\n"
 
 
