@@ -9,6 +9,7 @@ explicit, documented scan-only opt-out (canonicalizable: false).
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -154,6 +155,40 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             self.assertEqual(sem, expected, f"semantic disagrees on {line!r}")
             self.assertEqual(drift, expected, f"check_drift disagrees on {line!r}")
             self.assertEqual(sc, expected, f"scan disagrees on {line!r}")
+
+    def test_backtick_path_detection_single_sourced_across_stages(self):
+        # TD-03: the Phase-0 semantic check (declared_paths) and the Phase-2 D2
+        # drift gate (d2_path_drift) both classify backtick-quoted paths through
+        # the SAME shared registry.declared_paths, so they can no longer diverge.
+        text = (
+            "In-repo missing `docs/missing.md`.\n"
+            "Bare manifest `go.mod` and `Cargo.toml`.\n"
+            'Quoted literal `"./downloads"`.\n'
+            "Glob `src/**/*.ts`.\n"
+            "Command `./gradlew build` and `go build ./cmd`.\n"
+            "Bare tool `pytest`.\n"
+            "Home `~/.claude`, absolute `/etc/hosts`, escape `../outside.txt`.\n"
+            "Existing root `README.md`.\n"
+            "Duplicate `docs/missing.md` again.\n"
+        )
+        # 1) semantic.declared_paths delegates to the shared classifier.
+        self.assertEqual(semantic.declared_paths(text), registry.declared_paths(text))
+        self.assertEqual(check_drift.registry.declared_paths(text), registry.declared_paths(text))
+
+        # 2) On a real repo the two engines report the SAME set of in-repo missing
+        # paths (semantic MISSING findings vs D2 drift findings).
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "README.md").write_text("readme\n", encoding="utf-8")
+            (root / "docs").mkdir()
+            # docs/missing.md, go.mod, Cargo.toml deliberately absent.
+            sem_missing = {f["declared"] for f in semantic.compare_paths(root, text)}
+            d2_missing = {
+                f["message"].split("`")[1] for f in check_drift.d2_path_drift(root, text)
+            }
+            self.assertEqual(sem_missing, d2_missing)
+            # Sanity: the shared classifier's in-repo, existence-failing tokens.
+            self.assertEqual(sem_missing, {"docs/missing.md", "go.mod", "Cargo.toml"})
 
     def test_gap_stub_files_derived_from_registry(self):
         # TD-04: scan.GAP_STUB_FILES must be derived from the shared registry, not

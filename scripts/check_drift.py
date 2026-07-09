@@ -201,39 +201,26 @@ def _within_root(root, token):
 
 def d2_path_drift(root, text):
     findings = []
-    known = {"package.json", "Makefile", "AGENTS.md", "README.md"}
-    for lineno, line in enumerate(text.splitlines(), 1):
-        for m in re.finditer(r"`([^`]+)`", line):
-            token = m.group(1).strip()
-            if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
-                continue
-            if token.startswith(("~", "/", "$")) or ":" in token:
-                # Home-relative (~/.claude), absolute (/etc/...), env-var ($HOME/...),
-                # or scheme/drive-like paths reference locations outside the repo tree;
-                # they are never repo-relative paths, so skip them.
-                continue
-            if token.startswith(("npm ", "pnpm ", "yarn ", "make ", "python", "git ")):
-                continue
-            if "*" in token or "?" in token:
-                continue
-            if "/" not in token and token not in known:
-                continue
-            if any(ch.isspace() for ch in token):
-                continue
-            # Never probe outside the repo root: an absolute or `../`-escaping
-            # token is not repo drift and must not be stat()'d (info-leak guard).
-            if not _within_root(root, token):
-                continue
-            if not (root / token).exists():
-                findings.append(
-                    {
-                        "check": "D2",
-                        "level": "ERROR",
-                        "line": lineno,
-                        "message": f"Referenced path `{token}` does not exist",
-                        "suggestion": "Fix or remove the backtick-quoted path.",
-                    }
-                )
+    # Use the shared registry.declared_paths classifier so this Phase-2 gate and
+    # the Phase-0 semantic check agree on exactly what counts as a declared path
+    # (TD-03). Candidacy is decided by the shared token rules; this gate then
+    # applies its own containment (_within_root) and existence checks.
+    for decl in registry.declared_paths(text):
+        token, lineno = decl["path"], decl["line"]
+        # Never probe outside the repo root: an absolute or `../`-escaping token
+        # is not repo drift and must not be stat()'d (info-leak guard).
+        if not _within_root(root, token):
+            continue
+        if not (root / token).exists():
+            findings.append(
+                {
+                    "check": "D2",
+                    "level": "ERROR",
+                    "line": lineno,
+                    "message": f"Referenced path `{token}` does not exist",
+                    "suggestion": "Fix or remove the backtick-quoted path.",
+                }
+            )
     return findings
 
 
