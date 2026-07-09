@@ -329,7 +329,7 @@ class HealthScoreTests(unittest.TestCase):
             ]), encoding="utf-8")
             output = Path(td) / "results.json"
             runner = f"{sys.executable} -c \"print('unrelated')\""
-            base = [sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "h", "--workdir", str(workdir), "--runner", runner, "-o", str(output)]
+            base = [sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "h", "--workdir", str(workdir), "--runner", runner, "--judge-llm", "off", "-o", str(output)]
             proc = subprocess.run(base, text=True, capture_output=True)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
@@ -485,6 +485,229 @@ class MultiRoundStatsTests(unittest.TestCase):
         self.assertEqual(stats["min_health"], 50)
         self.assertEqual(stats["max_health"], 100)
         self.assertEqual(stats["flaky_tasks"], ["a"])
+
+
+class _EnvGuard:
+    """Context manager that temporarily sets/clears LLM API-key env vars."""
+
+    def __init__(self, **overrides):
+        self.overrides = overrides
+        self.saved = {}
+
+    def __enter__(self):
+        import os as _os
+        for key, value in self.overrides.items():
+            self.saved[key] = _os.environ.get(key)
+            if value is None:
+                _os.environ.pop(key, None)
+            else:
+                _os.environ[key] = value
+        return self
+
+    def __exit__(self, *exc):
+        import os as _os
+        for key, value in self.saved.items():
+            if value is None:
+                _os.environ.pop(key, None)
+            else:
+                _os.environ[key] = value
+        return False
+
+
+class GenerateTasksTests(unittest.TestCase):
+    def _make_repo(self, td):
+        repo = Path(td) / "repo"
+        (repo / "src" / "components").mkdir(parents=True)
+        (repo / "package.json").write_text(json.dumps({
+            "packageManager": "pnpm@9.0.0",
+            "engines": {"node": ">=20"},
+            "scripts": {"test": "vitest run", "lint": "eslint .", "build": "tsc", "dev": "vite"},
+            "devDependencies": {"vitest": "^1", "prettier": "^3"},
+        }), encoding="utf-8")
+        (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+        (repo / "AGENTS.md").write_text("# Overview\nUse Conventional Commits.\n", encoding="utf-8")
+        (repo / "go.mod").write_text("module github.com/acme/widget\n\ngo 1.22\n", encoding="utf-8")
+        return repo
+
+    def test_generate_tasks_from_repo_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_repo(td)
+            tasks = eval_run.generate_tasks(repo)
+            by_id = {t["id"]: t for t in tasks}
+            # Ground-truth facts become tasks.
+            for tid in ["package-manager", "install", "test", "lint", "build", "dev",
+                        "test-framework", "formatter", "node-version", "go-version",
+                        "go-module", "commit-convention", "components-dir"]:
+                self.assertIn(tid, by_id, tid)
+            # Every generated check is a regex over the true value.
+            self.assertTrue(eval_run.regex_passes(by_id["install"]["check"]["value"], "pnpm install"))
+            self.assertTrue(eval_run.regex_passes(by_id["test"]["check"]["value"], "pnpm test"))
+            self.assertTrue(eval_run.regex_passes(by_id["node-version"]["check"]["value"], "Node 20"))
+            self.assertTrue(eval_run.regex_passes(by_id["go-version"]["check"]["value"], "1.22"))
+            self.assertTrue(eval_run.regex_passes(by_id["go-module"]["check"]["value"], "github.com/acme/widget"))
+            self.assertFalse(eval_run.regex_passes(by_id["install"]["check"]["value"], "npm install"))
+            for t in tasks:
+                self.assertEqual(t["check"]["type"], "regex")
+
+    def test_generate_cli_writes_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_repo(td)
+            out = Path(td) / "tasks.json"
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--generate", str(repo), "-o", str(out)],
+                text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertGreaterEqual(len(data), 10)
+            self.assertTrue(all("prompt" in t and "check" in t for t in data))
+
+    def test_detect_package_manager(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "yarn.lock").write_text("", encoding="utf-8")
+            self.assertEqual(eval_run.detect_package_manager(repo), "yarn")
+
+
+class LlmJudgeTests(unittest.TestCase):
+    def test_auto_without_keys_returns_none(self):
+        with _EnvGuard(OPENAI_API_KEY=None, ANTHROPIC_API_KEY=None):
+            self.assertIsNone(eval_run.llm_judge("answer", "rubric", "auto"))
+
+    def test_off_provider_returns_none(self):
+        with _EnvGuard(OPENAI_API_KEY="sk-test"):
+            self.assertIsNone(eval_run.llm_judge("answer", "rubric", "off"))
+
+    def test_openai_success_parsed(self):
+        captured = {}
+
+        def fake_post(url, headers, payload, timeout):
+            captured["url"] = url
+            captured["auth"] = headers.get("Authorization")
+            return {"choices": [{"message": {"content": '{"passed": true, "score": 1, "reason": "good"}'}}]}
+
+        original = eval_run._http_post_json
+        eval_run._http_post_json = fake_post
+        try:
+            with _EnvGuard(OPENAI_API_KEY="sk-test", OPENAI_MODEL="gpt-test"):
+                verdict = eval_run.llm_judge("the answer", "must be good", "auto")
+        finally:
+            eval_run._http_post_json = original
+        self.assertIsNotNone(verdict)
+        self.assertTrue(verdict["passed"])
+        self.assertEqual(verdict["judge"], "llm:openai")
+        self.assertEqual(verdict["model"], "gpt-test")
+        self.assertIn("/chat/completions", captured["url"])
+        self.assertEqual(captured["auth"], "Bearer sk-test")
+
+    def test_claude_success_parsed(self):
+        def fake_post(url, headers, payload, timeout):
+            self.assertIn("/v1/messages", url)
+            self.assertEqual(headers.get("x-api-key"), "ak-test")
+            return {"content": [{"type": "text", "text": '{"passed": false, "score": 0, "reason": "no"}'}]}
+
+        original = eval_run._http_post_json
+        eval_run._http_post_json = fake_post
+        try:
+            with _EnvGuard(OPENAI_API_KEY=None, ANTHROPIC_API_KEY="ak-test"):
+                verdict = eval_run.llm_judge("x", "y", "claude")
+        finally:
+            eval_run._http_post_json = original
+        self.assertIsNotNone(verdict)
+        self.assertFalse(verdict["passed"])
+        self.assertEqual(verdict["judge"], "llm:claude")
+
+    def test_network_error_falls_back_to_none(self):
+        def boom(url, headers, payload, timeout):
+            raise RuntimeError("network down")
+
+        original = eval_run._http_post_json
+        eval_run._http_post_json = boom
+        try:
+            with _EnvGuard(OPENAI_API_KEY="sk-test"):
+                self.assertIsNone(eval_run.llm_judge("x", "y", "openai"))
+        finally:
+            eval_run._http_post_json = original
+
+    def test_grade_answer_prefers_llm_then_falls_back(self):
+        task = {"id": "j", "check": {"type": "judge", "expect": ["ok"]}, "timeout_s": 5}
+        # LLM available -> its verdict wins over the keyword judge.
+        original = eval_run.llm_judge
+        eval_run.llm_judge = lambda *a, **k: {"passed": True, "score": 1.0, "reason": "llm", "judge": "llm:openai"}
+        try:
+            passed, info = eval_run.grade_answer(task, "no keyword here", ".", None, judge_llm="auto")
+        finally:
+            eval_run.llm_judge = original
+        self.assertTrue(passed)
+        self.assertEqual(info["judge"], "llm:openai")
+        # LLM unavailable (returns None) -> keyword judge fallback.
+        eval_run.llm_judge = lambda *a, **k: None
+        try:
+            passed, info = eval_run.grade_answer(task, "ok answer", ".", None, judge_llm="auto")
+        finally:
+            eval_run.llm_judge = original
+        self.assertTrue(passed)
+        self.assertEqual(info["judge"], "builtin")
+
+
+class BaselineTests(unittest.TestCase):
+    def test_detect_regression_unit(self):
+        store = [{"label": "a", "score": 90}, {"label": "b", "score": 88}]
+        reg = eval_run.detect_regression(store, 80, 5)
+        self.assertTrue(reg["regressed"])
+        self.assertEqual(reg["prev_score"], 88)
+        self.assertEqual(reg["delta"], -8)
+        # Within threshold -> not a regression.
+        self.assertFalse(eval_run.detect_regression(store, 85, 5)["regressed"])
+        # No prior score -> None.
+        self.assertIsNone(eval_run.detect_regression([], 80, 5))
+
+    def test_save_baseline_appends_and_trend_renders(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            (workdir / "AGENTS.md").write_text("# overview\n", encoding="utf-8")
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(json.dumps([
+                {"id": "r", "prompt": "hi", "check": {"type": "regex", "value": "ok hi"}, "timeout_s": 10},
+            ]), encoding="utf-8")
+            runner = f"{sys.executable} -c \"print('ok hi')\""
+            store = Path(td) / "baseline.json"
+            base = [sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "run1",
+                    "--workdir", str(workdir), "--runner", runner, "-o", str(Path(td) / "r1.json"),
+                    "--baseline", str(store), "--save-baseline"]
+            self.assertEqual(subprocess.run(base, text=True, capture_output=True).returncode, 0)
+            self.assertEqual(len(json.loads(store.read_text(encoding="utf-8"))), 1)
+            # Second run appends a new snapshot.
+            base2 = list(base)
+            base2[base2.index("run1")] = "run2"
+            base2[base2.index(str(Path(td) / "r1.json"))] = str(Path(td) / "r2.json")
+            self.assertEqual(subprocess.run(base2, text=True, capture_output=True).returncode, 0)
+            data = json.loads(store.read_text(encoding="utf-8"))
+            self.assertEqual(len(data), 2)
+            self.assertEqual(data[0]["score"], 100)
+            # Trend report renders the history.
+            trend = subprocess.run([sys.executable, str(EVAL), "--trend", str(store)],
+                                   text=True, capture_output=True)
+            self.assertEqual(trend.returncode, 0, trend.stderr)
+            self.assertIn("Eval baseline trend", trend.stdout)
+
+    def test_check_regression_gate_exits_6(self):
+        with tempfile.TemporaryDirectory() as td:
+            # Prior baseline recorded a high score.
+            store = Path(td) / "baseline.json"
+            store.write_text(json.dumps([{"label": "good", "score": 100, "grade": "A"}]), encoding="utf-8")
+            # A results file that scores 0 (nothing passed).
+            results = Path(td) / "results.json"
+            results.write_text(json.dumps({
+                "label": "bad",
+                "tasks": [{"id": "x", "passed": False, "timed_out": False}],
+            }), encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--score", str(results),
+                 "--baseline", str(store), "--check-regression", "--regression-threshold", "5"],
+                text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 6, proc.stdout + proc.stderr)
+            self.assertIn("REGRESSION", proc.stdout)
 
 
 if __name__ == "__main__":

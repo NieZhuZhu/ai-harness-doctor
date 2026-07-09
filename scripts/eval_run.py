@@ -118,6 +118,198 @@ def rubric_keywords(rubric):
     return keywords
 
 
+# ---------------------------------------------------------------------------
+# Task generation from repository facts. Instead of hand-writing tasks.json,
+# derive eval tasks from what the repo *actually* declares (package.json
+# scripts, lockfiles, .nvmrc, go.mod, pyproject.toml) plus AGENTS.md, so the
+# efficacy loop works out of the box on any real repository. Deterministic and
+# dependency-free: every generated check is a regex over the ground-truth fact.
+# ---------------------------------------------------------------------------
+
+# Lockfiles that unambiguously reveal the package manager (checked in order).
+PKG_MANAGER_LOCKFILES = [
+    ("pnpm-lock.yaml", "pnpm"), ("pnpm-lock.yml", "pnpm"),
+    ("yarn.lock", "yarn"), ("bun.lockb", "bun"), ("bun.lock", "bun"),
+    ("package-lock.json", "npm"), ("npm-shrinkwrap.json", "npm"),
+]
+
+# package.json script name -> human phrasing used in the generated prompt.
+SCRIPT_PROMPTS = [
+    ("test", "run the test suite"),
+    ("lint", "lint the code"),
+    ("build", "build the project"),
+    ("dev", "start the dev server"),
+    ("start", "start the app"),
+    ("typecheck", "type-check the project"),
+    ("coverage", "run test coverage"),
+    ("format", "format the code"),
+]
+
+# dependency (package.json) -> canonical label the agent should answer with.
+TEST_FRAMEWORK_DEPS = [
+    ("vitest", "vitest"), ("jest", "jest"), ("mocha", "mocha"),
+    ("jasmine", "jasmine"), ("ava", "ava"), ("@playwright/test", "playwright"),
+    ("cypress", "cypress"),
+]
+FORMATTER_DEPS = [
+    ("prettier", "prettier"), ("@biomejs/biome", "biome"), ("eslint", "eslint"),
+]
+
+_PROMPT_SUFFIX = " Answer with ONLY the exact command/value, no explanation."
+
+
+def _load_json_file(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def detect_package_manager(root):
+    """Best-effort package-manager detection from lockfiles / packageManager."""
+    for fname, pm in PKG_MANAGER_LOCKFILES:
+        if (root / fname).is_file():
+            return pm
+    pkg = _load_json_file(root / "package.json")
+    if isinstance(pkg, dict):
+        field = pkg.get("packageManager")
+        if isinstance(field, str):
+            m = re.match(r"([A-Za-z]+)@", field)
+            if m:
+                return m.group(1).lower()
+    return None
+
+
+def generate_tasks(repo_root):
+    """Derive a deterministic list of eval tasks from repository facts.
+
+    Returns a list of task dicts in the same shape ``run_tasks`` consumes:
+    ``{"id", "prompt", "timeout_s", "check": {"type": "regex", "value": ...}}``.
+    Only facts that can be established from files are emitted, so the ground
+    truth for every generated check is verifiable without an LLM.
+    """
+    root = Path(repo_root).resolve()
+    tasks = []
+    seen = set()
+
+    def add(tid, prompt, pattern, timeout_s=120):
+        if tid in seen:
+            return
+        seen.add(tid)
+        tasks.append({
+            "id": tid,
+            "prompt": prompt + _PROMPT_SUFFIX,
+            "timeout_s": timeout_s,
+            "check": {"type": "regex", "value": pattern},
+        })
+
+    pkg = _load_json_file(root / "package.json")
+    pm = detect_package_manager(root)
+
+    if pm:
+        add("package-manager", "Which package manager does this repository use?",
+            r"(?i)\b" + re.escape(pm) + r"\b")
+        if pm in ("pnpm", "npm", "yarn", "bun"):
+            add("install", "What is the exact command to install dependencies in this repo?",
+                r"(?i)\b" + re.escape(pm) + r"\s+(install|i|add)\b")
+
+    if isinstance(pkg, dict) and isinstance(pkg.get("scripts"), dict):
+        scripts = pkg["scripts"]
+        runner = pm or "npm"
+        for name, phrase in SCRIPT_PROMPTS:
+            if name in scripts:
+                pattern = r"(?i)\b" + re.escape(runner) + r"\s+(run\s+)?" + re.escape(name) + r"\b"
+                add(name, "What is the exact command to " + phrase + "?", pattern)
+        deps = {}
+        for key in ("dependencies", "devDependencies"):
+            block = pkg.get(key)
+            if isinstance(block, dict):
+                deps.update(block)
+        for dep, label in TEST_FRAMEWORK_DEPS:
+            if dep in deps:
+                add("test-framework", "Which test framework does this repo use?",
+                    r"(?i)" + re.escape(label))
+                break
+        for dep, label in FORMATTER_DEPS:
+            if dep in deps:
+                add("formatter", "Which code formatter/linter does this repo use?",
+                    r"(?i)" + re.escape(label))
+                break
+
+    node_major = None
+    nvmrc = root / ".nvmrc"
+    if nvmrc.is_file():
+        m = re.search(r"(\d+)", nvmrc.read_text(encoding="utf-8", errors="replace"))
+        if m:
+            node_major = m.group(1)
+    if node_major is None and isinstance(pkg, dict):
+        engines = pkg.get("engines")
+        if isinstance(engines, dict) and isinstance(engines.get("node"), str):
+            m = re.search(r"(\d+)", engines["node"])
+            if m:
+                node_major = m.group(1)
+    if node_major:
+        add("node-version", "Which Node.js major version does this repo target?",
+            r"\b" + re.escape(node_major) + r"\b")
+
+    gomod = root / "go.mod"
+    if gomod.is_file():
+        text = gomod.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"^go\s+(\d+\.\d+)", text, re.M)
+        if m:
+            add("go-version", "Which Go version does this module target (the go directive in go.mod)?",
+                r"\b" + re.escape(m.group(1)) + r"\b")
+        mm = re.search(r"^module\s+(\S+)", text, re.M)
+        if mm:
+            add("go-module", "What is the Go module path declared in go.mod?",
+                r"(?i)" + re.escape(mm.group(1)))
+
+    py_version = None
+    pyproj = root / "pyproject.toml"
+    if pyproj.is_file():
+        m = re.search(r'requires-python\s*=\s*["\']([^"\']+)["\']',
+                      pyproj.read_text(encoding="utf-8", errors="replace"))
+        if m:
+            vm = re.search(r"(\d+\.\d+)", m.group(1))
+            if vm:
+                py_version = vm.group(1)
+    pyver_file = root / ".python-version"
+    if py_version is None and pyver_file.is_file():
+        m = re.search(r"(\d+\.\d+)", pyver_file.read_text(encoding="utf-8", errors="replace"))
+        if m:
+            py_version = m.group(1)
+    if py_version:
+        add("python-version", "Which minimum Python version do this repo's scripts target?",
+            r"\b" + re.escape(py_version) + r"\b")
+
+    agents = root / "AGENTS.md"
+    agents_text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
+    if agents_text and re.search(r"(?i)conventional commit", agents_text):
+        add("commit-convention", "Does this repo follow a commit message convention? Which one?",
+            r"(?i)conventional")
+
+    if (root / "src" / "components").is_dir():
+        add("components-dir", "In which directory should a new UI component file be created?",
+            r"src/components")
+
+    return tasks
+
+
+def generate_report(args):
+    """Emit an auto-generated tasks.json for the target repo (Phase 3 bootstrap)."""
+    tasks = generate_tasks(args.generate)
+    content = json.dumps(tasks, ensure_ascii=False, indent=2)
+    if args.output:
+        Path(args.output).write_text(content + "\n", encoding="utf-8")
+        print(f"wrote {args.output} ({len(tasks)} tasks generated)")
+    else:
+        print(content)
+    if not tasks:
+        print("warning: no facts detected; is this a supported repo (Node/Go/Python + AGENTS.md)?",
+              file=sys.stderr)
+    return 0
+
+
 def builtin_judge(answer, check):
     """Deterministic, dependency-free default judge.
 
@@ -359,17 +551,130 @@ def run_judge(judge_cmd, answer, rubric, workdir, timeout):
             pass
 
 
-def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True):
+# ---------------------------------------------------------------------------
+# LLM-as-judge (real model APIs, standard library only). When a task uses a
+# ``judge`` check and no external ``--judge-cmd`` is supplied, the judge can be
+# delegated to a real LLM (OpenAI- or Anthropic-compatible HTTP API) via
+# ``--judge-llm``. Every failure mode — no API key, network error, malformed
+# response — returns ``None`` so grading gracefully falls back to the built-in
+# deterministic keyword judge. No third-party packages: HTTP uses urllib.
+# ---------------------------------------------------------------------------
+
+JUDGE_SYSTEM_PROMPT = (
+    "You are a strict, fair grader for an AI coding-agent evaluation. You are "
+    "given a RUBRIC describing what a correct answer must contain and the "
+    "agent's ANSWER. Decide whether the answer satisfies the rubric. Respond "
+    "with ONLY a compact JSON object: "
+    '{"passed": true|false, "score": <number 0..1>, "reason": "<short>"}.'
+)
+
+
+def _judge_user_prompt(answer, rubric):
+    return (
+        "RUBRIC:\n" + (rubric or "(no rubric provided)") + "\n\n"
+        "ANSWER:\n" + (answer or "(empty answer)") + "\n\n"
+        'Return ONLY the JSON verdict, e.g. {"passed": true, "score": 1, "reason": "..."}.'
+    )
+
+
+def _http_post_json(url, headers, payload, timeout):
+    """POST ``payload`` as JSON and return the parsed JSON response (stdlib)."""
+    import urllib.request
+
+    body = json.dumps(payload).encode("utf-8")
+    merged = {"Content-Type": "application/json"}
+    merged.update(headers or {})
+    req = urllib.request.Request(url, data=body, headers=merged, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _resolve_llm_provider(provider):
+    """Map ``auto`` to a concrete provider based on available API keys."""
+    provider = (provider or "off").lower()
+    if provider == "auto":
+        if os.environ.get("OPENAI_API_KEY"):
+            return "openai"
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return "claude"
+        return None
+    return provider
+
+
+def llm_judge(answer, rubric, provider="auto", timeout=60, model=None):
+    """Grade an answer with a real LLM. Returns a verdict dict or ``None``.
+
+    ``None`` means "unavailable / failed — fall back to the keyword judge":
+    no matching API key, an unsupported provider, or any network/parse error.
+    A successful verdict has the usual shape plus ``judge="llm:<provider>"``
+    and the ``model`` used.
+    """
+    provider = _resolve_llm_provider(provider)
+    if provider not in ("openai", "claude"):
+        return None
+    try:
+        if provider == "openai":
+            key = os.environ.get("OPENAI_API_KEY")
+            if not key:
+                return None
+            base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+            used_model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+            data = _http_post_json(
+                base + "/chat/completions",
+                {"Authorization": "Bearer " + key},
+                {
+                    "model": used_model,
+                    "temperature": 0,
+                    "messages": [
+                        {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                        {"role": "user", "content": _judge_user_prompt(answer, rubric)},
+                    ],
+                },
+                timeout,
+            )
+            content = data["choices"][0]["message"]["content"]
+        else:  # claude
+            key = os.environ.get("ANTHROPIC_API_KEY")
+            if not key:
+                return None
+            base = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+            used_model = model or os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
+            data = _http_post_json(
+                base + "/v1/messages",
+                {"x-api-key": key, "anthropic-version": "2023-06-01"},
+                {
+                    "model": used_model,
+                    "max_tokens": 512,
+                    "temperature": 0,
+                    "system": JUDGE_SYSTEM_PROMPT,
+                    "messages": [{"role": "user", "content": _judge_user_prompt(answer, rubric)}],
+                },
+                timeout,
+            )
+            blocks = data.get("content", [])
+            content = "".join(b.get("text", "") for b in blocks if isinstance(b, dict))
+    except Exception as exc:  # noqa: BLE001 - any failure must fall back, never crash
+        print(f"llm judge ({provider}) failed, falling back to keyword judge: {exc}", file=sys.stderr)
+        return None
+    verdict = parse_judge_output(content)
+    verdict["judge"] = "llm:" + provider
+    verdict["model"] = used_model
+    return verdict
+
+
+def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True, judge_llm="off"):
     """Grade an answer for a task, returning ``(passed, judge_info)``.
 
     Supports ``regex``, ``command`` and ``judge`` check types. ``judge_info`` is
     ``None`` for non-judge checks. Timeouts count as a failure (no exception is
     propagated) so a matrix run keeps going.
 
-    For ``judge`` checks an external ``--judge-cmd`` takes priority; when none is
-    supplied the deterministic built-in judge (:func:`builtin_judge`) grades the
-    answer so judge checks work out of the box. Pass ``default_judge=False`` to
-    restore the legacy "requires --judge-cmd" behavior.
+    For ``judge`` checks an external ``--judge-cmd`` takes priority; otherwise,
+    when ``judge_llm`` names/auto-detects a provider, a real LLM grades the
+    answer. Any LLM failure (no key, network, parse) transparently falls back to
+    the deterministic built-in judge (:func:`builtin_judge`) so judge checks
+    always work. Pass ``default_judge=False`` to restore the legacy "requires
+    --judge-cmd" behavior.
     """
     check = task.get("check", {})
     ctype = check.get("type")
@@ -390,6 +695,11 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True):
             except subprocess.TimeoutExpired:
                 return False, {"passed": False, "score": None, "reason": "judge timed out"}
             return verdict["passed"], verdict
+        if judge_llm and judge_llm != "off":
+            verdict = llm_judge(answer, rubric, provider=judge_llm, timeout=timeout,
+                                model=check.get("model"))
+            if verdict is not None:
+                return verdict["passed"], verdict
         if default_judge:
             verdict = builtin_judge(answer, check)
             return verdict["passed"], verdict
@@ -417,7 +727,9 @@ def _run_round(tasks, args, workdir):
             continue
         duration = round(time.time() - start, 3)
         answer = extract_answer(proc.stdout)
-        passed, judge_info = grade_answer(task, answer, workdir, args.judge_cmd, not args.no_default_judge)
+        passed, judge_info = grade_answer(task, answer, workdir, args.judge_cmd,
+                                          not args.no_default_judge,
+                                          judge_llm=getattr(args, "judge_llm", "off"))
         record = {
             "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
             "exit_code": proc.returncode, "stdout": proc.stdout, "answer": answer, "stderr": proc.stderr,
@@ -449,10 +761,11 @@ def run_tasks(args):
         health = results["health"]
         print(f"health score: {health['score']}/100 (grade {health['grade']}), "
               f"{health['passed']}/{health['total']} tasks passed")
+        rc = apply_baseline(args, health, workdir)
         if args.fail_under is not None and health["score"] < args.fail_under:
             print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
-            return 5
-        return 0
+            return rc or 5
+        return rc
 
     # Multi-round: run the task set N times, then aggregate per-task stats.
     round_results = []
@@ -477,10 +790,11 @@ def run_tasks(args):
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
     print(render_stats_summary(stats, results["health"]), end="")
+    rc = apply_baseline(args, results["health"], workdir)
     if args.fail_under is not None and results["health"]["score"] < args.fail_under:
         print(f"health score {results['health']['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
-        return 5
-    return 0
+        return rc or 5
+    return rc
 
 
 def render_stats_summary(stats, overall_health=None):
@@ -579,7 +893,7 @@ def load_matrix(args):
     return runners
 
 
-def run_task_with_runner(runner, task, workdir, judge_cmd, default_judge=True):
+def run_task_with_runner(runner, task, workdir, judge_cmd, default_judge=True, judge_llm="off"):
     """Run a single task under a single runner and return a graded record."""
     prompt = task["prompt"]
     command = runner.replace("{prompt}", shlex.quote(prompt))
@@ -595,7 +909,7 @@ def run_task_with_runner(runner, task, workdir, judge_cmd, default_judge=True):
         }
     duration = round(time.time() - start, 3)
     answer = extract_answer(proc.stdout)
-    passed, judge_info = grade_answer(task, answer, workdir, judge_cmd, default_judge)
+    passed, judge_info = grade_answer(task, answer, workdir, judge_cmd, default_judge, judge_llm=judge_llm)
     record = {
         "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
         "exit_code": proc.returncode, "answer": answer, "usage": maybe_usage(proc.stdout),
@@ -645,7 +959,7 @@ def run_matrix(args, runners):
         if binary and shutil.which(binary) is None:
             print(manual_protocol(binary, args.tasks), file=sys.stderr)
             return 127
-        agent_records[name] = [run_task_with_runner(runner, task, workdir, args.judge_cmd, not args.no_default_judge) for task in tasks]
+        agent_records[name] = [run_task_with_runner(runner, task, workdir, args.judge_cmd, not args.no_default_judge, judge_llm=getattr(args, "judge_llm", "off")) for task in tasks]
     summary = {}
     for name, recs in agent_records.items():
         total = len(recs)
@@ -666,10 +980,11 @@ def run_matrix(args, runners):
     health = matrix["health"]
     print(f"health score: {health['score']}/100 (grade {health['grade']}), "
           f"{health['passed']}/{health['total']} tasks passed")
+    rc = apply_baseline(args, health, workdir)
     if args.fail_under is not None and health["score"] < args.fail_under:
         print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
-        return 5
-    return 0
+        return rc or 5
+    return rc
 
 
 def score_report(args):
@@ -683,10 +998,12 @@ def score_report(args):
     else:
         print(f"Health score: {health['score']}/100 (grade {health['grade']})")
         print(f"{health['passed']}/{health['total']} tasks passed; {health.get('timed_out', 0)} timed out")
+    workdir = Path(args.workdir).resolve() if getattr(args, "workdir", None) else None
+    rc = apply_baseline(args, health, workdir)
     if args.fail_under is not None and health["score"] < args.fail_under:
         print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
-        return 5
-    return 0
+        return rc or 5
+    return rc
 
 
 def stats_report(args):
@@ -712,9 +1029,182 @@ def stats_report(args):
         print(json.dumps({"task_stats": task_stats, "stats": stats, "health": overall}, ensure_ascii=False, indent=2))
     else:
         print(render_stats_summary(stats, overall), end="")
+    workdir = Path(args.workdir).resolve() if getattr(args, "workdir", None) else None
+    rc = apply_baseline(args, overall, workdir)
     if args.fail_under is not None and overall["score"] < args.fail_under:
         print(f"health score {overall['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
-        return 5
+        return rc or 5
+    return rc
+
+
+# ---------------------------------------------------------------------------
+# Baseline persistence + trend / regression tracking. A baseline "store" is a
+# JSON list of health snapshots (append-only history). After any run you can
+# --save-baseline to record the current health, and --check-regression to gate
+# on a drop versus the most recent prior snapshot. --trend renders the history.
+# Everything is standard library only and degrades gracefully on missing files.
+# ---------------------------------------------------------------------------
+
+
+def _now_iso():
+    import datetime
+
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def git_meta(workdir):
+    """Best-effort ``{commit, branch}`` for the target repo (None on failure)."""
+    meta = {"commit": None, "branch": None}
+    if not workdir:
+        return meta
+    try:
+        commit = subprocess.run(["git", "-C", str(workdir), "rev-parse", "HEAD"],
+                                capture_output=True, text=True, timeout=10)
+        if commit.returncode == 0:
+            meta["commit"] = commit.stdout.strip()[:12] or None
+        branch = subprocess.run(["git", "-C", str(workdir), "rev-parse", "--abbrev-ref", "HEAD"],
+                                capture_output=True, text=True, timeout=10)
+        if branch.returncode == 0:
+            meta["branch"] = branch.stdout.strip() or None
+    except Exception:  # noqa: BLE001 - git metadata is optional
+        pass
+    return meta
+
+
+def load_baseline_store(path):
+    """Load a baseline history file into a list; empty list if absent/invalid."""
+    p = Path(path)
+    if not p.is_file():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and isinstance(data.get("baselines"), list):
+        return data["baselines"]
+    return []
+
+
+def save_baseline_store(path, store):
+    Path(path).write_text(json.dumps(store, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def make_baseline_entry(label, health, workdir=None):
+    entry = {
+        "timestamp": _now_iso(),
+        "label": label,
+        "score": health.get("score"),
+        "grade": health.get("grade"),
+        "passed": health.get("passed"),
+        "total": health.get("total"),
+        "timed_out": health.get("timed_out", 0),
+        "pass_rate": health.get("pass_rate"),
+    }
+    if workdir:
+        entry["git"] = git_meta(workdir)
+    return entry
+
+
+def detect_regression(store, current_score, threshold):
+    """Compare ``current_score`` to the most recent prior snapshot in the store.
+
+    Returns ``None`` when there is no comparable prior score, otherwise a dict
+    describing the delta and whether it is a regression (drop >= threshold).
+    """
+    prior = [e for e in store if isinstance(e.get("score"), (int, float))]
+    if not prior:
+        return None
+    prev = prior[-1]
+    prev_score = prev["score"]
+    delta = round(current_score - prev_score, 2)
+    return {
+        "prev_score": prev_score,
+        "current_score": current_score,
+        "delta": delta,
+        "regressed": (prev_score - current_score) >= threshold,
+        "threshold": threshold,
+        "prev_label": prev.get("label"),
+        "prev_timestamp": prev.get("timestamp"),
+    }
+
+
+def render_regression(reg):
+    arrow = "▼" if reg["delta"] < 0 else ("▲" if reg["delta"] > 0 else "=")
+    status = "REGRESSION" if reg["regressed"] else "ok"
+    return (f"baseline compare: {reg['prev_score']} -> {reg['current_score']} "
+            f"({arrow} {reg['delta']:+g}) vs `{reg['prev_label']}` "
+            f"[{status}, threshold {reg['threshold']:g}]\n")
+
+
+def render_trend(store):
+    """Render a markdown trend table over the baseline history."""
+    lines = ["# Eval baseline trend", ""]
+    if not store:
+        lines.append("_No baseline snapshots recorded yet._")
+        return "\n".join(lines) + "\n"
+    lines.append("| # | Timestamp | Label | Score | Grade | Δ | Commit | Regression |")
+    lines.append("|---:|---|---|---:|---|---:|---|---|")
+    prev_score = None
+    for i, e in enumerate(store, 1):
+        score = e.get("score")
+        if isinstance(score, (int, float)) and isinstance(prev_score, (int, float)):
+            delta = round(score - prev_score, 2)
+            delta_str = f"{delta:+g}"
+            regressed = "⚠️" if delta < 0 else ""
+        else:
+            delta_str = "—"
+            regressed = ""
+        commit = (e.get("git") or {}).get("commit") or "—"
+        lines.append(f"| {i} | {e.get('timestamp', '—')} | `{e.get('label', '—')}` | "
+                     f"{score if score is not None else '—'} | {e.get('grade', '—')} | "
+                     f"{delta_str} | `{commit}` | {regressed} |")
+        if isinstance(score, (int, float)):
+            prev_score = score
+    scores = [e.get("score") for e in store if isinstance(e.get("score"), (int, float))]
+    if scores:
+        lines.extend(["",
+                      f"Snapshots: {len(store)}; latest score {scores[-1]}; "
+                      f"min {min(scores)}, max {max(scores)}."])
+    return "\n".join(lines) + "\n"
+
+
+def apply_baseline(args, health, workdir=None):
+    """Handle --check-regression (against the existing store) then --save-baseline.
+
+    Regression is checked BEFORE appending so the current run is compared to the
+    prior history. Returns a process exit code (6 on regression, else 0).
+    """
+    if not getattr(args, "baseline", None):
+        return 0
+    store = load_baseline_store(args.baseline)
+    rc = 0
+    if getattr(args, "check_regression", False):
+        reg = detect_regression(store, health["score"], args.regression_threshold)
+        if reg is None:
+            print("no prior baseline snapshot to compare against; skipping regression check")
+        else:
+            print(render_regression(reg), end="")
+            if reg["regressed"]:
+                print(f"eval regression: score dropped {reg['prev_score']} -> {reg['current_score']} "
+                      f"(>= --regression-threshold {args.regression_threshold:g})", file=sys.stderr)
+                rc = 6
+    if getattr(args, "save_baseline", False):
+        label = getattr(args, "label", None) or health.get("label") or "baseline"
+        store.append(make_baseline_entry(label, health, workdir))
+        save_baseline_store(args.baseline, store)
+        print(f"appended baseline snapshot to {args.baseline} ({len(store)} total)")
+    return rc
+
+
+def trend_report(args):
+    """Standalone: render the trend of an existing baseline store."""
+    store = load_baseline_store(args.trend)
+    if args.as_json:
+        print(json.dumps(store, ensure_ascii=False, indent=2))
+    else:
+        print(render_trend(store), end="")
     return 0
 
 
@@ -741,7 +1231,30 @@ def main(argv=None):
     parser.add_argument("--fail-under", dest="fail_under", type=float, default=None,
                         help="Exit 5 when the health score is below this value (0-100).")
     parser.add_argument("--json", dest="as_json", action="store_true", help="Emit machine-readable JSON (used by --score).")
+    parser.add_argument("--generate", metavar="REPO",
+                        help="Auto-generate a tasks.json from repository facts (AGENTS.md + code structure) instead of running.")
+    parser.add_argument("--judge-llm", dest="judge_llm", choices=["off", "auto", "openai", "claude"], default="auto",
+                        help="LLM-as-judge provider for judge checks without --judge-cmd: 'auto' uses OpenAI/Claude when an API key is set and otherwise falls back to the keyword judge (default auto).")
+    parser.add_argument("--judge-model", dest="judge_model", default=None,
+                        help="Override the LLM judge model name (else OPENAI_MODEL/ANTHROPIC_MODEL or a built-in default).")
+    parser.add_argument("--baseline", help="Baseline history JSON file for trend/regression tracking.")
+    parser.add_argument("--save-baseline", dest="save_baseline", action="store_true",
+                        help="Append the current run's health as a snapshot to --baseline.")
+    parser.add_argument("--check-regression", dest="check_regression", action="store_true",
+                        help="Exit 6 when the current score drops >= --regression-threshold below the latest --baseline snapshot.")
+    parser.add_argument("--regression-threshold", dest="regression_threshold", type=float, default=5.0,
+                        help="Regression gate: score drop (points) that counts as a regression (default 5).")
+    parser.add_argument("--trend", help="Render the trend of an existing --baseline-style history file and exit.")
     args = parser.parse_args(argv)
+    if args.judge_model:
+        # A model override is expressed through the check's optional "model"
+        # field; expose it via env so llm_judge picks it up for both providers.
+        os.environ.setdefault("OPENAI_MODEL", args.judge_model)
+        os.environ.setdefault("ANTHROPIC_MODEL", args.judge_model)
+    if args.generate:
+        return generate_report(args)
+    if args.trend:
+        return trend_report(args)
     if args.score:
         return score_report(args)
     if args.stats:
