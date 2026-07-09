@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -582,6 +583,126 @@ class DetectPackagesUnitTests(unittest.TestCase):
         dirs, source = scan.detect_packages(MONOREPO_FIXTURE, mode="auto")
         self.assertEqual(source, "package.json workspaces")
         self.assertEqual(set(dirs), {"packages/app-a", "packages/app-b"})
+
+
+class ScannerPerformanceTests(unittest.TestCase):
+    """PERF-01/02/03: the scanner must walk the tree once (pruning vendored
+    dirs), read/parse each config file at most once, and reuse the root walk for
+    package subtrees in monorepo mode — all without changing scan output."""
+
+    def _make_repo(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "AGENTS.md").write_text(
+            "# Project overview\n# Build & test\nUse node 18.\n", encoding="utf-8"
+        )
+        claude = tmp / ".claude"
+        claude.mkdir()
+        (claude / "settings.json").write_text(
+            json.dumps({"permissions": {"allow": ["Bash(ls)"]}, "hooks": {}}), encoding="utf-8"
+        )
+        (tmp / ".mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+        return tmp
+
+    def test_index_glob_matches_pathlib_glob(self):
+        # The regex-based matcher must agree with Path.glob for every scanner
+        # pattern, otherwise output would silently diverge (PERF-01 safety net).
+        root = FIXTURE
+        index = scan.build_file_index(root)
+        patterns = set()
+        for _tool, pats in scan.CONFIG_PATTERNS:
+            patterns.update(pats)
+        patterns.update(scan.SUBAGENT_PATTERNS)
+        patterns.update(scan.COMMAND_PATTERNS)
+        for _lang, marks in scan.TECH_STACK_MARKERS:
+            patterns.update(marks)
+        for _grp, pats in scan.SNAPSHOT_FILE_GROUPS:
+            patterns.update(pats)
+        for pattern in sorted(patterns):
+            expected = sorted(
+                scan.rel(p, root)
+                for p in root.glob(pattern)
+                if p.is_file() and not scan.is_skipped(p, root)
+            )
+            got = sorted(
+                scan.rel(p, root)
+                for p in scan.index_glob(index, pattern)
+                if p.is_file()
+            )
+            self.assertEqual(got, expected, f"mismatch for pattern {pattern!r}")
+
+    def test_tree_is_walked_only_once(self):
+        repo = self._make_repo()
+        calls = {"n": 0}
+        real_walk = scan.os.walk
+
+        def counting_walk(*a, **k):
+            calls["n"] += 1
+            return real_walk(*a, **k)
+
+        with unittest.mock.patch.object(scan.os, "walk", counting_walk):
+            scan.scan_repo(str(repo), 32768)
+        # Exactly one full-tree walk to build the shared file index (PERF-01).
+        self.assertEqual(calls["n"], 1)
+
+    def test_vendored_dirs_are_pruned_not_descended(self):
+        repo = self._make_repo()
+        # A huge vendored tree must never be descended: its files must be absent
+        # from the index even though it contains matchable names.
+        for i in range(5):
+            d = repo / "node_modules" / f"pkg{i}"
+            d.mkdir(parents=True)
+            (d / "AGENTS.md").write_text("vendored", encoding="utf-8")
+        index = scan.build_file_index(repo)
+        self.assertFalse(any("node_modules" in rp for rp, _ in index))
+
+    def test_shared_config_file_is_read_once(self):
+        repo = self._make_repo()
+        ctx = scan.ScanContext(repo)
+        settings = repo / ".claude" / "settings.json"
+        reads = {"n": 0}
+        orig = Path.read_bytes
+
+        def counting_read_bytes(self, *a, **k):
+            if Path(self) == settings:
+                reads["n"] += 1
+            return orig(self, *a, **k)
+
+        with unittest.mock.patch.object(Path, "read_bytes", counting_read_bytes):
+            # settings.json is consumed by scan_hooks, scan_permissions AND the
+            # security env scan; with the shared cache it is read exactly once.
+            scan.scan_hooks(repo, ctx)
+            scan.scan_permissions(repo, ctx)
+            scan.security_findings(repo, [], scan.scan_mcp(repo, ctx), [], [], ctx)
+        self.assertEqual(reads["n"], 1)
+
+    def test_subcontext_reuses_parent_walk_in_monorepo(self):
+        # Monorepo mode must not re-walk package subtrees the root scan already
+        # inventoried: only the single root walk should occur (PERF-03).
+        root = MONOREPO_FIXTURE
+        calls = {"n": 0}
+        real_walk = scan.os.walk
+
+        def counting_walk(*a, **k):
+            calls["n"] += 1
+            return real_walk(*a, **k)
+
+        ctx = scan.ScanContext(root)  # one walk here
+        pkgs, source = scan.detect_packages(root, "auto")
+        with unittest.mock.patch.object(scan.os, "walk", counting_walk):
+            scan.scan_monorepo(root, 32768, pkgs, source, ctx=ctx)
+        # Zero additional walks: every package scan sliced the parent inventory.
+        self.assertEqual(calls["n"], 0)
+
+    def test_subcontext_output_matches_standalone_scan(self):
+        # A package scanned via a sliced subcontext must yield the same report as
+        # scanning that package directory standalone (no behavioral drift).
+        root = MONOREPO_FIXTURE
+        pkg = root / "packages" / "app-a"
+        ctx = scan.ScanContext(root)
+        via_sub = scan.scan_repo(str(pkg), 32768, ctx=ctx.subcontext(pkg))
+        standalone = scan.scan_repo(str(pkg), 32768)
+        self.assertEqual(json.dumps(via_sub, sort_keys=True), json.dumps(standalone, sort_keys=True))
 
 
 if __name__ == "__main__":
