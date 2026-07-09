@@ -9,10 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # eslint 10 (dev-only) requires Node >= 20.19; pin the lint job to Node 22.
+      # eslint 10 (dev-only) requires Node >= 20.19; Node 20 LTS ships a stable
+      # npm 10.x (Node 22's bundled npm 11 crashes with "Exit handler never called").
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
