@@ -9,6 +9,7 @@ the JSON. Python 3.9 standard library only; no runtime dependencies.
 """
 
 import json
+import re
 from pathlib import Path
 
 # scripts/ is a sibling of assets/ under the package root.
@@ -37,6 +38,31 @@ LOCKFILE_MANAGERS = {
     "bun.lockb": "bun",
     "bun.lock": "bun",
 }
+
+# Single source of truth for recognizing a Node.js version reference in a line of
+# AGENTS.md / config prose and normalizing it to its MAJOR version. Previously
+# scan.py (Phase-0 conflict signal), semantic.py (Phase-0 declared-version check)
+# and check_drift.py (Phase-2 D6 drift gate) each carried their OWN slightly
+# different regex, so the same line could yield a different Node version (or none)
+# depending on the stage (TD-06). They now all go through ``node_version_major``
+# so every stage extracts the identical value. The pattern accepts: an optional
+# ``.js`` suffix, an optional ``:`` separator, an optional ``version``/``v`` word,
+# an optional comparator (``>=``/``<=``/``==``/``^``/``~``), an optional ``v``
+# prefix and an optional surrounding quote, then the version; only the MAJOR
+# component is captured and any ``.minor`` / ``.x`` suffix is consumed.
+NODE_VERSION_RE = re.compile(
+    r"\bnode(?:\.js)?\s*:?\s*(?:v|version)?\s*(?:>=?|<=?|==?|\^|~)?\s*v?[\"']?(\d+)(?:\.\d+|\.x)*",
+    re.I,
+)
+
+
+def node_version_major(line):
+    """Return the MAJOR Node.js version (int) referenced in ``line``, else ``None``.
+
+    Single shared extractor used by scan.py, semantic.py and check_drift.py so all
+    three stages normalize a Node version reference to the same value (TD-06)."""
+    m = NODE_VERSION_RE.search(line)
+    return int(m.group(1)) if m else None
 
 
 def load_registry():

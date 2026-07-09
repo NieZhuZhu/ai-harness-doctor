@@ -121,6 +121,40 @@ class SharedConstantConsistencyTests(unittest.TestCase):
         for lockfile in ("bun.lockb", "bun.lock"):
             self.assertEqual(registry.LOCKFILE_MANAGERS.get(lockfile), "bun")
 
+    def test_node_version_regex_single_sourced_across_stages(self):
+        # TD-06: the scan conflict signal, the Phase-0 semantic check and the
+        # Phase-2 D6 drift gate all extract a Node version through the SAME shared
+        # registry helper, so a given line yields the identical normalized MAJOR
+        # version (or None) in every stage. Feed tricky inputs and assert all
+        # three agree with registry.node_version_major.
+        def scan_major(line):
+            sigs = [s for s in scan.extract_signals({"text": line, "path": "AGENTS.md"})
+                    if s["signal"] == "node_version"]
+            return int(sigs[0]["value"].split()[1]) if sigs else None
+
+        cases = {
+            "node 18": 18,
+            "node 18.17.0": 18,
+            "node >=18": 18,
+            'node: "20"': 20,
+            "Use Node 16.": 16,
+            "node v14": 14,
+            "node.js 20.1": 20,
+            "node 18.x": 18,
+            "node:20-alpine": 20,
+            "no node version here": None,
+            "the Node + Python runtime": None,
+        }
+        for line, expected in cases.items():
+            reg = registry.node_version_major(line)
+            sem = semantic.declared_node_version(line)[0]
+            drift = check_drift.declared_node_version(line)[0]
+            sc = scan_major(line)
+            self.assertEqual(reg, expected, f"registry mis-extracted {line!r}")
+            self.assertEqual(sem, expected, f"semantic disagrees on {line!r}")
+            self.assertEqual(drift, expected, f"check_drift disagrees on {line!r}")
+            self.assertEqual(sc, expected, f"scan disagrees on {line!r}")
+
     def test_gap_stub_files_derived_from_registry(self):
         # TD-04: scan.GAP_STUB_FILES must be derived from the shared registry, not
         # a hardcoded literal, so adding a tool to the registry auto-updates gap
