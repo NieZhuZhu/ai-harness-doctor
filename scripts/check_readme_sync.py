@@ -124,9 +124,7 @@ def compare(reference_name, reference_text, name, text):
     ref_levels = [level for level, _ in ref_headings]
     levels = [level for level, _ in headings]
     if len(levels) != len(ref_levels):
-        problems.append(
-            f"{name} has {len(levels)} headings but {reference_name} has {len(ref_levels)}"
-        )
+        problems.append(f"{name} has {len(levels)} headings but {reference_name} has {len(ref_levels)}")
     for index in range(min(len(levels), len(ref_levels))):
         if levels[index] != ref_levels[index]:
             ref_level, ref_title = ref_headings[index]
@@ -140,9 +138,7 @@ def compare(reference_name, reference_text, name, text):
     ref_blocks = extract_code_blocks(reference_text)
     blocks = extract_code_blocks(text)
     if len(blocks) != len(ref_blocks):
-        problems.append(
-            f"{name} has {len(blocks)} code blocks but {reference_name} has {len(ref_blocks)}"
-        )
+        problems.append(f"{name} has {len(blocks)} code blocks but {reference_name} has {len(ref_blocks)}")
     for index in range(min(len(blocks), len(ref_blocks))):
         if blocks[index] != ref_blocks[index]:
             problems.append(
@@ -154,16 +150,12 @@ def compare(reference_name, reference_text, name, text):
     ref_rows = count_table_rows(reference_text)
     rows = count_table_rows(text)
     if rows != ref_rows:
-        problems.append(
-            f"{name} has {rows} table rows but {reference_name} has {ref_rows}"
-        )
+        problems.append(f"{name} has {rows} table rows but {reference_name} has {ref_rows}")
 
     ref_links = count_links(reference_text)
     links = count_links(text)
     if links != ref_links:
-        problems.append(
-            f"{name} has {links} links but {reference_name} has {ref_links}"
-        )
+        problems.append(f"{name} has {links} links but {reference_name} has {ref_links}")
 
     return problems
 

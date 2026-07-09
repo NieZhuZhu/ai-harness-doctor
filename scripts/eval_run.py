@@ -95,11 +95,50 @@ def _as_pattern_list(value):
 
 
 _STOPWORDS = {
-    "the", "and", "for", "with", "that", "this", "must", "should", "will", "have",
-    "from", "into", "your", "when", "then", "than", "each", "also", "such", "which",
-    "list", "explain", "describe", "mention", "answer", "correct", "correctly",
-    "include", "including", "provide", "using", "used", "note", "about", "these",
-    "there", "their", "does", "what", "where", "some", "only", "make", "sure",
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "must",
+    "should",
+    "will",
+    "have",
+    "from",
+    "into",
+    "your",
+    "when",
+    "then",
+    "than",
+    "each",
+    "also",
+    "such",
+    "which",
+    "list",
+    "explain",
+    "describe",
+    "mention",
+    "answer",
+    "correct",
+    "correctly",
+    "include",
+    "including",
+    "provide",
+    "using",
+    "used",
+    "note",
+    "about",
+    "these",
+    "there",
+    "their",
+    "does",
+    "what",
+    "where",
+    "some",
+    "only",
+    "make",
+    "sure",
 }
 
 
@@ -140,9 +179,13 @@ def rubric_keywords(rubric):
 
 # Lockfiles that unambiguously reveal the package manager (checked in order).
 PKG_MANAGER_LOCKFILES = [
-    ("pnpm-lock.yaml", "pnpm"), ("pnpm-lock.yml", "pnpm"),
-    ("yarn.lock", "yarn"), ("bun.lockb", "bun"), ("bun.lock", "bun"),
-    ("package-lock.json", "npm"), ("npm-shrinkwrap.json", "npm"),
+    ("pnpm-lock.yaml", "pnpm"),
+    ("pnpm-lock.yml", "pnpm"),
+    ("yarn.lock", "yarn"),
+    ("bun.lockb", "bun"),
+    ("bun.lock", "bun"),
+    ("package-lock.json", "npm"),
+    ("npm-shrinkwrap.json", "npm"),
 ]
 
 # package.json script name -> human phrasing used in the generated prompt.
@@ -159,12 +202,18 @@ SCRIPT_PROMPTS = [
 
 # dependency (package.json) -> canonical label the agent should answer with.
 TEST_FRAMEWORK_DEPS = [
-    ("vitest", "vitest"), ("jest", "jest"), ("mocha", "mocha"),
-    ("jasmine", "jasmine"), ("ava", "ava"), ("@playwright/test", "playwright"),
+    ("vitest", "vitest"),
+    ("jest", "jest"),
+    ("mocha", "mocha"),
+    ("jasmine", "jasmine"),
+    ("ava", "ava"),
+    ("@playwright/test", "playwright"),
     ("cypress", "cypress"),
 ]
 FORMATTER_DEPS = [
-    ("prettier", "prettier"), ("@biomejs/biome", "biome"), ("eslint", "eslint"),
+    ("prettier", "prettier"),
+    ("@biomejs/biome", "biome"),
+    ("eslint", "eslint"),
 ]
 
 _PROMPT_SUFFIX = " Answer with ONLY the exact command/value, no explanation."
@@ -208,22 +257,26 @@ def generate_tasks(repo_root):
         if tid in seen:
             return
         seen.add(tid)
-        tasks.append({
-            "id": tid,
-            "prompt": prompt + _PROMPT_SUFFIX,
-            "timeout_s": timeout_s,
-            "check": {"type": "regex", "value": pattern},
-        })
+        tasks.append(
+            {
+                "id": tid,
+                "prompt": prompt + _PROMPT_SUFFIX,
+                "timeout_s": timeout_s,
+                "check": {"type": "regex", "value": pattern},
+            }
+        )
 
     pkg = _load_json_file(root / "package.json")
     pm = detect_package_manager(root)
 
     if pm:
-        add("package-manager", "Which package manager does this repository use?",
-            r"(?i)\b" + re.escape(pm) + r"\b")
+        add("package-manager", "Which package manager does this repository use?", r"(?i)\b" + re.escape(pm) + r"\b")
         if pm in ("pnpm", "npm", "yarn", "bun"):
-            add("install", "What is the exact command to install dependencies in this repo?",
-                r"(?i)\b" + re.escape(pm) + r"\s+(install|i|add)\b")
+            add(
+                "install",
+                "What is the exact command to install dependencies in this repo?",
+                r"(?i)\b" + re.escape(pm) + r"\s+(install|i|add)\b",
+            )
 
     if isinstance(pkg, dict) and isinstance(pkg.get("scripts"), dict):
         scripts = pkg["scripts"]
@@ -239,13 +292,11 @@ def generate_tasks(repo_root):
                 deps.update(block)
         for dep, label in TEST_FRAMEWORK_DEPS:
             if dep in deps:
-                add("test-framework", "Which test framework does this repo use?",
-                    r"(?i)" + re.escape(label))
+                add("test-framework", "Which test framework does this repo use?", r"(?i)" + re.escape(label))
                 break
         for dep, label in FORMATTER_DEPS:
             if dep in deps:
-                add("formatter", "Which code formatter/linter does this repo use?",
-                    r"(?i)" + re.escape(label))
+                add("formatter", "Which code formatter/linter does this repo use?", r"(?i)" + re.escape(label))
                 break
 
     node_major = None
@@ -261,20 +312,21 @@ def generate_tasks(repo_root):
             if m:
                 node_major = m.group(1)
     if node_major:
-        add("node-version", "Which Node.js major version does this repo target?",
-            r"\b" + re.escape(node_major) + r"\b")
+        add("node-version", "Which Node.js major version does this repo target?", r"\b" + re.escape(node_major) + r"\b")
 
     gomod = root / "go.mod"
     if gomod.is_file():
         text = gomod.read_text(encoding="utf-8", errors="replace")
         m = re.search(r"^go\s+(\d+\.\d+)", text, re.M)
         if m:
-            add("go-version", "Which Go version does this module target (the go directive in go.mod)?",
-                r"\b" + re.escape(m.group(1)) + r"\b")
+            add(
+                "go-version",
+                "Which Go version does this module target (the go directive in go.mod)?",
+                r"\b" + re.escape(m.group(1)) + r"\b",
+            )
         mm = re.search(r"^module\s+(\S+)", text, re.M)
         if mm:
-            add("go-module", "What is the Go module path declared in go.mod?",
-                r"(?i)" + re.escape(mm.group(1)))
+            add("go-module", "What is the Go module path declared in go.mod?", r"(?i)" + re.escape(mm.group(1)))
 
     # Python version: reuse the scan/drift fact engine's ground-truth sources
     # (semantic.python_ground_versions) instead of a private pyproject-first
@@ -289,18 +341,19 @@ def generate_tasks(repo_root):
     py_values = {value for _source, value in py_grounds}
     if len(py_values) == 1:
         major, minor = next(iter(py_values))
-        add("python-version", "Which minimum Python version do this repo's scripts target?",
-            r"\b" + re.escape(f"{major}.{minor}") + r"\b")
+        add(
+            "python-version",
+            "Which minimum Python version do this repo's scripts target?",
+            r"\b" + re.escape(f"{major}.{minor}") + r"\b",
+        )
 
     agents = root / "AGENTS.md"
     agents_text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
     if agents_text and re.search(r"(?i)conventional commit", agents_text):
-        add("commit-convention", "Does this repo follow a commit message convention? Which one?",
-            r"(?i)conventional")
+        add("commit-convention", "Does this repo follow a commit message convention? Which one?", r"(?i)conventional")
 
     if (root / "src" / "components").is_dir():
-        add("components-dir", "In which directory should a new UI component file be created?",
-            r"src/components")
+        add("components-dir", "In which directory should a new UI component file be created?", r"src/components")
 
     return tasks
 
@@ -315,8 +368,7 @@ def generate_report(args):
     else:
         print(content)
     if not tasks:
-        print("warning: no facts detected; is this a supported repo (Node/Go/Python + AGENTS.md)?",
-              file=sys.stderr)
+        print("warning: no facts detected; is this a supported repo (Node/Go/Python + AGENTS.md)?", file=sys.stderr)
     return 0
 
 
@@ -352,7 +404,9 @@ def builtin_judge(answer, check):
 
     if not criteria:
         return {
-            "passed": False, "score": 0.0, "judge": "builtin",
+            "passed": False,
+            "score": 0.0,
+            "judge": "builtin",
             "reason": "builtin judge needs `expect`/`reject`/`rubric` to grade; none provided",
         }
 
@@ -480,7 +534,7 @@ def summarize_rounds(round_results):
         "health_scores": scores,
         "mean_health": round(mean, 4),
         "variance": round(variance, 4),
-        "stddev": round(variance ** 0.5, 4),
+        "stddev": round(variance**0.5, 4),
         "min_health": min(scores) if scores else 0,
         "max_health": max(scores) if scores else 0,
         "flaky_tasks": flaky,
@@ -542,14 +596,18 @@ def run_judge(judge_cmd, answer, rubric, workdir, timeout):
         handle.close()
         env["JUDGE_INPUT"] = handle.name
         command = (
-            judge_cmd
-            .replace("{answer}", shlex.quote(answer))
+            judge_cmd.replace("{answer}", shlex.quote(answer))
             .replace("{rubric}", shlex.quote(rubric))
             .replace("{input}", shlex.quote(handle.name))
         )
         proc = subprocess.run(
-            command, cwd=str(workdir) if workdir else None, text=True,
-            capture_output=True, shell=True, env=env, timeout=timeout,
+            command,
+            cwd=str(workdir) if workdir else None,
+            text=True,
+            capture_output=True,
+            shell=True,
+            env=env,
+            timeout=timeout,
         )
         verdict = parse_judge_output(proc.stdout)
         verdict["exit_code"] = proc.returncode
@@ -693,7 +751,9 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True, judg
         return regex_passes(check.get("value", ""), answer), None
     if ctype == "command":
         try:
-            cproc = subprocess.run(check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=timeout)
+            cproc = subprocess.run(
+                check.get("value", ""), cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=timeout
+            )
             return cproc.returncode == 0, None
         except subprocess.TimeoutExpired:
             return False, None
@@ -706,8 +766,7 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True, judg
                 return False, {"passed": False, "score": None, "reason": "judge timed out"}
             return verdict["passed"], verdict
         if judge_llm and judge_llm != "off":
-            verdict = llm_judge(answer, rubric, provider=judge_llm, timeout=timeout,
-                                model=check.get("model"))
+            verdict = llm_judge(answer, rubric, provider=judge_llm, timeout=timeout, model=check.get("model"))
             if verdict is not None:
                 return verdict["passed"], verdict
         if default_judge:
@@ -725,24 +784,45 @@ def _run_round(tasks, args, workdir):
         command = args.runner.replace("{prompt}", shlex.quote(prompt))
         start = time.time()
         try:
-            proc = subprocess.run(command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
+            proc = subprocess.run(
+                command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60)
+            )
         except subprocess.TimeoutExpired as exc:
             duration = round(time.time() - start, 3)
             stdout = timeout_output(exc.stdout)
-            records.append({
-                "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
-                "exit_code": None, "stdout": stdout, "answer": extract_answer(stdout), "stderr": timeout_output(exc.stderr),
-                "usage": {},
-            })
+            records.append(
+                {
+                    "id": task["id"],
+                    "passed": False,
+                    "timed_out": True,
+                    "duration_s": duration,
+                    "exit_code": None,
+                    "stdout": stdout,
+                    "answer": extract_answer(stdout),
+                    "stderr": timeout_output(exc.stderr),
+                    "usage": {},
+                }
+            )
             continue
         duration = round(time.time() - start, 3)
         answer = extract_answer(proc.stdout)
-        passed, judge_info = grade_answer(task, answer, workdir, args.judge_cmd,
-                                          not args.no_default_judge,
-                                          judge_llm=getattr(args, "judge_llm", "off"))
+        passed, judge_info = grade_answer(
+            task,
+            answer,
+            workdir,
+            args.judge_cmd,
+            not args.no_default_judge,
+            judge_llm=getattr(args, "judge_llm", "off"),
+        )
         record = {
-            "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
-            "exit_code": proc.returncode, "stdout": proc.stdout, "answer": answer, "stderr": proc.stderr,
+            "id": task["id"],
+            "passed": passed,
+            "timed_out": False,
+            "duration_s": duration,
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout,
+            "answer": answer,
+            "stderr": proc.stderr,
             "usage": maybe_usage(proc.stdout),
         }
         if judge_info is not None:
@@ -769,8 +849,10 @@ def run_tasks(args):
         output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"wrote {output}")
         health = results["health"]
-        print(f"health score: {health['score']}/100 (grade {health['grade']}), "
-              f"{health['passed']}/{health['total']} tasks passed")
+        print(
+            f"health score: {health['score']}/100 (grade {health['grade']}), "
+            f"{health['passed']}/{health['total']} tasks passed"
+        )
         rc = apply_baseline(args, health, workdir)
         if args.fail_under is not None and health["score"] < args.fail_under:
             print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
@@ -812,11 +894,15 @@ def render_stats_summary(stats, overall_health=None):
     lines = []
     lines.append(f"ran {stats['rounds']} round(s) over {stats['task_count']} task(s)")
     if overall_health is not None:
-        lines.append(f"overall health score: {overall_health['score']}/100 (grade {overall_health['grade']}), "
-                     f"{overall_health['passed']}/{overall_health['total']} task-runs passed")
-    lines.append(f"mean per-round health: {stats['mean_health']}/100 "
-                 f"(stddev {stats['stddev']}, variance {stats['variance']}, "
-                 f"min {stats['min_health']}, max {stats['max_health']})")
+        lines.append(
+            f"overall health score: {overall_health['score']}/100 (grade {overall_health['grade']}), "
+            f"{overall_health['passed']}/{overall_health['total']} task-runs passed"
+        )
+    lines.append(
+        f"mean per-round health: {stats['mean_health']}/100 "
+        f"(stddev {stats['stddev']}, variance {stats['variance']}, "
+        f"min {stats['min_health']}, max {stats['max_health']})"
+    )
     lines.append(f"per-round health scores: {stats['health_scores']}")
     if stats["flaky_tasks"]:
         lines.append(f"flaky tasks ({stats['flaky_count']}): {', '.join(stats['flaky_tasks'])}")
@@ -856,7 +942,15 @@ def compare(args):
     bmap = {t["id"]: t for t in before.get("tasks", [])}
     amap = {t["id"]: t for t in after.get("tasks", [])}
     ids = sorted(set(bmap) | set(amap))
-    lines = ["# Phase 3 — Efficacy Comparison Report", "", f"Before label: `{before.get('label')}`", f"After label: `{after.get('label')}`", "", "| Task | Before | After | Duration Δ(s) | Usage |", "|---|---:|---:|---:|---|"]
+    lines = [
+        "# Phase 3 — Efficacy Comparison Report",
+        "",
+        f"Before label: `{before.get('label')}`",
+        f"After label: `{after.get('label')}`",
+        "",
+        "| Task | Before | After | Duration Δ(s) | Usage |",
+        "|---|---:|---:|---:|---|",
+    ]
     before_pass = after_pass = 0
     for tid in ids:
         b, a = bmap.get(tid, {}), amap.get(tid, {})
@@ -865,7 +959,13 @@ def compare(args):
         delta = round((a.get("duration_s") or 0) - (b.get("duration_s") or 0), 3)
         usage = json.dumps(a.get("usage") or b.get("usage") or {}, ensure_ascii=False)
         lines.append(f"| `{tid}` | {b.get('passed')} | {a.get('passed')} | {delta} | `{usage}` |")
-    lines.extend(["", f"Summary: pass rate {before_pass}/{len(ids)} → {after_pass}/{len(ids)}; delta {after_pass - before_pass} tasks."])
+    lines.extend(
+        [
+            "",
+            f"Summary: pass rate {before_pass}/{len(ids)} → {after_pass}/{len(ids)}; "
+            f"delta {after_pass - before_pass} tasks.",
+        ]
+    )
     content = "\n".join(lines) + "\n"
     if args.output:
         Path(args.output).write_text(content, encoding="utf-8")
@@ -909,20 +1009,32 @@ def run_task_with_runner(runner, task, workdir, judge_cmd, default_judge=True, j
     command = runner.replace("{prompt}", shlex.quote(prompt))
     start = time.time()
     try:
-        proc = subprocess.run(command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60))
+        proc = subprocess.run(
+            command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60)
+        )
     except subprocess.TimeoutExpired as exc:
         duration = round(time.time() - start, 3)
         stdout = timeout_output(exc.stdout)
         return {
-            "id": task["id"], "passed": False, "timed_out": True, "duration_s": duration,
-            "exit_code": None, "answer": extract_answer(stdout), "usage": {},
+            "id": task["id"],
+            "passed": False,
+            "timed_out": True,
+            "duration_s": duration,
+            "exit_code": None,
+            "answer": extract_answer(stdout),
+            "usage": {},
         }
     duration = round(time.time() - start, 3)
     answer = extract_answer(proc.stdout)
     passed, judge_info = grade_answer(task, answer, workdir, judge_cmd, default_judge, judge_llm=judge_llm)
     record = {
-        "id": task["id"], "passed": passed, "timed_out": False, "duration_s": duration,
-        "exit_code": proc.returncode, "answer": answer, "usage": maybe_usage(proc.stdout),
+        "id": task["id"],
+        "passed": passed,
+        "timed_out": False,
+        "duration_s": duration,
+        "exit_code": proc.returncode,
+        "answer": answer,
+        "usage": maybe_usage(proc.stdout),
     }
     if judge_info is not None:
         record["judge"] = judge_info
@@ -949,7 +1061,9 @@ def render_matrix(tasks, agent_records, runners):
                 mark = "❌ fail"
             cells.append(f"{mark} ({record.get('duration_s', 0)}s)")
         lines.append(f"| `{tid}` | " + " | ".join(cells) + " |")
-    lines.extend(["", "## Per-agent pass rate", "", "| Agent | Runner | Pass | Total | Pass rate |", "|---|---|---:|---:|---:|"])
+    lines.extend(
+        ["", "## Per-agent pass rate", "", "| Agent | Runner | Pass | Total | Pass rate |", "|---|---|---:|---:|---:|"]
+    )
     for name in names:
         recs = agent_records[name]
         total = len(recs)
@@ -969,7 +1083,17 @@ def run_matrix(args, runners):
         if binary and shutil.which(binary) is None:
             print(manual_protocol(binary, args.tasks), file=sys.stderr)
             return 127
-        agent_records[name] = [run_task_with_runner(runner, task, workdir, args.judge_cmd, not args.no_default_judge, judge_llm=getattr(args, "judge_llm", "off")) for task in tasks]
+        agent_records[name] = [
+            run_task_with_runner(
+                runner,
+                task,
+                workdir,
+                args.judge_cmd,
+                not args.no_default_judge,
+                judge_llm=getattr(args, "judge_llm", "off"),
+            )
+            for task in tasks
+        ]
     summary = {}
     for name, recs in agent_records.items():
         total = len(recs)
@@ -977,19 +1101,28 @@ def run_matrix(args, runners):
         summary[name] = {"passed": passed, "total": total, "pass_rate": round(passed / total, 4) if total else 0.0}
     matrix = {
         "workdir": str(workdir),
-        "agents": {name: {"runner": runners[name], "tasks": recs, "summary": summary[name]} for name, recs in agent_records.items()},
+        "agents": {
+            name: {"runner": runners[name], "tasks": recs, "summary": summary[name]}
+            for name, recs in agent_records.items()
+        },
         "summary": summary,
     }
     matrix["health"] = compute_health(matrix)
     json_out = Path(args.matrix_json) if args.matrix_json else Path("matrix-results.json")
     json_out.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
-    report_out = Path(args.matrix_report) if args.matrix_report else (Path(args.output) if args.output else Path("matrix-report.md"))
+    report_out = (
+        Path(args.matrix_report)
+        if args.matrix_report
+        else (Path(args.output) if args.output else Path("matrix-report.md"))
+    )
     report_out.write_text(render_matrix(tasks, agent_records, runners), encoding="utf-8")
     print(f"wrote {json_out}")
     print(f"wrote {report_out}")
     health = matrix["health"]
-    print(f"health score: {health['score']}/100 (grade {health['grade']}), "
-          f"{health['passed']}/{health['total']} tasks passed")
+    print(
+        f"health score: {health['score']}/100 (grade {health['grade']}), "
+        f"{health['passed']}/{health['total']} tasks passed"
+    )
     rc = apply_baseline(args, health, workdir)
     if args.fail_under is not None and health["score"] < args.fail_under:
         print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
@@ -1032,7 +1165,9 @@ def stats_report(args):
         # A single-round result file: treat it as one round.
         round_results = [data]
     else:
-        raise SystemExit("--stats file must contain 'round_results', a list of rounds, or a single-round 'tasks' result")
+        raise SystemExit(
+            "--stats file must contain 'round_results', a list of rounds, or a single-round 'tasks' result"
+        )
     task_stats, stats = summarize_rounds(round_results)
     overall = compute_health({"tasks": [rec for rr in round_results for rec in _round_records(rr)]})
     if args.as_json:
@@ -1068,12 +1203,14 @@ def git_meta(workdir):
     if not workdir:
         return meta
     try:
-        commit = subprocess.run(["git", "-C", str(workdir), "rev-parse", "HEAD"],
-                                capture_output=True, text=True, timeout=10)
+        commit = subprocess.run(
+            ["git", "-C", str(workdir), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10
+        )
         if commit.returncode == 0:
             meta["commit"] = commit.stdout.strip()[:12] or None
-        branch = subprocess.run(["git", "-C", str(workdir), "rev-parse", "--abbrev-ref", "HEAD"],
-                                capture_output=True, text=True, timeout=10)
+        branch = subprocess.run(
+            ["git", "-C", str(workdir), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=10
+        )
         if branch.returncode == 0:
             meta["branch"] = branch.stdout.strip() or None
     except Exception:  # noqa: BLE001 - git metadata is optional
@@ -1143,9 +1280,11 @@ def detect_regression(store, current_score, threshold):
 def render_regression(reg):
     arrow = "▼" if reg["delta"] < 0 else ("▲" if reg["delta"] > 0 else "=")
     status = "REGRESSION" if reg["regressed"] else "ok"
-    return (f"baseline compare: {reg['prev_score']} -> {reg['current_score']} "
-            f"({arrow} {reg['delta']:+g}) vs `{reg['prev_label']}` "
-            f"[{status}, threshold {reg['threshold']:g}]\n")
+    return (
+        f"baseline compare: {reg['prev_score']} -> {reg['current_score']} "
+        f"({arrow} {reg['delta']:+g}) vs `{reg['prev_label']}` "
+        f"[{status}, threshold {reg['threshold']:g}]\n"
+    )
 
 
 def render_trend(store):
@@ -1167,16 +1306,16 @@ def render_trend(store):
             delta_str = "—"
             regressed = ""
         commit = (e.get("git") or {}).get("commit") or "—"
-        lines.append(f"| {i} | {e.get('timestamp', '—')} | `{e.get('label', '—')}` | "
-                     f"{score if score is not None else '—'} | {e.get('grade', '—')} | "
-                     f"{delta_str} | `{commit}` | {regressed} |")
+        lines.append(
+            f"| {i} | {e.get('timestamp', '—')} | `{e.get('label', '—')}` | "
+            f"{score if score is not None else '—'} | {e.get('grade', '—')} | "
+            f"{delta_str} | `{commit}` | {regressed} |"
+        )
         if isinstance(score, (int, float)):
             prev_score = score
     scores = [e.get("score") for e in store if isinstance(e.get("score"), (int, float))]
     if scores:
-        lines.extend(["",
-                      f"Snapshots: {len(store)}; latest score {scores[-1]}; "
-                      f"min {min(scores)}, max {max(scores)}."])
+        lines.extend(["", f"Snapshots: {len(store)}; latest score {scores[-1]}; min {min(scores)}, max {max(scores)}."])
     return "\n".join(lines) + "\n"
 
 
@@ -1197,8 +1336,11 @@ def apply_baseline(args, health, workdir=None):
         else:
             print(render_regression(reg), end="")
             if reg["regressed"]:
-                print(f"eval regression: score dropped {reg['prev_score']} -> {reg['current_score']} "
-                      f"(>= --regression-threshold {args.regression_threshold:g})", file=sys.stderr)
+                print(
+                    f"eval regression: score dropped {reg['prev_score']} -> {reg['current_score']} "
+                    f"(>= --regression-threshold {args.regression_threshold:g})",
+                    file=sys.stderr,
+                )
                 rc = 6
     if getattr(args, "save_baseline", False):
         label = getattr(args, "label", None) or health.get("label") or "baseline"
@@ -1227,33 +1369,90 @@ def main(argv=None):
     parser.add_argument("-o", "--output")
     parser.add_argument("--compare", nargs=2)
     parser.add_argument("--regrade")
-    parser.add_argument("--judge-cmd", dest="judge_cmd", help="Command template for LLM-as-judge checks (see SKILL.md for the contract).")
+    parser.add_argument(
+        "--judge-cmd",
+        dest="judge_cmd",
+        help="Command template for LLM-as-judge checks (see SKILL.md for the contract).",
+    )
     parser.add_argument("--matrix", help="JSON file mapping agent name -> runner command template.")
-    parser.add_argument("--runner-cmd", dest="runner_cmd", action="append", default=[], help="Repeatable NAME=CMD runner for the eval matrix.")
+    parser.add_argument(
+        "--runner-cmd",
+        dest="runner_cmd",
+        action="append",
+        default=[],
+        help="Repeatable NAME=CMD runner for the eval matrix.",
+    )
     parser.add_argument("--matrix-report", dest="matrix_report", help="Output path for the markdown matrix report.")
     parser.add_argument("--matrix-json", dest="matrix_json", help="Output path for the matrix JSON results.")
-    parser.add_argument("--no-default-judge", dest="no_default_judge", action="store_true",
-                        help="Disable the built-in judge; judge checks then require --judge-cmd (legacy behavior).")
+    parser.add_argument(
+        "--no-default-judge",
+        dest="no_default_judge",
+        action="store_true",
+        help="Disable the built-in judge; judge checks then require --judge-cmd (legacy behavior).",
+    )
     parser.add_argument("--score", help="Print an automated health score for an existing results / matrix JSON file.")
-    parser.add_argument("--stats", help="Aggregate multi-round statistics (flakiness, mean/variance) from an existing results JSON file.")
-    parser.add_argument("--rounds", type=int, default=1,
-                        help="Run the task set N times and aggregate per-task flakiness + per-round health stats (default 1).")
-    parser.add_argument("--fail-under", dest="fail_under", type=float, default=None,
-                        help="Exit 5 when the health score is below this value (0-100).")
-    parser.add_argument("--json", dest="as_json", action="store_true", help="Emit machine-readable JSON (used by --score).")
-    parser.add_argument("--generate", metavar="REPO",
-                        help="Auto-generate a tasks.json from repository facts (AGENTS.md + code structure) instead of running.")
-    parser.add_argument("--judge-llm", dest="judge_llm", choices=["off", "auto", "openai", "claude"], default="auto",
-                        help="LLM-as-judge provider for judge checks without --judge-cmd: 'auto' uses OpenAI/Claude when an API key is set and otherwise falls back to the keyword judge (default auto).")
-    parser.add_argument("--judge-model", dest="judge_model", default=None,
-                        help="Override the LLM judge model name (else OPENAI_MODEL/ANTHROPIC_MODEL or a built-in default).")
+    parser.add_argument(
+        "--stats",
+        help="Aggregate multi-round statistics (flakiness, mean/variance) from an existing results JSON file.",
+    )
+    parser.add_argument(
+        "--rounds",
+        type=int,
+        default=1,
+        help="Run the task set N times and aggregate per-task flakiness + per-round health stats (default 1).",
+    )
+    parser.add_argument(
+        "--fail-under",
+        dest="fail_under",
+        type=float,
+        default=None,
+        help="Exit 5 when the health score is below this value (0-100).",
+    )
+    parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="Emit machine-readable JSON (used by --score)."
+    )
+    parser.add_argument(
+        "--generate",
+        metavar="REPO",
+        help="Auto-generate a tasks.json from repository facts (AGENTS.md + code structure) instead of running.",
+    )
+    parser.add_argument(
+        "--judge-llm",
+        dest="judge_llm",
+        choices=["off", "auto", "openai", "claude"],
+        default="auto",
+        help=(
+            "LLM-as-judge provider for judge checks without --judge-cmd: 'auto' uses "
+            "OpenAI/Claude when an API key is set and otherwise falls back to the "
+            "keyword judge (default auto)."
+        ),
+    )
+    parser.add_argument(
+        "--judge-model",
+        dest="judge_model",
+        default=None,
+        help="Override the LLM judge model name (else OPENAI_MODEL/ANTHROPIC_MODEL or a built-in default).",
+    )
     parser.add_argument("--baseline", help="Baseline history JSON file for trend/regression tracking.")
-    parser.add_argument("--save-baseline", dest="save_baseline", action="store_true",
-                        help="Append the current run's health as a snapshot to --baseline.")
-    parser.add_argument("--check-regression", dest="check_regression", action="store_true",
-                        help="Exit 6 when the current score drops >= --regression-threshold below the latest --baseline snapshot.")
-    parser.add_argument("--regression-threshold", dest="regression_threshold", type=float, default=5.0,
-                        help="Regression gate: score drop (points) that counts as a regression (default 5).")
+    parser.add_argument(
+        "--save-baseline",
+        dest="save_baseline",
+        action="store_true",
+        help="Append the current run's health as a snapshot to --baseline.",
+    )
+    parser.add_argument(
+        "--check-regression",
+        dest="check_regression",
+        action="store_true",
+        help="Exit 6 when the current score drops >= --regression-threshold below the latest --baseline snapshot.",
+    )
+    parser.add_argument(
+        "--regression-threshold",
+        dest="regression_threshold",
+        type=float,
+        default=5.0,
+        help="Regression gate: score drop (points) that counts as a regression (default 5).",
+    )
     parser.add_argument("--trend", help="Render the trend of an existing --baseline-style history file and exit.")
     args = parser.parse_args(argv)
     if args.judge_model:

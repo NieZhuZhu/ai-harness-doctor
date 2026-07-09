@@ -13,7 +13,6 @@ CANON = ROOT / "scripts" / "canonicalize.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 import canonicalize  # noqa: E402
 
-
 AGENTS_MIN = """# Project overview
 Fixture repo.
 
@@ -57,7 +56,9 @@ class CanonicalizeTests(unittest.TestCase):
             (repo / ".cursor" / "rules").mkdir(parents=True)
             (repo / ".cursor" / "rules" / "extra.mdc").write_text("old cursor rule\n", encoding="utf-8")
             before = (repo / "CLAUDE.md").read_text(encoding="utf-8")
-            proc = subprocess.run([sys.executable, str(CANON), "--write-stubs", str(repo)], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo)], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("--- a/CLAUDE.md", proc.stdout)
             self.assertIn("delete .cursor/rules/extra.mdc", proc.stdout)
@@ -76,7 +77,9 @@ class CanonicalizeTests(unittest.TestCase):
             subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
             subprocess.run(["git", "add", "."], cwd=repo, check=True)
             subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
-            proc = subprocess.run([sys.executable, str(CANON), "--write-stubs", str(repo), "--apply"], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo), "--apply"], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue((repo / "CLAUDE.md").read_text(encoding="utf-8").startswith("@AGENTS.md"))
             self.assertFalse((repo / ".cursor" / "rules" / "extra.mdc").exists())
@@ -98,7 +101,9 @@ class CanonicalizeTests(unittest.TestCase):
             repo.mkdir()
             (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
             (repo / "CLAUDE.md").write_text("not a stub\n" * 100, encoding="utf-8")
-            proc = subprocess.run([sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             report = json.loads(proc.stdout)
             self.assertTrue(report["ok"])
@@ -110,7 +115,9 @@ class CanonicalizeTests(unittest.TestCase):
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text("# Project overview\nOnly overview.\n", encoding="utf-8")
-            proc = subprocess.run([sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 1)
             report = json.loads(proc.stdout)
             self.assertFalse(report["ok"])
@@ -128,13 +135,16 @@ class CanonicalizeTests(unittest.TestCase):
             "- `model`: the LLM to use.\n\n"
             "# Get Help\n\nJoin our community chat.\n\n"
             "# Telemetry\n\nAnonymous usage data is collected; opt out with an env var.\n\n"
-            + "Reference paragraph describing the public API in detail.\n" * 800
+            + "Reference paragraph describing the public API in detail.\n"
+            * 800
         )
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text(library_doc, encoding="utf-8")
-            proc = subprocess.run([sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             report = json.loads(proc.stdout)
             self.assertTrue(report["ok"])
@@ -152,11 +162,12 @@ class CanonicalizeTests(unittest.TestCase):
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text(
-                "# Project overview\n\nContributor guide.\n\n"
-                "# Testing requirements\n\nRun the suite before pushing.\n",
+                "# Project overview\n\nContributor guide.\n\n# Testing requirements\n\nRun the suite before pushing.\n",
                 encoding="utf-8",
             )
-            proc = subprocess.run([sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
             report = json.loads(proc.stdout)
             self.assertFalse(report["ok"])
@@ -198,9 +209,7 @@ class DraftTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
-            (repo / "package.json").write_text(
-                '{"name":"x","scripts":{"test":"node t.js"}}\n', encoding="utf-8"
-            )
+            (repo / "package.json").write_text('{"name":"x","scripts":{"test":"node t.js"}}\n', encoding="utf-8")
             # A committed pnpm lockfile is stronger evidence than instruction text.
             (repo / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n", encoding="utf-8")
             (repo / "CLAUDE.md").write_text(
@@ -225,7 +234,8 @@ class DraftTests(unittest.TestCase):
             out_path = Path(td) / "AGENTS.draft.md"
             proc = subprocess.run(
                 [sys.executable, str(CANON), str(repo), "--draft", "-o", str(out_path)],
-                text=True, capture_output=True,
+                text=True,
+                capture_output=True,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertTrue(out_path.is_file())
@@ -233,17 +243,18 @@ class DraftTests(unittest.TestCase):
             # Second run must refuse to clobber an existing file without --force.
             proc2 = subprocess.run(
                 [sys.executable, str(CANON), str(repo), "--draft", "-o", str(out_path)],
-                text=True, capture_output=True,
+                text=True,
+                capture_output=True,
             )
             self.assertNotEqual(proc2.returncode, 0)
             self.assertIn("Refusing to overwrite", proc2.stderr)
             # --force allows overwrite.
             proc3 = subprocess.run(
                 [sys.executable, str(CANON), str(repo), "--draft", "-o", str(out_path), "--force"],
-                text=True, capture_output=True,
+                text=True,
+                capture_output=True,
             )
             self.assertEqual(proc3.returncode, 0, proc3.stderr)
-
 
     def test_draft_infers_python_commands_for_pyproject_repo(self):
         # A Python repo (pyproject + uv + a console script + a pytest setup) must
@@ -284,13 +295,11 @@ class DraftTests(unittest.TestCase):
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "pyproject.toml").write_text(
-                "[project]\nname = \"mylib\"\n\n[tool.poetry]\nname = \"mylib\"\n",
+                '[project]\nname = "mylib"\n\n[tool.poetry]\nname = "mylib"\n',
                 encoding="utf-8",
             )
             (repo / "CLAUDE.md").write_text(
-                "# CLAUDE.md\n\n"
-                "- Run tests: `poetry run pytest -q`\n"
-                "- Lint: `poetry run ruff check`\n",
+                "# CLAUDE.md\n\n- Run tests: `poetry run pytest -q`\n- Lint: `poetry run ruff check`\n",
                 encoding="utf-8",
             )
             proc = subprocess.run([sys.executable, str(CANON), str(repo), "--draft"], text=True, capture_output=True)

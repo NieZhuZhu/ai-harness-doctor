@@ -222,9 +222,7 @@ def post_review(payload, repo, pr_number, commit_sha, token):
                 return json.loads(resp.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise SystemExit(
-                f"GitHub API {method} {url} failed: {exc.code} {exc.reason}\n{detail}"
-            )
+            raise SystemExit(f"GitHub API {method} {url} failed: {exc.code} {exc.reason}\n{detail}")
 
     comments = payload.get("comments", [])
     if comments:
@@ -242,9 +240,7 @@ def post_review(payload, repo, pr_number, commit_sha, token):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Turn drift/scan findings into GitHub PR review comments."
-    )
+    parser = argparse.ArgumentParser(description="Turn drift/scan findings into GitHub PR review comments.")
     parser.add_argument(
         "--report",
         help="Path to a JSON findings report (default: read from stdin).",

@@ -40,8 +40,12 @@ class McpServerTests(unittest.TestCase):
                 {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-                {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                 "params": {"name": "harness_scan", "arguments": {"repo": str(repo), "json": True}}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "harness_scan", "arguments": {"repo": str(repo), "json": True}},
+                },
             ]
             responses = self._exchange(messages)
 
@@ -74,8 +78,12 @@ class McpServerTests(unittest.TestCase):
             (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
             messages = [
                 {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                 "params": {"name": "harness_drift", "arguments": {"repo": str(repo)}}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "harness_drift", "arguments": {"repo": str(repo)}},
+                },
             ]
             responses = self._exchange(messages)
             by_id = {r.get("id"): r for r in responses if "id" in r}
@@ -92,7 +100,6 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(by_id[1]["error"]["code"], -32601)
         self.assertEqual(by_id[2]["error"]["code"], -32602)
 
-
     def test_tool_call_times_out_cleanly(self):
         # With a 1ms budget, spawning the Python interpreter always exceeds the
         # timeout, so the tool must return a clean JSON-RPC tool error (isError)
@@ -104,8 +111,12 @@ class McpServerTests(unittest.TestCase):
             (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
             messages = [
                 {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-                 "params": {"name": "harness_scan", "arguments": {"repo": str(repo)}}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "harness_scan", "arguments": {"repo": str(repo)}},
+                },
             ]
             responses = self._exchange(messages, env=env)
             by_id = {r.get("id"): r for r in responses if "id" in r}

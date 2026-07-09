@@ -41,14 +41,16 @@ is enough.
    for the full conventions.
 3. Add or update tests for any behavior change to `scripts/*.py` or
    `bin/cli.js`.
-4. Run the full suite and a self-checkup locally:
+4. Run the full suite, the linters, and a self-checkup locally:
    ```bash
-   python3 -m unittest discover -s tests -v
-   npm test
+   npm run check          # lint (eslint + ruff + docs + adapters) then tests
    node bin/cli.js help
    python3 scripts/scan.py .
    python3 scripts/check_drift.py .
    ```
+   `npm run check` is the single "all green" entry point (`npm run lint && npm test`).
+   Linting requires Node >= 20.19 (eslint 10) and `ruff` on your PATH
+   (`pip install ruff`); the runtime CLI itself still supports Node 16+.
    Keep the drift health score at grade A.
 5. If user-facing behavior changed, keep `README.md`, `README.zh-CN.md`, and
    `README.ja.md` in sync within the same PR (`npm run lint:docs` enforces the
@@ -56,8 +58,9 @@ is enough.
 6. Use Conventional Commit messages in English, e.g. `feat(scan): ...`,
    `fix(drift): ...`, `docs(agents): ...`. Link a related issue with
    `Closes #<n>` when one exists.
-7. Open the PR. CI runs the Python (3.9/3.10/3.12) and Node (16/20/22) matrix;
-   all checks must pass before merge.
+7. Open the PR. CI runs a lint job (eslint + ruff + docs + adapters) plus the
+   Python (3.9/3.10/3.12) and Node (16/20/22) matrix; all checks must pass
+   before merge.
 
 ## Releasing
 

@@ -90,8 +90,7 @@ def render_md(cmd):
 
 def render_toml(cmd):
     return (
-        TOML_TEMPLATE
-        .replace("__DESC__", cmd["description"])
+        TOML_TEMPLATE.replace("__DESC__", cmd["description"])
         .replace("__ACTION__", cmd["action"])
         .replace("__STOP__", cmd["stop_toml"])
     )
@@ -144,8 +143,11 @@ def write(root):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Generate agent adapters from a single source of truth.")
     parser.add_argument("repo_root", nargs="?", default=".")
-    parser.add_argument("--check", action="store_true",
-                        help="Verify committed adapters match the single source; exit 1 on drift (writes nothing).")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify committed adapters match the single source; exit 1 on drift (writes nothing).",
+    )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
 
@@ -156,12 +158,16 @@ def main(argv=None):
         for path in sorted(drifted):
             print(f"DRIFT:   {_rel(path, root)}")
         if missing or drifted:
-            print(f"\n{len(files)} adapters checked from {len(ADAPTER_COMMANDS)} command definitions; "
-                  f"{len(missing)} missing, {len(drifted)} drifted.")
+            print(
+                f"\n{len(files)} adapters checked from {len(ADAPTER_COMMANDS)} command definitions; "
+                f"{len(missing)} missing, {len(drifted)} drifted."
+            )
             print("Run: python3 scripts/gen_adapters.py   to regenerate.")
             return 1
-        print(f"OK: {len(files)} generated adapters match the single source "
-              f"({len(ADAPTER_COMMANDS)} command definitions).")
+        print(
+            f"OK: {len(files)} generated adapters match the single source "
+            f"({len(ADAPTER_COMMANDS)} command definitions)."
+        )
         return 0
 
     files, written = write(root)

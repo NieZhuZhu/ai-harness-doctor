@@ -31,7 +31,8 @@ class GenAdaptersUnitTests(unittest.TestCase):
         for path, content in gen_adapters.generate(ROOT).items():
             self.assertTrue(path.is_file(), f"missing committed adapter: {path}")
             self.assertEqual(
-                content, path.read_text(encoding="utf-8"),
+                content,
+                path.read_text(encoding="utf-8"),
                 f"generated content differs from committed {path.relative_to(ROOT)}",
             )
 
@@ -66,13 +67,12 @@ class GenAdaptersCliTests(unittest.TestCase):
     def _run(self, repo, *args):
         return subprocess.run(
             [sys.executable, str(repo / "scripts" / "gen_adapters.py"), str(repo), *args],
-            text=True, capture_output=True,
+            text=True,
+            capture_output=True,
         )
 
     def test_check_passes_on_committed_repo(self):
-        proc = subprocess.run(
-            [sys.executable, str(GEN), str(ROOT), "--check"], text=True, capture_output=True
-        )
+        proc = subprocess.run([sys.executable, str(GEN), str(ROOT), "--check"], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("15 generated adapters match", proc.stdout)
 

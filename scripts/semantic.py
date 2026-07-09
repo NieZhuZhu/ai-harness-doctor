@@ -30,10 +30,41 @@ from pathlib import Path
 # mirrors check_drift.PACKAGE_MANAGER_BUILTINS so the two engines agree on what
 # counts as a "real" script name.
 PACKAGE_MANAGER_BUILTINS = {
-    "install", "ci", "i", "init", "add", "remove", "rm", "uninstall", "update", "up", "upgrade",
-    "exec", "dlx", "create", "audit", "link", "unlink", "publish", "outdated", "config", "cache",
-    "login", "logout", "whoami", "version", "info", "list", "ls", "why", "dedupe", "prune",
-    "rebuild", "help", "test", "start",
+    "install",
+    "ci",
+    "i",
+    "init",
+    "add",
+    "remove",
+    "rm",
+    "uninstall",
+    "update",
+    "up",
+    "upgrade",
+    "exec",
+    "dlx",
+    "create",
+    "audit",
+    "link",
+    "unlink",
+    "publish",
+    "outdated",
+    "config",
+    "cache",
+    "login",
+    "logout",
+    "whoami",
+    "version",
+    "info",
+    "list",
+    "ls",
+    "why",
+    "dedupe",
+    "prune",
+    "rebuild",
+    "help",
+    "test",
+    "start",
 }
 
 # Common Python tools invoked via ``poetry run`` / ``pdm run`` / ``uv run`` that are
@@ -41,10 +72,39 @@ PACKAGE_MANAGER_BUILTINS = {
 # "missing script". Keeps the Python command check conservative (false negatives
 # are cheaper than noisy false positives).
 PYTHON_RUN_BUILTINS = {
-    "python", "python3", "pip", "pip3", "pytest", "mypy", "ruff", "black", "flake8",
-    "isort", "tox", "nox", "coverage", "pre-commit", "pylint", "bandit", "twine", "build",
-    "uvicorn", "gunicorn", "hypercorn", "celery", "alembic", "django-admin", "manage.py",
-    "sphinx-build", "mkdocs", "jupyter", "ipython", "pyright", "poetry", "pdm", "uv",
+    "python",
+    "python3",
+    "pip",
+    "pip3",
+    "pytest",
+    "mypy",
+    "ruff",
+    "black",
+    "flake8",
+    "isort",
+    "tox",
+    "nox",
+    "coverage",
+    "pre-commit",
+    "pylint",
+    "bandit",
+    "twine",
+    "build",
+    "uvicorn",
+    "gunicorn",
+    "hypercorn",
+    "celery",
+    "alembic",
+    "django-admin",
+    "manage.py",
+    "sphinx-build",
+    "mkdocs",
+    "jupyter",
+    "ipython",
+    "pyright",
+    "poetry",
+    "pdm",
+    "uv",
 }
 
 # Node lockfile -> package manager (single-ecosystem legacy map, kept for callers).
@@ -63,11 +123,19 @@ ECOSYSTEM_ORDER = ("node", "python", "go", "rust", "java")
 
 # Package-manager token -> ecosystem it belongs to.
 PM_TO_ECOSYSTEM = {
-    "npm": "node", "pnpm": "node", "yarn": "node", "bun": "node",
-    "pip": "python", "poetry": "python", "uv": "python", "pipenv": "python", "pdm": "python",
+    "npm": "node",
+    "pnpm": "node",
+    "yarn": "node",
+    "bun": "node",
+    "pip": "python",
+    "poetry": "python",
+    "uv": "python",
+    "pipenv": "python",
+    "pdm": "python",
     "cargo": "rust",
     "go": "go",
-    "maven": "java", "gradle": "java",
+    "maven": "java",
+    "gradle": "java",
 }
 # Aliases spelled differently in prose than their canonical manager name.
 _PM_NORMALIZE = {"mvn": "maven"}
@@ -76,18 +144,36 @@ _PM_NORMALIZE = {"mvn": "maven"}
 # repo-relative paths worth verifying. Covers every ecosystem's manifest/lockfile.
 KNOWN_ROOT_FILES = {
     # Generic
-    "AGENTS.md", "README.md", "Makefile",
+    "AGENTS.md",
+    "README.md",
+    "Makefile",
     # Node
-    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
     # Python
-    "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile",
-    "poetry.lock", "uv.lock", "pdm.lock",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "requirements.txt",
+    "Pipfile",
+    "poetry.lock",
+    "uv.lock",
+    "pdm.lock",
     # Go
-    "go.mod", "go.sum", "go.work",
+    "go.mod",
+    "go.sum",
+    "go.work",
     # Rust
-    "Cargo.toml", "Cargo.lock",
+    "Cargo.toml",
+    "Cargo.lock",
     # Java
-    "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
 }
 
 
@@ -202,9 +288,29 @@ def declared_commands(text):
 
 # Command prefixes that make a backtick token an invocation, not a path.
 _CMD_PATH_PREFIXES = (
-    "npm ", "pnpm ", "yarn ", "bun ", "make ", "python", "git ", "node ",
-    "go ", "cargo ", "mvn ", "gradle ", "./gradlew", "./mvnw", "poetry ", "pdm ",
-    "uv ", "pip ", "pipenv ", "pytest", "rustc ", "javac ", "java ",
+    "npm ",
+    "pnpm ",
+    "yarn ",
+    "bun ",
+    "make ",
+    "python",
+    "git ",
+    "node ",
+    "go ",
+    "cargo ",
+    "mvn ",
+    "gradle ",
+    "./gradlew",
+    "./mvnw",
+    "poetry ",
+    "pdm ",
+    "uv ",
+    "pip ",
+    "pipenv ",
+    "pytest",
+    "rustc ",
+    "javac ",
+    "java ",
 )
 
 
@@ -325,6 +431,7 @@ def declared_java_version(text):
 # subset we need by hand for 3.9 compatibility).
 # ---------------------------------------------------------------------------
 
+
 def _toml_section_lines(text, header):
     """Return the raw lines inside a ``[header]`` table (excludes array tables)."""
     cur = None
@@ -390,6 +497,7 @@ def _java_major(s):
 # ---------------------------------------------------------------------------
 # Repository facts — what the code actually says.
 # ---------------------------------------------------------------------------
+
 
 def package_scripts(root):
     path = root / "package.json"
@@ -465,16 +573,20 @@ def lockfile_managers(root):
 
 
 def _node_ground_pm(root):
-    for name in ("pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock",
-                 "package-lock.json", "npm-shrinkwrap.json"):
+    for name in ("pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock", "package-lock.json", "npm-shrinkwrap.json"):
         if (root / name).is_file():
             return LOCKFILE_MANAGERS[name], name
     return None, None
 
 
 def _python_ground_pm(root):
-    for name, pm in (("poetry.lock", "poetry"), ("uv.lock", "uv"), ("pdm.lock", "pdm"),
-                     ("Pipfile.lock", "pipenv"), ("Pipfile", "pipenv")):
+    for name, pm in (
+        ("poetry.lock", "poetry"),
+        ("uv.lock", "uv"),
+        ("pdm.lock", "pdm"),
+        ("Pipfile.lock", "pipenv"),
+        ("Pipfile", "pipenv"),
+    ):
         if (root / name).is_file():
             return pm, name
     pyproject = root / "pyproject.toml"
@@ -614,8 +726,7 @@ def java_ground_versions(root):
     pom = root / "pom.xml"
     if pom.is_file():
         text = _read(pom)
-        for tag in ("maven.compiler.release", "maven.compiler.source",
-                    "maven.compiler.target", "java.version"):
+        for tag in ("maven.compiler.release", "maven.compiler.source", "maven.compiler.target", "java.version"):
             m = re.search(r"<" + re.escape(tag) + r">\s*(1\.\d+|\d+)", text)
             if m:
                 major = _java_major(m.group(1))
@@ -651,6 +762,7 @@ def _within_root(root, token):
 # Comparison — declarations vs facts.
 # ---------------------------------------------------------------------------
 
+
 def compare_commands(root, text):
     findings = []
     scripts = package_scripts(root)
@@ -665,55 +777,81 @@ def compare_commands(root, text):
             if name in PACKAGE_MANAGER_BUILTINS:
                 continue
             if scripts is not None and name not in scripts:
-                findings.append(_finding(
-                    "command", "MISMATCH",
-                    f"AGENTS.md references `{decl['tool']} run {name}` but package.json has no `{name}` script.",
-                    "Add the package.json script or update AGENTS.md to a real script.",
-                    f"{decl['tool']} run {name}", "no such package.json script", line,
-                ))
+                findings.append(
+                    _finding(
+                        "command",
+                        "MISMATCH",
+                        f"AGENTS.md references `{decl['tool']} run {name}` but package.json has no `{name}` script.",
+                        "Add the package.json script or update AGENTS.md to a real script.",
+                        f"{decl['tool']} run {name}",
+                        "no such package.json script",
+                        line,
+                    )
+                )
         elif kind == "make":
             name = decl["name"]
             if targets is not None and name not in targets:
-                findings.append(_finding(
-                    "command", "MISMATCH",
-                    f"AGENTS.md references `make {name}` but the Makefile has no `{name}` target.",
-                    "Add the Makefile target or update AGENTS.md to a real target.",
-                    f"make {name}", "no such Makefile target", line,
-                ))
+                findings.append(
+                    _finding(
+                        "command",
+                        "MISMATCH",
+                        f"AGENTS.md references `make {name}` but the Makefile has no `{name}` target.",
+                        "Add the Makefile target or update AGENTS.md to a real target.",
+                        f"make {name}",
+                        "no such Makefile target",
+                        line,
+                    )
+                )
         elif kind == "cargo_bin":
             name = decl["name"]
             # Conservative: only flag when we positively parsed a non-empty bin set.
             if cargo_bins and name not in cargo_bins:
-                findings.append(_finding(
-                    "command", "MISMATCH",
-                    f"AGENTS.md references `cargo run --bin {name}` but Cargo.toml declares no such binary target.",
-                    "Add the `[[bin]]` target (or `src/bin/{name}.rs`) or update AGENTS.md to a real binary.",
-                    f"cargo run --bin {name}", "no such Cargo binary target", line,
-                ))
+                findings.append(
+                    _finding(
+                        "command",
+                        "MISMATCH",
+                        f"AGENTS.md references `cargo run --bin {name}` but Cargo.toml declares no such binary target.",
+                        "Add the `[[bin]]` target (or `src/bin/{name}.rs`) or update AGENTS.md to a real binary.",
+                        f"cargo run --bin {name}",
+                        "no such Cargo binary target",
+                        line,
+                    )
+                )
         elif kind == "go_pkg":
             path = decl["path"]
             if "..." in path or not _within_root(root, path):
                 continue
             if not (root / path).exists():
-                findings.append(_finding(
-                    "command", "MISMATCH",
-                    f"AGENTS.md references Go package path `{path}` which does not exist in the repository.",
-                    "Fix the package path in AGENTS.md or add the missing Go package.",
-                    path, "no such Go package path", line,
-                ))
+                findings.append(
+                    _finding(
+                        "command",
+                        "MISMATCH",
+                        f"AGENTS.md references Go package path `{path}` which does not exist in the repository.",
+                        "Fix the package path in AGENTS.md or add the missing Go package.",
+                        path,
+                        "no such Go package path",
+                        line,
+                    )
+                )
         elif kind == "py_run":
             name = decl["name"]
             if name in PYTHON_RUN_BUILTINS:
                 continue
             # Conservative: only flag when pyproject declares a non-empty script set.
             if py_scripts and name not in py_scripts:
-                findings.append(_finding(
-                    "command", "MISMATCH",
-                    f"AGENTS.md references `{decl['tool']} run {name}` but pyproject.toml declares "
-                    f"no `{name}` console script.",
-                    "Add the console script under `[project.scripts]` / `[tool.poetry.scripts]` or update AGENTS.md.",
-                    f"{decl['tool']} run {name}", "no such pyproject console script", line,
-                ))
+                findings.append(
+                    _finding(
+                        "command",
+                        "MISMATCH",
+                        f"AGENTS.md references `{decl['tool']} run {name}` but pyproject.toml declares "
+                        f"no `{name}` console script.",
+                        "Add the console script under `[project.scripts]` / "
+                        "`[tool.poetry.scripts]` or update AGENTS.md.",
+                        f"{decl['tool']} run {name}",
+                        "no such pyproject console script",
+                        line,
+                    )
+                )
     return findings
 
 
@@ -724,12 +862,17 @@ def compare_paths(root, text):
         if not _within_root(root, token):
             continue
         if not (root / token).exists():
-            findings.append(_finding(
-                "path", "MISSING",
-                f"AGENTS.md references path `{token}` which does not exist in the repository.",
-                "Fix or remove the backtick-quoted path in AGENTS.md.",
-                token, "path not found", line,
-            ))
+            findings.append(
+                _finding(
+                    "path",
+                    "MISSING",
+                    f"AGENTS.md references path `{token}` which does not exist in the repository.",
+                    "Fix or remove the backtick-quoted path in AGENTS.md.",
+                    token,
+                    "path not found",
+                    line,
+                )
+            )
     return findings
 
 
@@ -745,12 +888,17 @@ def compare_package_manager(root, text):
             continue
         declared_pm = next(iter(declared))
         if declared_pm != ground_pm:
-            findings.append(_finding(
-                "package_manager", "MISMATCH",
-                f"AGENTS.md uses `{declared_pm}` but the repo has `{evidence}`, implying `{ground_pm}`.",
-                f"Align AGENTS.md with `{ground_pm}` or change the {eco} manifest/lockfile to match `{declared_pm}`.",
-                declared_pm, ground_pm,
-            ))
+            findings.append(
+                _finding(
+                    "package_manager",
+                    "MISMATCH",
+                    f"AGENTS.md uses `{declared_pm}` but the repo has `{evidence}`, implying `{ground_pm}`.",
+                    f"Align AGENTS.md with `{ground_pm}` or change the {eco} "
+                    f"manifest/lockfile to match `{declared_pm}`.",
+                    declared_pm,
+                    ground_pm,
+                )
+            )
     return findings
 
 
@@ -761,20 +909,30 @@ def compare_node_version(root, text):
         return findings
     nvmrc = nvmrc_node_version(root)
     if nvmrc is not None and nvmrc != declared:
-        findings.append(_finding(
-            "node_version", "MISMATCH",
-            f"AGENTS.md claims Node {declared} but `.nvmrc` pins Node {nvmrc}.",
-            "Align AGENTS.md with `.nvmrc` or update `.nvmrc`.",
-            f"node {declared}", f"node {nvmrc}", line,
-        ))
+        findings.append(
+            _finding(
+                "node_version",
+                "MISMATCH",
+                f"AGENTS.md claims Node {declared} but `.nvmrc` pins Node {nvmrc}.",
+                "Align AGENTS.md with `.nvmrc` or update `.nvmrc`.",
+                f"node {declared}",
+                f"node {nvmrc}",
+                line,
+            )
+        )
     engines = engines_node_version(root)
     if engines is not None and engines != declared:
-        findings.append(_finding(
-            "node_version", "MISMATCH",
-            f"AGENTS.md claims Node {declared} but `package.json` engines.node requires Node {engines}.",
-            "Align AGENTS.md with `package.json` engines.node or update engines.node.",
-            f"node {declared}", f"node {engines}", line,
-        ))
+        findings.append(
+            _finding(
+                "node_version",
+                "MISMATCH",
+                f"AGENTS.md claims Node {declared} but `package.json` engines.node requires Node {engines}.",
+                "Align AGENTS.md with `package.json` engines.node or update engines.node.",
+                f"node {declared}",
+                f"node {engines}",
+                line,
+            )
+        )
     return findings
 
 
@@ -789,13 +947,18 @@ def _compare_language_version(category, label, declared, line, ground):
         return findings
     for source, value in ground:
         if value != declared:
-            findings.append(_finding(
-                category, "MISMATCH",
-                f"AGENTS.md claims {label} {_fmt_version(declared)} but `{source}` requires "
-                f"{label} {_fmt_version(value)}.",
-                f"Align AGENTS.md with `{source}` or update `{source}`.",
-                f"{label.lower()} {_fmt_version(declared)}", f"{label.lower()} {_fmt_version(value)}", line,
-            ))
+            findings.append(
+                _finding(
+                    category,
+                    "MISMATCH",
+                    f"AGENTS.md claims {label} {_fmt_version(declared)} but `{source}` requires "
+                    f"{label} {_fmt_version(value)}.",
+                    f"Align AGENTS.md with `{source}` or update `{source}`.",
+                    f"{label.lower()} {_fmt_version(declared)}",
+                    f"{label.lower()} {_fmt_version(value)}",
+                    line,
+                )
+            )
     return findings
 
 

@@ -58,7 +58,9 @@ class DriftTests(unittest.TestCase):
     def test_package_manager_builtins_do_not_trigger_d1(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
-        (repo / "AGENTS.md").write_text(CLEAN_AGENTS + "```bash\nnpm install\nyarn add foo\nnpm run nonexist\n```\n", encoding="utf-8")
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\nnpm install\nyarn add foo\nnpm run nonexist\n```\n", encoding="utf-8"
+        )
         (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
         (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
@@ -128,7 +130,8 @@ class DriftTests(unittest.TestCase):
         independent = (
             "# CLAUDE.md\n\n"
             "This file provides guidance to Claude Code when working with this repo.\n\n"
-            + "Standalone documentation paragraph.\n" * 200
+            + "Standalone documentation paragraph.\n"
+            * 200
         )
         (repo / "CLAUDE.md").write_text(independent, encoding="utf-8")
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
@@ -190,7 +193,9 @@ class DriftTests(unittest.TestCase):
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
         (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
 
-        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True
+        )
 
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("rewrote `CLAUDE.md`", proc.stdout)
@@ -211,7 +216,9 @@ class DriftTests(unittest.TestCase):
         (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
         (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
 
-        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True
+        )
 
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("needs manual attention", proc.stdout)
@@ -251,7 +258,9 @@ class DriftTests(unittest.TestCase):
     def test_node_version_fact_drift_d6(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
-        (repo / "AGENTS.md").write_text(CLEAN_AGENTS + "\n# Toolchain\nUse Node 18 for development.\n", encoding="utf-8")
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "\n# Toolchain\nUse Node 18 for development.\n", encoding="utf-8"
+        )
         (repo / ".nvmrc").write_text("20\n", encoding="utf-8")
         self._stub_pointers(repo)
         proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
@@ -292,7 +301,9 @@ class DriftTests(unittest.TestCase):
         (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
         self._stub_pointers(repo)
         # Clean repo scores 100 (exit 0), but a threshold above the score must gate CI.
-        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--min-score", "101"], text=True, capture_output=True)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--min-score", "101"], text=True, capture_output=True
+        )
         self.assertNotEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("Score:", proc.stdout)
 
@@ -330,10 +341,7 @@ class DriftTests(unittest.TestCase):
     def test_out_of_repo_markdown_link_does_not_probe(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
-        body = (
-            CLEAN_AGENTS
-            + "\nAbsolute: [x](/etc/hostname). Escaping: [y](../outside.md).\n"
-        )
+        body = CLEAN_AGENTS + "\nAbsolute: [x](/etc/hostname). Escaping: [y](../outside.md).\n"
         (repo / "AGENTS.md").write_text(body, encoding="utf-8")
         self._stub_pointers(repo)
         proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
@@ -347,7 +355,9 @@ class DriftTests(unittest.TestCase):
         body = CLEAN_AGENTS + "\nSee the [runbook](references/missing.md).\n"
         (repo / "AGENTS.md").write_text(body, encoding="utf-8")
         self._stub_pointers(repo)
-        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True
+        )
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("needs manual attention", proc.stdout)
         self.assertIn("D7", proc.stdout)
@@ -389,7 +399,9 @@ class DriftTests(unittest.TestCase):
         self._stub_pointers(repo)
         (repo / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
         (repo / "yarn.lock").write_text("# yarn lockfile v1\n", encoding="utf-8")
-        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--fix", "--apply"], text=True, capture_output=True
+        )
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("needs manual attention", proc.stdout)
         self.assertIn("D8", proc.stdout)

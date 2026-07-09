@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import check_readme_sync as sync  # noqa: E402
 
-
 REFERENCE = """# Title
 
 Intro with a [link](https://example.com).
@@ -87,9 +86,7 @@ class RepoReadmesTests(unittest.TestCase):
             path = ROOT / name
             if not path.exists():
                 continue
-            problems = sync.compare(
-                sync.README_FILES[0], reference_text, name, path.read_text(encoding="utf-8")
-            )
+            problems = sync.compare(sync.README_FILES[0], reference_text, name, path.read_text(encoding="utf-8"))
             self.assertEqual(problems, [], f"{name} diverged: {problems}")
 
 

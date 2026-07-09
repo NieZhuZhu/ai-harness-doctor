@@ -159,41 +159,49 @@ def run_plugins(root, context=None, extra_dirs=None):
         try:
             module = _load_module(path)
         except Exception as exc:  # noqa: BLE001 - isolate any import-time failure
-            findings.append(_error_finding(
-                "plugin-load",
-                plugin,
-                f"Failed to import rule plugin `{plugin}`: {exc.__class__.__name__}: {exc}",
-                "Fix the plugin so it imports cleanly, or remove it from the rules directory.",
-            ))
+            findings.append(
+                _error_finding(
+                    "plugin-load",
+                    plugin,
+                    f"Failed to import rule plugin `{plugin}`: {exc.__class__.__name__}: {exc}",
+                    "Fix the plugin so it imports cleanly, or remove it from the rules directory.",
+                )
+            )
             continue
         check = getattr(module, "check", None)
         if not callable(check):
-            findings.append(_error_finding(
-                "plugin-contract",
-                plugin,
-                f"Rule plugin `{plugin}` does not define a callable `check(root, context)`.",
-                "Add `def check(root, context): ...` returning a list of finding dicts.",
-            ))
+            findings.append(
+                _error_finding(
+                    "plugin-contract",
+                    plugin,
+                    f"Rule plugin `{plugin}` does not define a callable `check(root, context)`.",
+                    "Add `def check(root, context): ...` returning a list of finding dicts.",
+                )
+            )
             continue
         try:
             results = check(root, context)
         except Exception as exc:  # noqa: BLE001 - isolate any runtime failure
-            findings.append(_error_finding(
-                "plugin-error",
-                plugin,
-                f"Rule plugin `{plugin}` raised at runtime: {exc.__class__.__name__}: {exc}",
-                "Fix the plugin's check() so it handles the repository without raising.",
-            ))
+            findings.append(
+                _error_finding(
+                    "plugin-error",
+                    plugin,
+                    f"Rule plugin `{plugin}` raised at runtime: {exc.__class__.__name__}: {exc}",
+                    "Fix the plugin's check() so it handles the repository without raising.",
+                )
+            )
             continue
         if results is None:
             continue
         if not isinstance(results, (list, tuple)):
-            findings.append(_error_finding(
-                "plugin-output",
-                plugin,
-                f"Rule plugin `{plugin}` returned {type(results).__name__}, expected a list of finding dicts.",
-                "Return a list of finding dicts (or an empty list) from check().",
-            ))
+            findings.append(
+                _error_finding(
+                    "plugin-output",
+                    plugin,
+                    f"Rule plugin `{plugin}` returned {type(results).__name__}, expected a list of finding dicts.",
+                    "Return a list of finding dicts (or an empty list) from check().",
+                )
+            )
             continue
         for raw in results:
             findings.append(_normalize_finding(raw, plugin))

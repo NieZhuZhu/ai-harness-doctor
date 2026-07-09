@@ -97,7 +97,9 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("harness-drift.yml", proc.stdout)
             self.assertFalse((repo / ".github" / "workflows" / "harness-drift.yml").exists())
             self.assertFalse((repo / ".git" / "hooks" / "pre-commit").exists())
-            self.assertNotIn("ai-harness-doctor:maintenance-contract:start", (repo / "AGENTS.md").read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "ai-harness-doctor:maintenance-contract:start", (repo / "AGENTS.md").read_text(encoding="utf-8")
+            )
 
     def test_guard_apply_installs_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
@@ -114,11 +116,15 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("# ai-harness-doctor:guard", hook.read_text(encoding="utf-8"))
             self.assertIn("npx -y ai-harness-doctor drift . --strict", drift_workflow.read_text(encoding="utf-8"))
             self.assertIn("🩺 Harness checkup: drift detected", checkup_workflow.read_text(encoding="utf-8"))
-            self.assertEqual(agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1)
+            self.assertEqual(
+                agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1
+            )
 
             second = self.run_cli(["guard", str(repo), "--apply"], home, repo)
             self.assertIn("No changes needed", second.stdout)
-            self.assertEqual(agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1)
+            self.assertEqual(
+                agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1
+            )
 
     def test_guard_without_agents_exits_1(self):
         with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
@@ -144,7 +150,9 @@ class CliInstallerTests(unittest.TestCase):
             self.assertEqual(hook.read_text(encoding="utf-8"), foreign)
             self.assertTrue((repo / ".github" / "workflows" / "harness-drift.yml").exists())
             self.assertTrue((repo / ".github" / "workflows" / "harness-checkup.yml").exists())
-            self.assertIn("ai-harness-doctor:maintenance-contract:start", (repo / "AGENTS.md").read_text(encoding="utf-8"))
+            self.assertIn(
+                "ai-harness-doctor:maintenance-contract:start", (repo / "AGENTS.md").read_text(encoding="utf-8")
+            )
 
     def test_guard_remove_apply_restores_installed_files(self):
         variants = [
@@ -153,7 +161,11 @@ class CliInstallerTests(unittest.TestCase):
             b"# Agent Guide\n\nKeep this intact.\n\n  \t",
         ]
         for original_agents_bytes in variants:
-            with self.subTest(original=original_agents_bytes), tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+            with (
+                self.subTest(original=original_agents_bytes),
+                tempfile.TemporaryDirectory() as home_dir,
+                tempfile.TemporaryDirectory() as parent_dir,
+            ):
                 home = Path(home_dir)
                 repo = self.make_git_repo(Path(parent_dir))
                 (repo / "AGENTS.md").write_bytes(original_agents_bytes)
@@ -214,9 +226,7 @@ class CliInstallerTests(unittest.TestCase):
             self.run_cli(["guard", str(repo), "--apply"], home, repo)
 
             drift = repo / ".github" / "workflows" / "harness-drift.yml"
-            edited = drift.read_text(encoding="utf-8").replace(
-                "# ai-harness-doctor:guard\n", ""
-            ) + "\n# user tweak\n"
+            edited = drift.read_text(encoding="utf-8").replace("# ai-harness-doctor:guard\n", "") + "\n# user tweak\n"
             drift.write_text(edited, encoding="utf-8")
 
             proc = self.run_cli(["guard", str(repo), "--apply"], home, repo)
@@ -303,7 +313,6 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("ai-harness-doctor validate [...args]", proc.stdout)
             self.assertNotIn("Traceback", proc.stderr)
             self.assertNotIn("TypeError", proc.stderr)
-
 
     def test_help_lists_mcp_command(self):
         with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:

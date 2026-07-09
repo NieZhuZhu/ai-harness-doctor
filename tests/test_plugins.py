@@ -12,7 +12,7 @@ DRIFT = ROOT / "scripts" / "check_drift.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 import plugins  # noqa: E402
 
-GOOD_PLUGIN = '''\
+GOOD_PLUGIN = """\
 def check(root, context):
     return [
         {
@@ -24,44 +24,42 @@ def check(root, context):
             "suggestion": "do the thing",
         }
     ]
-'''
+"""
 
 # Reads the injected context so we can assert the loader passes it through.
-CONTEXT_PLUGIN = '''\
+CONTEXT_PLUGIN = """\
 def check(root, context):
     return [{"rule": "demo/phase", "level": "NOTICE", "message": "phase=%s" % context.get("phase")}]
-'''
+"""
 
-IMPORT_ERROR_PLUGIN = '''\
+IMPORT_ERROR_PLUGIN = """\
 import this_module_definitely_does_not_exist_xyz  # noqa: F401
 
 
 def check(root, context):
     return []
-'''
+"""
 
-RUNTIME_ERROR_PLUGIN = '''\
+RUNTIME_ERROR_PLUGIN = """\
 def check(root, context):
     raise ValueError("boom from plugin")
-'''
+"""
 
-NO_CHECK_PLUGIN = '''\
+NO_CHECK_PLUGIN = """\
 def not_check(root, context):
     return []
-'''
+"""
 
-BAD_RETURN_PLUGIN = '''\
+BAD_RETURN_PLUGIN = """\
 def check(root, context):
     return {"not": "a list"}
-'''
+"""
 
 
 def _make_repo(tmp):
     repo = Path(tmp) / "repo"
     (repo / ".ai-harness-doctor" / "rules").mkdir(parents=True)
-    (repo / "AGENTS.md").write_text(
-        "# Project overview\n\nSome docs.\n", encoding="utf-8"
-    )
+    (repo / "AGENTS.md").write_text("# Project overview\n\nSome docs.\n", encoding="utf-8")
     return repo
 
 
@@ -73,9 +71,7 @@ def _write_rule(repo, name, body):
 
 class PluginScanIntegrationTests(unittest.TestCase):
     def run_json(self, repo, *extra):
-        proc = subprocess.run(
-            [sys.executable, str(SCAN), str(repo), "--json", *extra],
-            text=True, capture_output=True)
+        proc = subprocess.run([sys.executable, str(SCAN), str(repo), "--json", *extra], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return json.loads(proc.stdout)
 
@@ -146,9 +142,7 @@ class PluginScanIntegrationTests(unittest.TestCase):
 
 class PluginDriftIntegrationTests(unittest.TestCase):
     def run_drift_json(self, repo, *extra):
-        proc = subprocess.run(
-            [sys.executable, str(DRIFT), str(repo), "--json", *extra],
-            text=True, capture_output=True)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json", *extra], text=True, capture_output=True)
         return proc
 
     def test_drift_reports_custom_without_affecting_score(self):
@@ -206,8 +200,7 @@ class PluginLoaderUnitTests(unittest.TestCase):
             names = [p.name for p in files]
             self.assertEqual(names, ["a.py", "b.py"])
             # Passing the same dir again via extra_dirs must not duplicate entries.
-            again = plugins.discover_rule_files(
-                repo, [repo / ".ai-harness-doctor" / "rules"])
+            again = plugins.discover_rule_files(repo, [repo / ".ai-harness-doctor" / "rules"])
             self.assertEqual([p.name for p in again], ["a.py", "b.py"])
 
     def test_example_plugin_conforms_to_contract(self):
@@ -217,11 +210,12 @@ class PluginLoaderUnitTests(unittest.TestCase):
             repo = _make_repo(tmp)
             # Copy the shipped example into the rules dir and run it end to end.
             (repo / ".ai-harness-doctor" / "rules" / "example.py").write_text(
-                example.read_text(encoding="utf-8"), encoding="utf-8")
-            (repo / "AGENTS.md").write_text(
-                "# Project overview\n\nTODO(agents): finish this.\n", encoding="utf-8")
+                example.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            (repo / "AGENTS.md").write_text("# Project overview\n\nTODO(agents): finish this.\n", encoding="utf-8")
             findings = plugins.run_plugins(
-                repo, {"phase": "scan", "agents_text": (repo / "AGENTS.md").read_text(encoding="utf-8")})
+                repo, {"phase": "scan", "agents_text": (repo / "AGENTS.md").read_text(encoding="utf-8")}
+            )
             rules = {f["rule"] for f in findings}
             self.assertIn("example/require-license", rules)
             self.assertIn("example/no-agent-todo", rules)
