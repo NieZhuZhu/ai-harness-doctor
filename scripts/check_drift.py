@@ -327,11 +327,15 @@ LOCKFILE_MANAGERS = registry.LOCKFILE_MANAGERS
 
 
 def declared_node_version(text):
-    """Return (major_version, lineno) for a node version declared in AGENTS.md, else (None, None)."""
+    """Return (major_version, lineno) for a node version declared in AGENTS.md, else (None, None).
+
+    Uses the shared ``registry.node_version_major`` extractor so this D6 drift gate,
+    the Phase-0 semantic check and the scan conflict signal all read the same value
+    from a given line (TD-06)."""
     for lineno, line in enumerate(text.splitlines(), 1):
-        m = re.search(r"\bnode(?:\.js)?\s*(?:version)?\s*(?:>=?|<=?|==?|\^|~)?\s*v?(\d+)(?:\.\d+|\.x)*", line, re.I)
-        if m:
-            return int(m.group(1)), lineno
+        major = registry.node_version_major(line)
+        if major is not None:
+            return major, lineno
     return None, None
 
 

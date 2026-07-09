@@ -462,7 +462,10 @@ SIGNAL_PATTERNS = {
         ("npm test", re.compile(r"\bnpm\s+(?:run\s+)?test\b")),
         ("pnpm test", re.compile(r"\bpnpm\s+(?:run\s+)?test\b")),
     ],
-    "node_version": [("node", re.compile(r"\bnode(?:\.js)?\s*(?:v|version)?\s*(\d+(?:\.\d+)*)", re.I))],
+    # Node version uses the shared registry regex so the scan conflict signal, the
+    # Phase-0 semantic check and the Phase-2 D6 drift gate all extract the same
+    # MAJOR-normalized value from a given line (TD-06). group(1) is the major.
+    "node_version": [("node", registry.NODE_VERSION_RE)],
     "formatter": [
         ("prettier", re.compile(r"\bprettier\b", re.I)),
         ("biome", re.compile(r"\bbiome\b", re.I)),
