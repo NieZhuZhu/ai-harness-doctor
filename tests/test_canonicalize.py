@@ -116,6 +116,52 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertFalse(report["ok"])
             self.assertTrue(any(f["check"] == "SECTION" and f["level"] == "ERROR" for f in report["findings"]))
 
+    def test_validate_library_doc_downgrades_section_and_size_errors(self):
+        # A large end-user library/reference AGENTS.md (installation + API
+        # reference + support sections + import examples) must not be hard-failed
+        # for lacking contributor-guide sections or for exceeding the size budget.
+        library_doc = (
+            "# Quickstart\n\n"
+            "Install with `pip install mylib`.\n\n"
+            "```python\nfrom mylib import Agent\nagent = Agent()\n```\n\n"
+            "# Available Parameters\n\n"
+            "- `model`: the LLM to use.\n\n"
+            "# Get Help\n\nJoin our community chat.\n\n"
+            "# Telemetry\n\nAnonymous usage data is collected; opt out with an env var.\n\n"
+            + "Reference paragraph describing the public API in detail.\n" * 800
+        )
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(library_doc, encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            report = json.loads(proc.stdout)
+            self.assertTrue(report["ok"])
+            # The size/section findings are still surfaced, but only as
+            # non-blocking WARN rather than blocking ERROR.
+            self.assertFalse([f for f in report["findings"] if f["level"] == "ERROR"])
+            downgraded = [f for f in report["findings"] if f["check"] in ("SIZE", "SECTION")]
+            self.assertTrue(downgraded)
+            self.assertTrue(all(f["level"] == "WARN" for f in downgraded))
+
+    def test_validate_contributor_doc_not_treated_as_library_doc(self):
+        # A conventional contributor guide missing required sections must still
+        # hard-fail: the library-doc relaxation must not misclassify it.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\n\nContributor guide.\n\n"
+                "# Testing requirements\n\nRun the suite before pushing.\n",
+                encoding="utf-8",
+            )
+            proc = subprocess.run([sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            report = json.loads(proc.stdout)
+            self.assertFalse(report["ok"])
+            self.assertTrue(any(f["check"] == "SECTION" and f["level"] == "ERROR" for f in report["findings"]))
+
 
 REQUIRED_DRAFT_HEADINGS = [
     "# Project overview",
@@ -197,6 +243,63 @@ class DraftTests(unittest.TestCase):
                 text=True, capture_output=True,
             )
             self.assertEqual(proc3.returncode, 0, proc3.stderr)
+
+
+    def test_draft_infers_python_commands_for_pyproject_repo(self):
+        # A Python repo (pyproject + uv + a console script + a pytest setup) must
+        # yield real inferred build/test commands, not the "could not be inferred"
+        # TODO that only Node/Make repos used to avoid.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "pyproject.toml").write_text(
+                "[project]\n"
+                'name = "mylib"\n'
+                'requires-python = ">=3.11"\n\n'
+                "[project.scripts]\n"
+                'mycli = "mylib.cli:main"\n\n'
+                "[tool.uv]\n"
+                'dev-dependencies = ["pytest", "ruff"]\n',
+                encoding="utf-8",
+            )
+            (repo / "tests").mkdir()
+            (repo / "tests" / "test_basic.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(CANON), str(repo), "--draft"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            out = proc.stdout
+            self.assertNotIn("no build/test commands could be inferred", out)
+            # uv detected from [tool.uv]; install + common runners inferred.
+            self.assertIn("uv sync", out)
+            self.assertIn("uv run pytest", out)
+            self.assertIn("uv run ruff check", out)
+            # Console script from pyproject surfaced (as an entry-point note).
+            self.assertIn("`mycli`", out)
+            # Every drafted command stays tagged for human confirmation.
+            self.assertIn("(inferred — confirm)", out)
+
+    def test_draft_reuses_python_commands_documented_in_claude_md(self):
+        # When a CLAUDE.md already documents build/test/lint commands, --draft
+        # reuses them verbatim instead of guessing.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "pyproject.toml").write_text(
+                "[project]\nname = \"mylib\"\n\n[tool.poetry]\nname = \"mylib\"\n",
+                encoding="utf-8",
+            )
+            (repo / "CLAUDE.md").write_text(
+                "# CLAUDE.md\n\n"
+                "- Run tests: `poetry run pytest -q`\n"
+                "- Lint: `poetry run ruff check`\n",
+                encoding="utf-8",
+            )
+            proc = subprocess.run([sys.executable, str(CANON), str(repo), "--draft"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            out = proc.stdout
+            self.assertIn("poetry install", out)
+            self.assertIn("poetry run pytest -q", out)
+            self.assertIn("poetry run ruff check", out)
+            self.assertIn("documented in CLAUDE.md", out)
 
 
 class ConflictDefaultTests(unittest.TestCase):
