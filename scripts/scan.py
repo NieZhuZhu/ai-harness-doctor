@@ -138,10 +138,11 @@ PRECOMMIT_HOOK_PATHS = [".git/hooks/pre-commit", ".githooks/pre-commit"]
 # Manifest files that reveal the primary language / ecosystem. Order matters
 # only for readability; every match is reported.
 TECH_STACK_MARKERS = [
-    ("Go", ["go.mod"]),
+    ("Go", ["go.mod", "go.sum", "go.work"]),
     ("Node.js", ["package.json"]),
-    ("Python", ["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "Pipfile"]),
-    ("Rust", ["Cargo.toml"]),
+    ("Python", ["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "Pipfile",
+                "poetry.lock", "uv.lock", "pdm.lock", "Pipfile.lock"]),
+    ("Rust", ["Cargo.toml", "Cargo.lock"]),
     ("Ruby", ["Gemfile"]),
     ("PHP", ["composer.json"]),
     ("Java (Maven)", ["pom.xml"]),
@@ -340,6 +341,15 @@ SIGNAL_PATTERNS = {
         ("npm", re.compile(r"\bnpm\b")),
         ("yarn", re.compile(r"\byarn\b")),
         ("bun", re.compile(r"\bbun\b")),
+        ("poetry", re.compile(r"\bpoetry\b")),
+        ("pipenv", re.compile(r"\bpipenv\b")),
+        ("pdm", re.compile(r"\bpdm\b")),
+        ("uv", re.compile(r"\buv\s+(?:run|sync|pip|add|lock|venv|tool)\b")),
+        ("pip", re.compile(r"\bpip3?\s+install\b")),
+        ("cargo", re.compile(r"\bcargo\b")),
+        ("go modules", re.compile(r"\bgo\s+(?:mod|get|build|test|run)\b")),
+        ("maven", re.compile(r"\bmvn\b|\bmaven\b")),
+        ("gradle", re.compile(r"\bgradle\b|\bgradlew\b")),
     ],
     "indent_style": [
         ("tabs", re.compile(r"\btab(?:s)?\b", re.I)),
@@ -355,6 +365,9 @@ SIGNAL_PATTERNS = {
         ("vitest", re.compile(r"\bvitest\b")),
         ("pytest", re.compile(r"\bpytest\b")),
         ("go test", re.compile(r"\bgo\s+test\b")),
+        ("cargo test", re.compile(r"\bcargo\s+test\b")),
+        ("mvn test", re.compile(r"\bmvn\s+(?:test|verify)\b")),
+        ("gradle test", re.compile(r"\bgradle(?:w)?\s+test\b|\./gradlew\s+test\b")),
         ("npm test", re.compile(r"\bnpm\s+(?:run\s+)?test\b")),
         ("pnpm test", re.compile(r"\bpnpm\s+(?:run\s+)?test\b")),
     ],
@@ -1050,6 +1063,10 @@ CATEGORY_LABELS = {
     "path": "Path",
     "package_manager": "Package manager",
     "node_version": "Node version",
+    "python_version": "Python version",
+    "go_version": "Go version",
+    "rust_version": "Rust version",
+    "java_version": "Java version",
 }
 
 
