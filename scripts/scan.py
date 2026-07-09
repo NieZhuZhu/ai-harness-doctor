@@ -841,7 +841,7 @@ def find_gaps(root, surface):
     return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
 
 
-def scan_repo(repo_root, max_bytes, rules_dirs=None):
+def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False):
     root = Path(repo_root).resolve()
     files = []
     warnings = []
@@ -874,13 +874,16 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None):
         "semantic": semantic.analyze(root, agents_text),
         "gaps": find_gaps(root, surface),
     }
-    # User-extensible deterministic rule plugins (opt-in). Discovered from
-    # <root>/.ai-harness-doctor/rules/*.py plus any --rules DIR; each plugin is
-    # isolated so a broken one is reported as an ERROR finding, never a crash.
-    # The key is always present (empty list when no plugins) and rendered under
-    # its own "Custom rule plugins" section.
+    # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
+    # files live inside the scanned repo, so importing them runs arbitrary code
+    # on the host/CI; discovery + execution therefore happens ONLY when the
+    # caller opts in via --allow-plugins. Otherwise this is a no-op returning an
+    # empty list. Discovered from <root>/.ai-harness-doctor/rules/*.py plus any
+    # --rules DIR; each plugin is isolated so a broken one is reported as an
+    # ERROR finding, never a crash. The key is always present (empty list when
+    # no plugins ran) and rendered under its own "Custom rule plugins" section.
     context = {"phase": "scan", "agents_text": agents_text}
-    report["custom"] = plugins.run_plugins(root, context, rules_dirs)
+    report["custom"] = plugins.run_plugins(root, context, rules_dirs, allow_plugins=allow_plugins)
     return report
 
 
@@ -1033,7 +1036,7 @@ def _aggregate_packages(packages):
     return aggregate
 
 
-def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None):
+def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_plugins=False):
     """Scan every detected package subdirectory and build the aggregate.
 
     Returns ``(monorepo_summary, packages)`` where ``packages`` is a list of
@@ -1042,7 +1045,7 @@ def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None):
     """
     packages = []
     for relpath, pdir in package_dirs.items():
-        sub = scan_repo(pdir, max_bytes, rules_dirs)
+        sub = scan_repo(pdir, max_bytes, rules_dirs, allow_plugins=allow_plugins)
         packages.append(
             {
                 "path": relpath,
@@ -1314,6 +1317,13 @@ def main(argv=None):
     )
     parser.add_argument("--no-custom", action="store_true", help="Skip custom rule plugins (drops the `custom` key).")
     parser.add_argument(
+        "--allow-plugins",
+        action="store_true",
+        help="Opt in to executing custom rule plugins (`*.py`) found inside the scanned repo "
+        "or in --rules DIRs. SECURITY: this runs arbitrary code from the target repository; "
+        "it is OFF by default and no plugin code is discovered or imported without this flag.",
+    )
+    parser.add_argument(
         "--rules",
         action="append",
         default=None,
@@ -1338,12 +1348,21 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
-    report = scan_repo(root, args.max_bytes, args.rules)
+    # Executing plugins runs untrusted code from the scanned repo; warn loudly.
+    if args.allow_plugins:
+        print(
+            "WARNING: --allow-plugins enabled: executing untrusted rule plugin code from the "
+            "scanned repository (<repo>/.ai-harness-doctor/rules/ and any --rules DIR).",
+            file=sys.stderr,
+        )
+    report = scan_repo(root, args.max_bytes, args.rules, allow_plugins=args.allow_plugins)
 
     mode = "force" if args.monorepo else ("off" if args.no_monorepo else "auto")
     package_dirs, source = detect_packages(root, mode)
     if package_dirs:
-        monorepo, packages = scan_monorepo(root, args.max_bytes, package_dirs, source, args.rules)
+        monorepo, packages = scan_monorepo(
+            root, args.max_bytes, package_dirs, source, args.rules, allow_plugins=args.allow_plugins
+        )
         report["monorepo"] = monorepo
         report["packages"] = packages
         for pkg in packages:

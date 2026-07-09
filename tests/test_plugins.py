@@ -55,6 +55,18 @@ def check(root, context):
     return {"not": "a list"}
 """
 
+# Import-time (top-level) side effect. If this module is ever imported, it drops
+# a SENTINEL file next to itself — proving the loader ran arbitrary repo code.
+MALICIOUS_PLUGIN = """\
+import pathlib
+
+(pathlib.Path(__file__).resolve().parent / "SENTINEL").write_text("pwned", encoding="utf-8")
+
+
+def check(root, context):
+    return []
+"""
+
 
 def _make_repo(tmp):
     repo = Path(tmp) / "repo"
@@ -79,7 +91,7 @@ class PluginScanIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)
             _write_rule(repo, "good.py", GOOD_PLUGIN)
-            report = self.run_json(repo)
+            report = self.run_json(repo, "--allow-plugins")
             self.assertIn("custom", report)
             rules = {f["rule"] for f in report["custom"]}
             self.assertIn("demo/hello", rules)
@@ -97,7 +109,7 @@ class PluginScanIntegrationTests(unittest.TestCase):
             rules_dir = Path(tmp) / "myrules"
             rules_dir.mkdir()
             (rules_dir / "ctx.py").write_text(CONTEXT_PLUGIN, encoding="utf-8")
-            report = self.run_json(repo, "--rules", str(rules_dir))
+            report = self.run_json(repo, "--allow-plugins", "--rules", str(rules_dir))
             phases = [f["message"] for f in report["custom"] if f["rule"] == "demo/phase"]
             self.assertEqual(phases, ["phase=scan"])
 
@@ -106,7 +118,7 @@ class PluginScanIntegrationTests(unittest.TestCase):
             repo = _make_repo(tmp)
             _write_rule(repo, "broken.py", IMPORT_ERROR_PLUGIN)
             _write_rule(repo, "good.py", GOOD_PLUGIN)
-            report = self.run_json(repo)  # must NOT crash (returncode 0 asserted)
+            report = self.run_json(repo, "--allow-plugins")  # must NOT crash (returncode 0 asserted)
             errors = [f for f in report["custom"] if f["level"] == "ERROR"]
             self.assertTrue(any(f["rule"] == "plugin-load" for f in errors))
             load_err = next(f for f in errors if f["rule"] == "plugin-load")
@@ -118,7 +130,7 @@ class PluginScanIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)
             _write_rule(repo, "raiser.py", RUNTIME_ERROR_PLUGIN)
-            report = self.run_json(repo)
+            report = self.run_json(repo, "--allow-plugins")
             errors = [f for f in report["custom"] if f["level"] == "ERROR"]
             self.assertTrue(any(f["rule"] == "plugin-error" for f in errors))
             self.assertTrue(any("boom from plugin" in f["message"] for f in errors))
@@ -132,11 +144,32 @@ class PluginScanIntegrationTests(unittest.TestCase):
             # No rules dir and no --rules → section present but empty.
             self.assertEqual(report["custom"], [])
 
+    def test_default_does_not_execute_repo_plugin_code(self):
+        # SEC-01: without --allow-plugins, a malicious plugin in the scanned repo
+        # must NOT be imported/executed, so its import-time side effect never fires.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _make_repo(tmp)
+            _write_rule(repo, "evil.py", MALICIOUS_PLUGIN)
+            sentinel = repo / ".ai-harness-doctor" / "rules" / "SENTINEL"
+            report = self.run_json(repo)  # no opt-in flag
+            self.assertFalse(sentinel.exists(), "plugin code executed without --allow-plugins (RCE)")
+            # The section is still present but empty because nothing ran.
+            self.assertEqual(report["custom"], [])
+
+    def test_allow_plugins_executes_repo_plugin_code(self):
+        # With the explicit opt-in, the plugin IS imported and its check() runs.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _make_repo(tmp)
+            _write_rule(repo, "evil.py", MALICIOUS_PLUGIN)
+            sentinel = repo / ".ai-harness-doctor" / "rules" / "SENTINEL"
+            self.run_json(repo, "--allow-plugins")
+            self.assertTrue(sentinel.exists(), "plugin code did NOT execute with --allow-plugins")
+
     def test_no_custom_flag_drops_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)
             _write_rule(repo, "good.py", GOOD_PLUGIN)
-            report = self.run_json(repo, "--no-custom")
+            report = self.run_json(repo, "--allow-plugins", "--no-custom")
             self.assertNotIn("custom", report)
 
 
@@ -149,7 +182,7 @@ class PluginDriftIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)
             _write_rule(repo, "good.py", GOOD_PLUGIN)
-            proc = self.run_drift_json(repo)
+            proc = self.run_drift_json(repo, "--allow-plugins")
             self.assertEqual(proc.returncode, 0, proc.stderr)
             report = json.loads(proc.stdout)
             self.assertIn("custom", report)
@@ -162,25 +195,48 @@ class PluginDriftIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)
             _write_rule(repo, "raiser.py", RUNTIME_ERROR_PLUGIN)
-            proc = self.run_drift_json(repo)
+            proc = self.run_drift_json(repo, "--allow-plugins")
             self.assertEqual(proc.returncode, 0, proc.stderr)
             report = json.loads(proc.stdout)
             self.assertTrue(any(f["rule"] == "plugin-error" for f in report["custom"]))
 
+    def test_drift_default_does_not_execute_repo_plugin_code(self):
+        # SEC-01: drift must not import repo plugins without the opt-in flag.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _make_repo(tmp)
+            _write_rule(repo, "evil.py", MALICIOUS_PLUGIN)
+            sentinel = repo / ".ai-harness-doctor" / "rules" / "SENTINEL"
+            proc = self.run_drift_json(repo)  # no opt-in flag
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads(proc.stdout)
+            self.assertFalse(sentinel.exists(), "plugin code executed without --allow-plugins (RCE)")
+            self.assertEqual(report["custom"], [])
+
 
 class PluginLoaderUnitTests(unittest.TestCase):
+    def test_default_is_noop_without_opt_in(self):
+        # SEC-01 defense-in-depth: run_plugins never discovers or imports plugin
+        # code unless allow_plugins=True, even when a plugin file is present.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _make_repo(tmp)
+            _write_rule(repo, "evil.py", MALICIOUS_PLUGIN)
+            sentinel = repo / ".ai-harness-doctor" / "rules" / "SENTINEL"
+            findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""})
+            self.assertEqual(findings, [])
+            self.assertFalse(sentinel.exists(), "plugin imported without allow_plugins=True")
+
     def test_missing_check_is_contract_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)
             _write_rule(repo, "nocheck.py", NO_CHECK_PLUGIN)
-            findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""})
+            findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""}, allow_plugins=True)
             self.assertTrue(any(f["rule"] == "plugin-contract" for f in findings))
 
     def test_bad_return_type_is_output_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)
             _write_rule(repo, "badret.py", BAD_RETURN_PLUGIN)
-            findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""})
+            findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""}, allow_plugins=True)
             self.assertTrue(any(f["rule"] == "plugin-output" for f in findings))
 
     def test_private_files_are_skipped(self):
@@ -188,7 +244,7 @@ class PluginLoaderUnitTests(unittest.TestCase):
             repo = _make_repo(tmp)
             _write_rule(repo, "_helper.py", RUNTIME_ERROR_PLUGIN)
             _write_rule(repo, "__init__.py", RUNTIME_ERROR_PLUGIN)
-            findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""})
+            findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""}, allow_plugins=True)
             self.assertEqual(findings, [])
 
     def test_discovery_is_ordered_and_deduped(self):
@@ -214,7 +270,9 @@ class PluginLoaderUnitTests(unittest.TestCase):
             )
             (repo / "AGENTS.md").write_text("# Project overview\n\nTODO(agents): finish this.\n", encoding="utf-8")
             findings = plugins.run_plugins(
-                repo, {"phase": "scan", "agents_text": (repo / "AGENTS.md").read_text(encoding="utf-8")}
+                repo,
+                {"phase": "scan", "agents_text": (repo / "AGENTS.md").read_text(encoding="utf-8")},
+                allow_plugins=True,
             )
             rules = {f["rule"] for f in findings}
             self.assertIn("example/require-license", rules)

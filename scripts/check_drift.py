@@ -501,7 +501,7 @@ def health_score(findings):
     return score, grade
 
 
-def run_checks(root, max_bytes, strict=False, rules_dirs=None):
+def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=False):
     agents = root / "AGENTS.md"
     text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
     findings = []
@@ -520,12 +520,17 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None):
         {"check": "D5", "level": "INFO", "path": p, "message": "Nested AGENTS.md inventory"}
         for p in nested_agents(root)
     ]
-    # User-extensible deterministic rule plugins (opt-in). Discovered from
-    # <root>/.ai-harness-doctor/rules/*.py plus any --rules DIR; each plugin is
-    # isolated so a broken one is reported as an ERROR finding, never a crash.
-    # Custom findings are reported additively under `custom`; they do not alter
-    # the built-in D1-D8 health score, so the opt-out default is byte-stable.
-    custom = plugins.run_plugins(root, {"phase": "drift", "agents_text": text}, rules_dirs)
+    # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
+    # files live inside the scanned repo, so importing them runs arbitrary code
+    # on the host/CI; discovery + execution therefore happens ONLY when the
+    # caller opts in via --allow-plugins. Otherwise this is a no-op returning an
+    # empty list. Discovered from <root>/.ai-harness-doctor/rules/*.py plus any
+    # --rules DIR; each plugin is isolated so a broken one is reported as an
+    # ERROR finding, never a crash. Custom findings are reported additively
+    # under `custom`; they do not alter the built-in D1-D8 health score.
+    custom = plugins.run_plugins(
+        root, {"phase": "drift", "agents_text": text}, rules_dirs, allow_plugins=allow_plugins
+    )
     if strict:
         for f in custom:
             if f.get("level") == "NOTICE":
@@ -591,7 +596,7 @@ def _finding_loc(f):
     return ""
 
 
-def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None):
+def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None, allow_plugins=False):
     """Auto-repair ONLY the safe, mechanical subset of drift (D3 stub regrowth).
 
     Dry run by default (writes nothing); with apply=True actually rewrites the
@@ -599,7 +604,7 @@ def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None):
     that is not safely auto-fixable is reported as "needs manual attention" and its
     files are left untouched.
     """
-    report = run_checks(root, max_bytes, strict, rules_dirs)
+    report = run_checks(root, max_bytes, strict, rules_dirs, allow_plugins=allow_plugins)
     d3 = [f for f in report["findings"] if f["check"] == "D3"]
     manual = [f for f in report["findings"] if f["check"] != "D3" and f.get("level") in ("ERROR", "NOTICE")]
 
@@ -668,6 +673,13 @@ def main(argv=None):
     parser.add_argument("--apply", action="store_true", help="With --fix, actually rewrite files instead of a dry run.")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
     parser.add_argument(
+        "--allow-plugins",
+        action="store_true",
+        help="Opt in to executing custom rule plugins (`*.py`) found inside the scanned repo "
+        "or in --rules DIRs. SECURITY: this runs arbitrary code from the target repository; "
+        "it is OFF by default and no plugin code is discovered or imported without this flag.",
+    )
+    parser.add_argument(
         "--rules",
         action="append",
         default=None,
@@ -681,11 +693,20 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
+    # Executing plugins runs untrusted code from the scanned repo; warn loudly.
+    if args.allow_plugins:
+        print(
+            "WARNING: --allow-plugins enabled: executing untrusted rule plugin code from the "
+            "scanned repository (<repo>/.ai-harness-doctor/rules/ and any --rules DIR).",
+            file=sys.stderr,
+        )
     if args.fix:
-        text, code = run_fix(root, args.max_bytes, args.apply, args.strict, args.rules)
+        text, code = run_fix(
+            root, args.max_bytes, args.apply, args.strict, args.rules, allow_plugins=args.allow_plugins
+        )
         print(text, end="")
         return code
-    report = run_checks(root, args.max_bytes, args.strict, args.rules)
+    report = run_checks(root, args.max_bytes, args.strict, args.rules, allow_plugins=args.allow_plugins)
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
