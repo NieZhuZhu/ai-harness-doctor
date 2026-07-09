@@ -140,8 +140,14 @@ def d3_stub_regrowth(root):
             continue
         data = path.read_bytes()
         text = data.decode("utf-8", errors="replace")
-        if len(data) > 600 or "AGENTS.md" not in text:
-            findings.append({"check": "D3", "level": "ERROR", "path": rel, "message": f"Tool stub `{rel}` regrew or lost AGENTS.md pointer", "suggestion": "Run canonicalize.py --write-stubs after reviewing changes."})
+        # Only flag a file as a regrown/broken canonical stub when there is
+        # positive evidence it IS a managed pointer stub: it references AGENTS.md
+        # as a pointer but has grown past the minimal-stub size budget. A file
+        # with NO AGENTS.md pointer is an independent, hand-authored doc (the
+        # checkup/overlap subsystem's concern), not a broken stub, so D3 must not
+        # claim it "lost" a pointer it never had.
+        if "AGENTS.md" in text and len(data) > 600:
+            findings.append({"check": "D3", "level": "ERROR", "path": rel, "message": f"Tool stub `{rel}` regrew past the pointer-stub size budget", "suggestion": "Run canonicalize.py --write-stubs after reviewing changes."})
     cursor_rules = root / ".cursor" / "rules"
     if cursor_rules.is_dir():
         for p in cursor_rules.glob("*"):
@@ -149,8 +155,11 @@ def d3_stub_regrowth(root):
                 continue
             data = p.read_bytes()
             text = data.decode("utf-8", errors="replace")
-            if len(data) > 600 or "AGENTS.md" not in text:
-                findings.append({"check": "D3", "level": "ERROR", "path": p.relative_to(root).as_posix(), "message": "Cursor rule regrew or lost AGENTS.md pointer", "suggestion": "Keep a single minimal pointer rule."})
+            # Same rule as above: only a genuine pointer rule (references
+            # AGENTS.md) that regrew past the size budget is drift; an
+            # independent rule with no AGENTS.md pointer is not a broken stub.
+            if "AGENTS.md" in text and len(data) > 600:
+                findings.append({"check": "D3", "level": "ERROR", "path": p.relative_to(root).as_posix(), "message": "Cursor rule regrew past the pointer-stub size budget", "suggestion": "Keep a single minimal pointer rule."})
     return findings
 
 
