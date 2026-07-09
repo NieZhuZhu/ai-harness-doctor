@@ -467,6 +467,85 @@ class EvalRunTests(unittest.TestCase):
             self.assertFalse(passed)
             self.assertIsNone(judge_info)
 
+    def test_command_check_does_not_allow_shell_injection(self):
+        # SEC-04: a `command` check is untrusted task data. Shell metacharacters
+        # must NOT spawn extra commands — the injected `touch pwned` must never
+        # create a file, even though the leading `true` "succeeds".
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td)
+            sentinel = workdir / "pwned"
+            task = {
+                "id": "inject",
+                "prompt": "x",
+                "check": {"type": "command", "value": f"true; touch {sentinel}"},
+                "timeout_s": 5,
+            }
+            passed, judge_info = eval_run.grade_answer(task, "answer", workdir, None)
+            # `true; touch ...` tokenizes to argv ["true", ";", "touch", ...];
+            # `true` ignores its args and exits 0, but no shell ran the `touch`.
+            self.assertFalse(sentinel.exists(), "shell injection executed the payload")
+            self.assertIsNone(judge_info)
+
+    def test_command_check_legitimate_command_still_passes(self):
+        # A plain, well-formed command still works via shlex.split + argv exec.
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td)
+            (workdir / "AGENTS.md").write_text("x", encoding="utf-8")
+            task = {
+                "id": "ok",
+                "prompt": "x",
+                "check": {"type": "command", "value": "test -f AGENTS.md"},
+                "timeout_s": 5,
+            }
+            passed, judge_info = eval_run.grade_answer(task, "answer", workdir, None)
+            self.assertTrue(passed)
+            self.assertIsNone(judge_info)
+
+    def test_runner_prompt_with_shell_metacharacters_is_not_executed(self):
+        # SEC-04: the runner template substitutes {prompt} with shlex.quote, so a
+        # prompt full of shell metacharacters cannot break out of the runner
+        # command and run an injected payload.
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            sentinel = workdir / "pwned"
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "inject",
+                            "prompt": f"hi; touch {sentinel}",
+                            "check": {"type": "regex", "value": ".*"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            output = Path(td) / "results.json"
+            runner = "echo {prompt}"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--runner",
+                    runner,
+                    "--label",
+                    "inject",
+                    "--workdir",
+                    str(workdir),
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertFalse(sentinel.exists(), "prompt shell injection executed the payload")
+
     def test_run_tasks_command_check_timeout_records_non_crashing_fail(self):
         # End-to-end: a command check that times out is a fail, and run_tasks
         # still emits the full record (does not crash, keeps timed_out field).
