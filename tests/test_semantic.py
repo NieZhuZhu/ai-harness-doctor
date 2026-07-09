@@ -68,6 +68,35 @@ class SemanticCommandTests(unittest.TestCase):
             self.assertFalse(any("sure" in f["message"] for f in cmds))
 
 
+class SemanticPackageScriptsTests(unittest.TestCase):
+    def test_valid_package_json_with_scripts(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {"build": "tsc", "lint": "eslint"}}')
+            self.assertEqual(semantic.package_scripts(Path(td)), {"build", "lint"})
+
+    def test_valid_package_json_without_scripts_is_empty_set(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", "{}")
+            self.assertEqual(semantic.package_scripts(Path(td)), set())
+
+    def test_absent_package_json_is_none(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertIsNone(semantic.package_scripts(Path(td)))
+
+    def test_invalid_json_returns_none_not_empty_set(self):
+        # A present-but-unparseable package.json must be a sentinel distinct from
+        # "parsed, no scripts" so callers do not treat it as "no scripts" (CORR-01).
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", "{ this is not valid json ")
+            self.assertIsNone(semantic.package_scripts(Path(td)))
+
+    def test_invalid_json_yields_no_false_unknown_script_finding(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", "{ this is not valid json ")
+            result = semantic.analyze(td, "Run `npm run build` and `npm run lint`.")
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+
 class SemanticPathTests(unittest.TestCase):
     def test_missing_path_flagged(self):
         with tempfile.TemporaryDirectory() as td:
