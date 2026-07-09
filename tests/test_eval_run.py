@@ -480,15 +480,18 @@ class EvalRunTests(unittest.TestCase):
                         {
                             "id": "slow",
                             "prompt": "x",
-                            "check": {"type": "command", "value": "sleep 5"},
-                            "timeout_s": 0.1,
+                            "check": {"type": "command", "value": "sleep 30"},
+                            # Wide margin so timing is deterministic under CI load:
+                            # the runner (a shell echo) finishes in milliseconds while
+                            # the check (sleep 30) always exceeds the 1s budget.
+                            "timeout_s": 1,
                         },
                     ]
                 ),
                 encoding="utf-8",
             )
             output = Path(td) / "results.json"
-            runner = f"{sys.executable} -c \"print('done')\""
+            runner = "echo done"
             proc = subprocess.run(
                 [
                     sys.executable,
