@@ -31,8 +31,10 @@ class BuildReviewTests(unittest.TestCase):
             ],
         }
         payload = pr_review.build_review(report)
-        self.assertEqual(payload["inline_count"], 2)
-        self.assertEqual(payload["summary_count"], 0)
+        # Only the D2 finding has BOTH a path and a line, so exactly one inline
+        # comment; the path-without-line secret goes to the summary instead.
+        self.assertEqual(payload["inline_count"], 1)
+        self.assertEqual(payload["summary_count"], 1)
 
         d2 = payload["comments"][0]
         self.assertEqual(d2["path"], "docs/x.md")
@@ -40,11 +42,27 @@ class BuildReviewTests(unittest.TestCase):
         self.assertIn("D2", d2["body"])
         self.assertIn("Fix it.", d2["body"])
 
-        # A finding with a path but no line is still inline, without a line key.
-        secret = payload["comments"][1]
-        self.assertEqual(secret["path"], "CLAUDE.md")
-        self.assertNotIn("line", secret)
-        self.assertIn("secret", secret["body"])
+        # Every posted inline comment MUST carry a concrete line, otherwise
+        # GitHub 422-rejects the whole review.
+        for comment in payload["comments"]:
+            self.assertIn("line", comment)
+            self.assertIsInstance(comment["line"], int)
+
+    def test_path_without_line_goes_to_summary_not_inline(self):
+        # A finding with a path but no line must NOT become an inline comment
+        # (that would 422 the whole review); it is routed to the summary body
+        # while still naming the file it refers to.
+        report = {
+            "security": [
+                {"level": "HIGH", "category": "secret", "path": "CLAUDE.md", "message": "token leaked"},
+            ],
+        }
+        payload = pr_review.build_review(report)
+        self.assertEqual(payload["comments"], [])
+        self.assertEqual(payload["inline_count"], 0)
+        self.assertEqual(payload["summary_count"], 1)
+        self.assertIn("secret", payload["body"])
+        self.assertIn("CLAUDE.md", payload["body"])
 
     def test_unlocated_findings_go_to_summary(self):
         report = {
@@ -179,6 +197,87 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertFalse(called["posted"])
         json.loads(buf.getvalue())  # still valid JSON
+
+
+class PostReviewTests(unittest.TestCase):
+    """Cover the network-posting path by mocking the GitHub HTTP call.
+
+    ``post_review`` imports ``urllib.request`` lazily inside the function, so we
+    patch ``urllib.request.urlopen`` and capture the ``Request`` object that
+    would be sent to GitHub, asserting the correct endpoint, method, headers and
+    JSON payload are built.
+    """
+
+    def _capture(self, payload, **kwargs):
+        import urllib.request
+        from unittest import mock
+
+        captured = {}
+
+        class _Resp:
+            def __enter__(self_inner):
+                return self_inner
+
+            def __exit__(self_inner, *exc):
+                return False
+
+            def read(self_inner):
+                return b'{"html_url": "https://github.com/o/r/pull/7#review"}'
+
+        def _fake_urlopen(req, *a, **kw):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["data"] = json.loads(req.data.decode("utf-8"))
+            captured["headers"] = dict(req.header_items())
+            return _Resp()
+
+        with mock.patch.object(urllib.request, "urlopen", _fake_urlopen):
+            resp = pr_review.post_review(payload, **kwargs)
+        return captured, resp
+
+    def test_post_with_inline_comments_hits_reviews_endpoint(self):
+        report = {
+            "findings": [
+                {"check": "D2", "level": "ERROR", "path": "a.md", "line": 3, "message": "m", "suggestion": "s"},
+            ],
+            # path-without-line: must be dropped from inline comments so the
+            # review is never 422-rejected.
+            "security": [{"level": "HIGH", "category": "secret", "path": "b.md", "message": "leak"}],
+        }
+        payload = pr_review.build_review(report)
+        captured, resp = self._capture(
+            payload, repo="o/r", pr_number=7, commit_sha="deadbeef", token="tok"
+        )
+
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["url"], "https://api.github.com/repos/o/r/pulls/7/reviews")
+        self.assertEqual(captured["data"]["commit_id"], "deadbeef")
+        self.assertEqual(captured["data"]["event"], "COMMENT")
+        # Exactly one inline comment (the located D2); the path-without-line
+        # secret was routed to the summary body, not sent as a comment.
+        self.assertEqual(len(captured["data"]["comments"]), 1)
+        for comment in captured["data"]["comments"]:
+            self.assertIn("path", comment)
+            self.assertIn("line", comment)  # 422-avoidance: every comment has a line
+            self.assertIsInstance(comment["line"], int)
+        # Auth header carries the bearer token.
+        headers = {k.lower(): v for k, v in captured["headers"].items()}
+        self.assertEqual(headers["authorization"], "Bearer tok")
+        self.assertEqual(resp.get("html_url"), "https://github.com/o/r/pull/7#review")
+
+    def test_post_without_comments_falls_back_to_issue_comment(self):
+        # No located findings -> a single general issue comment carrying the
+        # summary body (never the reviews endpoint, so no 422 risk).
+        report = {"findings": [{"check": "D4", "level": "ERROR", "message": "no location"}]}
+        payload = pr_review.build_review(report)
+        self.assertEqual(payload["comments"], [])
+        captured, _ = self._capture(
+            payload, repo="o/r", pr_number=9, commit_sha="cafe", token="tok"
+        )
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["url"], "https://api.github.com/repos/o/r/issues/9/comments")
+        self.assertIn("body", captured["data"])
+        self.assertNotIn("comments", captured["data"])
 
 
 if __name__ == "__main__":
