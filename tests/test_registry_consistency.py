@@ -21,6 +21,7 @@ import canonicalize  # noqa: E402
 import check_drift  # noqa: E402
 import registry  # noqa: E402
 import scan  # noqa: E402
+import semantic  # noqa: E402
 
 
 class RegistryConsistencyTests(unittest.TestCase):
@@ -97,6 +98,40 @@ class RegistryConsistencyTests(unittest.TestCase):
         self.assertFalse(roo["canonicalizable"])
         self.assertEqual(roo["stub_paths"], [])
         self.assertIn("Roo", roo["canonicalizable_note"])
+
+
+class SharedConstantConsistencyTests(unittest.TestCase):
+    """CORR-06 / TD-01: the stub-size threshold and the lockfile->manager map are
+    single-sourced in registry.py so they cannot drift between the scan, drift and
+    canonicalize stages."""
+
+    def test_stub_size_threshold_single_sourced(self):
+        # scan.py references the registry constant; check_drift.py and
+        # canonicalize.py use registry.STUB_POINTER_MAX_BYTES inline. Assert the
+        # published value is consistent and sane (CORR-06).
+        self.assertEqual(scan.STUB_POINTER_MAX_BYTES, registry.STUB_POINTER_MAX_BYTES)
+        self.assertEqual(registry.STUB_POINTER_MAX_BYTES, 800)
+
+    def test_lockfile_managers_single_sourced_and_include_bun(self):
+        # All three modules must expose the same map (TD-01), and it must include
+        # bun so the drift gate is no longer blind to bun repos.
+        self.assertEqual(semantic.LOCKFILE_MANAGERS, registry.LOCKFILE_MANAGERS)
+        self.assertEqual(check_drift.LOCKFILE_MANAGERS, registry.LOCKFILE_MANAGERS)
+        self.assertEqual(canonicalize.LOCKFILE_MANAGERS, registry.LOCKFILE_MANAGERS)
+        for lockfile in ("bun.lockb", "bun.lock"):
+            self.assertEqual(registry.LOCKFILE_MANAGERS.get(lockfile), "bun")
+
+    def test_stub_at_threshold_boundary_classified_consistently(self):
+        # A pointer stub at the byte boundary must be classified the same way by
+        # the scan gap analysis and the drift D3 gate: <= threshold is fine,
+        # just over is "regrown". Guards against the thresholds drifting apart.
+        threshold = registry.STUB_POINTER_MAX_BYTES
+        at_limit = "@AGENTS.md\n" + "x" * (threshold - len("@AGENTS.md\n"))
+        over_limit = at_limit + "y" * 8
+        self.assertEqual(len(at_limit.encode("utf-8")), threshold)
+        self.assertGreater(len(over_limit.encode("utf-8")), threshold)
+        self.assertLessEqual(len(at_limit.encode("utf-8")), scan.STUB_POINTER_MAX_BYTES)
+        self.assertGreater(len(over_limit.encode("utf-8")), scan.STUB_POINTER_MAX_BYTES)
 
 
 if __name__ == "__main__":

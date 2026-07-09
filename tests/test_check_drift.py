@@ -426,6 +426,24 @@ class DriftTests(unittest.TestCase):
         self.assertIn("package-lock.json", d8[0]["message"])
         self.assertIn("pnpm-lock.yaml", d8[0]["message"])
 
+    def test_competing_bun_lockfile_triggers_d8(self):
+        # TD-01: the drift gate previously omitted bun from its lockfile map and
+        # was blind to bun repos. A bun.lockb alongside package-lock.json is now
+        # a competing-manager conflict (D8).
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        self._stub_pointers(repo)
+        (repo / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
+        (repo / "bun.lockb").write_bytes(b"\x00bun binary lockfile\x00")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d8 = [f for f in report["findings"] if f["check"] == "D8"]
+        self.assertEqual(len(d8), 1)
+        self.assertIn("bun.lockb", d8[0]["message"])
+        self.assertIn("package-lock.json", d8[0]["message"])
+
     def test_single_lockfile_does_not_trigger_d8(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)

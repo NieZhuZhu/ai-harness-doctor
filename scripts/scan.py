@@ -134,7 +134,9 @@ GAP_STUB_FILES = [
     "GEMINI.md",
     ".clinerules",
 ]
-STUB_POINTER_MAX_BYTES = 600
+# Maximum pointer-stub size, shared across scan/drift/canonicalize (see
+# registry.STUB_POINTER_MAX_BYTES) so the threshold cannot drift between stages.
+STUB_POINTER_MAX_BYTES = registry.STUB_POINTER_MAX_BYTES
 
 # Guard / CI templates the `ai-harness-doctor guard` installer writes.
 GUARD_CI_WORKFLOWS = [

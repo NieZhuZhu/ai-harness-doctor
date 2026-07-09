@@ -15,17 +15,11 @@ import registry  # noqa: E402
 import scan  # noqa: E402
 import semantic  # noqa: E402  # reuse package.json/Makefile/lockfile/node fact readers
 
-# Lockfile -> package-manager map, mirrored from check_drift.py / semantic.py so
-# the draft generator and the conflict-default recommender agree on which manager
-# a committed lockfile implies.
-LOCKFILE_MANAGERS = {
-    "package-lock.json": "npm",
-    "npm-shrinkwrap.json": "npm",
-    "pnpm-lock.yaml": "pnpm",
-    "yarn.lock": "yarn",
-    "bun.lockb": "bun",
-    "bun.lock": "bun",
-}
+# Lockfile -> package-manager map, from the shared registry single source of
+# truth (includes bun) so the draft generator and the conflict-default
+# recommender agree with semantic.py / check_drift.py on which manager a
+# committed lockfile implies (TD-01).
+LOCKFILE_MANAGERS = registry.LOCKFILE_MANAGERS
 
 
 def _build_stubs():
@@ -691,7 +685,7 @@ def validate(args):
                 continue
             if change["action"] == "write":
                 text = path.read_text(encoding="utf-8", errors="replace")
-                if "AGENTS.md" in text and len(text.encode("utf-8")) <= 800:
+                if "AGENTS.md" in text and len(text.encode("utf-8")) <= registry.STUB_POINTER_MAX_BYTES:
                     continue
             # Existing full files are allowed before stub-writing; check_drift catches post-migration re-divergence.
             findings.append(
