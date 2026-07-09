@@ -37,14 +37,18 @@ python3 scripts/scan.py /path/to/repo --json
 python3 scripts/scan.py /path/to/repo --fail-on-security   # non-zero exit on HIGH findings
 python3 scripts/scan.py /path/to/repo --fail-on-semantic   # non-zero exit on declaration/code mismatch
 python3 scripts/scan.py /path/to/repo --no-security        # inventory only
+python3 scripts/scan.py /path/to/monorepo --json           # auto-detects workspaces
+python3 scripts/scan.py /path/to/repo --monorepo           # force per-package scan
 ```
 
 The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`). It additionally runs a **semantic consistency** check (via `scripts/semantic.py`) that cross-checks the concrete claims in `AGENTS.md` — build/test commands, repo-relative paths, the package manager, and the Node.js version — against ground truth in `package.json`, `Makefile`, the filesystem, lockfiles, and `.nvmrc` / `engines.node`, surfacing declaration-vs-code mismatches at checkup time.
 
+**Monorepo / multi-package awareness.** `scan` is monorepo-aware. When it detects a workspace — npm/yarn/pnpm `workspaces` in `package.json`, a `pnpm-workspace.yaml`, or (with `--monorepo`) multiple nested `package.json` / `AGENTS.md` subtrees — it scans each detected package subdirectory too and reports per-package results plus a top-level aggregate. In markdown a `## Monorepo` section is added; in `--json` the report gains a `packages` array (one entry per package, each with the full single-repo scan shape under `report` plus a `summary`) and a `monorepo` object (`source`, `package_count`, `aggregate`). Single-repo behavior is unchanged when no workspace is detected; `--no-monorepo` forces a root-only scan.
+
 ### Outputs
 
 - A human-readable Checkup report.
-- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), and `security` (severity-ranked findings).
+- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), and `security` (severity-ranked findings). In monorepo mode it also includes `packages` and `monorepo`.
 
 ### Explicit stop condition
 

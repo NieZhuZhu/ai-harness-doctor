@@ -295,6 +295,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 **给 agent 用的完整 JSON 报告。** 在 markdown 模式下，`scan` 会把完整的机器可读报告（files、surface、security、`project_snapshot`、`semantic`、`gaps`）写入一个稳定的临时文件——`${TMPDIR}/harness-scan-<hash>.json`，其中 `<hash>` 由解析后的仓库路径派生——并在末尾追加一节 `## Full JSON report` 指向它。驱动工作流的 agent 可以读取该文件，基于快照和缺口做推断与修复规划，而无需再解析 markdown。`--json` 模式已经把完整报告打印到 stdout，因此不会写临时文件。用 `--no-report-file` 可跳过写入。
 
+**Monorepo / 多包感知。** `scan` 支持 monorepo。当它检测到工作区（`package.json` 中的 npm/yarn/pnpm `workspaces`、`pnpm-workspace.yaml`，或在 `--monorepo` 下的多个嵌套 `package.json` / `AGENTS.md` 子树）时，会额外扫描每个检测到的包子目录，并报告每个包的结果以及一个顶层聚合。markdown 报告会新增一节 `## Monorepo`（每个包一行的表格加一行聚合），`--json` 会新增顶层 `packages` 数组（每个包一条，`report` 下是相同结构的扫描结果，另有 `summary`）和一个 `monorepo` 对象（`source`、`package_count`、`aggregate`）。未检测到工作区时单仓行为保持不变；用 `--no-monorepo` 强制只扫描根目录，用 `--monorepo` 强制检测。
+
 | Flag | 用途 |
 |---|---|
 | `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |
@@ -305,6 +307,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | `--fail-on-semantic` | 存在任意 AGENTS.md 声明与代码矛盾时以 `4` 退出。 |
 | `--no-snapshot` | 跳过项目快照（不输出 `project_snapshot` key）。 |
 | `--no-report-file` | 不把完整 JSON 报告写入临时文件（仅 markdown 模式）。 |
+| `--monorepo` | 强制 monorepo 模式：即使没有工作区配置也扫描每个包子目录（回退到嵌套的 `package.json` / `AGENTS.md` 子树）。 |
+| `--no-monorepo` | 关闭 monorepo 检测；只扫描仓库根目录。 |
 
 `--json` returns（已有的 key 保持不变——向后兼容）:
 
@@ -346,7 +350,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 }
 ```
 
-`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。`semantic` 带有 `checked`（已核对的声明数）、`mismatches` 和 `findings`（每条含 `category`、`level`、可选 `line`、`declared`、`actual`、`message`、`suggestion`）；使用 `--no-semantic` 时会省略 `semantic` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。
+`security` 发现带有 `level`（`HIGH`/`MEDIUM`）、`category`（`secret`/`mcp`/`permission`/`hook`/`instruction`）、`path` 以及人类可读的 `message`。使用 `--no-security` 时会省略 `security` key。`gaps` 条目带有 `check`（`G1`–`G4`）、`level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和 `suggestion`；使用 `--no-gaps` 时会省略 `gaps` key。`semantic` 带有 `checked`（已核对的声明数）、`mismatches` 和 `findings`（每条含 `category`、`level`、可选 `line`、`declared`、`actual`、`message`、`suggestion`）；使用 `--no-semantic` 时会省略 `semantic` key。使用 `--no-snapshot` 时会省略 `project_snapshot`。在 markdown 模式下，同样的 JSON 对象还会写入 `${TMPDIR}/harness-scan-<hash>.json`（除非指定 `--no-report-file`）。在 monorepo 模式下，报告还会新增顶层 `packages` 数组和一个 `monorepo` 概要。
 
 </details>
 
