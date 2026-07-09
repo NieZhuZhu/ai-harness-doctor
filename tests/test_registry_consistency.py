@@ -190,6 +190,61 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             # Sanity: the shared classifier's in-repo, existence-failing tokens.
             self.assertEqual(sem_missing, {"docs/missing.md", "go.mod", "Cargo.toml"})
 
+    def test_fact_readers_single_sourced_across_engines(self):
+        # TD-02: the generic repo fact-readers and declaration extractors used to
+        # be copy-pasted into both semantic.py (Phase-0) and check_drift.py
+        # (Phase-2). They now live once in facts.py and both modules re-export the
+        # SAME callables, so the two engines cannot silently drift. First prove the
+        # aliases are literally the same objects as the shared facts layer.
+        import facts  # noqa: E402  # shared single source of truth
+
+        shared = {
+            "package_scripts": facts.package_scripts,
+            "make_targets": facts.make_targets,
+            "nvmrc_node_version": facts.nvmrc_node_version,
+            "engines_node_version": facts.engines_node_version,
+            "lockfile_managers": facts.lockfile_managers,
+            "declared_node_version": facts.declared_node_version,
+            "declared_package_managers": facts.declared_package_managers,
+            "PACKAGE_MANAGER_BUILTINS": facts.PACKAGE_MANAGER_BUILTINS,
+        }
+        for name, obj in shared.items():
+            self.assertIs(getattr(semantic, name), obj, f"semantic.{name} is not the shared facts object")
+            self.assertIs(getattr(check_drift, name), obj, f"check_drift.{name} is not the shared facts object")
+        # The two engines' code-span tokenizers alias the one shared iterator.
+        self.assertIs(semantic.iter_code_tokens, facts.iter_code_tokens)
+        self.assertIs(check_drift.line_collected_code, facts.iter_code_tokens)
+        self.assertIs(semantic._within_root, facts.within_root)
+        self.assertIs(check_drift._within_root, facts.within_root)
+
+        # Second, on a representative repo fixture both engines read identical
+        # ground-truth facts through the shared layer.
+        doc = (
+            "Run `npm run build` then `make lint`.\n"
+            "This project targets `node 18`.\n"
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "package.json").write_text(
+                json.dumps({"scripts": {"build": "tsc", "lint": "eslint ."}, "engines": {"node": ">=18.0.0"}}),
+                encoding="utf-8",
+            )
+            (root / "Makefile").write_text("lint:\n\techo lint\ntest:\n\techo test\n", encoding="utf-8")
+            (root / ".nvmrc").write_text("18\n", encoding="utf-8")
+            (root / "package-lock.json").write_text("{}\n", encoding="utf-8")
+
+            self.assertEqual(semantic.package_scripts(root), check_drift.package_scripts(root))
+            self.assertEqual(semantic.make_targets(root), check_drift.make_targets(root))
+            self.assertEqual(semantic.nvmrc_node_version(root), check_drift.nvmrc_node_version(root))
+            self.assertEqual(semantic.engines_node_version(root), check_drift.engines_node_version(root))
+            self.assertEqual(semantic.lockfile_managers(root), check_drift.lockfile_managers(root))
+            self.assertEqual(semantic.declared_node_version(doc), check_drift.declared_node_version(doc))
+            self.assertEqual(semantic.declared_package_managers(doc), check_drift.declared_package_managers(doc))
+            # Sanity: the shared facts were actually read (not both empty/None).
+            self.assertEqual(semantic.package_scripts(root), {"build", "lint"})
+            self.assertEqual(semantic.lockfile_managers(root), {"npm"})
+            self.assertEqual(semantic.declared_node_version(doc), (18, 2))
+
     def test_gap_stub_files_derived_from_registry(self):
         # TD-04: scan.GAP_STUB_FILES must be derived from the shared registry, not
         # a hardcoded literal, so adding a tool to the registry auto-updates gap

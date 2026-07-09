@@ -22,7 +22,6 @@ checkup time, exactly where the instructions no longer match the code. Python 3.
 standard library only; no runtime dependencies.
 """
 
-import json
 import re
 import sys
 from pathlib import Path
@@ -31,48 +30,13 @@ from pathlib import Path
 # lockfile->manager map, etc.). Add it to sys.path so importing this module
 # standalone still resolves ``registry``.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import facts  # noqa: E402  # shared repo fact-readers (single source of truth, TD-02)
 import registry  # noqa: E402
 
-# Package-manager subcommands that are always valid regardless of package.json;
-# mirrors check_drift.PACKAGE_MANAGER_BUILTINS so the two engines agree on what
-# counts as a "real" script name.
-PACKAGE_MANAGER_BUILTINS = {
-    "install",
-    "ci",
-    "i",
-    "init",
-    "add",
-    "remove",
-    "rm",
-    "uninstall",
-    "update",
-    "up",
-    "upgrade",
-    "exec",
-    "dlx",
-    "create",
-    "audit",
-    "link",
-    "unlink",
-    "publish",
-    "outdated",
-    "config",
-    "cache",
-    "login",
-    "logout",
-    "whoami",
-    "version",
-    "info",
-    "list",
-    "ls",
-    "why",
-    "dedupe",
-    "prune",
-    "rebuild",
-    "help",
-    "test",
-    "start",
-}
+# Package-manager subcommands that are always valid regardless of package.json.
+# Single-sourced in facts.py so this Phase-0 engine and the Phase-2 drift gate
+# agree on what counts as a "real" script name (TD-02).
+PACKAGE_MANAGER_BUILTINS = facts.PACKAGE_MANAGER_BUILTINS
 
 # Common Python tools invoked via ``poetry run`` / ``pdm run`` / ``uv run`` that are
 # not project console scripts, so a reference to them must never be flagged as a
@@ -170,53 +134,16 @@ def _read(path):
         return ""
 
 
-def iter_code_tokens(text):
-    """Yield ``(lineno, token)`` for fenced-code lines and inline backtick spans.
-
-    Commands frequently live inside ```` ```bash ```` fences as well as inline
-    ``code`` spans, so both are scanned. Mirrors ``check_drift.line_collected_code``.
-    """
-    in_fence = False
-    for lineno, line in enumerate(text.splitlines(), 1):
-        if line.strip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        # Inside a fenced block a line beginning with `#` is a shell comment, not
-        # a command; skip it so prose in comments (e.g. "# make sure the tests
-        # pass") is not misread as a command (CORR-02).
-        if in_fence and not line.strip().startswith("#"):
-            yield lineno, line
-        for m in re.finditer(r"`([^`]+)`", line):
-            yield lineno, m.group(1)
+# Shared code-span tokenizer (fenced blocks + inline backticks). Single-sourced
+# in facts.py so this engine and the drift gate scan spans identically (TD-02).
+iter_code_tokens = facts.iter_code_tokens
 
 
-# English function words whose presence marks a code span as an English prose
-# sentence rather than a shell command. Extracting a "command" from such prose
-# only produces phantom targets, which are then reported as false mismatches
-# (CORR-02).
-_PROSE_WORDS = frozenset(
-    {
-        "the", "a", "an", "to", "of", "in", "on", "for", "and", "or", "if",
-        "then", "that", "this", "your", "you", "we", "is", "are", "be", "should",
-        "must", "will", "can", "please", "before", "after", "when", "which",
-        "with", "into", "sure",
-    }
-)
-# Words that appear as the object of a common English imperative ("make sure",
-# "make certain", "make the ...") — never real Makefile targets / npm scripts.
-# Guards the short (sub-sentence) prose case that _looks_like_prose misses.
-_PROSE_TARGET_WORDS = frozenset(
-    {"sure", "certain", "it", "them", "the", "a", "an", "use", "do", "note", "your", "this", "that"}
-)
-
-
-def _looks_like_prose(segment):
-    """Return True when a code span reads as an English prose sentence rather than
-    a shell command line, so command extraction from it would be spurious."""
-    words = re.findall(r"[A-Za-z']+", segment.lower())
-    if len(words) < 4:
-        return False
-    return any(w in _PROSE_WORDS for w in words)
+# English prose heuristics used to reject prose sentences that would otherwise be
+# parsed into phantom command targets (CORR-02). Single-sourced in facts.py (TD-02).
+_PROSE_WORDS = facts._PROSE_WORDS
+_PROSE_TARGET_WORDS = facts._PROSE_TARGET_WORDS
+_looks_like_prose = facts.looks_like_prose
 
 
 # ---------------------------------------------------------------------------
@@ -311,13 +238,9 @@ def declared_paths(text):
     return registry.declared_paths(text)
 
 
-def declared_package_managers(text):
-    """Node-ecosystem package managers named in AGENTS.md (legacy single-ecosystem helper)."""
-    pms = set()
-    for _lineno, token in iter_code_tokens(text):
-        for m in re.finditer(r"\b(npm|pnpm|yarn|bun)\b", token):
-            pms.add(m.group(1))
-    return pms
+# Node-ecosystem package managers named in AGENTS.md (legacy single-ecosystem
+# helper). Single-sourced in facts.py (shared with the drift gate) (TD-02).
+declared_package_managers = facts.declared_package_managers
 
 
 _PM_TOKEN_RE = re.compile(r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|mvn|maven|gradle)\b")
@@ -336,17 +259,10 @@ def declared_package_managers_by_ecosystem(text):
     return by
 
 
-def declared_node_version(text):
-    """Return ``(major, line)`` for a Node.js version declared in AGENTS.md, else ``(None, None)``.
-
-    Uses the shared ``registry.node_version_major`` extractor so this Phase-0 check,
-    the Phase-2 D6 drift gate and the scan conflict signal all read the same value
-    from a given line (TD-06)."""
-    for lineno, line in enumerate(text.splitlines(), 1):
-        major = registry.node_version_major(line)
-        if major is not None:
-            return major, lineno
-    return None, None
+# ``(major, line)`` for a Node.js version declared in AGENTS.md. Single-sourced in
+# facts.py (which uses the shared registry.node_version_major extractor) so the
+# Phase-0 check and the Phase-2 D6 drift gate read the same value (TD-02/TD-06).
+declared_node_version = facts.declared_node_version
 
 
 def _declared_two_part(text, keyword):
@@ -464,40 +380,16 @@ def _java_major(s):
 
 # ---------------------------------------------------------------------------
 # Repository facts — what the code actually says.
+#
+# The generic fact-readers (package.json scripts, Makefile targets, .nvmrc /
+# engines.node Node version, committed-lockfile managers) are single-sourced in
+# facts.py so the Phase-0 engine and the Phase-2 drift gate read every fact one
+# way (TD-02). Ecosystem-specific readers (python_scripts, cargo_bin_targets,
+# the *_ground_pm helpers) stay here as they are semantic-only.
 # ---------------------------------------------------------------------------
 
-
-def package_scripts(root):
-    """Return the set of package.json script names.
-
-    ``None`` when there is nothing to verify against: either no package.json
-    exists, or it is present but could not be read/parsed. Returning ``None``
-    (rather than an empty ``set()``) on a parse failure keeps "invalid JSON"
-    distinct from "valid JSON with no scripts", so :func:`compare_commands`
-    skips the unknown-script check instead of falsely reporting every referenced
-    script as a missing script (CORR-01).
-    """
-    path = root / "package.json"
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    scripts = data.get("scripts")
-    return set(scripts.keys()) if isinstance(scripts, dict) else set()
-
-
-def make_targets(root):
-    path = root / "Makefile"
-    if not path.is_file():
-        return None
-    targets = set()
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = re.match(r"^([A-Za-z0-9_.-]+):", line)
-        if m and not line.startswith("\t"):
-            targets.add(m.group(1))
-    return targets
+package_scripts = facts.package_scripts
+make_targets = facts.make_targets
 
 
 def python_scripts(root):
@@ -545,8 +437,7 @@ def cargo_bin_targets(root):
     return bins
 
 
-def lockfile_managers(root):
-    return {mgr for name, mgr in LOCKFILE_MANAGERS.items() if (root / name).is_file()}
+lockfile_managers = facts.lockfile_managers
 
 
 def _node_ground_pm(root):
@@ -613,28 +504,8 @@ ECOSYSTEM_GROUND_PM = {
 }
 
 
-def nvmrc_node_version(root):
-    path = root / ".nvmrc"
-    if not path.is_file():
-        return None
-    m = re.search(r"v?(\d+)", path.read_text(encoding="utf-8", errors="replace").strip())
-    return int(m.group(1)) if m else None
-
-
-def engines_node_version(root):
-    path = root / "package.json"
-    if not path.is_file():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    engines = data.get("engines")
-    node = engines.get("node") if isinstance(engines, dict) else None
-    if not node:
-        return None
-    m = re.search(r"(\d+)", str(node))
-    return int(m.group(1)) if m else None
+nvmrc_node_version = facts.nvmrc_node_version
+engines_node_version = facts.engines_node_version
 
 
 def python_ground_versions(root):
@@ -725,14 +596,8 @@ def java_ground_versions(root):
     return out
 
 
-def _within_root(root, token):
-    """True only if ``token`` resolves to a path contained in ``root`` (info-leak guard)."""
-    try:
-        candidate = (root / token).resolve()
-        candidate.relative_to(root.resolve())
-        return True
-    except (ValueError, OSError):
-        return False
+# Path-containment info-leak guard. Single-sourced in facts.py (TD-02).
+_within_root = facts.within_root
 
 
 # ---------------------------------------------------------------------------
