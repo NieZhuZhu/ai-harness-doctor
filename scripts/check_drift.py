@@ -12,6 +12,7 @@ from pathlib import Path
 # content/logic instead of duplicating it here.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import canonicalize  # noqa: E402
+import plugins  # noqa: E402  # user-extensible deterministic rule plugins
 import registry  # noqa: E402
 import scan  # noqa: E402  # reuse scan.SKIP_DIRS so the drift walk prunes the same vendored dirs
 
@@ -374,7 +375,7 @@ def health_score(findings):
     return score, grade
 
 
-def run_checks(root, max_bytes, strict=False):
+def run_checks(root, max_bytes, strict=False, rules_dirs=None):
     agents = root / "AGENTS.md"
     text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
     findings = []
@@ -390,9 +391,19 @@ def run_checks(root, max_bytes, strict=False):
             if f.get("level") == "NOTICE":
                 f["level"] = "ERROR"
     info = [{"check": "D5", "level": "INFO", "path": p, "message": "Nested AGENTS.md inventory"} for p in nested_agents(root)]
+    # User-extensible deterministic rule plugins (opt-in). Discovered from
+    # <root>/.ai-harness-doctor/rules/*.py plus any --rules DIR; each plugin is
+    # isolated so a broken one is reported as an ERROR finding, never a crash.
+    # Custom findings are reported additively under `custom`; they do not alter
+    # the built-in D1-D8 health score, so the opt-out default is byte-stable.
+    custom = plugins.run_plugins(root, {"phase": "drift", "agents_text": text}, rules_dirs)
+    if strict:
+        for f in custom:
+            if f.get("level") == "NOTICE":
+                f["level"] = "ERROR"
     failures = [f for f in findings if f.get("level") == "ERROR"]
     score, grade = health_score(findings)
-    return {"ok": not failures, "findings": findings, "info": info, "score": score, "grade": grade}
+    return {"ok": not failures, "findings": findings, "info": info, "custom": custom, "score": score, "grade": grade}
 
 
 def render(report):
@@ -410,6 +421,15 @@ def render(report):
     lines.extend(["", "## D5 Nested AGENTS.md (informational, non-blocking)"])
     if report["info"]:
         lines.extend(f"- `{i['path']}`" for i in report["info"])
+    else:
+        lines.append("None.")
+    custom = report.get("custom", [])
+    lines.extend(["", "## Custom rule plugins"])
+    if custom:
+        for f in custom:
+            loc = f":{f['line']}" if "line" in f else (f" `{f['path']}`" if "path" in f else "")
+            suggestion = f" Repair advice: {f['suggestion']}" if f.get("suggestion") else ""
+            lines.append(f"- **{f['level']}** [{f.get('plugin', '?')}:{f.get('rule', 'custom')}]{loc} {f['message']}{suggestion}")
     else:
         lines.append("None.")
     lines.extend(["", "## Health score", f"Score: {report['score']}/100 (grade {report['grade']})"])
@@ -440,7 +460,7 @@ def _finding_loc(f):
     return ""
 
 
-def run_fix(root, max_bytes, apply, strict=False):
+def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None):
     """Auto-repair ONLY the safe, mechanical subset of drift (D3 stub regrowth).
 
     Dry run by default (writes nothing); with apply=True actually rewrites the
@@ -448,7 +468,7 @@ def run_fix(root, max_bytes, apply, strict=False):
     that is not safely auto-fixable is reported as "needs manual attention" and its
     files are left untouched.
     """
-    report = run_checks(root, max_bytes, strict)
+    report = run_checks(root, max_bytes, strict, rules_dirs)
     d3 = [f for f in report["findings"] if f["check"] == "D3"]
     manual = [f for f in report["findings"] if f["check"] != "D3" and f.get("level") in ("ERROR", "NOTICE")]
 
@@ -510,14 +530,17 @@ def main(argv=None):
     parser.add_argument("--fix", action="store_true", help="Auto-repair the safe subset (D3 stub regrowth); dry run unless --apply.")
     parser.add_argument("--apply", action="store_true", help="With --fix, actually rewrite files instead of a dry run.")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
+    parser.add_argument("--rules", action="append", default=None, metavar="DIR", dest="rules",
+                        help="Directory of custom rule plugins (`*.py` exposing `check(root, context)`). "
+                             "Repeatable; searched in addition to `<repo>/.ai-harness-doctor/rules/`.")
     parser.add_argument("--min-score", type=int, default=None, help="Exit non-zero if the health score is below N (CI gating).")
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
     if args.fix:
-        text, code = run_fix(root, args.max_bytes, args.apply, args.strict)
+        text, code = run_fix(root, args.max_bytes, args.apply, args.strict, args.rules)
         print(text, end="")
         return code
-    report = run_checks(root, args.max_bytes, args.strict)
+    report = run_checks(root, args.max_bytes, args.strict, args.rules)
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
