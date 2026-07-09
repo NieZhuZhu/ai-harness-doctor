@@ -210,10 +210,42 @@ def iter_code_tokens(text):
         if line.strip().startswith("```"):
             in_fence = not in_fence
             continue
-        if in_fence:
+        # Inside a fenced block a line beginning with `#` is a shell comment, not
+        # a command; skip it so prose in comments (e.g. "# make sure the tests
+        # pass") is not misread as a command (CORR-02).
+        if in_fence and not line.strip().startswith("#"):
             yield lineno, line
         for m in re.finditer(r"`([^`]+)`", line):
             yield lineno, m.group(1)
+
+
+# English function words whose presence marks a code span as an English prose
+# sentence rather than a shell command. Extracting a "command" from such prose
+# only produces phantom targets, which are then reported as false mismatches
+# (CORR-02).
+_PROSE_WORDS = frozenset(
+    {
+        "the", "a", "an", "to", "of", "in", "on", "for", "and", "or", "if",
+        "then", "that", "this", "your", "you", "we", "is", "are", "be", "should",
+        "must", "will", "can", "please", "before", "after", "when", "which",
+        "with", "into", "sure",
+    }
+)
+# Words that appear as the object of a common English imperative ("make sure",
+# "make certain", "make the ...") — never real Makefile targets / npm scripts.
+# Guards the short (sub-sentence) prose case that _looks_like_prose misses.
+_PROSE_TARGET_WORDS = frozenset(
+    {"sure", "certain", "it", "them", "the", "a", "an", "use", "do", "note", "your", "this", "that"}
+)
+
+
+def _looks_like_prose(segment):
+    """Return True when a code span reads as an English prose sentence rather than
+    a shell command line, so command extraction from it would be spurious."""
+    words = re.findall(r"[A-Za-z']+", segment.lower())
+    if len(words) < 4:
+        return False
+    return any(w in _PROSE_WORDS for w in words)
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +282,10 @@ def declared_commands(text):
     out = []
     seen = set()
     for lineno, token in iter_code_tokens(text):
+        # Skip English prose sentences so imperatives like "make sure the tests
+        # pass" are not parsed into phantom command targets (CORR-02).
+        if _looks_like_prose(token):
+            continue
         for m in _NODE_CMD_RE.finditer(token):
             tool = m.group(1) or "yarn"
             name = m.group(2) or m.group(3)
@@ -258,6 +294,10 @@ def declared_commands(text):
                 seen.add(key)
                 out.append({"kind": "node", "tool": tool, "name": name, "line": lineno})
         for m in _MAKE_CMD_RE.finditer(token):
+            # A make "target" that is a bare English word ("make sure",
+            # "make the ...") is prose, not a Makefile target (CORR-02).
+            if m.group(1) in _PROSE_TARGET_WORDS:
+                continue
             key = ("make", m.group(1), lineno)
             if key not in seen:
                 seen.add(key)

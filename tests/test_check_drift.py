@@ -228,6 +228,28 @@ class DriftTests(unittest.TestCase):
         # AGENTS.md is not modified by --fix for D1 command drift.
         self.assertEqual(agents, (repo / "AGENTS.md").read_text(encoding="utf-8"))
 
+    def test_prose_imperative_does_not_trigger_d1_but_real_command_does(self):
+        # A prose imperative ("make sure the tests pass") must not be parsed into
+        # a phantom Makefile target and fail the gate, while a genuine fenced
+        # `make deploy` (absent from the Makefile) is still flagged (CORR-02).
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "Makefile").write_text("build:\n\techo hi\n", encoding="utf-8")
+        body = (
+            CLEAN_AGENTS
+            + "\nPlease make sure the tests pass before committing.\n\n"
+            + "```bash\n# make sure to run the tests first\nmake deploy\n```\n"
+        )
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d1 = [f for f in report["findings"] if f["check"] == "D1"]
+        messages = " ".join(f["message"] for f in d1)
+        self.assertIn("deploy", messages)
+        self.assertNotIn("sure", messages)
+
     def test_out_of_repo_tokens_do_not_probe_but_in_repo_missing_does(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
