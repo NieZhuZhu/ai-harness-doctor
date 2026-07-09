@@ -397,6 +397,12 @@ scan output から Phase 1 の merge plan を組み立てます。inventory、ov
 
 正本 `AGENTS.md` を書いた後、その構造を検証します。`scripts/canonicalize.py --validate` への read-only passthrough です。
 
+デフォルトでは `Project overview`、`Build & test`、`Conventions` の見出しを必須とします。独自のカンマ区切りリストを `--require-sections` に渡すと、どの見出しを必須にするかを変更できます（欠けている見出しは `SECTION` の指摘として報告されます）：
+
+```bash
+python3 scripts/canonicalize.py --validate . --require-sections "Project overview,Build & test,Security"
+```
+
 </details>
 
 <details>

@@ -397,6 +397,12 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 在你写好 canonical `AGENTS.md` 后验证其结构。它是对 `scripts/canonicalize.py --validate` 的只读透传。
 
+默认要求包含 `Project overview`、`Build & test` 和 `Conventions` 三个标题。传入 `--require-sections` 及你自己的逗号分隔列表，即可更改哪些标题为必需（缺失的标题会报告为 `SECTION` 发现项）：
+
+```bash
+python3 scripts/canonicalize.py --validate . --require-sections "Project overview,Build & test,Security"
+```
+
 </details>
 
 <details>

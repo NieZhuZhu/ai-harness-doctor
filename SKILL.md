@@ -102,6 +102,12 @@ python3 scripts/canonicalize.py --validate /path/to/repo
 python3 scripts/canonicalize.py --validate /path/to/repo --json
 ```
 
+`--validate` requires the `Project overview`, `Build & test`, and `Conventions` headings by default. Override the required set with `--require-sections` (comma-separated); a missing heading is reported as a `SECTION` finding (ERROR, or WARN for a library/reference doc):
+
+```bash
+python3 scripts/canonicalize.py --validate /path/to/repo --require-sections "Project overview,Build & test,Security"
+```
+
 ### Outputs
 
 - Canonical root `AGENTS.md`.
