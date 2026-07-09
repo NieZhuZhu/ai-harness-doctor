@@ -7,6 +7,7 @@ const os = require('os');
 const http = require('http');
 const https = require('https');
 const childProcess = require('child_process');
+const runtime = require('./runtime.js');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'));
@@ -33,6 +34,7 @@ Usage:
   ai-harness-doctor drift [...args]
   ai-harness-doctor eval [...args]
   ai-harness-doctor mcp
+  ai-harness-doctor doctor [--self-test] [--json]
   ai-harness-doctor guard [target-repo] [--apply] [--remove] [--provider github|gitlab|codebase|auto]
   ai-harness-doctor help
 
@@ -44,6 +46,7 @@ Examples:
   npx ai-harness-doctor scan .
   npx ai-harness-doctor validate .
   npx ai-harness-doctor drift . --strict
+  npx ai-harness-doctor doctor --self-test   # verify the Node + Python runtime is ready
   npx ai-harness-doctor guard . --apply
   npx ai-harness-doctor mcp   # start the MCP stdio server (JSON-RPC over newline-delimited JSON)
   npx ai-harness-doctor guard . --apply --provider gitlab
@@ -517,24 +520,27 @@ function updateInstalled() {
   printSummary('Update', rows);
 }
 
+// Single source of truth for the Python-backed subcommands: command name -> the
+// script file plus any fixed leading args. Both the dispatcher and `doctor
+// --self-test` iterate this map so they can never disagree about what exists.
+const SCRIPT_COMMANDS = {
+  scan: ['scan.py'],
+  plan: ['canonicalize.py', '--plan'],
+  validate: ['canonicalize.py', '--validate'],
+  stubs: ['canonicalize.py', '--write-stubs'],
+  drift: ['check_drift.py'],
+  eval: ['eval_run.py'],
+};
+
 function resolvePython() {
-  for (const candidate of ['python3', 'python']) {
-    const found = childProcess.spawnSync(candidate, ['--version'], { stdio: 'ignore' });
-    if (!found.error && found.status === 0) return candidate;
-  }
-  fail('Python is required. Install python3 or python and retry.');
+  const found = runtime.findPython();
+  if (found.ok) return found.command;
+  // Clean, actionable message — never a raw stack trace.
+  fail(runtime.pythonMissingMessage(found.tried));
 }
 
 function runScript(command, argv) {
-  const mapping = {
-    scan: ['scan.py'],
-    plan: ['canonicalize.py', '--plan'],
-    validate: ['canonicalize.py', '--validate'],
-    stubs: ['canonicalize.py', '--write-stubs'],
-    drift: ['check_drift.py'],
-    eval: ['eval_run.py'],
-  };
-  const spec = mapping[command];
+  const spec = SCRIPT_COMMANDS[command];
   if (!spec) fail(`Unknown command: ${command}`);
   const python = resolvePython();
   const script = path.join(PACKAGE_ROOT, 'scripts', spec[0]);
@@ -542,6 +548,57 @@ function runScript(command, argv) {
   const result = childProcess.spawnSync(python, [script, ...spec.slice(1), ...argv], { stdio: 'inherit' });
   if (result.error) fail(result.error.message);
   process.exit(result.status === null ? 1 : result.status);
+}
+
+// Runtime self-test rows: Node, the resolved Python interpreter, and every
+// Python engine + the MCP server file. `env`/`spawn` are injectable for tests.
+function runtimeChecks(env = process.env, spawn) {
+  const checks = [];
+  checks.push({ name: 'node', ok: true, detail: process.version });
+  const py = runtime.findPython(env, spawn);
+  checks.push(py.ok
+    ? { name: 'python', ok: true, detail: `${py.command} (Python ${py.version})` }
+    : { name: 'python', ok: false, detail: `not found (tried ${py.tried.join(', ')})` });
+  for (const [command, spec] of Object.entries(SCRIPT_COMMANDS)) {
+    const script = path.join(PACKAGE_ROOT, 'scripts', spec[0]);
+    const present = fs.existsSync(script);
+    checks.push({ name: `script:${command}`, ok: present, detail: present ? spec[0] : `missing ${spec[0]}` });
+  }
+  const mcp = path.join(__dirname, 'mcp-server.js');
+  const mcpPresent = fs.existsSync(mcp);
+  checks.push({ name: 'mcp-server', ok: mcpPresent, detail: mcpPresent ? 'mcp-server.js' : 'missing mcp-server.js' });
+  return checks;
+}
+
+function parseDoctorArgs(argv) {
+  let asJson = false;
+  for (const arg of argv) {
+    if (arg === '--self-test') continue; // default action; accepted for clarity
+    else if (arg === '--json') asJson = true;
+    else fail(`Unknown option: ${arg}`);
+  }
+  return { asJson };
+}
+
+function doctor(argv) {
+  const { asJson } = parseDoctorArgs(argv);
+  const checks = runtimeChecks();
+  const ok = checks.every((check) => check.ok);
+  if (asJson) {
+    console.log(JSON.stringify({ ok, version: PACKAGE_VERSION, node: process.version, checks }, null, 2));
+  } else {
+    console.log(`ai-harness-doctor self-test (v${PACKAGE_VERSION})`);
+    console.log('| Check | Status | Detail |');
+    console.log('|---|---|---|');
+    for (const check of checks) console.log(`| ${check.name} | ${check.ok ? 'ok' : 'FAIL'} | ${check.detail} |`);
+    if (ok) {
+      console.log('\nAll runtime checks passed.');
+    } else {
+      console.log('\nSome runtime checks FAILED.');
+      console.log(runtime.pythonMissingMessage(runtime.findPython().tried));
+    }
+  }
+  process.exit(ok ? 0 : 1);
 }
 
 function parseGuardArgs(argv) {
@@ -890,6 +947,7 @@ function main() {
   if (command === 'update') return updateInstalled();
   if (command === 'guard') return guard(rest);
   if (command === 'mcp') return runMcpServer();
+  if (command === 'doctor') return doctor(rest);
   if (['scan', 'plan', 'validate', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
   fail(`Unknown command: ${command}`);
 }
@@ -901,4 +959,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { compareVersions, parseInstallArgs };
+module.exports = { compareVersions, parseInstallArgs, SCRIPT_COMMANDS, runtimeChecks, parseDoctorArgs };

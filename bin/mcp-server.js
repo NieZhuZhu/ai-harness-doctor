@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const childProcess = require('child_process');
+const runtime = require('./runtime.js');
 
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'));
@@ -105,11 +106,10 @@ function summarizeStderr(stderr) {
 }
 
 function resolvePython() {
-  for (const candidate of ['python3', 'python']) {
-    const found = childProcess.spawnSync(candidate, ['--version'], { stdio: 'ignore' });
-    if (!found.error && found.status === 0) return candidate;
-  }
-  return null;
+  // Delegate to the shared runtime resolver so the MCP server and the CLI agree
+  // on discovery order and the "must be Python 3" check. Returns null on miss.
+  const found = runtime.findPython();
+  return found.ok ? found.command : null;
 }
 
 function writeMessage(message) {
