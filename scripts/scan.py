@@ -124,16 +124,11 @@ DEFAULT_REQUIRED_SECTIONS = [
 ]
 
 # Tool stub files that, once an AGENTS.md exists, should be minimal pointers back
-# to it rather than full duplicated instruction sets. Mirrors check_drift.py.
-GAP_STUB_FILES = [
-    "CLAUDE.md",
-    ".claude/CLAUDE.md",
-    ".cursorrules",
-    ".windsurfrules",
-    ".github/copilot-instructions.md",
-    "GEMINI.md",
-    ".clinerules",
-]
+# to it rather than full duplicated instruction sets. Derived from the shared
+# agent-config registry (the same single source gen_adapters.py and check_drift.py
+# use) rather than a hardcoded literal, so adding a tool to the registry
+# automatically extends gap detection and the two stages cannot drift (TD-04).
+GAP_STUB_FILES = [p for tool in registry.canonicalizable_tools() for p in tool["stub_paths"]]
 # Maximum pointer-stub size, shared across scan/drift/canonicalize (see
 # registry.STUB_POINTER_MAX_BYTES) so the threshold cannot drift between stages.
 STUB_POINTER_MAX_BYTES = registry.STUB_POINTER_MAX_BYTES
