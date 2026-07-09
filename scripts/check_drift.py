@@ -60,13 +60,45 @@ PACKAGE_MANAGER_BUILTINS = {
 }
 
 
+# English function words whose presence marks a code span as an English prose
+# sentence (a comment or descriptive line) rather than a shell command. Extracting
+# a "command" from such prose only produces phantom targets that then fail the
+# drift gate (CORR-02).
+_PROSE_WORDS = frozenset(
+    {
+        "the", "a", "an", "to", "of", "in", "on", "for", "and", "or", "if",
+        "then", "that", "this", "your", "you", "we", "is", "are", "be", "should",
+        "must", "will", "can", "please", "before", "after", "when", "which",
+        "with", "into", "sure",
+    }
+)
+# Words that appear as the object of a common English imperative ("make sure",
+# "make certain", "make the ...") — never real Makefile targets / npm scripts.
+# Guards the short (sub-sentence) prose case that _looks_like_prose misses.
+_PROSE_TARGET_WORDS = frozenset(
+    {"sure", "certain", "it", "them", "the", "a", "an", "use", "do", "note", "your", "this", "that"}
+)
+
+
+def _looks_like_prose(segment):
+    """Return True when a code span reads as an English prose sentence rather than
+    a shell command line, so command extraction from it would be spurious."""
+    words = re.findall(r"[A-Za-z']+", segment.lower())
+    if len(words) < 4:
+        return False
+    return any(w in _PROSE_WORDS for w in words)
+
+
 def line_collected_code(text):
     in_fence = False
     for lineno, line in enumerate(text.splitlines(), 1):
         if line.strip().startswith("```"):
             in_fence = not in_fence
             continue
-        if in_fence:
+        # Inside a fenced block a line beginning with `#` is a shell comment, not
+        # a command; skip it so prose in comments (e.g. "# make sure the tests
+        # pass") is not misread as a command (CORR-02).
+        if in_fence and not line.strip().startswith("#"):
             yield lineno, line
         for m in re.finditer(r"`([^`]+)`", line):
             yield lineno, m.group(1)
@@ -103,9 +135,17 @@ def d1_command_drift(root, text):
         r"\b(?:(npm|pnpm)\s+(?:run\s+)?([A-Za-z0-9:_-]+)|yarn\s+([A-Za-z0-9:_-]+)|make\s+([A-Za-z0-9_.-]+))\b"
     )
     for lineno, code in line_collected_code(text):
+        # Skip English prose sentences so imperatives like "make sure the tests
+        # pass" are not parsed into phantom command targets (CORR-02).
+        if _looks_like_prose(code):
+            continue
         for m in cmd_re.finditer(code):
             tool = m.group(1) or ("yarn" if m.group(3) else "make")
             name = m.group(2) or m.group(3) or m.group(4)
+            # A make "target" that is a bare English word ("make sure",
+            # "make the ...") is prose, not a Makefile target (CORR-02).
+            if tool == "make" and name in _PROSE_TARGET_WORDS:
+                continue
             if tool == "make" and targets is not None and name not in targets:
                 findings.append(
                     {

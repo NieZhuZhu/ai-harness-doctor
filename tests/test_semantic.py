@@ -48,6 +48,25 @@ class SemanticCommandTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
 
+    def test_prose_imperative_not_misdetected_as_make_command(self):
+        # "make sure the tests pass" is English prose, not a `make sure` target;
+        # it must not be parsed into a phantom command, while a genuine fenced
+        # `make deploy` invocation is still detected (CORR-02).
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Makefile", "build:\n\techo hi\n")
+            text = (
+                "Please make sure the tests pass before committing.\n\n"
+                "```bash\n"
+                "# make sure to run the tests first\n"
+                "make deploy\n"
+                "```\n"
+            )
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("deploy", cmds[0]["message"])
+            self.assertFalse(any("sure" in f["message"] for f in cmds))
+
 
 class SemanticPathTests(unittest.TestCase):
     def test_missing_path_flagged(self):
