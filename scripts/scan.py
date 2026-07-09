@@ -1431,26 +1431,36 @@ def main(argv=None):
         )
         report["monorepo"] = monorepo
         report["packages"] = packages
-        for pkg in packages:
-            _apply_section_flags(pkg["report"], args)
 
+    # Evaluate the fail-on gates on the ACTUAL findings BEFORE the --no-* flags
+    # suppress any report sections. Otherwise --no-security would pop the security
+    # section and silently neuter --fail-on-security, letting HIGH findings pass
+    # with exit 0 (CORR-03). --no-security must only hide the section from the
+    # printed report, never disable the gate. Precedence: security > gaps >
+    # semantic, matching the previous return order. Fail-on gates consider the
+    # root report and every package report so a monorepo run cannot hide a
+    # failing package.
+    reports = [report] + [pkg["report"] for pkg in report.get("packages", [])]
+    exit_code = 0
+    if args.fail_on_security and any(any(s["level"] == "HIGH" for s in r.get("security", [])) for r in reports):
+        exit_code = 2
+    elif args.fail_on_gaps and any(any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in reports):
+        exit_code = 3
+    elif args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in reports):
+        exit_code = 4
+
+    # Output suppression only: drop optional sections per the --no-* flags. This
+    # runs AFTER the gate decision above so suppression cannot change the exit.
+    for pkg in report.get("packages", []):
+        _apply_section_flags(pkg["report"], args)
     _apply_section_flags(report, args)
+
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         report_path = None if args.no_report_file else write_report_file(report, args.repo_root)
         print(render_markdown(report, report_path), end="")
-    # Fail-on gates consider the root report and every package report so a
-    # monorepo run cannot hide a failing package. In single-repo mode this is
-    # exactly the previous behavior (only the root report is present).
-    reports = [report] + [pkg["report"] for pkg in report.get("packages", [])]
-    if args.fail_on_security and any(any(s["level"] == "HIGH" for s in r.get("security", [])) for r in reports):
-        return 2
-    if args.fail_on_gaps and any(any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in reports):
-        return 3
-    if args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in reports):
-        return 4
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
