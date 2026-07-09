@@ -39,16 +39,19 @@ python3 scripts/scan.py /path/to/repo --fail-on-semantic   # non-zero exit on de
 python3 scripts/scan.py /path/to/repo --no-security        # inventory only
 python3 scripts/scan.py /path/to/monorepo --json           # auto-detects workspaces
 python3 scripts/scan.py /path/to/repo --monorepo           # force per-package scan
+python3 scripts/scan.py /path/to/repo --rules ./my-rules   # add custom rule plugins (also reads .ai-harness-doctor/rules/)
 ```
 
 The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`). It additionally runs a **semantic consistency** check (via `scripts/semantic.py`) that cross-checks the concrete claims in `AGENTS.md` — build/test commands, repo-relative paths, the package manager, and the Node.js version — against ground truth in `package.json`, `Makefile`, the filesystem, lockfiles, and `.nvmrc` / `engines.node`, surfacing declaration-vs-code mismatches at checkup time.
 
 **Monorepo / multi-package awareness.** `scan` is monorepo-aware. When it detects a workspace — npm/yarn/pnpm `workspaces` in `package.json`, a `pnpm-workspace.yaml`, or (with `--monorepo`) multiple nested `package.json` / `AGENTS.md` subtrees — it scans each detected package subdirectory too and reports per-package results plus a top-level aggregate. In markdown a `## Monorepo` section is added; in `--json` the report gains a `packages` array (one entry per package, each with the full single-repo scan shape under `report` plus a `summary`) and a `monorepo` object (`source`, `package_count`, `aggregate`). Single-repo behavior is unchanged when no workspace is detected; `--no-monorepo` forces a root-only scan.
 
+**Custom rule plugins (user-extensible).** Both `scan` and `check_drift.py` can be extended with your own DETERMINISTIC rules via `scripts/plugins.py`. Rule modules are loaded from the target repo's `.ai-harness-doctor/rules/*.py` directory and/or any explicit `--rules DIR` (repeatable). Each module exposes a single function `check(root, context) -> list[dict]`, where `root` is the repo `Path` and `context` is a read-only dict containing at least `phase` (`"scan"`/`"drift"`) and `agents_text`. Findings need `level` and `message` and may add `path`, `line`, `suggestion`, and a `rule` id; they are merged into the report under a `custom` section (markdown `## Custom rule plugins` and the `--json` `custom` array). Plugins are opt-in — with no rules directory and no `--rules`, behavior is unchanged and the section stays empty. Each plugin is isolated: an import failure, a missing `check`, or a runtime exception is reported as a `level: "ERROR"` finding instead of crashing the scan/drift. See `references/example-rule-plugin.py` for a working template.
+
 ### Outputs
 
 - A human-readable Checkup report.
-- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), and `security` (severity-ranked findings). In monorepo mode it also includes `packages` and `monorepo`.
+- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), `security` (severity-ranked findings), and `custom` (findings from user rule plugins). In monorepo mode it also includes `packages` and `monorepo`.
 
 ### Explicit stop condition
 
@@ -399,6 +402,7 @@ Correction: proceed strictly through Checkup, Treat, Follow-up, and Efficacy, wi
 - `references/section-template.md`: recommended `AGENTS.md` section structure.
 - `references/migration-decision-tree.md`: migration-scope decision tree.
 - `references/conflict-resolution.md`: conflict categories, resolution rules, and escalation format.
+- `references/example-rule-plugin.py`: a copy-paste starting point for a custom rule plugin (`check(root, context)` contract).
 - `assets/AGENTS.template.md`: English `AGENTS.md` template.
 - `assets/guard/`: long-term follow-up guard suite templates: pre-commit, PR gate, weekly checkup, and maintenance contract.
 - `commands/`: Claude Code slash commands routed to this skill by phase.
