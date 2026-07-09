@@ -1,0 +1,15 @@
+# Coverage.py config for the optional `npm run coverage:py` dev target.
+# Coverage is a dev-only convenience and NOT a runtime dependency (the shipped
+# scripts stay standard-library-only); install it locally with `pip install
+# coverage` to measure test coverage of scripts/.
+[run]
+source = scripts
+branch = True
+
+[report]
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
