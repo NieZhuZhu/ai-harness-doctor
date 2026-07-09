@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Shared repository fact-readers for the semantic engine and the drift gate.
+
+Phase-0 (``semantic.py``) and the Phase-2 drift gate (``check_drift.py``) both need
+to read the SAME ground-truth facts out of a repository — package.json scripts,
+Makefile targets, the committed lockfile's package manager, the pinned Node
+version (``.nvmrc`` / ``engines.node``), the package managers a doc *declares*, and
+the shared code-span / prose heuristics used to parse commands. Those readers used
+to be copy-pasted near-verbatim into both modules and could silently drift — the
+exact failure mode this whole tool exists to catch (TD-02). They now live here as
+the single source of truth; both engines import them so every fact is read one way.
+
+Python 3.9 standard library only; no runtime dependencies.
+"""
+
+import json
+import re
+import sys
+from pathlib import Path
+
+# scripts/ holds the shared agent-config registry (lockfile->manager map, the
+# Node-version regex, etc.). Add it to sys.path so importing this module
+# standalone still resolves ``registry``.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import registry  # noqa: E402
+
+# Package-manager subcommands that are always valid regardless of package.json;
+# a reference to one of these is never a "missing script". Shared so the Phase-0
+# semantic engine and the Phase-2 drift gate agree on what counts as a "real"
+# script name.
+PACKAGE_MANAGER_BUILTINS = {
+    "install",
+    "ci",
+    "i",
+    "init",
+    "add",
+    "remove",
+    "rm",
+    "uninstall",
+    "update",
+    "up",
+    "upgrade",
+    "exec",
+    "dlx",
+    "create",
+    "audit",
+    "link",
+    "unlink",
+    "publish",
+    "outdated",
+    "config",
+    "cache",
+    "login",
+    "logout",
+    "whoami",
+    "version",
+    "info",
+    "list",
+    "ls",
+    "why",
+    "dedupe",
+    "prune",
+    "rebuild",
+    "help",
+    "test",
+    "start",
+}
+
+
+# English function words whose presence marks a code span as an English prose
+# sentence (a comment or descriptive line) rather than a shell command. Extracting
+# a "command" from such prose only produces phantom targets (CORR-02).
+_PROSE_WORDS = frozenset(
+    {
+        "the", "a", "an", "to", "of", "in", "on", "for", "and", "or", "if",
+        "then", "that", "this", "your", "you", "we", "is", "are", "be", "should",
+        "must", "will", "can", "please", "before", "after", "when", "which",
+        "with", "into", "sure",
+    }
+)
+# Words that appear as the object of a common English imperative ("make sure",
+# "make certain", "make the ...") — never real Makefile targets / npm scripts.
+# Guards the short (sub-sentence) prose case that _looks_like_prose misses.
+_PROSE_TARGET_WORDS = frozenset(
+    {"sure", "certain", "it", "them", "the", "a", "an", "use", "do", "note", "your", "this", "that"}
+)
+
+
+def looks_like_prose(segment):
+    """Return True when a code span reads as an English prose sentence rather than
+    a shell command line, so command extraction from it would be spurious."""
+    words = re.findall(r"[A-Za-z']+", segment.lower())
+    if len(words) < 4:
+        return False
+    return any(w in _PROSE_WORDS for w in words)
+
+
+def iter_code_tokens(text):
+    """Yield ``(lineno, token)`` for fenced-code lines and inline backtick spans.
+
+    Commands frequently live inside ```` ```bash ```` fences as well as inline
+    ``code`` spans, so both are scanned. This is the single shared code-span
+    tokenizer used by both the semantic engine and the drift gate.
+    """
+    in_fence = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        # Inside a fenced block a line beginning with `#` is a shell comment, not
+        # a command; skip it so prose in comments (e.g. "# make sure the tests
+        # pass") is not misread as a command (CORR-02).
+        if in_fence and not line.strip().startswith("#"):
+            yield lineno, line
+        for m in re.finditer(r"`([^`]+)`", line):
+            yield lineno, m.group(1)
+
+
+def within_root(root, token):
+    """Return True only if ``token`` resolves to a path contained in ``root``.
+
+    Both engines read backtick tokens from an untrusted AGENTS.md and probe them
+    on disk. ``pathlib`` happily lets an absolute (``/etc/hostname``) or
+    ``../``-escaping token point outside the repo, which would let a malicious
+    AGENTS.md infer the existence of arbitrary filesystem paths. Reject anything
+    that does not stay under the repo root before calling ``.exists()``.
+    """
+    try:
+        candidate = (root / token).resolve()
+        candidate.relative_to(root.resolve())  # raises ValueError if outside root
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Repository facts — what the code actually says.
+# ---------------------------------------------------------------------------
+
+
+def package_scripts(root):
+    """Return the set of package.json script names.
+
+    ``None`` when there is nothing to verify against: either no package.json
+    exists, or it is present but could not be read/parsed. Returning ``None``
+    (rather than an empty ``set()``) on a parse failure keeps "invalid JSON"
+    distinct from "valid JSON with no scripts", so callers skip the unknown-
+    script check instead of falsely reporting every referenced script as unknown
+    (CORR-01).
+    """
+    path = root / "package.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    scripts = data.get("scripts")
+    return set(scripts.keys()) if isinstance(scripts, dict) else set()
+
+
+def make_targets(root):
+    path = root / "Makefile"
+    if not path.is_file():
+        return None
+    targets = set()
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = re.match(r"^([A-Za-z0-9_.-]+):", line)
+        if m and not line.startswith("\t"):
+            targets.add(m.group(1))
+    return targets
+
+
+def nvmrc_node_version(root):
+    path = root / ".nvmrc"
+    if not path.is_file():
+        return None
+    m = re.search(r"v?(\d+)", path.read_text(encoding="utf-8", errors="replace").strip())
+    return int(m.group(1)) if m else None
+
+
+def engines_node_version(root):
+    path = root / "package.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    engines = data.get("engines")
+    node = engines.get("node") if isinstance(engines, dict) else None
+    if not node:
+        return None
+    m = re.search(r"(\d+)", str(node))
+    return int(m.group(1)) if m else None
+
+
+def lockfile_managers(root):
+    """Return the set of package managers implied by committed lockfiles.
+
+    Uses the shared ``registry.LOCKFILE_MANAGERS`` map (single source of truth,
+    incl. bun) so the semantic engine and the drift gate see the same managers.
+    """
+    return {mgr for name, mgr in registry.LOCKFILE_MANAGERS.items() if (root / name).is_file()}
+
+
+# ---------------------------------------------------------------------------
+# Declaration extractors — what AGENTS.md *claims*.
+# ---------------------------------------------------------------------------
+
+
+def declared_node_version(text):
+    """Return ``(major, line)`` for a Node.js version declared in AGENTS.md, else ``(None, None)``.
+
+    Uses the shared ``registry.node_version_major`` extractor so the Phase-0 check,
+    the Phase-2 D6 drift gate and the scan conflict signal all read the same value
+    from a given line (TD-06)."""
+    for lineno, line in enumerate(text.splitlines(), 1):
+        major = registry.node_version_major(line)
+        if major is not None:
+            return major, lineno
+    return None, None
+
+
+def declared_package_managers(text):
+    """Return the set of Node package managers named in AGENTS.md code spans.
+
+    Includes bun so this matches ``registry.LOCKFILE_MANAGERS`` (TD-01) and so the
+    Phase-0 engine and the Phase-2 D6 drift gate agree on what a doc declares."""
+    pms = set()
+    for _lineno, token in iter_code_tokens(text):
+        for m in re.finditer(r"\b(npm|pnpm|yarn|bun)\b", token):
+            pms.add(m.group(1))
+    return pms
