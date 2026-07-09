@@ -257,6 +257,24 @@ class EvalRunTests(unittest.TestCase):
             self.assertIn("answer", record)
 
 
+class MaybeUsageTests(unittest.TestCase):
+    def test_object_payload_extracts_known_usage_keys(self):
+        out = json.dumps({"result": "ok", "usage": {"input_tokens": 3}, "cost": 0.01, "other": 1})
+        self.assertEqual(eval_run.maybe_usage(out), {"usage": {"input_tokens": 3}, "cost": 0.01})
+
+    def test_non_json_returns_empty(self):
+        self.assertEqual(eval_run.maybe_usage("plain text answer"), {})
+
+    def test_bare_scalar_does_not_crash(self):
+        # A runner printing a bare JSON scalar must not raise TypeError and abort
+        # the whole eval batch; it simply carries no usage.
+        for payload in ("42", "3.14", '"just a string"', "true", "null"):
+            self.assertEqual(eval_run.maybe_usage(payload), {})
+
+    def test_bare_array_does_not_crash(self):
+        self.assertEqual(eval_run.maybe_usage('["usage", "cost"]'), {})
+
+
 class BuiltinJudgeTests(unittest.TestCase):
     def test_expect_all_must_match(self):
         v = eval_run.builtin_judge("has canonical AGENTS.md", {"expect": ["canonical", "AGENTS.md"]})

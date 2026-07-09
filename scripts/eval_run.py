@@ -36,6 +36,12 @@ def maybe_usage(stdout):
         data = json.loads(stdout)
     except Exception:
         return {}
+    # A runner may legitimately print a bare JSON scalar/array (e.g. `42`,
+    # `"done"`, `[...]`) instead of an object. `key in data` would then raise
+    # TypeError (scalars) or silently mis-behave (substring/element checks),
+    # aborting the whole eval batch. Only object payloads carry usage fields.
+    if not isinstance(data, dict):
+        return {}
     usage = {}
     for key in ["usage", "cost", "total_cost_usd", "tokens", "input_tokens", "output_tokens"]:
         if key in data:
