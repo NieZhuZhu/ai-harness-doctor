@@ -63,8 +63,9 @@ COMMAND_PATTERNS = [
 ]
 SETTINGS_FILES = [".claude/settings.json", ".claude/settings.local.json"]
 
-# Secret-shaped tokens. Kept intentionally conservative to limit false positives;
-# the goal is to flag obvious plaintext credentials committed into agent configs.
+# Secret-shaped tokens. Kept reasonably conservative to limit false positives;
+# the goal is to flag obvious plaintext credentials committed into agent configs
+# and MCP env values. Each pattern targets a concrete, high-confidence shape.
 SECRET_PATTERNS = [
     ("AWS access key id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")),
@@ -72,10 +73,25 @@ SECRET_PATTERNS = [
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}\b")),
     ("Slack token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
     ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
+    # Stripe live/restricted secret keys (sk_live_/rk_live_). Publishable
+    # pk_live_ keys are intentionally excluded — they are not secret.
+    ("Stripe secret key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{16,}\b")),
+    # JSON Web Token: three base64url segments; the header (and usually the
+    # payload) begin with the literal `eyJ` (base64 of `{"`).
+    ("JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
     ("Private key block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
     (
         "Generic hardcoded secret",
-        re.compile(r"(?i)\b(?:api[_-]?key|secret|token|password|passwd)\b\s*[:=]\s*['\"][^'\"\s]{12,}['\"]"),
+        # A credential-shaped key followed by `:`/`=` and a value that is either
+        # quoted (>=12 non-space chars) OR unquoted but long/high-signal (>=16
+        # credential chars with no spaces). The unquoted arm catches `.env`-style
+        # `KEY=value` assignments that the quoted-only rule used to miss, while
+        # the length/charset floor keeps prose from matching.
+        re.compile(
+            r"(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?key|client[_-]?secret|token|password|passwd|"
+            r"auth[_-]?token|bearer)\b\s*[:=]\s*"
+            r"(?:['\"][^'\"\s]{12,}['\"]|[A-Za-z0-9+/_\-.]{16,})"
+        ),
     ),
 ]
 
@@ -280,15 +296,30 @@ def build_project_snapshot(root, surface, agents_text):
 
 
 def write_report_file(report, repo_root):
-    """Dump the full JSON report to a stable temp file so an agent can read it
-    back and reason over the machine-readable data (snapshot, gaps, surface,
-    security) rather than re-parsing the markdown. Returns the file path, or
-    None if writing failed (writing must never break the scan output)."""
-    digest = hashlib.sha256(str(Path(repo_root).resolve()).encode("utf-8")).hexdigest()[:12]
-    path = Path(tempfile.gettempdir()) / f"harness-scan-{digest}.json"
+    """Dump the full JSON report to a temp file so an agent can read it back and
+    reason over the machine-readable data (snapshot, gaps, surface, security)
+    rather than re-parsing the markdown. Returns the file path, or None if
+    writing failed (writing must never break the scan output).
+
+    SEC-02: the report can contain sensitive scan data (secrets, hooks, config).
+    It must NOT land at a predictable path in the world-writable temp dir — that
+    invites a symlink-overwrite / info-leak attack. Use ``tempfile.mkstemp`` so
+    the file is created atomically (O_EXCL, does not follow symlinks) with an
+    unpredictable name and 0600 permissions, owned only by the current user.
+    """
+    del repo_root  # no longer used for naming; kept for call-site compatibility
     try:
-        path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        fd, path = tempfile.mkstemp(prefix="harness-scan-", suffix=".json")
     except OSError:
+        return None
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(report, ensure_ascii=False, indent=2))
+    except OSError:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
         return None
     return str(path)
 
@@ -639,6 +670,41 @@ def security_findings(root, files, mcp, hooks, permissions):
                     "message": f"Possible {label} committed in {rel_path}",
                 }
             )
+    # 1b) Secret-shaped values inside MCP server `env` maps. JSON-quoted
+    # `"KEY": "value"` assignments slip past the generic key=value rule (the
+    # quote before the colon breaks it), so inspect each env value directly and
+    # attribute the finding to the exact server/key.
+    seen_env_secrets = set()
+    for rel_path in MCP_CONFIG_FILES:
+        path = root / rel_path
+        if not path.is_file():
+            continue
+        data = load_json(path)
+        if not isinstance(data, dict):
+            continue
+        block = data.get("mcpServers") or data.get("servers") or {}
+        if not isinstance(block, dict):
+            continue
+        for name, cfg in block.items():
+            env = cfg.get("env") if isinstance(cfg, dict) else None
+            if not isinstance(env, dict):
+                continue
+            for key, value in env.items():
+                if not isinstance(value, str):
+                    continue
+                for label in secret_hits(value):
+                    dedupe_key = (rel_path, name, key, label)
+                    if dedupe_key in seen_env_secrets:
+                        continue
+                    seen_env_secrets.add(dedupe_key)
+                    findings.append(
+                        {
+                            "level": "HIGH",
+                            "category": "secret",
+                            "path": rel_path,
+                            "message": f"Possible {label} in MCP server `{name}` env `{key}`",
+                        }
+                    )
     # 2) MCP transport / credential hygiene.
     for s in mcp:
         if s["url"].startswith("http://"):
