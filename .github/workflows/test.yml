@@ -9,14 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # eslint 10 (dev-only) requires Node >= 20.19; Node 20 LTS ships a stable
-      # npm 10.x (Node 22's bundled npm 11 crashes with "Exit handler never called").
+      # eslint 10 (dev-only) requires Node >= 20.19. Pin an exact Node 20.19.x that
+      # ships a stable npm 10.x; npm 11 (bundled with newer Node) aborts with
+      # "Exit handler never called" on this runner, leaving node_modules incomplete.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19.5"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Pin npm to a stable release
+        run: npm install -g npm@10.9.2
       - name: Install Node dev dependencies
         run: npm install --no-audit --no-fund
       - name: Install ruff
