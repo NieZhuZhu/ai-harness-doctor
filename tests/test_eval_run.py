@@ -585,6 +585,29 @@ class GenerateTasksTests(unittest.TestCase):
             (repo / "yarn.lock").write_text("", encoding="utf-8")
             self.assertEqual(eval_run.detect_package_manager(repo), "yarn")
 
+    def test_python_version_task_uses_unified_ground_truth(self):
+        # When every pinned source agrees, emit the golden-answer task using the
+        # same sources the scan/drift fact engine reads (semantic.python_ground_versions).
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / ".python-version").write_text("3.12\n", encoding="utf-8")
+            (repo / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.12"\n', encoding="utf-8")
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+            self.assertIn("python-version", by_id)
+            self.assertTrue(eval_run.regex_passes(by_id["python-version"]["check"]["value"], "Python 3.12"))
+            self.assertFalse(eval_run.regex_passes(by_id["python-version"]["check"]["value"], "Python 3.11"))
+
+    def test_python_version_task_abstains_on_conflicting_sources(self):
+        # `.python-version` and pyproject `requires-python` disagreeing means the
+        # repo has no unambiguous ground truth (the scanner reports this as a
+        # MISMATCH). eval must not bake in one side as the golden answer.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / ".python-version").write_text("3.12\n", encoding="utf-8")
+            (repo / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.11"\n', encoding="utf-8")
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+            self.assertNotIn("python-version", by_id)
+
 
 class LlmJudgeTests(unittest.TestCase):
     def test_auto_without_keys_returns_none(self):
