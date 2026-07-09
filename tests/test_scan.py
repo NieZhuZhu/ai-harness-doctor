@@ -11,6 +11,25 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "messy-repo"
 MONOREPO_FIXTURE = ROOT / "tests" / "fixtures" / "monorepo"
 SCAN = ROOT / "scripts" / "scan.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+import scan  # noqa: E402
+
+
+class PackageManagerConflictTests(unittest.TestCase):
+    def _pm_conflict_values(self, text):
+        conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
+        pm = [c for c in conflicts if c["signal"] == "package_manager"]
+        return set(pm[0]["values"].keys()) if pm else set()
+
+    def test_uv_pip_install_is_not_a_uv_pip_conflict(self):
+        # `uv pip install` is uv's pip interface, not a competing pip manager.
+        self.assertEqual(self._pm_conflict_values("Install with `uv pip install browser-use`."), set())
+
+    def test_standalone_pip_and_uv_still_conflict(self):
+        self.assertEqual(
+            self._pm_conflict_values("Use `uv run app` and separately `pip install foo`."),
+            {"uv", "pip"},
+        )
 
 
 class ScanTests(unittest.TestCase):

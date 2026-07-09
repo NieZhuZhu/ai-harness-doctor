@@ -345,7 +345,10 @@ SIGNAL_PATTERNS = {
         ("pipenv", re.compile(r"\bpipenv\b")),
         ("pdm", re.compile(r"\bpdm\b")),
         ("uv", re.compile(r"\buv\s+(?:run|sync|pip|add|lock|venv|tool)\b")),
-        ("pip", re.compile(r"\bpip3?\s+install\b")),
+        # `uv pip install` is uv's pip *interface*, not a competing pip package
+        # manager; the negative lookbehind stops it from also matching as "pip"
+        # and manufacturing a bogus uv-vs-pip conflict.
+        ("pip", re.compile(r"(?<!uv )\bpip3?\s+install\b")),
         ("cargo", re.compile(r"\bcargo\b")),
         ("go modules", re.compile(r"\bgo\s+(?:mod|get|build|test|run)\b")),
         ("maven", re.compile(r"\bmvn\b|\bmaven\b")),

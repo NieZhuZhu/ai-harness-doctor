@@ -71,6 +71,16 @@ class SemanticPathTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
 
+    def test_quoted_absolute_path_and_example_value_ignored(self):
+        # Backtick spans wrapped in quotes are string-literal example values, not
+        # repo path references; only backticks were stripped before, leaving the
+        # inner quotes to defeat the guards so the value was flagged as missing.
+        with tempfile.TemporaryDirectory() as td:
+            text = ("Chrome lives at `'/usr/bin/google-chrome'`; set downloads to "
+                    "a string like `'./downloads'` or `\"/tmp/out\"`.")
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
 
 class SemanticPackageManagerTests(unittest.TestCase):
     def test_declared_pm_mismatch_with_lockfile(self):
@@ -176,6 +186,24 @@ class SemanticPythonTests(unittest.TestCase):
             text = "Run `poetry run pytest` and `poetry run mypy`."
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_uv_run_script_file_not_flagged(self):
+        # `uv run examples/simple.py` / `uv run script.py` execute script files,
+        # not project console scripts, so neither may be flagged as missing.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pyproject.toml", '[project.scripts]\nmytool = "pkg:main"\n')
+            text = "Run `uv run examples/simple.py` then `uv run scripts/lint.py`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_uv_run_missing_console_script_still_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pyproject.toml", '[project.scripts]\nmytool = "pkg:main"\n')
+            text = "Run `uv run ghost`."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("ghost", cmds[0]["message"])
 
 
 class SemanticGoTests(unittest.TestCase):
