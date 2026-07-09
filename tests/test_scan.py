@@ -259,6 +259,18 @@ class ExtendedSurfaceTests(unittest.TestCase):
             self.assertNotIn("security", report)
             self.assertIn("surface", report)
 
+    def test_no_security_does_not_neuter_fail_on_security_gate(self):
+        # --no-security only suppresses the printed section; it must NOT disable
+        # the --fail-on-security gate. A HIGH finding must still exit non-zero
+        # even though the section is dropped from the report (CORR-03).
+        with tempfile.TemporaryDirectory() as td:
+            repo = self.build_repo(td)
+            proc = self.run_json(repo, "--no-security", "--fail-on-security")
+            self.assertEqual(proc.returncode, 2, proc.stdout)
+            report = json.loads(proc.stdout)
+            # Gate fired, yet the section is still suppressed from the output.
+            self.assertNotIn("security", report)
+
 
 class SecretRecallTests(unittest.TestCase):
     """SEC-03: the secret scanner must catch common credential shapes it used to
