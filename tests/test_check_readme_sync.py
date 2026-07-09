@@ -78,6 +78,35 @@ class CompareTests(unittest.TestCase):
         problems = sync.compare("README.md", REFERENCE, "README.ja.md", dropped_link)
         self.assertTrue(any("links" in p for p in problems))
 
+    def test_fixed_url_target_drift_is_caught(self):
+        # A URL is not translated: if a translation points it elsewhere, flag it.
+        drifted = REFERENCE.replace("https://example.com", "https://evil.example.net")
+        problems = sync.compare("README.md", REFERENCE, "README.zh-CN.md", drifted)
+        self.assertTrue(any("target differs" in p for p in problems), problems)
+
+    def test_translated_anchor_target_is_allowed(self):
+        # In-page anchors are slugs of translated headings, so they legitimately
+        # differ per language and must NOT be flagged.
+        doc = "# Title\n\nSee [section](#project-overview).\n\n## Project overview\n"
+        translated = "# 标题\n\n参见 [章节](#项目概览)。\n\n## 项目概览\n"
+        problems = sync.compare("README.md", doc, "README.zh-CN.md", translated)
+        self.assertEqual([p for p in problems if "target differs" in p], [], problems)
+
+    def test_sibling_readme_nav_links_are_allowed(self):
+        # The language switcher links each file to its siblings; those targets
+        # differ by design and must not be flagged as drift.
+        en = "[中文](README.zh-CN.md) | [日本語](README.ja.md)\n\n# Title\n"
+        zh = "[English](README.md) | [日本語](README.ja.md)\n\n# 标题\n"
+        problems = sync.compare("README.md", en, "README.zh-CN.md", zh)
+        self.assertEqual([p for p in problems if "target differs" in p], [], problems)
+
+    def test_extract_link_targets_returns_targets_in_order(self):
+        doc = "a [x](https://a.example) then [y](path/to/file.md)\n"
+        self.assertEqual(
+            sync.extract_link_targets(doc),
+            ["https://a.example", "path/to/file.md"],
+        )
+
 
 class RepoReadmesTests(unittest.TestCase):
     def test_shipped_readmes_are_in_sync(self):

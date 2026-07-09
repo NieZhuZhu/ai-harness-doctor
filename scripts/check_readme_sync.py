@@ -11,7 +11,9 @@ identical structural skeleton:
      not diverge between translations.
   3. Table rows: same count (translated prose lives inside cells, but the
      table shape must match).
-  4. Links: same count (link targets are not translated).
+  4. Links: same count AND byte-identical targets, in order. Link *text* may be
+     translated, but the target (URL / anchor / path) is not, so a target that
+     drifts between translations is a bug.
 
 This guards against a translation drifting out of sync when a section, command,
 table row, or link is added, removed, or re-nested in only one file.
@@ -40,8 +42,9 @@ README_FILES = [
 # contain lines that start with '#', so we skip content inside ``` fences.
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 FENCE_RE = re.compile(r"^\s*(```|~~~)")
-# Markdown inline links and images: [text](target) / ![alt](target).
-LINK_RE = re.compile(r"!?\[[^\]]*\]\([^)]+\)")
+# Markdown inline links and images: [text](target) / ![alt](target). The
+# capturing group isolates the target so it can be compared byte-for-byte.
+LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 
 
 def extract_headings(text):
@@ -101,9 +104,14 @@ def count_table_rows(text):
     return count
 
 
-def count_links(text):
-    """Count Markdown inline links/images outside fenced code blocks."""
-    count = 0
+def extract_link_targets(text):
+    """Return inline link/image targets (URLs/anchors/paths), in document order.
+
+    Targets are not translated, so they must match byte-for-byte across the
+    READMEs; ``LINK_RE``'s capturing group yields exactly the ``(target)`` text.
+    Fenced code blocks are skipped so code samples never count as links.
+    """
+    targets = []
     in_fence = False
     for line in text.splitlines():
         if FENCE_RE.match(line):
@@ -111,8 +119,27 @@ def count_links(text):
             continue
         if in_fence:
             continue
-        count += len(LINK_RE.findall(line))
-    return count
+        targets.extend(LINK_RE.findall(line))
+    return targets
+
+
+def count_links(text):
+    """Count Markdown inline links/images outside fenced code blocks."""
+    return len(extract_link_targets(text))
+
+
+def _is_fixed_target(target):
+    """True if a link target is non-translatable (a URL or a stable file path).
+
+    Excludes (a) the sibling READMEs, which the per-file language switcher links
+    to, and (b) any target containing an in-page anchor (``#...``), whose slug is
+    derived from a *translated* heading and therefore differs by design.
+    """
+    if target in README_FILES:
+        return False
+    if "#" in target:
+        return False
+    return True
 
 
 def compare(reference_name, reference_text, name, text):
@@ -152,10 +179,26 @@ def compare(reference_name, reference_text, name, text):
     if rows != ref_rows:
         problems.append(f"{name} has {rows} table rows but {reference_name} has {ref_rows}")
 
-    ref_links = count_links(reference_text)
-    links = count_links(text)
-    if links != ref_links:
-        problems.append(f"{name} has {links} links but {reference_name} has {ref_links}")
+    ref_links = extract_link_targets(reference_text)
+    links = extract_link_targets(text)
+    if len(links) != len(ref_links):
+        problems.append(f"{name} has {len(links)} links but {reference_name} has {len(ref_links)}")
+    # Compare only the targets that are genuinely NOT translated: external URLs
+    # and file/image paths. Two kinds legitimately differ per language and are
+    # excluded — (a) the leading language-switcher nav, which links each file to
+    # its *sibling* READMEs, and (b) in-page anchors (``#...`` or ``file.md#...``),
+    # which are slugs derived from *translated* headings. Everything else must
+    # match byte-for-byte, in order, so a drifted URL/path is caught.
+    ref_body = [t for t in ref_links if _is_fixed_target(t)]
+    body = [t for t in links if _is_fixed_target(t)]
+    for index in range(min(len(body), len(ref_body))):
+        if body[index] != ref_body[index]:
+            problems.append(
+                f"link #{index + 1} target differs from {reference_name} "
+                f"(link targets are not translated and must be identical): "
+                f"{ref_body[index]!r} vs {body[index]!r}"
+            )
+            break
 
     return problems
 

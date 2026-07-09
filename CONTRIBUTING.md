@@ -62,6 +62,23 @@ is enough.
    Python (3.9/3.10/3.12) and Node (16/20/22) matrix; all checks must pass
    before merge.
 
+## Test coverage
+
+Coverage is optional and **not** part of the required gate, but it helps spot
+untested code paths. Both measurements use dev-only tooling — nothing new is
+added to the shipped runtime (the scripts stay standard-library-only):
+
+```bash
+npm run coverage          # Python + JS coverage
+npm run coverage:py       # coverage.py over scripts/ (pip install coverage)
+npm run coverage:js       # node --test --experimental-test-coverage over bin/
+```
+
+- `coverage:py` needs the dev-only [`coverage`](https://pypi.org/project/coverage/)
+  package (`pip install coverage`); its config lives in `.coveragerc`.
+- `coverage:js` uses Node's built-in test-coverage reporter (Node >= 20), so it
+  needs no extra dependency.
+
 ## Releasing
 
 Releases are tag-driven and published by GitHub Actions. See `RELEASING.md` for
