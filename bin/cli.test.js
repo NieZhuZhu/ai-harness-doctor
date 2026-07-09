@@ -24,9 +24,24 @@ test('compareVersions treats missing components as zero', () => {
 });
 
 test('compareVersions handles pre-release tags', () => {
-  // Numeric release sorts above alphabetic pre-release segment.
-  assert.ok(compareVersions('1.0.0', '1.0.0-alpha') !== 0);
+  // CORR-09: a pre-release is LOWER than its associated normal release, so
+  // `1.0.0` > `1.0.0-alpha` and `1.0.0-alpha` < `1.0.0` (SemVer §11.3).
+  assert.ok(compareVersions('1.0.0', '1.0.0-alpha') > 0);
+  assert.ok(compareVersions('1.0.0-alpha', '1.0.0') < 0);
+  assert.strictEqual(compareVersions('1.0.0-alpha', '1.0.0-alpha'), 0);
+  // Alphabetic identifiers compare lexically.
   assert.ok(compareVersions('1.0.0-beta', '1.0.0-alpha') > 0);
+  // SemVer §11.4 precedence chain: alpha < alpha.1 < alpha.beta < beta < beta.2
+  // < beta.11 < rc.1 < release.
+  assert.ok(compareVersions('1.0.0-alpha.1', '1.0.0-alpha') > 0); // larger set wins
+  assert.ok(compareVersions('1.0.0-alpha.beta', '1.0.0-alpha.1') > 0); // alphanumeric > numeric
+  assert.ok(compareVersions('1.0.0-beta.11', '1.0.0-beta.2') > 0); // numeric compares numerically
+  assert.ok(compareVersions('1.0.0-rc.1', '1.0.0-beta.11') > 0);
+  assert.ok(compareVersions('1.0.0', '1.0.0-rc.1') > 0);
+  // A pre-release on a higher main version still outranks a lower release.
+  assert.ok(compareVersions('1.0.1-alpha', '1.0.0') > 0);
+  // Build metadata is ignored for precedence.
+  assert.strictEqual(compareVersions('1.0.0+build.5', '1.0.0'), 0);
 });
 
 test('parseInstallArgs returns sensible defaults', () => {

@@ -224,13 +224,14 @@ function linkPayload(dest) {
   symlinkDirectory(PACKAGE_ROOT, dest);
 }
 
-function compareVersions(a, b) {
-  const pa = String(a).split(/[.-]/).map((part) => (/^\d+$/.test(part) ? Number(part) : part));
-  const pb = String(b).split(/[.-]/).map((part) => (/^\d+$/.test(part) ? Number(part) : part));
-  const len = Math.max(pa.length, pb.length);
+function compareIdentifiers(a, b) {
+  // Compare two dot-separated identifier lists (used for both the main version
+  // and the pre-release). Numeric identifiers compare numerically; when either
+  // side is non-numeric fall back to ASCII string comparison.
+  const len = Math.max(a.length, b.length);
   for (let i = 0; i < len; i += 1) {
-    const va = pa[i] === undefined ? 0 : pa[i];
-    const vb = pb[i] === undefined ? 0 : pb[i];
+    const va = a[i] === undefined ? 0 : a[i];
+    const vb = b[i] === undefined ? 0 : b[i];
     if (typeof va === 'number' && typeof vb === 'number') {
       if (va !== vb) return va > vb ? 1 : -1;
     } else {
@@ -240,6 +241,60 @@ function compareVersions(a, b) {
     }
   }
   return 0;
+}
+
+function comparePreRelease(a, b) {
+  // SemVer §11: identifiers are compared left to right. Numeric identifiers
+  // always have LOWER precedence than alphanumeric ones. A larger set of
+  // pre-release fields (with all preceding fields equal) has higher precedence.
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    if (a[i] === undefined) return -1;
+    if (b[i] === undefined) return 1;
+    const va = a[i];
+    const vb = b[i];
+    const aNum = typeof va === 'number';
+    const bNum = typeof vb === 'number';
+    if (aNum && bNum) {
+      if (va !== vb) return va > vb ? 1 : -1;
+    } else if (aNum !== bNum) {
+      // Numeric < alphanumeric.
+      return aNum ? -1 : 1;
+    } else {
+      const sa = String(va);
+      const sb = String(vb);
+      if (sa !== sb) return sa > sb ? 1 : -1;
+    }
+  }
+  return 0;
+}
+
+function compareVersions(a, b) {
+  // Split off SemVer build metadata ('+...', ignored for precedence) and the
+  // pre-release tag (everything after the first '-') from the main version.
+  const parse = (v) => {
+    const [core, pre] = String(v).split('+')[0].split(/-(.*)/s);
+    const toParts = (s) => s.split('.').map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+    return {
+      main: toParts(core),
+      pre: pre === undefined || pre === '' ? [] : toParts(pre),
+    };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+
+  // 1) Compare the main version (major.minor.patch...) first.
+  const mainCmp = compareIdentifiers(pa.main, pb.main);
+  if (mainCmp !== 0) return mainCmp;
+
+  // 2) Main versions equal: a normal release outranks a pre-release of the same
+  //    version, so `1.0.0` > `1.0.0-alpha` (SemVer §11.3).
+  if (pa.pre.length === 0 && pb.pre.length === 0) return 0;
+  if (pa.pre.length === 0) return 1;
+  if (pb.pre.length === 0) return -1;
+
+  // 3) Both are pre-releases: compare their identifiers.
+  return comparePreRelease(pa.pre, pb.pre);
 }
 
 function maybeCheckForUpdate() {
