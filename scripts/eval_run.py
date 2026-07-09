@@ -13,6 +13,12 @@ import tempfile
 import time
 from pathlib import Path
 
+# semantic.py lives in the same scripts/ dir; reuse its canonical ground-truth
+# extraction so eval task generation and the scan/drift fact engine agree on the
+# same sources (single source of truth) instead of maintaining a divergent copy.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import semantic  # noqa: E402
+
 
 def runner_binary(template):
     parts = shlex.split(template)
@@ -264,23 +270,21 @@ def generate_tasks(repo_root):
             add("go-module", "What is the Go module path declared in go.mod?",
                 r"(?i)" + re.escape(mm.group(1)))
 
-    py_version = None
-    pyproj = root / "pyproject.toml"
-    if pyproj.is_file():
-        m = re.search(r'requires-python\s*=\s*["\']([^"\']+)["\']',
-                      pyproj.read_text(encoding="utf-8", errors="replace"))
-        if m:
-            vm = re.search(r"(\d+\.\d+)", m.group(1))
-            if vm:
-                py_version = vm.group(1)
-    pyver_file = root / ".python-version"
-    if py_version is None and pyver_file.is_file():
-        m = re.search(r"(\d+\.\d+)", pyver_file.read_text(encoding="utf-8", errors="replace"))
-        if m:
-            py_version = m.group(1)
-    if py_version:
+    # Python version: reuse the scan/drift fact engine's ground-truth sources
+    # (semantic.python_ground_versions) instead of a private pyproject-first
+    # heuristic. The two subsystems previously disagreed: eval fixed
+    # pyproject's `requires-python` as the golden answer while scan judged the
+    # very same value against `.python-version` and reported a MISMATCH, so an
+    # agent could be rewarded for an answer the scanner calls wrong. Only emit a
+    # golden-answer task when every pinned source agrees on one version; when
+    # they conflict there is no unambiguous ground truth (that inconsistency is
+    # exactly what the scanner flags), so abstain rather than bake in one side.
+    py_grounds = semantic.python_ground_versions(root)
+    py_values = {value for _source, value in py_grounds}
+    if len(py_values) == 1:
+        major, minor = next(iter(py_values))
         add("python-version", "Which minimum Python version do this repo's scripts target?",
-            r"\b" + re.escape(py_version) + r"\b")
+            r"\b" + re.escape(f"{major}.{minor}") + r"\b")
 
     agents = root / "AGENTS.md"
     agents_text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
