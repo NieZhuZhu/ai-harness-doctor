@@ -22,10 +22,41 @@ DEFAULT_MAX_BYTES = 32768
 # canonicalize.py writes. See assets/agent-tools.json.
 STUB_FILES = [p for tool in registry.canonicalizable_tools() for p in tool["stub_paths"]]
 PACKAGE_MANAGER_BUILTINS = {
-    "install", "ci", "i", "init", "add", "remove", "rm", "uninstall", "update", "up", "upgrade",
-    "exec", "dlx", "create", "audit", "link", "unlink", "publish", "outdated", "config", "cache",
-    "login", "logout", "whoami", "version", "info", "list", "ls", "why", "dedupe", "prune",
-    "rebuild", "help", "test", "start",
+    "install",
+    "ci",
+    "i",
+    "init",
+    "add",
+    "remove",
+    "rm",
+    "uninstall",
+    "update",
+    "up",
+    "upgrade",
+    "exec",
+    "dlx",
+    "create",
+    "audit",
+    "link",
+    "unlink",
+    "publish",
+    "outdated",
+    "config",
+    "cache",
+    "login",
+    "logout",
+    "whoami",
+    "version",
+    "info",
+    "list",
+    "ls",
+    "why",
+    "dedupe",
+    "prune",
+    "rebuild",
+    "help",
+    "test",
+    "start",
 }
 
 
@@ -68,18 +99,37 @@ def d1_command_drift(root, text):
     findings = []
     scripts = package_scripts(root)
     targets = make_targets(root)
-    cmd_re = re.compile(r"\b(?:(npm|pnpm)\s+(?:run\s+)?([A-Za-z0-9:_-]+)|yarn\s+([A-Za-z0-9:_-]+)|make\s+([A-Za-z0-9_.-]+))\b")
+    cmd_re = re.compile(
+        r"\b(?:(npm|pnpm)\s+(?:run\s+)?([A-Za-z0-9:_-]+)|yarn\s+([A-Za-z0-9:_-]+)|make\s+([A-Za-z0-9_.-]+))\b"
+    )
     for lineno, code in line_collected_code(text):
         for m in cmd_re.finditer(code):
             tool = m.group(1) or ("yarn" if m.group(3) else "make")
             name = m.group(2) or m.group(3) or m.group(4)
             if tool == "make" and targets is not None and name not in targets:
-                findings.append({"check": "D1", "level": "ERROR", "line": lineno, "message": f"Unknown Makefile target `{name}`", "suggestion": "Update AGENTS.md or add the Makefile target."})
-            # Treat package-manager builtins as valid unconditionally; false negatives are cheaper than noisy false positives here.
+                findings.append(
+                    {
+                        "check": "D1",
+                        "level": "ERROR",
+                        "line": lineno,
+                        "message": f"Unknown Makefile target `{name}`",
+                        "suggestion": "Update AGENTS.md or add the Makefile target.",
+                    }
+                )
+            # Treat package-manager builtins as valid unconditionally; false negatives
+            # are cheaper than noisy false positives here.
             if tool != "make" and name in PACKAGE_MANAGER_BUILTINS:
                 continue
             if tool != "make" and scripts is not None and name not in scripts:
-                findings.append({"check": "D1", "level": "ERROR", "line": lineno, "message": f"Unknown package.json script `{name}`", "suggestion": "Update AGENTS.md or add the package.json script."})
+                findings.append(
+                    {
+                        "check": "D1",
+                        "level": "ERROR",
+                        "line": lineno,
+                        "message": f"Unknown package.json script `{name}`",
+                        "suggestion": "Update AGENTS.md or add the package.json script.",
+                    }
+                )
     return findings
 
 
@@ -126,7 +176,15 @@ def d2_path_drift(root, text):
             if not _within_root(root, token):
                 continue
             if not (root / token).exists():
-                findings.append({"check": "D2", "level": "ERROR", "line": lineno, "message": f"Referenced path `{token}` does not exist", "suggestion": "Fix or remove the backtick-quoted path."})
+                findings.append(
+                    {
+                        "check": "D2",
+                        "level": "ERROR",
+                        "line": lineno,
+                        "message": f"Referenced path `{token}` does not exist",
+                        "suggestion": "Fix or remove the backtick-quoted path.",
+                    }
+                )
     return findings
 
 
@@ -147,7 +205,15 @@ def d3_stub_regrowth(root):
         # checkup/overlap subsystem's concern), not a broken stub, so D3 must not
         # claim it "lost" a pointer it never had.
         if "AGENTS.md" in text and len(data) > 600:
-            findings.append({"check": "D3", "level": "ERROR", "path": rel, "message": f"Tool stub `{rel}` regrew past the pointer-stub size budget", "suggestion": "Run canonicalize.py --write-stubs after reviewing changes."})
+            findings.append(
+                {
+                    "check": "D3",
+                    "level": "ERROR",
+                    "path": rel,
+                    "message": f"Tool stub `{rel}` regrew past the pointer-stub size budget",
+                    "suggestion": "Run canonicalize.py --write-stubs after reviewing changes.",
+                }
+            )
     cursor_rules = root / ".cursor" / "rules"
     if cursor_rules.is_dir():
         for p in cursor_rules.glob("*"):
@@ -159,19 +225,48 @@ def d3_stub_regrowth(root):
             # AGENTS.md) that regrew past the size budget is drift; an
             # independent rule with no AGENTS.md pointer is not a broken stub.
             if "AGENTS.md" in text and len(data) > 600:
-                findings.append({"check": "D3", "level": "ERROR", "path": p.relative_to(root).as_posix(), "message": "Cursor rule regrew past the pointer-stub size budget", "suggestion": "Keep a single minimal pointer rule."})
+                findings.append(
+                    {
+                        "check": "D3",
+                        "level": "ERROR",
+                        "path": p.relative_to(root).as_posix(),
+                        "message": "Cursor rule regrew past the pointer-stub size budget",
+                        "suggestion": "Keep a single minimal pointer rule.",
+                    }
+                )
     return findings
 
 
 def d4_size(root, max_bytes):
     path = root / "AGENTS.md"
     if not path.is_file():
-        return [{"check": "D4", "level": "ERROR", "message": "AGENTS.md is missing", "suggestion": "Create canonical AGENTS.md first."}]
+        return [
+            {
+                "check": "D4",
+                "level": "ERROR",
+                "message": "AGENTS.md is missing",
+                "suggestion": "Create canonical AGENTS.md first.",
+            }
+        ]
     size = len(path.read_bytes())
     if size > max_bytes:
-        return [{"check": "D4", "level": "ERROR", "message": f"AGENTS.md is {size} bytes, above {max_bytes}", "suggestion": "Move details to references/ and keep AGENTS.md concise."}]
+        return [
+            {
+                "check": "D4",
+                "level": "ERROR",
+                "message": f"AGENTS.md is {size} bytes, above {max_bytes}",
+                "suggestion": "Move details to references/ and keep AGENTS.md concise.",
+            }
+        ]
     if size > 12 * 1024:
-        return [{"check": "D4", "level": "NOTICE", "message": f"AGENTS.md is {size} bytes; context bloat risk", "suggestion": "Consider progressive disclosure."}]
+        return [
+            {
+                "check": "D4",
+                "level": "NOTICE",
+                "message": f"AGENTS.md is {size} bytes; context bloat risk",
+                "suggestion": "Consider progressive disclosure.",
+            }
+        ]
     return []
 
 
@@ -239,18 +334,27 @@ def d6_fact_drift(root, text):
     if declared_node is not None:
         nvmrc = nvmrc_node_version(root)
         if nvmrc is not None and nvmrc != declared_node:
-            findings.append({
-                "check": "D6", "level": "ERROR", "line": node_line,
-                "message": f"AGENTS.md claims Node {declared_node} but `.nvmrc` pins Node {nvmrc}",
-                "suggestion": "Align AGENTS.md with `.nvmrc` or update `.nvmrc`.",
-            })
+            findings.append(
+                {
+                    "check": "D6",
+                    "level": "ERROR",
+                    "line": node_line,
+                    "message": f"AGENTS.md claims Node {declared_node} but `.nvmrc` pins Node {nvmrc}",
+                    "suggestion": "Align AGENTS.md with `.nvmrc` or update `.nvmrc`.",
+                }
+            )
         engines = engines_node_version(root)
         if engines is not None and engines != declared_node:
-            findings.append({
-                "check": "D6", "level": "ERROR", "line": node_line,
-                "message": f"AGENTS.md claims Node {declared_node} but `package.json` engines.node requires Node {engines}",
-                "suggestion": "Align AGENTS.md with `package.json` engines.node or update engines.node.",
-            })
+            findings.append(
+                {
+                    "check": "D6",
+                    "level": "ERROR",
+                    "line": node_line,
+                    "message": f"AGENTS.md claims Node {declared_node} but "
+                    f"`package.json` engines.node requires Node {engines}",
+                    "suggestion": "Align AGENTS.md with `package.json` engines.node or update engines.node.",
+                }
+            )
 
     # Package manager: declared claim vs the lockfile that actually exists.
     declared_pms = declared_package_managers(text)
@@ -259,12 +363,18 @@ def d6_fact_drift(root, text):
         declared_pm = next(iter(declared_pms))
         ground_pm = next(iter(ground_pms))
         if declared_pm != ground_pm:
-            lockfile = next(name for name, mgr in LOCKFILE_MANAGERS.items() if mgr == ground_pm and (root / name).is_file())
-            findings.append({
-                "check": "D6", "level": "ERROR",
-                "message": f"AGENTS.md uses `{declared_pm}` but the repo has `{lockfile}` implying `{ground_pm}`",
-                "suggestion": f"Align AGENTS.md with `{ground_pm}` or replace the lockfile to match `{declared_pm}`.",
-            })
+            lockfile = next(
+                name for name, mgr in LOCKFILE_MANAGERS.items() if mgr == ground_pm and (root / name).is_file()
+            )
+            findings.append(
+                {
+                    "check": "D6",
+                    "level": "ERROR",
+                    "message": f"AGENTS.md uses `{declared_pm}` but the repo has `{lockfile}` implying `{ground_pm}`",
+                    "suggestion": f"Align AGENTS.md with `{ground_pm}` or "
+                    f"replace the lockfile to match `{declared_pm}`.",
+                }
+            )
     return findings
 
 
@@ -317,11 +427,15 @@ def d7_markdown_link_drift(root, text):
             if not _within_root(root, target):
                 continue
             if not (root / target).exists():
-                findings.append({
-                    "check": "D7", "level": "ERROR", "line": lineno,
-                    "message": f"Markdown link target `{target}` does not exist",
-                    "suggestion": "Fix or remove the Markdown link to the missing path.",
-                })
+                findings.append(
+                    {
+                        "check": "D7",
+                        "level": "ERROR",
+                        "line": lineno,
+                        "message": f"Markdown link target `{target}` does not exist",
+                        "suggestion": "Fix or remove the Markdown link to the missing path.",
+                    }
+                )
     return findings
 
 
@@ -339,11 +453,14 @@ def d8_competing_lockfiles(root):
     if len(managers) <= 1:
         return []
     names = ", ".join(f"`{name}`" for name, _ in sorted(present))
-    return [{
-        "check": "D8", "level": "ERROR",
-        "message": f"Competing package-manager lockfiles committed ({names}); intended manager is ambiguous",
-        "suggestion": "Keep exactly one lockfile for the chosen package manager and delete the rest.",
-    }]
+    return [
+        {
+            "check": "D8",
+            "level": "ERROR",
+            "message": f"Competing package-manager lockfiles committed ({names}); intended manager is ambiguous",
+            "suggestion": "Keep exactly one lockfile for the chosen package manager and delete the rest.",
+        }
+    ]
 
 
 def nested_agents(root):
@@ -399,7 +516,10 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None):
         for f in findings:
             if f.get("level") == "NOTICE":
                 f["level"] = "ERROR"
-    info = [{"check": "D5", "level": "INFO", "path": p, "message": "Nested AGENTS.md inventory"} for p in nested_agents(root)]
+    info = [
+        {"check": "D5", "level": "INFO", "path": p, "message": "Nested AGENTS.md inventory"}
+        for p in nested_agents(root)
+    ]
     # User-extensible deterministic rule plugins (opt-in). Discovered from
     # <root>/.ai-harness-doctor/rules/*.py plus any --rules DIR; each plugin is
     # isolated so a broken one is reported as an ERROR finding, never a crash.
@@ -438,7 +558,9 @@ def render(report):
         for f in custom:
             loc = f":{f['line']}" if "line" in f else (f" `{f['path']}`" if "path" in f else "")
             suggestion = f" Repair advice: {f['suggestion']}" if f.get("suggestion") else ""
-            lines.append(f"- **{f['level']}** [{f.get('plugin', '?')}:{f.get('rule', 'custom')}]{loc} {f['message']}{suggestion}")
+            lines.append(
+                f"- **{f['level']}** [{f.get('plugin', '?')}:{f.get('rule', 'custom')}]{loc} {f['message']}{suggestion}"
+            )
     else:
         lines.append("None.")
     lines.extend(["", "## Health score", f"Score: {report['score']}/100 (grade {report['grade']})"])
@@ -517,7 +639,11 @@ def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None):
     if manual:
         for f in manual:
             loc = _finding_loc(f)
-            lines.append(f"- needs manual attention: **{f['check']}**{loc} {f['message']} — {f.get('suggestion', '')}".rstrip(" —"))
+            lines.append(
+                f"- needs manual attention: **{f['check']}**{loc} {f['message']} — {f.get('suggestion', '')}".rstrip(
+                    " —"
+                )
+            )
     else:
         lines.append("- None.")
 
@@ -536,13 +662,23 @@ def main(argv=None):
     parser.add_argument("repo_root", nargs="?", default=".")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--strict", action="store_true")
-    parser.add_argument("--fix", action="store_true", help="Auto-repair the safe subset (D3 stub regrowth); dry run unless --apply.")
+    parser.add_argument(
+        "--fix", action="store_true", help="Auto-repair the safe subset (D3 stub regrowth); dry run unless --apply."
+    )
     parser.add_argument("--apply", action="store_true", help="With --fix, actually rewrite files instead of a dry run.")
     parser.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
-    parser.add_argument("--rules", action="append", default=None, metavar="DIR", dest="rules",
-                        help="Directory of custom rule plugins (`*.py` exposing `check(root, context)`). "
-                             "Repeatable; searched in addition to `<repo>/.ai-harness-doctor/rules/`.")
-    parser.add_argument("--min-score", type=int, default=None, help="Exit non-zero if the health score is below N (CI gating).")
+    parser.add_argument(
+        "--rules",
+        action="append",
+        default=None,
+        metavar="DIR",
+        dest="rules",
+        help="Directory of custom rule plugins (`*.py` exposing `check(root, context)`). "
+        "Repeatable; searched in addition to `<repo>/.ai-harness-doctor/rules/`.",
+    )
+    parser.add_argument(
+        "--min-score", type=int, default=None, help="Exit non-zero if the health score is below N (CI gating)."
+    )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
     if args.fix:

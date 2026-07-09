@@ -76,8 +76,10 @@ class SemanticPathTests(unittest.TestCase):
         # repo path references; only backticks were stripped before, leaving the
         # inner quotes to defeat the guards so the value was flagged as missing.
         with tempfile.TemporaryDirectory() as td:
-            text = ("Chrome lives at `'/usr/bin/google-chrome'`; set downloads to "
-                    "a string like `'./downloads'` or `\"/tmp/out\"`.")
+            text = (
+                "Chrome lives at `'/usr/bin/google-chrome'`; set downloads to "
+                "a string like `'./downloads'` or `\"/tmp/out\"`."
+            )
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
 
@@ -274,9 +276,7 @@ class SemanticJavaTests(unittest.TestCase):
 
     def test_java_version_mismatch_from_pom(self):
         with tempfile.TemporaryDirectory() as td:
-            pom = "<project><properties>" \
-                  "<maven.compiler.release>17</maven.compiler.release>" \
-                  "</properties></project>\n"
+            pom = "<project><properties><maven.compiler.release>17</maven.compiler.release></properties></project>\n"
             write(td, "pom.xml", pom)
             text = "Requires Java 11."
             result = semantic.analyze(td, text)
@@ -286,9 +286,7 @@ class SemanticJavaTests(unittest.TestCase):
 
     def test_java_legacy_1_8_normalized_ok(self):
         with tempfile.TemporaryDirectory() as td:
-            pom = "<project><properties>" \
-                  "<maven.compiler.source>1.8</maven.compiler.source>" \
-                  "</properties></project>\n"
+            pom = "<project><properties><maven.compiler.source>1.8</maven.compiler.source></properties></project>\n"
             write(td, "pom.xml", pom)
             text = "Requires Java 8."
             result = semantic.analyze(td, text)
@@ -321,4 +319,3 @@ class SemanticMultiEcosystemTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

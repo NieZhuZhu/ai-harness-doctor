@@ -17,12 +17,17 @@ class BuildReviewTests(unittest.TestCase):
     def test_located_findings_become_inline_comments(self):
         report = {
             "findings": [
-                {"check": "D2", "level": "ERROR", "path": "docs/x.md", "line": 12,
-                 "message": "Referenced path missing", "suggestion": "Fix it."},
+                {
+                    "check": "D2",
+                    "level": "ERROR",
+                    "path": "docs/x.md",
+                    "line": 12,
+                    "message": "Referenced path missing",
+                    "suggestion": "Fix it.",
+                },
             ],
             "security": [
-                {"level": "HIGH", "category": "secret", "path": "CLAUDE.md",
-                 "message": "token leaked"},
+                {"level": "HIGH", "category": "secret", "path": "CLAUDE.md", "message": "token leaked"},
             ],
         }
         payload = pr_review.build_review(report)
@@ -44,8 +49,7 @@ class BuildReviewTests(unittest.TestCase):
     def test_unlocated_findings_go_to_summary(self):
         report = {
             "findings": [
-                {"check": "D4", "level": "ERROR", "message": "AGENTS.md missing",
-                 "suggestion": "Create it."},
+                {"check": "D4", "level": "ERROR", "message": "AGENTS.md missing", "suggestion": "Create it."},
             ],
         }
         payload = pr_review.build_review(report)
@@ -57,10 +61,17 @@ class BuildReviewTests(unittest.TestCase):
         self.assertIn("Create it.", payload["body"])
 
     def test_line_only_findings_use_default_path_when_given(self):
-        report = {"findings": [
-            {"check": "D1", "level": "ERROR", "line": 7,
-             "message": "Unknown script `nope`", "suggestion": "Update AGENTS.md."},
-        ]}
+        report = {
+            "findings": [
+                {
+                    "check": "D1",
+                    "level": "ERROR",
+                    "line": 7,
+                    "message": "Unknown script `nope`",
+                    "suggestion": "Update AGENTS.md.",
+                },
+            ]
+        }
         # Without a default_path, a line-only finding cannot be located.
         without = pr_review.build_review(report)
         self.assertEqual(without["inline_count"], 0)
@@ -83,10 +94,17 @@ class BuildReviewTests(unittest.TestCase):
         report = {
             "findings": [{"check": "D3", "path": "CLAUDE.md", "message": "regrew"}],
             "gaps": [{"check": "G1", "level": "ERROR", "message": "no AGENTS.md"}],
-            "semantic": {"findings": [
-                {"category": "command", "level": "ERROR", "line": 3,
-                 "message": "cmd mismatch", "suggestion": "align"}
-            ]},
+            "semantic": {
+                "findings": [
+                    {
+                        "category": "command",
+                        "level": "ERROR",
+                        "line": 3,
+                        "message": "cmd mismatch",
+                        "suggestion": "align",
+                    }
+                ]
+            },
         }
         findings = pr_review.collect_findings(report)
         self.assertEqual(len(findings), 3)
@@ -100,16 +118,19 @@ class BuildReviewTests(unittest.TestCase):
 
 class CliTests(unittest.TestCase):
     def test_dry_run_prints_valid_json_via_stdin(self):
-        report = json.dumps({
-            "findings": [
-                {"check": "D2", "level": "ERROR", "path": "a.md", "line": 1,
-                 "message": "m", "suggestion": "s"},
-                {"check": "D4", "level": "ERROR", "message": "n"},
-            ]
-        })
+        report = json.dumps(
+            {
+                "findings": [
+                    {"check": "D2", "level": "ERROR", "path": "a.md", "line": 1, "message": "m", "suggestion": "s"},
+                    {"check": "D4", "level": "ERROR", "message": "n"},
+                ]
+            }
+        )
         proc = subprocess.run(
             [sys.executable, str(PR_REVIEW)],
-            input=report, text=True, capture_output=True,
+            input=report,
+            text=True,
+            capture_output=True,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         payload = json.loads(proc.stdout)  # must be valid JSON
@@ -119,6 +140,7 @@ class CliTests(unittest.TestCase):
 
     def test_dry_run_reads_report_file(self):
         import tempfile
+
         report = {"findings": [{"check": "D4", "level": "ERROR", "message": "x"}]}
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
             json.dump(report, fh)
@@ -126,7 +148,8 @@ class CliTests(unittest.TestCase):
         try:
             proc = subprocess.run(
                 [sys.executable, str(PR_REVIEW), "--report", path],
-                text=True, capture_output=True,
+                text=True,
+                capture_output=True,
             )
         finally:
             Path(path).unlink()

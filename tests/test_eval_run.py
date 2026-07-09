@@ -20,21 +20,57 @@ class EvalRunTests(unittest.TestCase):
             workdir.mkdir()
             (workdir / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "regex", "prompt": "hello", "check": {"type": "regex", "value": "ok hello"}, "timeout_s": 10},
-                {"id": "command", "prompt": "world", "check": {"type": "command", "value": "test -f AGENTS.md"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "regex",
+                            "prompt": "hello",
+                            "check": {"type": "regex", "value": "ok hello"},
+                            "timeout_s": 10,
+                        },
+                        {
+                            "id": "command",
+                            "prompt": "world",
+                            "check": {"type": "command", "value": "test -f AGENTS.md"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             before = Path(td) / "before.json"
             after = Path(td) / "after.json"
             runner = f"{sys.executable} -c \"import sys; print('ok '+sys.argv[1])\" {{prompt}}"
             for label, out in [("before", before), ("after", after)]:
-                proc = subprocess.run([sys.executable, str(EVAL), "--tasks", str(tasks), "--label", label, "--workdir", str(workdir), "--runner", runner, "-o", str(out)], text=True, capture_output=True)
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(EVAL),
+                        "--tasks",
+                        str(tasks),
+                        "--label",
+                        label,
+                        "--workdir",
+                        str(workdir),
+                        "--runner",
+                        runner,
+                        "-o",
+                        str(out),
+                    ],
+                    text=True,
+                    capture_output=True,
+                )
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 data = json.loads(out.read_text(encoding="utf-8"))
                 self.assertTrue(all(t["passed"] for t in data["tasks"]))
                 self.assertEqual(data["tasks"][0]["answer"], "ok hello")
             report = Path(td) / "report.md"
-            proc = subprocess.run([sys.executable, str(EVAL), "--compare", str(before), str(after), "-o", str(report)], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--compare", str(before), str(after), "-o", str(report)],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             text = report.read_text(encoding="utf-8")
             self.assertIn("before", text)
@@ -45,12 +81,34 @@ class EvalRunTests(unittest.TestCase):
             workdir = Path(td) / "repo"
             workdir.mkdir()
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "hang", "prompt": "sleep", "timeout_s": 1},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {"id": "hang", "prompt": "sleep", "timeout_s": 1},
+                    ]
+                ),
+                encoding="utf-8",
+            )
             output = Path(td) / "results.json"
-            runner = "python3 -c \"import time;time.sleep(5)\""
-            proc = subprocess.run([sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "timeout", "--workdir", str(workdir), "--runner", runner, "-o", str(output)], text=True, capture_output=True)
+            runner = 'python3 -c "import time;time.sleep(5)"'
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "timeout",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(len(data["tasks"]), 1)
@@ -63,13 +121,45 @@ class EvalRunTests(unittest.TestCase):
             workdir = Path(td) / "repo"
             workdir.mkdir()
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "dev", "prompt": "dev", "check": {"type": "regex", "value": r"^pnpm\s+(run\s+)?dev\b"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "dev",
+                            "prompt": "dev",
+                            "check": {"type": "regex", "value": r"^pnpm\s+(run\s+)?dev\b"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             output = Path(td) / "results.json"
-            runner = f"{sys.executable} -c \"import json; print(json.dumps({{'type':'result','result':'  '+chr(96)+'pnpm dev'+chr(96)+'  ','usage':{{}}}}))\""
+            runner = (
+                f'{sys.executable} -c "import json; '
+                "print(json.dumps({'type':'result',"
+                "'result':'  '+chr(96)+'pnpm dev'+chr(96)+'  ',"
+                "'usage':{}}))\""
+            )
 
-            proc = subprocess.run([sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "envelope", "--workdir", str(workdir), "--runner", runner, "-o", str(output)], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "envelope",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
             self.assertTrue(data["tasks"][0]["passed"])
@@ -78,22 +168,43 @@ class EvalRunTests(unittest.TestCase):
     def test_regrade_flips_stored_false_to_true_after_regex_fix(self):
         with tempfile.TemporaryDirectory() as td:
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "format", "prompt": "format", "check": {"type": "regex", "value": r"(?i)prettier"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "format",
+                            "prompt": "format",
+                            "check": {"type": "regex", "value": r"(?i)prettier"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             results = Path(td) / "results.json"
-            results.write_text(json.dumps({
-                "label": "stored",
-                "tasks": [{
-                    "id": "format",
-                    "passed": False,
-                    "duration_s": 1.23,
-                    "usage": {"total_cost_usd": 0.01},
-                    "stdout": json.dumps({"type": "result", "result": "`Prettier`"}),
-                }],
-            }), encoding="utf-8")
+            results.write_text(
+                json.dumps(
+                    {
+                        "label": "stored",
+                        "tasks": [
+                            {
+                                "id": "format",
+                                "passed": False,
+                                "duration_s": 1.23,
+                                "usage": {"total_cost_usd": 0.01},
+                                "stdout": json.dumps({"type": "result", "result": "`Prettier`"}),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
 
-            proc = subprocess.run([sys.executable, str(EVAL), "--regrade", str(results), "--tasks", str(tasks), "-o", str(results)], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--regrade", str(results), "--tasks", str(tasks), "-o", str(results)],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(results.read_text(encoding="utf-8"))
             record = data["tasks"][0]
@@ -103,26 +214,55 @@ class EvalRunTests(unittest.TestCase):
             self.assertEqual(record["duration_s"], 1.23)
             self.assertEqual(record["usage"], {"total_cost_usd": 0.01})
 
-
     def test_matrix_run_across_two_runners_produces_report_and_json(self):
         with tempfile.TemporaryDirectory() as td:
             workdir = Path(td) / "repo"
             workdir.mkdir()
             (workdir / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "regex", "prompt": "hello", "check": {"type": "regex", "value": "ok hello"}, "timeout_s": 10},
-                {"id": "command", "prompt": "world", "check": {"type": "command", "value": "test -f AGENTS.md"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "regex",
+                            "prompt": "hello",
+                            "check": {"type": "regex", "value": "ok hello"},
+                            "timeout_s": 10,
+                        },
+                        {
+                            "id": "command",
+                            "prompt": "world",
+                            "check": {"type": "command", "value": "test -f AGENTS.md"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             report = Path(td) / "matrix.md"
             matrix_json = Path(td) / "matrix.json"
             runner_ok = f"{sys.executable} -c \"import sys; print('ok '+sys.argv[1])\" {{prompt}}"
             runner_bad = f"{sys.executable} -c \"print('nope')\""
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--workdir", str(workdir),
-                "--runner-cmd", f"good={runner_ok}", "--runner-cmd", f"bad={runner_bad}",
-                "--matrix-report", str(report), "--matrix-json", str(matrix_json),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--runner-cmd",
+                    f"good={runner_ok}",
+                    "--runner-cmd",
+                    f"bad={runner_bad}",
+                    "--matrix-report",
+                    str(report),
+                    "--matrix-json",
+                    str(matrix_json),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
             text = report.read_text(encoding="utf-8")
@@ -144,18 +284,42 @@ class EvalRunTests(unittest.TestCase):
             workdir = Path(td) / "repo"
             workdir.mkdir()
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "regex", "prompt": "hello", "check": {"type": "regex", "value": "ok hello"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "regex",
+                            "prompt": "hello",
+                            "check": {"type": "regex", "value": "ok hello"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             matrix_file = Path(td) / "agents.json"
             runner_ok = f"{sys.executable} -c \"import sys; print('ok '+sys.argv[1])\" {{prompt}}"
             matrix_file.write_text(json.dumps({"alpha": runner_ok}), encoding="utf-8")
             report = Path(td) / "matrix.md"
             matrix_json = Path(td) / "matrix.json"
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--workdir", str(workdir),
-                "--matrix", str(matrix_file), "--matrix-report", str(report), "--matrix-json", str(matrix_json),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--matrix",
+                    str(matrix_file),
+                    "--matrix-report",
+                    str(report),
+                    "--matrix-json",
+                    str(matrix_json),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(matrix_json.read_text(encoding="utf-8"))
             self.assertEqual(data["summary"]["alpha"]["passed"], 1)
@@ -165,17 +329,43 @@ class EvalRunTests(unittest.TestCase):
             workdir = Path(td) / "repo"
             workdir.mkdir()
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "judged", "prompt": "explain", "check": {"type": "judge", "rubric": "must be correct"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "judged",
+                            "prompt": "explain",
+                            "check": {"type": "judge", "rubric": "must be correct"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             runner = f"{sys.executable} -c \"print('the answer')\""
 
-            pass_judge = "printf '{\"passed\":true,\"score\":1.0,\"reason\":\"ok\"}'"
+            pass_judge = 'printf \'{"passed":true,"score":1.0,"reason":"ok"}\''
             out_pass = Path(td) / "pass.json"
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "pass", "--workdir", str(workdir),
-                "--runner", runner, "--judge-cmd", pass_judge, "-o", str(out_pass),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "pass",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "--judge-cmd",
+                    pass_judge,
+                    "-o",
+                    str(out_pass),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(out_pass.read_text(encoding="utf-8"))
             record = data["tasks"][0]
@@ -183,12 +373,28 @@ class EvalRunTests(unittest.TestCase):
             self.assertEqual(record["judge"]["score"], 1.0)
             self.assertTrue(record["judge"]["passed"])
 
-            fail_judge = "printf '{\"passed\":false,\"score\":0.0,\"reason\":\"bad\"}'"
+            fail_judge = 'printf \'{"passed":false,"score":0.0,"reason":"bad"}\''
             out_fail = Path(td) / "fail.json"
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "fail", "--workdir", str(workdir),
-                "--runner", runner, "--judge-cmd", fail_judge, "-o", str(out_fail),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "fail",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "--judge-cmd",
+                    fail_judge,
+                    "-o",
+                    str(out_fail),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(out_fail.read_text(encoding="utf-8"))
             record = data["tasks"][0]
@@ -200,22 +406,48 @@ class EvalRunTests(unittest.TestCase):
             workdir = Path(td) / "repo"
             workdir.mkdir()
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "judged", "prompt": "explain", "check": {"type": "judge", "rubric": "mention-foo"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "judged",
+                            "prompt": "explain",
+                            "check": {"type": "judge", "rubric": "mention-foo"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             runner = f"{sys.executable} -c \"print('foo answer')\""
             # The judge passes only if the answer contains the rubric-required token.
             judge = (
-                f"{sys.executable} -c \"import os,json;"
+                f'{sys.executable} -c "import os,json;'
                 "a=os.environ['JUDGE_ANSWER'];r=os.environ['JUDGE_RUBRIC'];"
                 "ok='foo' in a and r=='mention-foo';"
                 "print(json.dumps({'passed':ok,'score':1.0 if ok else 0.0}))\""
             )
             out = Path(td) / "res.json"
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "envjudge", "--workdir", str(workdir),
-                "--runner", runner, "--judge-cmd", judge, "-o", str(out),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "envjudge",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "--judge-cmd",
+                    judge,
+                    "-o",
+                    str(out),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(out.read_text(encoding="utf-8"))
             self.assertTrue(data["tasks"][0]["passed"])
@@ -242,12 +474,39 @@ class EvalRunTests(unittest.TestCase):
             workdir = Path(td) / "repo"
             workdir.mkdir()
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "slow", "prompt": "x", "check": {"type": "command", "value": "sleep 5"}, "timeout_s": 0.1},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "slow",
+                            "prompt": "x",
+                            "check": {"type": "command", "value": "sleep 5"},
+                            "timeout_s": 0.1,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             output = Path(td) / "results.json"
             runner = f"{sys.executable} -c \"print('done')\""
-            proc = subprocess.run([sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "slow", "--workdir", str(workdir), "--runner", runner, "-o", str(output)], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "slow",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
             record = data["tasks"][0]
@@ -326,8 +585,12 @@ class HealthScoreTests(unittest.TestCase):
         self.assertEqual(health["grade"], "C")
 
     def test_compute_health_from_matrix(self):
-        data = {"agents": {"a": {"tasks": [{"passed": True}, {"passed": True}]},
-                           "b": {"tasks": [{"passed": False}, {"passed": True}]}}}
+        data = {
+            "agents": {
+                "a": {"tasks": [{"passed": True}, {"passed": True}]},
+                "b": {"tasks": [{"passed": False}, {"passed": True}]},
+            }
+        }
         health = eval_run.compute_health(data)
         self.assertEqual(health["total"], 4)
         self.assertEqual(health["score"], 75)
@@ -342,12 +605,37 @@ class HealthScoreTests(unittest.TestCase):
             workdir = Path(td) / "repo"
             workdir.mkdir()
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "j", "prompt": "x", "check": {"type": "judge", "expect": ["never-there"]}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "j",
+                            "prompt": "x",
+                            "check": {"type": "judge", "expect": ["never-there"]},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
             output = Path(td) / "results.json"
             runner = f"{sys.executable} -c \"print('unrelated')\""
-            base = [sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "h", "--workdir", str(workdir), "--runner", runner, "--judge-llm", "off", "-o", str(output)]
+            base = [
+                sys.executable,
+                str(EVAL),
+                "--tasks",
+                str(tasks),
+                "--label",
+                "h",
+                "--workdir",
+                str(workdir),
+                "--runner",
+                runner,
+                "--judge-llm",
+                "off",
+                "-o",
+                str(output),
+            ]
             proc = subprocess.run(base, text=True, capture_output=True)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
@@ -360,10 +648,16 @@ class HealthScoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             results = Path(td) / "r.json"
             results.write_text(json.dumps({"tasks": [{"passed": True}, {"passed": True}]}), encoding="utf-8")
-            proc = subprocess.run([sys.executable, str(EVAL), "--score", str(results), "--json"], text=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--score", str(results), "--json"], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(json.loads(proc.stdout)["score"], 100)
-            gated = subprocess.run([sys.executable, str(EVAL), "--score", str(results), "--fail-under", "100"], text=True, capture_output=True)
+            gated = subprocess.run(
+                [sys.executable, str(EVAL), "--score", str(results), "--fail-under", "100"],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(gated.returncode, 0)
 
 
@@ -388,10 +682,15 @@ class MultiRoundStatsTests(unittest.TestCase):
             encoding="utf-8",
         )
         tasks = Path(td) / "tasks.json"
-        tasks.write_text(json.dumps([
-            {"id": "stable", "prompt": "stable", "check": {"type": "regex", "value": "^ok$"}, "timeout_s": 10},
-            {"id": "flaky", "prompt": "flaky", "check": {"type": "regex", "value": "^ok$"}, "timeout_s": 10},
-        ]), encoding="utf-8")
+        tasks.write_text(
+            json.dumps(
+                [
+                    {"id": "stable", "prompt": "stable", "check": {"type": "regex", "value": "^ok$"}, "timeout_s": 10},
+                    {"id": "flaky", "prompt": "flaky", "check": {"type": "regex", "value": "^ok$"}, "timeout_s": 10},
+                ]
+            ),
+            encoding="utf-8",
+        )
         runner = f"{sys.executable} {shlex_quote(str(runner_py))} {{prompt}}"
         return tasks, runner
 
@@ -401,10 +700,26 @@ class MultiRoundStatsTests(unittest.TestCase):
             workdir.mkdir()
             tasks, runner = self._write_scenario(td)
             output = Path(td) / "results.json"
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "multi",
-                "--workdir", str(workdir), "--runner", runner, "--rounds", "2", "-o", str(output),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "multi",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "--rounds",
+                    "2",
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(data["rounds"], 2)
@@ -435,10 +750,24 @@ class MultiRoundStatsTests(unittest.TestCase):
             workdir.mkdir()
             tasks, runner = self._write_scenario(td)
             output = Path(td) / "results.json"
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "single",
-                "--workdir", str(workdir), "--runner", runner, "-o", str(output),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "single",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
             # Legacy shape: top-level tasks + health, no rounds/stats keys.
@@ -454,10 +783,26 @@ class MultiRoundStatsTests(unittest.TestCase):
             workdir.mkdir()
             tasks, runner = self._write_scenario(td)
             output = Path(td) / "results.json"
-            proc = subprocess.run([
-                sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "one",
-                "--workdir", str(workdir), "--runner", runner, "--rounds", "1", "-o", str(output),
-            ], text=True, capture_output=True)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "one",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "--rounds",
+                    "1",
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             data = json.loads(output.read_text(encoding="utf-8"))
             self.assertNotIn("round_results", data)
@@ -466,13 +811,20 @@ class MultiRoundStatsTests(unittest.TestCase):
     def test_stats_subcommand_reads_existing_multi_round_file(self):
         with tempfile.TemporaryDirectory() as td:
             multi = Path(td) / "multi.json"
-            multi.write_text(json.dumps({
-                "round_results": [
-                    {"round": 1, "tasks": [{"id": "a", "passed": True}, {"id": "b", "passed": True}]},
-                    {"round": 2, "tasks": [{"id": "a", "passed": True}, {"id": "b", "passed": False}]},
-                ]
-            }), encoding="utf-8")
-            proc = subprocess.run([sys.executable, str(EVAL), "--stats", str(multi), "--json"], text=True, capture_output=True)
+            multi.write_text(
+                json.dumps(
+                    {
+                        "round_results": [
+                            {"round": 1, "tasks": [{"id": "a", "passed": True}, {"id": "b", "passed": True}]},
+                            {"round": 2, "tasks": [{"id": "a", "passed": True}, {"id": "b", "passed": False}]},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--stats", str(multi), "--json"], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
             out = json.loads(proc.stdout)
             self.assertEqual(out["stats"]["flaky_tasks"], ["b"])
@@ -482,12 +834,19 @@ class MultiRoundStatsTests(unittest.TestCase):
     def test_stats_fail_under_gate(self):
         with tempfile.TemporaryDirectory() as td:
             multi = Path(td) / "multi.json"
-            multi.write_text(json.dumps({
-                "round_results": [
-                    {"round": 1, "tasks": [{"id": "a", "passed": False}]},
-                ]
-            }), encoding="utf-8")
-            gated = subprocess.run([sys.executable, str(EVAL), "--stats", str(multi), "--fail-under", "50"], text=True, capture_output=True)
+            multi.write_text(
+                json.dumps(
+                    {
+                        "round_results": [
+                            {"round": 1, "tasks": [{"id": "a", "passed": False}]},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            gated = subprocess.run(
+                [sys.executable, str(EVAL), "--stats", str(multi), "--fail-under", "50"], text=True, capture_output=True
+            )
             self.assertEqual(gated.returncode, 5, gated.stdout)
 
     def test_summarize_rounds_unit(self):
@@ -514,6 +873,7 @@ class _EnvGuard:
 
     def __enter__(self):
         import os as _os
+
         for key, value in self.overrides.items():
             self.saved[key] = _os.environ.get(key)
             if value is None:
@@ -524,6 +884,7 @@ class _EnvGuard:
 
     def __exit__(self, *exc):
         import os as _os
+
         for key, value in self.saved.items():
             if value is None:
                 _os.environ.pop(key, None)
@@ -536,12 +897,17 @@ class GenerateTasksTests(unittest.TestCase):
     def _make_repo(self, td):
         repo = Path(td) / "repo"
         (repo / "src" / "components").mkdir(parents=True)
-        (repo / "package.json").write_text(json.dumps({
-            "packageManager": "pnpm@9.0.0",
-            "engines": {"node": ">=20"},
-            "scripts": {"test": "vitest run", "lint": "eslint .", "build": "tsc", "dev": "vite"},
-            "devDependencies": {"vitest": "^1", "prettier": "^3"},
-        }), encoding="utf-8")
+        (repo / "package.json").write_text(
+            json.dumps(
+                {
+                    "packageManager": "pnpm@9.0.0",
+                    "engines": {"node": ">=20"},
+                    "scripts": {"test": "vitest run", "lint": "eslint .", "build": "tsc", "dev": "vite"},
+                    "devDependencies": {"vitest": "^1", "prettier": "^3"},
+                }
+            ),
+            encoding="utf-8",
+        )
         (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
         (repo / "AGENTS.md").write_text("# Overview\nUse Conventional Commits.\n", encoding="utf-8")
         (repo / "go.mod").write_text("module github.com/acme/widget\n\ngo 1.22\n", encoding="utf-8")
@@ -553,9 +919,21 @@ class GenerateTasksTests(unittest.TestCase):
             tasks = eval_run.generate_tasks(repo)
             by_id = {t["id"]: t for t in tasks}
             # Ground-truth facts become tasks.
-            for tid in ["package-manager", "install", "test", "lint", "build", "dev",
-                        "test-framework", "formatter", "node-version", "go-version",
-                        "go-module", "commit-convention", "components-dir"]:
+            for tid in [
+                "package-manager",
+                "install",
+                "test",
+                "lint",
+                "build",
+                "dev",
+                "test-framework",
+                "formatter",
+                "node-version",
+                "go-version",
+                "go-module",
+                "commit-convention",
+                "components-dir",
+            ]:
                 self.assertIn(tid, by_id, tid)
             # Every generated check is a regex over the true value.
             self.assertTrue(eval_run.regex_passes(by_id["install"]["check"]["value"], "pnpm install"))
@@ -572,8 +950,8 @@ class GenerateTasksTests(unittest.TestCase):
             repo = self._make_repo(td)
             out = Path(td) / "tasks.json"
             proc = subprocess.run(
-                [sys.executable, str(EVAL), "--generate", str(repo), "-o", str(out)],
-                text=True, capture_output=True)
+                [sys.executable, str(EVAL), "--generate", str(repo), "-o", str(out)], text=True, capture_output=True
+            )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             data = json.loads(out.read_text(encoding="utf-8"))
             self.assertGreaterEqual(len(data), 10)
@@ -708,14 +1086,33 @@ class BaselineTests(unittest.TestCase):
             workdir.mkdir()
             (workdir / "AGENTS.md").write_text("# overview\n", encoding="utf-8")
             tasks = Path(td) / "tasks.json"
-            tasks.write_text(json.dumps([
-                {"id": "r", "prompt": "hi", "check": {"type": "regex", "value": "ok hi"}, "timeout_s": 10},
-            ]), encoding="utf-8")
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {"id": "r", "prompt": "hi", "check": {"type": "regex", "value": "ok hi"}, "timeout_s": 10},
+                    ]
+                ),
+                encoding="utf-8",
+            )
             runner = f"{sys.executable} -c \"print('ok hi')\""
             store = Path(td) / "baseline.json"
-            base = [sys.executable, str(EVAL), "--tasks", str(tasks), "--label", "run1",
-                    "--workdir", str(workdir), "--runner", runner, "-o", str(Path(td) / "r1.json"),
-                    "--baseline", str(store), "--save-baseline"]
+            base = [
+                sys.executable,
+                str(EVAL),
+                "--tasks",
+                str(tasks),
+                "--label",
+                "run1",
+                "--workdir",
+                str(workdir),
+                "--runner",
+                runner,
+                "-o",
+                str(Path(td) / "r1.json"),
+                "--baseline",
+                str(store),
+                "--save-baseline",
+            ]
             self.assertEqual(subprocess.run(base, text=True, capture_output=True).returncode, 0)
             self.assertEqual(len(json.loads(store.read_text(encoding="utf-8"))), 1)
             # Second run appends a new snapshot.
@@ -727,8 +1124,7 @@ class BaselineTests(unittest.TestCase):
             self.assertEqual(len(data), 2)
             self.assertEqual(data[0]["score"], 100)
             # Trend report renders the history.
-            trend = subprocess.run([sys.executable, str(EVAL), "--trend", str(store)],
-                                   text=True, capture_output=True)
+            trend = subprocess.run([sys.executable, str(EVAL), "--trend", str(store)], text=True, capture_output=True)
             self.assertEqual(trend.returncode, 0, trend.stderr)
             self.assertIn("Eval baseline trend", trend.stdout)
 
@@ -739,14 +1135,30 @@ class BaselineTests(unittest.TestCase):
             store.write_text(json.dumps([{"label": "good", "score": 100, "grade": "A"}]), encoding="utf-8")
             # A results file that scores 0 (nothing passed).
             results = Path(td) / "results.json"
-            results.write_text(json.dumps({
-                "label": "bad",
-                "tasks": [{"id": "x", "passed": False, "timed_out": False}],
-            }), encoding="utf-8")
+            results.write_text(
+                json.dumps(
+                    {
+                        "label": "bad",
+                        "tasks": [{"id": "x", "passed": False, "timed_out": False}],
+                    }
+                ),
+                encoding="utf-8",
+            )
             proc = subprocess.run(
-                [sys.executable, str(EVAL), "--score", str(results),
-                 "--baseline", str(store), "--check-regression", "--regression-threshold", "5"],
-                text=True, capture_output=True)
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--score",
+                    str(results),
+                    "--baseline",
+                    str(store),
+                    "--check-regression",
+                    "--regression-threshold",
+                    "5",
+                ],
+                text=True,
+                capture_output=True,
+            )
             self.assertEqual(proc.returncode, 6, proc.stdout + proc.stderr)
             self.assertIn("REGRESSION", proc.stdout)
 

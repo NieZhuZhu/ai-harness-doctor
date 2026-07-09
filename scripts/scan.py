@@ -2,7 +2,6 @@
 """Scan AI harness configuration files and report overlap/conflicts."""
 
 import argparse
-import fnmatch
 import hashlib
 import json
 import os
@@ -19,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plugins  # noqa: E402  # user-extensible deterministic rule plugins
 import registry  # noqa: E402
 import semantic  # noqa: E402  # declaration-vs-fact consistency engine
-
 
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
 
@@ -75,7 +73,10 @@ SECRET_PATTERNS = [
     ("Slack token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
     ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
     ("Private key block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
-    ("Generic hardcoded secret", re.compile(r"(?i)\b(?:api[_-]?key|secret|token|password|passwd)\b\s*[:=]\s*['\"][^'\"\s]{12,}['\"]")),
+    (
+        "Generic hardcoded secret",
+        re.compile(r"(?i)\b(?:api[_-]?key|secret|token|password|passwd)\b\s*[:=]\s*['\"][^'\"\s]{12,}['\"]"),
+    ),
 ]
 
 # Permission entries that grant broad/unrestricted execution.
@@ -140,8 +141,20 @@ PRECOMMIT_HOOK_PATHS = [".git/hooks/pre-commit", ".githooks/pre-commit"]
 TECH_STACK_MARKERS = [
     ("Go", ["go.mod", "go.sum", "go.work"]),
     ("Node.js", ["package.json"]),
-    ("Python", ["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "Pipfile",
-                "poetry.lock", "uv.lock", "pdm.lock", "Pipfile.lock"]),
+    (
+        "Python",
+        [
+            "pyproject.toml",
+            "requirements.txt",
+            "setup.py",
+            "setup.cfg",
+            "Pipfile",
+            "poetry.lock",
+            "uv.lock",
+            "pdm.lock",
+            "Pipfile.lock",
+        ],
+    ),
     ("Rust", ["Cargo.toml", "Cargo.lock"]),
     ("Ruby", ["Gemfile"]),
     ("PHP", ["composer.json"]),
@@ -156,25 +169,63 @@ TECH_STACK_MARKERS = [
 # Config surfaces grouped by concern so an agent can see what tooling is (and is
 # not) wired up. Values are glob patterns evaluated from the repo root.
 SNAPSHOT_FILE_GROUPS = [
-    ("ci", [
-        ".github/workflows/*.yml", ".github/workflows/*.yaml",
-        ".gitlab-ci.yml", ".circleci/config.yml", "azure-pipelines.yml",
-        "Jenkinsfile", ".travis.yml", "buildkite.yml", ".drone.yml",
-    ]),
-    ("hooks", [
-        ".pre-commit-config.yaml", ".pre-commit-config.yml",
-        ".githooks/*", ".husky/*", "lefthook.yml", "lefthook.yaml",
-    ]),
-    ("lint_format", [
-        ".eslintrc", ".eslintrc.*", "eslint.config.*", ".prettierrc",
-        ".prettierrc.*", "prettier.config.*", "biome.json", "biome.jsonc",
-        ".flake8", "ruff.toml", ".ruff.toml", ".pylintrc",
-        ".golangci.yml", ".golangci.yaml", ".rubocop.yml",
-        ".editorconfig", ".rustfmt.toml", "rustfmt.toml",
-    ]),
-    ("typecheck", [
-        "tsconfig.json", "mypy.ini", ".mypy.ini", "pyrightconfig.json",
-    ]),
+    (
+        "ci",
+        [
+            ".github/workflows/*.yml",
+            ".github/workflows/*.yaml",
+            ".gitlab-ci.yml",
+            ".circleci/config.yml",
+            "azure-pipelines.yml",
+            "Jenkinsfile",
+            ".travis.yml",
+            "buildkite.yml",
+            ".drone.yml",
+        ],
+    ),
+    (
+        "hooks",
+        [
+            ".pre-commit-config.yaml",
+            ".pre-commit-config.yml",
+            ".githooks/*",
+            ".husky/*",
+            "lefthook.yml",
+            "lefthook.yaml",
+        ],
+    ),
+    (
+        "lint_format",
+        [
+            ".eslintrc",
+            ".eslintrc.*",
+            "eslint.config.*",
+            ".prettierrc",
+            ".prettierrc.*",
+            "prettier.config.*",
+            "biome.json",
+            "biome.jsonc",
+            ".flake8",
+            "ruff.toml",
+            ".ruff.toml",
+            ".pylintrc",
+            ".golangci.yml",
+            ".golangci.yaml",
+            ".rubocop.yml",
+            ".editorconfig",
+            ".rustfmt.toml",
+            "rustfmt.toml",
+        ],
+    ),
+    (
+        "typecheck",
+        [
+            "tsconfig.json",
+            "mypy.ini",
+            ".mypy.ini",
+            "pyrightconfig.json",
+        ],
+    ),
 ]
 
 
@@ -274,20 +325,25 @@ def file_info(root, tool, path, max_bytes):
     # normally-sized files; oversize files are read only up to max_bytes.
     size = path.stat().st_size
     if size > max_bytes:
-        warnings.append({
-            "level": "WARN",
-            "path": rp,
-            "message": f"{rp} is {size} bytes, above {max_bytes}; Codex project_doc_max_bytes defaults to 32KB and may silently truncate context.",
-        })
+        warnings.append(
+            {
+                "level": "WARN",
+                "path": rp,
+                "message": f"{rp} is {size} bytes, above {max_bytes}; Codex "
+                f"project_doc_max_bytes defaults to 32KB and may silently truncate context.",
+            }
+        )
         with path.open("rb") as fh:
             data = fh.read(max_bytes)
     else:
         if size > 12 * 1024:
-            warnings.append({
-                "level": "NOTICE",
-                "path": rp,
-                "message": f"{rp} is {size} bytes; this may cause context bloat.",
-            })
+            warnings.append(
+                {
+                    "level": "NOTICE",
+                    "path": rp,
+                    "message": f"{rp} is {size} bytes; this may cause context bloat.",
+                }
+            )
         data = path.read_bytes()
     text = data.decode("utf-8", errors="replace")
     return {
@@ -303,7 +359,9 @@ def file_info(root, tool, path, max_bytes):
 
 def normalized_lines(text):
     out = []
-    punctuation = set(string.punctuation + "#*-_=|`~>\u3002\uff01\uff1f\u3001\uff0c\uff1b\uff1a\uff08\uff09\u3010\u3011\u300a\u300b")
+    punctuation = set(
+        string.punctuation + "#*-_=|`~>\u3002\uff01\uff1f\u3001\uff0c\uff1b\uff1a\uff08\uff09\u3010\u3011\u300a\u300b"
+    )
     for line in text.splitlines():
         s = line.strip()
         if not s:
@@ -325,13 +383,15 @@ def find_overlaps(files):
         shared = la & lb
         ratio = len(shared) / float(min(len(la), len(lb)))
         if ratio > 0.30:
-            overlaps.append({
-                "a": a["path"],
-                "b": b["path"],
-                "shared_lines": len(shared),
-                "ratio": round(ratio, 4),
-                "percent": round(ratio * 100, 1),
-            })
+            overlaps.append(
+                {
+                    "a": a["path"],
+                    "b": b["path"],
+                    "shared_lines": len(shared),
+                    "ratio": round(ratio, 4),
+                    "percent": round(ratio * 100, 1),
+                }
+            )
     return sorted(overlaps, key=lambda x: x["ratio"], reverse=True)
 
 
@@ -392,7 +452,15 @@ def extract_signals(file_entry):
                 if not match:
                     continue
                 actual = f"node {match.group(1)}" if signal == "node_version" and match.groups() else value
-                signals.append({"signal": signal, "value": actual, "path": file_entry["path"], "line": lineno, "evidence": line.strip()})
+                signals.append(
+                    {
+                        "signal": signal,
+                        "value": actual,
+                        "path": file_entry["path"],
+                        "line": lineno,
+                        "evidence": line.strip(),
+                    }
+                )
     return signals
 
 
@@ -409,10 +477,12 @@ def find_conflicts(files):
     for signal, values in by_signal.items():
         if len(values) <= 1:
             continue
-        conflicts.append({
-            "signal": signal,
-            "values": {value: entries[:3] for value, entries in values.items()},
-        })
+        conflicts.append(
+            {
+                "signal": signal,
+                "values": {value: entries[:3] for value, entries in values.items()},
+            }
+        )
     return conflicts
 
 
@@ -454,14 +524,16 @@ def scan_mcp(root):
             url = cfg.get("url") or cfg.get("endpoint") or ""
             transport = cfg.get("type") or ("remote" if url else "stdio")
             env = cfg.get("env") if isinstance(cfg.get("env"), dict) else {}
-            servers.append({
-                "config": rel(path, root),
-                "name": name,
-                "transport": transport,
-                "command": str(cfg.get("command", "")),
-                "url": str(url),
-                "env_keys": sorted(env.keys()),
-            })
+            servers.append(
+                {
+                    "config": rel(path, root),
+                    "name": name,
+                    "transport": transport,
+                    "command": str(cfg.get("command", "")),
+                    "url": str(url),
+                    "env_keys": sorted(env.keys()),
+                }
+            )
     return servers
 
 
@@ -544,8 +616,14 @@ def security_findings(root, files, mcp, hooks, permissions):
     # 1) Plaintext secrets in instruction/rule files.
     for f in files:
         for label in secret_hits(f["text"]):
-            findings.append({"level": "HIGH", "category": "secret", "path": f["path"],
-                             "message": f"Possible {label} committed in {f['path']}"})
+            findings.append(
+                {
+                    "level": "HIGH",
+                    "category": "secret",
+                    "path": f["path"],
+                    "message": f"Possible {label} committed in {f['path']}",
+                }
+            )
     # Raw MCP/settings config files are not in `files`; scan them directly.
     for rel_path in sorted(set(MCP_CONFIG_FILES) | set(SETTINGS_FILES)):
         path = root / rel_path
@@ -553,42 +631,91 @@ def security_findings(root, files, mcp, hooks, permissions):
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         for label in secret_hits(text):
-            findings.append({"level": "HIGH", "category": "secret", "path": rel_path,
-                             "message": f"Possible {label} committed in {rel_path}"})
+            findings.append(
+                {
+                    "level": "HIGH",
+                    "category": "secret",
+                    "path": rel_path,
+                    "message": f"Possible {label} committed in {rel_path}",
+                }
+            )
     # 2) MCP transport / credential hygiene.
     for s in mcp:
         if s["url"].startswith("http://"):
-            findings.append({"level": "MEDIUM", "category": "mcp", "path": s["config"],
-                             "message": f"MCP server `{s['name']}` uses insecure http:// transport"})
+            findings.append(
+                {
+                    "level": "MEDIUM",
+                    "category": "mcp",
+                    "path": s["config"],
+                    "message": f"MCP server `{s['name']}` uses insecure http:// transport",
+                }
+            )
         for key in s["env_keys"]:
             if re.search(r"(?i)key|token|secret|password", key):
-                findings.append({"level": "MEDIUM", "category": "mcp", "path": s["config"],
-                                 "message": f"MCP server `{s['name']}` sets credential-shaped env `{key}`; reference an env var instead of a literal"})
+                findings.append(
+                    {
+                        "level": "MEDIUM",
+                        "category": "mcp",
+                        "path": s["config"],
+                        "message": f"MCP server `{s['name']}` sets credential-shaped "
+                        f"env `{key}`; reference an env var instead of a literal",
+                    }
+                )
     # 3) Permission breadth.
     for p in permissions:
         for entry in p.get("allow", []):
             if BROAD_PERMISSION_RE.search(entry.strip()):
-                findings.append({"level": "HIGH", "category": "permission", "path": p["config"],
-                                 "message": f"Overly broad allow rule `{entry}` grants unrestricted execution"})
+                findings.append(
+                    {
+                        "level": "HIGH",
+                        "category": "permission",
+                        "path": p["config"],
+                        "message": f"Overly broad allow rule `{entry}` grants unrestricted execution",
+                    }
+                )
         mode = p.get("defaultMode", "")
         if mode == "bypassPermissions":
-            findings.append({"level": "HIGH", "category": "permission", "path": p["config"],
-                             "message": "permissions.defaultMode is `bypassPermissions` (no confirmation prompts)"})
+            findings.append(
+                {
+                    "level": "HIGH",
+                    "category": "permission",
+                    "path": p["config"],
+                    "message": "permissions.defaultMode is `bypassPermissions` (no confirmation prompts)",
+                }
+            )
         elif mode == "acceptEdits":
-            findings.append({"level": "MEDIUM", "category": "permission", "path": p["config"],
-                             "message": "permissions.defaultMode is `acceptEdits` (edits auto-approved)"})
+            findings.append(
+                {
+                    "level": "MEDIUM",
+                    "category": "permission",
+                    "path": p["config"],
+                    "message": "permissions.defaultMode is `acceptEdits` (edits auto-approved)",
+                }
+            )
     # 4) Risky hook / command bodies.
     for h in hooks:
         for label, pattern in RISKY_COMMAND_RES:
             if pattern.search(h["command"]):
-                findings.append({"level": "HIGH", "category": "hook", "path": h["config"],
-                                 "message": f"{h['event']} hook contains {label}: `{h['command'][:80]}`"})
+                findings.append(
+                    {
+                        "level": "HIGH",
+                        "category": "hook",
+                        "path": h["config"],
+                        "message": f"{h['event']} hook contains {label}: `{h['command'][:80]}`",
+                    }
+                )
     # 5) Risky flags recommended inside instruction files.
     for f in files:
         for label, pattern in RISKY_COMMAND_RES:
             if label == "permission bypass flag" and pattern.search(f["text"]):
-                findings.append({"level": "MEDIUM", "category": "instruction", "path": f["path"],
-                                 "message": f"Instruction file recommends a {label}"})
+                findings.append(
+                    {
+                        "level": "MEDIUM",
+                        "category": "instruction",
+                        "path": f["path"],
+                        "message": f"Instruction file recommends a {label}",
+                    }
+                )
     order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     return sorted(findings, key=lambda x: (order.get(x["level"], 3), x["category"], x["path"]))
 
@@ -642,11 +769,15 @@ def find_gaps(root, surface):
 
     # 1) Canonical root AGENTS.md must exist — the single source of truth.
     if not agents.is_file():
-        gaps.append(gap(
-            "G1", "ERROR", "Root AGENTS.md",
-            "No canonical `AGENTS.md` at the repository root.",
-            "Create a root AGENTS.md (see assets/AGENTS.template.md), then run canonicalize.py --write-stubs.",
-        ))
+        gaps.append(
+            gap(
+                "G1",
+                "ERROR",
+                "Root AGENTS.md",
+                "No canonical `AGENTS.md` at the repository root.",
+                "Create a root AGENTS.md (see assets/AGENTS.template.md), then run canonicalize.py --write-stubs.",
+            )
+        )
         agents_text = ""
     else:
         agents_text = agents.read_text(encoding="utf-8", errors="replace")
@@ -657,11 +788,15 @@ def find_gaps(root, surface):
         for section in required_sections():
             needle = section.lower()
             if not any(needle == h or needle in h for h in present):
-                gaps.append(gap(
-                    "G2", "WARN", f"Section: {section}",
-                    f"AGENTS.md is missing the `{section}` section.",
-                    f"Add a `# {section}` section describing what agents cannot infer from code alone.",
-                ))
+                gaps.append(
+                    gap(
+                        "G2",
+                        "WARN",
+                        f"Section: {section}",
+                        f"AGENTS.md is missing the `{section}` section.",
+                        f"Add a `# {section}` section describing what agents cannot infer from code alone.",
+                    )
+                )
 
     # 3) Tool stubs should be minimal pointers to AGENTS.md, not full duplicates.
     if agents.is_file():
@@ -672,21 +807,30 @@ def find_gaps(root, surface):
             data = path.read_bytes()
             text = data.decode("utf-8", errors="replace")
             if len(data) > STUB_POINTER_MAX_BYTES or "AGENTS.md" not in text:
-                gaps.append(gap(
-                    "G3", "WARN", f"Stub pointer: {rel_path}",
-                    f"`{rel_path}` exists but is not a minimal pointer to AGENTS.md "
-                    f"({len(data)} bytes; pointer must be <= {STUB_POINTER_MAX_BYTES} bytes and reference AGENTS.md).",
-                    "Run canonicalize.py --write-stubs to downgrade it to a pointer.",
-                ))
+                gaps.append(
+                    gap(
+                        "G3",
+                        "WARN",
+                        f"Stub pointer: {rel_path}",
+                        f"`{rel_path}` exists but is not a minimal pointer to AGENTS.md "
+                        f"({len(data)} bytes; pointer must be <= "
+                        f"{STUB_POINTER_MAX_BYTES} bytes and reference AGENTS.md).",
+                        "Run canonicalize.py --write-stubs to downgrade it to a pointer.",
+                    )
+                )
 
     # 4) Drift guard / checkup CI workflows.
     for rel_path, level, item in GUARD_CI_WORKFLOWS:
         if not (root / rel_path).is_file():
-            gaps.append(gap(
-                "G4", level, item,
-                f"`{rel_path}` is not installed.",
-                "Run `ai-harness-doctor guard . --apply` to install the guard suite.",
-            ))
+            gaps.append(
+                gap(
+                    "G4",
+                    level,
+                    item,
+                    f"`{rel_path}` is not installed.",
+                    "Run `ai-harness-doctor guard . --apply` to install the guard suite.",
+                )
+            )
 
     # G5-G8 (pre-commit drift guard, maintenance contract, MCP configuration,
     # permission configuration) used to be reported here as static gaps. They
@@ -899,13 +1043,15 @@ def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None):
     packages = []
     for relpath, pdir in package_dirs.items():
         sub = scan_repo(pdir, max_bytes, rules_dirs)
-        packages.append({
-            "path": relpath,
-            "name": _package_name(pdir),
-            "has_agents_md": (pdir / "AGENTS.md").is_file(),
-            "summary": _package_summary(sub),
-            "report": sub,
-        })
+        packages.append(
+            {
+                "path": relpath,
+                "name": _package_name(pdir),
+                "has_agents_md": (pdir / "AGENTS.md").is_file(),
+                "summary": _package_summary(sub),
+                "report": sub,
+            }
+        )
     monorepo = {
         "source": source,
         "package_count": len(packages),
@@ -962,14 +1108,22 @@ def render_markdown(report, report_path=None):
     if "custom" in report:
         render_custom(lines, report["custom"])
     if report_path:
-        lines.extend([
+        lines.extend(
+            [
+                "",
+                "## Full JSON report",
+                f"The complete machine-readable report was written to `{report_path}`. "
+                "An agent can read this file to reason over the project snapshot, gaps, "
+                "surface, and security findings, and to plan fixes.",
+            ]
+        )
+    lines.extend(
+        [
             "",
-            "## Full JSON report",
-            f"The complete machine-readable report was written to `{report_path}`. "
-            "An agent can read this file to reason over the project snapshot, gaps, "
-            "surface, and security findings, and to plan fixes.",
-        ])
-    lines.extend(["", "> Stop condition: confirm the migration scope (whole repository / subdirectory / selected files) before entering Phase 1 — Treat."])
+            "> Stop condition: confirm the migration scope (whole repository / "
+            "subdirectory / selected files) before entering Phase 1 — Treat.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
@@ -1083,9 +1237,7 @@ def render_semantic(lines, semantic_report):
         else:
             lines.append("No verifiable AGENTS.md declarations were found to cross-check.")
         return
-    lines.append(
-        f"{len(findings)} of {checked} checked AGENTS.md declaration(s) do not match the code:"
-    )
+    lines.append(f"{len(findings)} of {checked} checked AGENTS.md declaration(s) do not match the code:")
     for f in findings:
         label = CATEGORY_LABELS.get(f["category"], f["category"])
         loc = f":{f['line']}" if "line" in f else ""
@@ -1137,32 +1289,53 @@ def main(argv=None):
     parser.add_argument("repo_root", nargs="?", default=".")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--max-bytes", type=int, default=32768)
-    parser.add_argument("--no-security", action="store_true",
-                        help="Skip the security checkup section.")
-    parser.add_argument("--fail-on-security", action="store_true",
-                        help="Exit non-zero when any HIGH-severity security finding is present.")
-    parser.add_argument("--no-gaps", action="store_true",
-                        help="Skip the missing / gap analysis section.")
-    parser.add_argument("--fail-on-gaps", action="store_true",
-                        help="Exit non-zero when any ERROR-level harness gap is present.")
-    parser.add_argument("--no-semantic", action="store_true",
-                        help="Skip the semantic consistency section (drops the `semantic` key).")
-    parser.add_argument("--fail-on-semantic", action="store_true",
-                        help="Exit non-zero when any AGENTS.md declaration contradicts the code.")
-    parser.add_argument("--no-snapshot", action="store_true",
-                        help="Skip the project snapshot section (drops the `project_snapshot` key).")
-    parser.add_argument("--no-custom", action="store_true",
-                        help="Skip custom rule plugins (drops the `custom` key).")
-    parser.add_argument("--rules", action="append", default=None, metavar="DIR", dest="rules",
-                        help="Directory of custom rule plugins (`*.py` exposing `check(root, context)`). "
-                             "Repeatable; searched in addition to `<repo>/.ai-harness-doctor/rules/`.")
-    parser.add_argument("--no-report-file", action="store_true",
-                        help="Do not write the full JSON report to a temp file (markdown mode only).")
-    parser.add_argument("--monorepo", action="store_true",
-                        help="Force monorepo mode: scan each package subdir even without a "
-                             "workspace config (falls back to nested package.json / AGENTS.md subtrees).")
-    parser.add_argument("--no-monorepo", action="store_true",
-                        help="Disable monorepo detection; scan only the repo root.")
+    parser.add_argument("--no-security", action="store_true", help="Skip the security checkup section.")
+    parser.add_argument(
+        "--fail-on-security",
+        action="store_true",
+        help="Exit non-zero when any HIGH-severity security finding is present.",
+    )
+    parser.add_argument("--no-gaps", action="store_true", help="Skip the missing / gap analysis section.")
+    parser.add_argument(
+        "--fail-on-gaps", action="store_true", help="Exit non-zero when any ERROR-level harness gap is present."
+    )
+    parser.add_argument(
+        "--no-semantic", action="store_true", help="Skip the semantic consistency section (drops the `semantic` key)."
+    )
+    parser.add_argument(
+        "--fail-on-semantic",
+        action="store_true",
+        help="Exit non-zero when any AGENTS.md declaration contradicts the code.",
+    )
+    parser.add_argument(
+        "--no-snapshot",
+        action="store_true",
+        help="Skip the project snapshot section (drops the `project_snapshot` key).",
+    )
+    parser.add_argument("--no-custom", action="store_true", help="Skip custom rule plugins (drops the `custom` key).")
+    parser.add_argument(
+        "--rules",
+        action="append",
+        default=None,
+        metavar="DIR",
+        dest="rules",
+        help="Directory of custom rule plugins (`*.py` exposing `check(root, context)`). "
+        "Repeatable; searched in addition to `<repo>/.ai-harness-doctor/rules/`.",
+    )
+    parser.add_argument(
+        "--no-report-file",
+        action="store_true",
+        help="Do not write the full JSON report to a temp file (markdown mode only).",
+    )
+    parser.add_argument(
+        "--monorepo",
+        action="store_true",
+        help="Force monorepo mode: scan each package subdir even without a "
+        "workspace config (falls back to nested package.json / AGENTS.md subtrees).",
+    )
+    parser.add_argument(
+        "--no-monorepo", action="store_true", help="Disable monorepo detection; scan only the repo root."
+    )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
     report = scan_repo(root, args.max_bytes, args.rules)
@@ -1186,11 +1359,9 @@ def main(argv=None):
     # monorepo run cannot hide a failing package. In single-repo mode this is
     # exactly the previous behavior (only the root report is present).
     reports = [report] + [pkg["report"] for pkg in report.get("packages", [])]
-    if args.fail_on_security and any(
-            any(s["level"] == "HIGH" for s in r.get("security", [])) for r in reports):
+    if args.fail_on_security and any(any(s["level"] == "HIGH" for s in r.get("security", [])) for r in reports):
         return 2
-    if args.fail_on_gaps and any(
-            any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in reports):
+    if args.fail_on_gaps and any(any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in reports):
         return 3
     if args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in reports):
         return 4

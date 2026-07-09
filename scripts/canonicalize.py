@@ -11,8 +11,8 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-import scan  # noqa: E402
 import registry  # noqa: E402
+import scan  # noqa: E402
 import semantic  # noqa: E402  # reuse package.json/Makefile/lockfile/node fact readers
 
 # Lockfile -> package-manager map, mirrored from check_drift.py / semantic.py so
@@ -47,13 +47,19 @@ def _build_stubs():
 
 STUBS = _build_stubs()
 
-CURSOR_RULE_STUB = "---\nalwaysApply: true\n---\n\nCanonical agent instructions live in `AGENTS.md` (single source of truth). Do not duplicate rules here.\n"
+CURSOR_RULE_STUB = (
+    "---\nalwaysApply: true\n---\n\n"
+    "Canonical agent instructions live in `AGENTS.md` (single source of truth). "
+    "Do not duplicate rules here.\n"
+)
 
 
 def git_clean_or_forced(root, force):
     if force:
         return
-    inside = subprocess.run(["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"], text=True, capture_output=True)
+    inside = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"], text=True, capture_output=True
+    )
     if inside.returncode != 0 or inside.stdout.strip() != "true":
         raise SystemExit("Refusing to write: target is not a git repo. Use --force to override.")
     status = subprocess.run(["git", "-C", str(root), "status", "--porcelain"], text=True, capture_output=True)
@@ -62,10 +68,15 @@ def git_clean_or_forced(root, force):
 
 
 def unified_diff(path, old, new):
-    return "".join(difflib.unified_diff(
-        old.splitlines(True), new.splitlines(True),
-        fromfile=f"a/{path.as_posix()}", tofile=f"b/{path.as_posix()}", lineterm=""
-    ))
+    return "".join(
+        difflib.unified_diff(
+            old.splitlines(True),
+            new.splitlines(True),
+            fromfile=f"a/{path.as_posix()}",
+            tofile=f"b/{path.as_posix()}",
+            lineterm="",
+        )
+    )
 
 
 def render_plan(report, root=None):
@@ -91,14 +102,18 @@ def render_plan(report, root=None):
                     lines.append(f"    - {e['path']}:{e['line']} `{e['evidence']}`")
     else:
         lines.append("- No obvious conflict candidates.")
-    lines.extend([
-        "", "## TODO decision checklist",
-        "- [ ] Confirm the migration scope (whole repository / subdirectory / selected files).",
-        "- [ ] Record the human adjudication for every conflict.",
-        "- [ ] Manually write the root `AGENTS.md`, keeping only information agents cannot infer from code or manifests.",
-        "- [ ] Run `canonicalize.py --write-stubs` to preview the downgrade diff.",
-        "- [ ] Run `canonicalize.py --validate` to re-check the result.",
-    ])
+    lines.extend(
+        [
+            "",
+            "## TODO decision checklist",
+            "- [ ] Confirm the migration scope (whole repository / subdirectory / selected files).",
+            "- [ ] Record the human adjudication for every conflict.",
+            "- [ ] Manually write the root `AGENTS.md`, keeping only information "
+            "agents cannot infer from code or manifests.",
+            "- [ ] Run `canonicalize.py --write-stubs` to preview the downgrade diff.",
+            "- [ ] Run `canonicalize.py --validate` to re-check the result.",
+        ]
+    )
     lines.extend(render_merge_suggestions(report, root))
     return "\n".join(lines) + "\n"
 
@@ -189,8 +204,7 @@ def render_merge_suggestions(report, root=None):
     recommend_conflict_default). When ``root`` is provided the recommendation
     prefers repository facts (lockfile, .nvmrc/engines.node) over vote counts.
     """
-    lines = ["", "## Merge suggestions (semi-automatic)",
-             "Canonical file: `AGENTS.md` (single source of truth)."]
+    lines = ["", "## Merge suggestions (semi-automatic)", "Canonical file: `AGENTS.md` (single source of truth)."]
 
     lines.append("")
     lines.append("### Overlap consolidation")
@@ -243,8 +257,8 @@ def write_plan(args):
 
 DRAFT_BANNER = [
     "<!-- Auto-drafted by `ai-harness-doctor canonicalize.py --draft`. -->",
-    "<!-- Lines tagged \"(inferred — confirm)\" are mechanical guesses derived from repository facts; -->",
-    "<!-- lines tagged \"(suggested default)\" are safe conventions to keep. Replace every TODO, review -->",
+    '<!-- Lines tagged "(inferred — confirm)" are mechanical guesses derived from repository facts; -->',
+    '<!-- lines tagged "(suggested default)" are safe conventions to keep. Replace every TODO, review -->',
     "<!-- each inference, and delete this banner before committing. -->",
 ]
 
@@ -405,7 +419,7 @@ def _draft_build_lines(root):
         commands.append((f"{pm} install", f"{INFERRED} package manager {pm_why}"))
         for name in DRAFT_SCRIPT_ORDER:
             if scripts and name in scripts:
-                commands.append((f"{pm} run {name}", f"{INFERRED} from package.json \"scripts\""))
+                commands.append((f"{pm} run {name}", f'{INFERRED} from package.json "scripts"'))
     if targets:
         for name in DRAFT_MAKE_ORDER:
             if name in targets:
@@ -461,11 +475,12 @@ def render_draft(report, root):
     lines = list(DRAFT_BANNER)
 
     lines += ["", "# Project overview", ""]
-    lines.append("TODO: Describe what this repository does, its main subsystems, and boundaries an agent cannot infer from code alone.")
+    lines.append(
+        "TODO: Describe what this repository does, its main subsystems, "
+        "and boundaries an agent cannot infer from code alone."
+    )
     if stack:
-        stack_text = "; ".join(
-            f"{s['language']} ({', '.join(f'`{m}`' for m in s['markers'])})" for s in stack
-        )
+        stack_text = "; ".join(f"{s['language']} ({', '.join(f'`{m}`' for m in s['markers'])})" for s in stack)
         lines += ["", f"- Detected tech stack: {stack_text}. {INFERRED}"]
 
     lines += ["", "# Build & test", ""]
@@ -478,16 +493,24 @@ def render_draft(report, root):
     lines += _draft_conflict_lines(report, root)
 
     lines += ["", "# Conventions", ""]
-    lines.append("TODO: Document repository-specific conventions not already enforced by a formatter, linter, type checker, or manifest.")
+    lines.append(
+        "TODO: Document repository-specific conventions not already enforced "
+        "by a formatter, linter, type checker, or manifest."
+    )
     if lint_format:
         lf_text = ", ".join(f"`{c}`" for c in lint_format)
-        lines += ["", f"- Lint/format tooling is configured via {lf_text}; follow it rather than hand-formatting. {INFERRED}"]
+        lines += [
+            "",
+            f"- Lint/format tooling is configured via {lf_text}; follow it rather than hand-formatting. {INFERRED}",
+        ]
     if typecheck:
         tc_text = ", ".join(f"`{c}`" for c in typecheck)
         lines += [f"- Type checking is configured via {tc_text}. {INFERRED}"]
 
     lines += ["", "# Testing requirements", ""]
-    lines.append("TODO: Explain when tests are required, where fixtures live, and which test scopes are safe to run locally.")
+    lines.append(
+        "TODO: Explain when tests are required, where fixtures live, and which test scopes are safe to run locally."
+    )
     if scripts and "test" in scripts:
         pm, _ = _detected_package_manager(root)
         pm = pm or "npm"
@@ -495,8 +518,11 @@ def render_draft(report, root):
 
     lines += ["", "# Safety", ""]
     lines.append("TODO: Call out secrets, production resources, data boundaries, and destructive commands.")
-    lines += ["", f"- Never commit secrets, tokens, or credentials. {SUGGESTED}",
-              f"- Treat the repository as read-only unless a change is explicitly requested. {SUGGESTED}"]
+    lines += [
+        "",
+        f"- Never commit secrets, tokens, or credentials. {SUGGESTED}",
+        f"- Treat the repository as read-only unless a change is explicitly requested. {SUGGESTED}",
+    ]
 
     lines += ["", "# Commit & PR", ""]
     lines.append("TODO: Document commit message style and PR validation expectations.")
@@ -642,10 +668,22 @@ def validate(args):
         soft_level = "WARN" if library_doc else "ERROR"
         note = " (library/reference doc: relaxed to non-blocking)" if library_doc else ""
         if len(data) > args.max_bytes:
-            findings.append({"level": soft_level, "check": "SIZE", "message": f"AGENTS.md is {len(data)} bytes, above {args.max_bytes}{note}"})
+            findings.append(
+                {
+                    "level": soft_level,
+                    "check": "SIZE",
+                    "message": f"AGENTS.md is {len(data)} bytes, above {args.max_bytes}{note}",
+                }
+            )
         for req in args.require_sections.split(","):
             if req.strip() and not heading_present(text, req.strip()):
-                findings.append({"level": soft_level, "check": "SECTION", "message": f"Missing required heading: {req.strip()}{note}"})
+                findings.append(
+                    {
+                        "level": soft_level,
+                        "check": "SECTION",
+                        "message": f"Missing required heading: {req.strip()}{note}",
+                    }
+                )
     if agents.is_file():
         for change in collect_stub_targets(root, ["claude", "cursor", "windsurf", "copilot", "gemini", "cline"]):
             path = change["path"]
@@ -656,7 +694,14 @@ def validate(args):
                 if "AGENTS.md" in text and len(text.encode("utf-8")) <= 800:
                     continue
             # Existing full files are allowed before stub-writing; check_drift catches post-migration re-divergence.
-            findings.append({"level": "NOTICE", "check": "STUB", "path": path.relative_to(root).as_posix(), "message": "tool file not yet downgraded to stub (or regrew)"})
+            findings.append(
+                {
+                    "level": "NOTICE",
+                    "check": "STUB",
+                    "path": path.relative_to(root).as_posix(),
+                    "message": "tool file not yet downgraded to stub (or regrew)",
+                }
+            )
     errors = [f for f in findings if f.get("level") == "ERROR"]
     result = {"ok": not errors, "findings": findings}
     if args.as_json:
@@ -676,8 +721,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Canonicalization mechanics for AGENTS.md.")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true")
-    mode.add_argument("--draft", action="store_true",
-                      help="Auto-draft a starter AGENTS.md filled with fact-derived content (write with -o).")
+    mode.add_argument(
+        "--draft",
+        action="store_true",
+        help="Auto-draft a starter AGENTS.md filled with fact-derived content (write with -o).",
+    )
     mode.add_argument("--write-stubs", action="store_true")
     mode.add_argument("--validate", action="store_true")
     parser.add_argument("repo_root", nargs="?", default=".")

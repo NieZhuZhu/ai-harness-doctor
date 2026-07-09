@@ -56,6 +56,7 @@
     "test": "python3 -m unittest discover -s tests && node --test bin/*.test.js",
     "test:py": "python3 -m unittest discover -s tests",
     "test:js": "node --test bin/*.test.js",
+    "check": "npm run lint && npm test",
     "lint": "npm run lint:js && npm run lint:py && npm run lint:docs && npm run lint:adapters",
     "lint:js": "eslint bin",
     "lint:py": "ruff check scripts tests",
