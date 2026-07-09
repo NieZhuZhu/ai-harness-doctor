@@ -1,7 +1,9 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from shlex import quote as shlex_quote
@@ -1148,6 +1150,121 @@ class LlmJudgeTests(unittest.TestCase):
             eval_run.llm_judge = original
         self.assertTrue(passed)
         self.assertEqual(info["judge"], "builtin")
+
+
+class ProcessHygieneTests(unittest.TestCase):
+    """CORR-07: a timeout must kill the WHOLE process group, not just the top
+    shell, so no grandchild survives as an orphan."""
+
+    def test_run_subprocess_kills_grandchildren_on_timeout(self):
+        with tempfile.TemporaryDirectory() as td:
+            pidfile = Path(td) / "child.pid"
+            # sh (the child) backgrounds a `sleep` (a grandchild) and records its
+            # pid, then waits. With plain subprocess.run+timeout only sh would be
+            # killed and the sleep would leak; run_subprocess must killpg the
+            # whole session so the sleep dies too.
+            cmd = f"sleep 30 & echo $! > {shlex_quote(str(pidfile))}; wait"
+            with self.assertRaises(subprocess.TimeoutExpired):
+                eval_run.run_subprocess(cmd, shell=True, timeout=1)
+            # Let the OS deliver the signals and reap.
+            deadline = time.time() + 5
+            child_pid = int(pidfile.read_text().strip())
+            alive = True
+            while time.time() < deadline:
+                try:
+                    os.kill(child_pid, 0)
+                except (ProcessLookupError, OSError):
+                    alive = False
+                    break
+                time.sleep(0.1)
+            self.assertFalse(alive, "grandchild process leaked past the timeout")
+
+    def test_run_subprocess_returns_completed_process_normally(self):
+        proc = eval_run.run_subprocess("echo hi", shell=True, timeout=10)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout.strip(), "hi")
+
+
+class DeterministicGradingDefaultTests(unittest.TestCase):
+    """CORR-08: the default grader is the deterministic built-in judge. An
+    ambient API key must NOT silently reroute grading to a real LLM."""
+
+    def test_grade_answer_off_ignores_present_api_key(self):
+        task = {"id": "j", "check": {"type": "judge", "expect": ["ok"]}, "timeout_s": 5}
+        called = {"llm": False}
+
+        def _boom(*a, **k):
+            called["llm"] = True
+            return {"passed": True, "score": 1.0, "reason": "llm", "judge": "llm:openai"}
+
+        original = eval_run.llm_judge
+        eval_run.llm_judge = _boom
+        old_key = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = "sk-fake-should-be-ignored"
+        try:
+            passed, info = eval_run.grade_answer(task, "ok answer", ".", None, judge_llm="off")
+        finally:
+            eval_run.llm_judge = original
+            if old_key is None:
+                os.environ.pop("OPENAI_API_KEY", None)
+            else:
+                os.environ["OPENAI_API_KEY"] = old_key
+        self.assertFalse(called["llm"], "judge_llm='off' must never call the LLM judge")
+        self.assertTrue(passed)
+        self.assertEqual(info["judge"], "builtin")
+
+    def test_cli_default_does_not_route_to_llm_even_with_api_key(self):
+        # End-to-end: no --judge-llm flag + a present API key must still grade
+        # deterministically (default is 'off'), never invoking the LLM judge.
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            (workdir / "AGENTS.md").write_text("# overview\n", encoding="utf-8")
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [{"id": "j", "prompt": "p", "check": {"type": "judge", "expect": ["ok"]}, "timeout_s": 10}]
+                ),
+                encoding="utf-8",
+            )
+            out = Path(td) / "res.json"
+            runner = f"{sys.executable} -c \"print('ok answer')\""
+
+            called = {"llm": False}
+
+            def _boom(*a, **k):
+                called["llm"] = True
+                return {"passed": True, "score": 1.0, "reason": "llm", "judge": "llm:openai"}
+
+            original = eval_run.llm_judge
+            eval_run.llm_judge = _boom
+            old_key = os.environ.get("OPENAI_API_KEY")
+            os.environ["OPENAI_API_KEY"] = "sk-fake-should-be-ignored"
+            try:
+                rc = eval_run.main(
+                    [
+                        "--tasks",
+                        str(tasks),
+                        "--workdir",
+                        str(workdir),
+                        "--label",
+                        "x",
+                        "--runner",
+                        runner,
+                        "-o",
+                        str(out),
+                    ]
+                )
+            finally:
+                eval_run.llm_judge = original
+                if old_key is None:
+                    os.environ.pop("OPENAI_API_KEY", None)
+                else:
+                    os.environ["OPENAI_API_KEY"] = old_key
+            self.assertEqual(rc, 0)
+            self.assertFalse(called["llm"], "default --judge-llm must not call a real LLM")
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(data["tasks"][0]["judge"]["judge"], "builtin")
 
 
 class BaselineTests(unittest.TestCase):

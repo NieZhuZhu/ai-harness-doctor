@@ -7,6 +7,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -573,6 +574,68 @@ def parse_judge_output(stdout):
     return {"passed": bool(passed), "score": score, "reason": data.get("reason", ""), "raw": raw}
 
 
+def _kill_process_group(proc):
+    """Best-effort SIGKILL of the entire process group led by ``proc``.
+
+    Sends the signal to the group (negative pgid) so children AND grandchildren
+    spawned by the shell die too, then also kills the leader directly as a
+    belt-and-suspenders. All lookups/signals are guarded because the process may
+    have already exited between the timeout and the kill.
+    """
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, OSError):
+        pgid = None
+    if pgid is not None:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            pass
+    try:
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass
+
+
+def run_subprocess(command, *, cwd=None, env=None, timeout=None, shell=False, text=True):
+    """Run a subprocess in its OWN session and kill the whole group on timeout.
+
+    ``subprocess.run(..., shell=True, timeout=...)`` only kills the top ``sh``
+    process when the deadline passes; any command that shell spawned keeps
+    running as an orphan, leaking grandchildren and skewing later measurements
+    (CORR-07). We instead ``Popen`` the child with ``start_new_session=True`` so
+    it becomes the leader of a fresh process group, and on timeout ``killpg`` the
+    entire group so nothing survives.
+
+    Returns a :class:`subprocess.CompletedProcess`; on timeout it re-raises
+    :class:`subprocess.TimeoutExpired` carrying whatever output was captured
+    before the kill, matching ``subprocess.run``'s contract so callers that read
+    ``exc.stdout`` / ``exc.stderr`` keep working unchanged.
+    """
+    proc = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=env,
+        shell=shell,
+        text=text,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        # Reap the (now killed) group and collect any partial output so the
+        # timeout record is as informative as subprocess.run's would have been.
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = None, None
+        raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+
 def run_judge(judge_cmd, answer, rubric, workdir, timeout):
     """Invoke a configurable judge command and return its parsed verdict.
 
@@ -600,11 +663,10 @@ def run_judge(judge_cmd, answer, rubric, workdir, timeout):
             .replace("{rubric}", shlex.quote(rubric))
             .replace("{input}", shlex.quote(handle.name))
         )
-        proc = subprocess.run(
+        proc = run_subprocess(
             command,
             cwd=str(workdir) if workdir else None,
             text=True,
-            capture_output=True,
             shell=True,
             env=env,
             timeout=timeout,
@@ -764,8 +826,8 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True, judg
         if not argv:
             return False, None
         try:
-            cproc = subprocess.run(
-                argv, cwd=str(workdir), text=True, capture_output=True, timeout=timeout
+            cproc = run_subprocess(
+                argv, cwd=str(workdir), text=True, timeout=timeout
             )
             return cproc.returncode == 0, None
         except subprocess.TimeoutExpired:
@@ -800,8 +862,8 @@ def _run_round(tasks, args, workdir):
         command = args.runner.replace("{prompt}", shlex.quote(prompt))
         start = time.time()
         try:
-            proc = subprocess.run(
-                command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60)
+            proc = run_subprocess(
+                command, cwd=str(workdir), text=True, shell=True, timeout=task.get("timeout_s", 60)
             )
         except subprocess.TimeoutExpired as exc:
             duration = round(time.time() - start, 3)
@@ -1025,8 +1087,8 @@ def run_task_with_runner(runner, task, workdir, judge_cmd, default_judge=True, j
     command = runner.replace("{prompt}", shlex.quote(prompt))
     start = time.time()
     try:
-        proc = subprocess.run(
-            command, cwd=str(workdir), text=True, capture_output=True, shell=True, timeout=task.get("timeout_s", 60)
+        proc = run_subprocess(
+            command, cwd=str(workdir), text=True, shell=True, timeout=task.get("timeout_s", 60)
         )
     except subprocess.TimeoutExpired as exc:
         duration = round(time.time() - start, 3)
@@ -1436,11 +1498,14 @@ def main(argv=None):
         "--judge-llm",
         dest="judge_llm",
         choices=["off", "auto", "openai", "claude"],
-        default="auto",
+        default="off",
         help=(
-            "LLM-as-judge provider for judge checks without --judge-cmd: 'auto' uses "
-            "OpenAI/Claude when an API key is set and otherwise falls back to the "
-            "keyword judge (default auto)."
+            "LLM-as-judge provider for judge checks without --judge-cmd. Defaults "
+            "to 'off' so grading is DETERMINISTIC (the built-in keyword judge) and "
+            "never silently routes to a real LLM just because an API key happens "
+            "to be present in the environment. Pass 'auto' to opt in to "
+            "OpenAI/Claude when a key is set (falling back to the keyword judge), "
+            "or name a provider explicitly."
         ),
     )
     parser.add_argument(
