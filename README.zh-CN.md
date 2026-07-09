@@ -467,6 +467,12 @@ npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stu
 
 运行或对比 before/after agent tasks。
 
+**零配置任务。** 你不必手写 `tasks.json` —— `--generate REPO` 会从仓库事实（`package.json` 的 scripts/engines/deps、锁文件、`.nvmrc`、`go.mod`、`pyproject.toml`，以及 `AGENTS.md` 约定）推导出一套确定性任务，每条 check 用 regex 编码真实事实，因此更高的分数直接反映 `AGENTS.md` 是否起到了作用：
+
+```bash
+npx ai-harness-doctor eval --generate . -o tasks.json   # auto-generate tasks from repo facts
+```
+
 `tasks.json` is an array of task records:
 
 ```json
@@ -493,7 +499,11 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 
 **LLM-as-judge check。** 一个任务 check 可以使用 `{ "type": "judge", "rubric": "..." }` 来完成 regex 无法表达的评分。当提供 `--judge-cmd "CMD_TEMPLATE"` 时它优先生效：judge 会收到环境变量 `JUDGE_ANSWER`、`JUDGE_RUBRIC` 和 `JUDGE_INPUT`（一个临时 JSON `{answer, rubric}` 的路径），且模板占位符 `{answer}`/`{rubric}`/`{input}` 会被替换。它必须打印 `{"passed": bool, "score": number, "reason": "..."}`；若省略 `passed`，则 `score >= 0.5` 记为通过。一个离线的确定性 judge 适用于 CI。
 
-**内置默认 judge。** 当未提供 `--judge-cmd` 时，`judge` check 由一个确定性、无依赖的内置 judge 评分（结论为 `{passed, score, reason, judge:"builtin"}`）。它按优先级评分：`check.expect` —— 一组必须全部匹配（不区分大小写）的 regex；`check.reject` —— 一组必须不匹配的 regex；否则基于自由文本 `check.rubric` / `check.criteria` 得出的关键词覆盖率，当覆盖率 `>= check.min_score`（默认 `0.5`）时通过。传入 `--no-default-judge` 可恢复旧行为，即 `judge` check 必须依赖外部 `--judge-cmd`。
+**真实 LLM 与内置 judge。** 当未提供 `--judge-cmd` 时，`judge` check 可通过 `--judge-llm {auto,openai,claude,off}`（默认 `auto`）由真实 LLM 评分：`auto` 在设置了 `OPENAI_API_KEY` 时调用 OpenAI，否则在设置了 `ANTHROPIC_API_KEY` 时调用 Claude，仅使用 Python 标准库（无需 SDK）。可通过 `OPENAI_MODEL`/`OPENAI_BASE_URL`、`ANTHROPIC_MODEL`/`ANTHROPIC_BASE_URL` 或 `--judge-model` 配置模型/端点。任何失败（无 key、网络错误、返回格式错误）都会透明回退到确定性、无依赖的内置关键词 judge（结论为 `{passed, score, reason, judge:"builtin"}`；LLM 结论会被标记为 `judge:"llm:openai"`/`"llm:claude"`）。关键词 judge 按优先级评分：`check.expect` —— 必须全部匹配（不区分大小写）的 regex；`check.reject` —— 必须不匹配的 regex；否则基于自由文本 `check.rubric` / `check.criteria` 的关键词覆盖率，`>= check.min_score`（默认 `0.5`）时通过。传入 `--judge-llm off` 只用关键词评分，或 `--no-default-judge` 强制要求外部 `--judge-cmd`。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after --judge-llm auto   # real LLM judge, keyword fallback
+```
 
 **健康分（Health score）。** 每次 eval 还会计算一个一键式疗效健康分 = 所有任务记录的通过率，以 `0–100` 表示并带 A–F 字母等级（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F）。它以 `health` key 嵌入单次运行结果（`{"tasks":...}`）和矩阵结果（`{"agents":...}`），并打印为一行摘要（`health score: N/100 (grade X), P/T tasks passed`）。超时计为失败。`--score PATH` 会打印某个已有 results/matrix JSON 的健康分（加 `--json` 输出机器可读格式），`--fail-under N` 会在健康分低于 `N` 时以退出码 `5` 退出（作为 CI 门禁）。
 
@@ -502,6 +512,14 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 ```bash
 npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --rounds 5   # run 5x, aggregate stability stats
 npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
+```
+
+**基线、趋势与回归。** 将每次运行的健康分作为只追加的基线历史落库（`--baseline FILE` + `--save-baseline`），记录时间戳、label、分数/等级、通过计数，以及目标仓库的 git commit/branch。`--check-regression` 会把当前分数与最近一次历史快照对比，当下降至少 `--regression-threshold` 分（默认 `5`）时以退出码 `6` 退出；`--trend FILE` 会把历史渲染为带逐快照增量和回归标记的 Markdown 表格。它可与任意运行模式以及 `--score` 组合使用。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after -o results.json \
+  --baseline baselines/history.json --save-baseline --check-regression   # save + gate on regressions
+npx ai-harness-doctor eval --trend baselines/history.json                  # render the recorded trend
 ```
 
 </details>

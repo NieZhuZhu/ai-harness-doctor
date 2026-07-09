@@ -198,9 +198,19 @@ The same template runs an **eval health-score gate** — `python3 scripts/eval_r
 
 ### Inputs
 
-- Fixed task file `tasks.json`.
+- Task file `tasks.json` — hand-written, or **auto-generated from repository facts** (see below).
 - Before and after labels plus the target repository.
 - Runner template, for example `claude -p {prompt} --output-format json`.
+
+### Zero-config bootstrap (auto-generate tasks)
+
+You do not need to hand-write `tasks.json`. `--generate REPO` inspects the target repo's ground truth — `package.json` scripts/engines/deps, lockfiles (package manager), `.nvmrc`, `go.mod`, `pyproject.toml`, plus `AGENTS.md` conventions — and emits a deterministic task set whose regex checks encode the true facts. This is what makes the efficacy loop work out of the box on any real repo:
+
+```bash
+python3 scripts/eval_run.py --generate /path/to/repo -o tasks.json
+```
+
+Each generated task asks the agent for a concrete fact (install command, test/lint/build command, Node/Go/Python version, test framework, formatter, commit convention, ...) and passes only when the answer matches the fact the repo actually declares — so a higher score directly reflects whether `AGENTS.md` made the agent answer correctly.
 
 ### Actions
 
@@ -281,7 +291,13 @@ python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/
   --judge-cmd "python3 my_judge.py"
 ```
 
-An external `--judge-cmd` always takes priority. When it is not supplied, `judge` checks are graded by a **built-in default judge** — deterministic and dependency-free — that emits a verdict `{passed, score, reason, judge: "builtin"}`. It grades in priority order: `check.expect` (a list of regex patterns that must ALL match, case-insensitive), then `check.reject` (a list of regex patterns that must NOT match), otherwise keyword coverage derived from the free-text `check.rubric` / `check.criteria`, passing when coverage `>= check.min_score` (default `0.5`). Pass `--no-default-judge` to restore the legacy behavior where `judge` checks require an external `--judge-cmd`.
+An external `--judge-cmd` always takes priority. When it is not supplied, `judge` checks can be graded by a **real LLM** via `--judge-llm {auto,openai,claude,off}` (default `auto`). `auto` uses OpenAI when `OPENAI_API_KEY` is set, else Anthropic/Claude when `ANTHROPIC_API_KEY` is set; API calls use only the Python standard library (no third-party SDKs). Model and endpoint are configurable via `OPENAI_MODEL`/`OPENAI_BASE_URL` and `ANTHROPIC_MODEL`/`ANTHROPIC_BASE_URL`, or `--judge-model`. Any failure — no key, network error, malformed response — **transparently falls back to the built-in keyword judge**, so judge checks always produce a verdict. The built-in judge is deterministic and dependency-free and emits `{passed, score, reason, judge: "builtin"}`, grading in priority order: `check.expect` (a list of regex patterns that must ALL match, case-insensitive), then `check.reject` (patterns that must NOT match), otherwise keyword coverage derived from the free-text `check.rubric` / `check.criteria`, passing when coverage `>= check.min_score` (default `0.5`). An LLM verdict is tagged `judge: "llm:openai"` / `"llm:claude"`. Pass `--judge-llm off` for keyword-only grading, or `--no-default-judge` to require an external `--judge-cmd` (legacy behavior).
+
+```bash
+# Grade judge checks with a real LLM (falls back to keywords if no API key)
+python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/repo \
+  --runner "claude -p {prompt} --output-format json" --judge-llm auto
+```
 
 ### Health score
 
@@ -294,6 +310,19 @@ python3 scripts/eval_run.py --score results-after.json --json  # machine-readabl
 
 # CI gate: exit code 5 when the health score is below the threshold
 python3 scripts/eval_run.py --tasks tasks.json --workdir /path/to/repo -o results.json --fail-under 80
+```
+
+### Baseline, trend & regression tracking
+
+Persist each run's health as an append-only **baseline history** (a JSON list of snapshots) so you can track efficacy over time and gate on regressions. `--save-baseline` appends the current run's health to `--baseline FILE` (recording timestamp, label, score/grade, pass counts, and the target repo's git commit/branch when available). `--check-regression` compares the current score to the most recent prior snapshot and **exits 6** when the score drops by at least `--regression-threshold` points (default `5`). `--trend FILE` renders the recorded history as a markdown table with per-snapshot deltas and regression flags. These flags compose with any run mode (`--tasks`, `--rounds`, `--matrix`) and with `--score` on an existing results file.
+
+```bash
+# Save a baseline snapshot after a run, and fail the build on a regression
+python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/repo -o results.json \
+  --baseline baselines/history.json --save-baseline --check-regression --regression-threshold 5
+
+# Render the recorded trend (add --json for the raw history)
+python3 scripts/eval_run.py --trend baselines/history.json
 ```
 
 ### Multi-round stability (`--rounds`)

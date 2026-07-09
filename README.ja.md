@@ -467,6 +467,12 @@ npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stu
 
 before/after agent tasks を実行または比較します。
 
+**ゼロコンフィグのタスク。** `tasks.json` を手書きする必要はありません。`--generate REPO` はリポジトリの事実（`package.json` の scripts/engines/deps、ロックファイル、`.nvmrc`、`go.mod`、`pyproject.toml`、および `AGENTS.md` の規約）から決定的なタスクセットを導出し、各 check は真の事実を regex でエンコードします。したがってスコアが高いほど `AGENTS.md` が効いたかどうかを直接反映します：
+
+```bash
+npx ai-harness-doctor eval --generate . -o tasks.json   # auto-generate tasks from repo facts
+```
+
 `tasks.json` is an array of task records:
 
 ```json
@@ -493,7 +499,11 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 
 **LLM-as-judge check.** task check は、regex では表現できない grading のために `{ "type": "judge", "rubric": "..." }` を使えます。`--judge-cmd "CMD_TEMPLATE"` が指定されている場合はそれが優先されます：judge は env `JUDGE_ANSWER`、`JUDGE_RUBRIC`、`JUDGE_INPUT`（一時 JSON `{answer, rubric}` へのパス）を受け取り、template placeholders `{answer}`/`{rubric}`/`{input}` が置換されます。judge は `{"passed": bool, "score": number, "reason": "..."}` を出力する必要があります。`passed` が省略された場合、`score >= 0.5` を pass とみなします。offline の決定的な judge は CI に適しています。
 
-**組み込みのデフォルト judge。** `--judge-cmd` が指定されない場合、`judge` check は決定的で依存関係のない組み込み judge によって採点されます（判定は `{passed, score, reason, judge:"builtin"}`）。優先順位で採点します：`check.expect` —— すべて一致（大文字小文字を区別しない）する必要がある regex のリスト；`check.reject` —— 一致してはならない regex のリスト；それ以外はフリーテキストの `check.rubric` / `check.criteria` から導出したキーワード網羅率で、網羅率が `>= check.min_score`（デフォルト `0.5`）のとき pass となります。`--no-default-judge` を渡すと、`judge` check が外部の `--judge-cmd` を必要とする従来の挙動に戻ります。
+**実 LLM と組み込み judge。** `--judge-cmd` が指定されない場合、`judge` check は `--judge-llm {auto,openai,claude,off}`（デフォルト `auto`）で実 LLM により採点できます：`auto` は `OPENAI_API_KEY` があれば OpenAI を、なければ `ANTHROPIC_API_KEY` があれば Claude を、Python 標準ライブラリのみで呼び出します（SDK 不要）。モデル/エンドポイントは `OPENAI_MODEL`/`OPENAI_BASE_URL`、`ANTHROPIC_MODEL`/`ANTHROPIC_BASE_URL`、または `--judge-model` で設定できます。あらゆる失敗（key なし、ネットワークエラー、不正な応答）は、決定的で依存関係のない組み込みキーワード judge に透過的にフォールバックします（判定は `{passed, score, reason, judge:"builtin"}`；LLM の判定は `judge:"llm:openai"`/`"llm:claude"` とタグ付けされます）。キーワード judge は優先順位で採点します：`check.expect` —— すべて一致（大文字小文字を区別しない）する必要がある regex；`check.reject` —— 一致してはならない regex；それ以外はフリーテキストの `check.rubric` / `check.criteria` から導出したキーワード網羅率で、`>= check.min_score`（デフォルト `0.5`）のとき pass となります。`--judge-llm off` でキーワードのみの採点、`--no-default-judge` で外部の `--judge-cmd` を必須にできます。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after --judge-llm auto   # real LLM judge, keyword fallback
+```
 
 **Health score.** すべての eval は、ワンクリックの効果 health score = すべての task record にわたる pass rate も計算します。`0–100` で表され、A–F の letter grade（A ≥90 / B ≥80 / C ≥70 / D ≥60 / F）が付きます。これは single-run results（`{"tasks":...}`）と matrix results（`{"agents":...}`）の両方に `health` key として埋め込まれ、要約行（`health score: N/100 (grade X), P/T tasks passed`）として表示されます。timeout は failure として数えられます。`--score PATH` は既存の results/matrix JSON の health score を表示し（`--json` で機械可読出力）、`--fail-under N` は health score が `N` を下回ると exit code `5` で終了します（CI gate）。
 
@@ -502,6 +512,14 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 ```bash
 npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --rounds 5   # run 5x, aggregate stability stats
 npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
+```
+
+**ベースライン、トレンドと回帰。** 各実行の health score を追記専用のベースライン履歴として保存します（`--baseline FILE` + `--save-baseline`）。タイムスタンプ、label、スコア/グレード、pass 数、および対象リポジトリの git commit/branch を記録します。`--check-regression` は現在のスコアを直近の履歴スナップショットと比較し、`--regression-threshold` 分（デフォルト `5`）以上低下したとき exit code `6` で終了します。`--trend FILE` は履歴をスナップショットごとの差分と回帰フラグ付きの Markdown 表として表示します。任意の実行モードおよび `--score` と組み合わせられます。
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after -o results.json \
+  --baseline baselines/history.json --save-baseline --check-regression   # save + gate on regressions
+npx ai-harness-doctor eval --trend baselines/history.json                  # render the recorded trend
 ```
 
 </details>

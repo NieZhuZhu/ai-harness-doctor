@@ -467,6 +467,12 @@ npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stu
 
 Runs or compares before/after agent tasks.
 
+**Zero-config tasks.** You don't have to hand-write `tasks.json` — `--generate REPO` derives a deterministic task set from repository facts (`package.json` scripts/engines/deps, lockfiles, `.nvmrc`, `go.mod`, `pyproject.toml`, and `AGENTS.md` conventions), with a regex check encoding each true fact so a higher score directly reflects whether `AGENTS.md` helped:
+
+```bash
+npx ai-harness-doctor eval --generate . -o tasks.json   # auto-generate tasks from repo facts
+```
+
 `tasks.json` is an array of task records:
 
 ```json
@@ -493,7 +499,11 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 
 **LLM-as-judge check.** A task check may use `{ "type": "judge", "rubric": "..." }` for grading that regex cannot express. When `--judge-cmd "CMD_TEMPLATE"` is provided it takes priority: the judge receives env `JUDGE_ANSWER`, `JUDGE_RUBRIC`, and `JUDGE_INPUT` (path to a temp JSON `{answer, rubric}`), and template placeholders `{answer}`/`{rubric}`/`{input}` are substituted. It must print `{"passed": bool, "score": number, "reason": "..."}`; if `passed` is omitted, `score >= 0.5` counts as a pass. An offline deterministic judge works for CI.
 
-**Built-in default judge.** When no `--judge-cmd` is supplied, `judge` checks are graded by a deterministic, dependency-free built-in judge (verdict `{passed, score, reason, judge:"builtin"}`). It grades an answer in priority order: `check.expect` — a list of regex patterns that must ALL match (case-insensitive); `check.reject` — a list of regex patterns that must NOT match; otherwise keyword coverage derived from the free-text `check.rubric` / `check.criteria`, passing when coverage `>= check.min_score` (default `0.5`). Pass `--no-default-judge` to restore the legacy behavior where `judge` checks require an external `--judge-cmd`.
+**Real-LLM & built-in judge.** When no `--judge-cmd` is supplied, `judge` checks can be graded by a real LLM via `--judge-llm {auto,openai,claude,off}` (default `auto`): `auto` calls OpenAI when `OPENAI_API_KEY` is set, else Claude when `ANTHROPIC_API_KEY` is set, using only the Python standard library (no SDKs). Model/endpoint are configurable via `OPENAI_MODEL`/`OPENAI_BASE_URL`, `ANTHROPIC_MODEL`/`ANTHROPIC_BASE_URL`, or `--judge-model`. Any failure (no key, network, malformed reply) transparently falls back to a deterministic, dependency-free built-in keyword judge (verdict `{passed, score, reason, judge:"builtin"}`; LLM verdicts are tagged `judge:"llm:openai"`/`"llm:claude"`). The keyword judge grades in priority order: `check.expect` — regex patterns that must ALL match (case-insensitive); `check.reject` — patterns that must NOT match; otherwise keyword coverage from the free-text `check.rubric` / `check.criteria`, passing at `>= check.min_score` (default `0.5`). Pass `--judge-llm off` for keyword-only grading, or `--no-default-judge` to require an external `--judge-cmd`.
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after --judge-llm auto   # real LLM judge, keyword fallback
+```
 
 **Health score.** Every eval also computes a one-click efficacy health score = pass rate across all task records, expressed `0–100` with an A–F letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F). It is embedded as a `health` key in both single-run results (`{"tasks":...}`) and matrix results (`{"agents":...}`), and printed as a summary line (`health score: N/100 (grade X), P/T tasks passed`). Timeouts count as failures. `--score PATH` prints the health score for an existing results/matrix JSON (add `--json` for machine output), and `--fail-under N` exits code `5` when the health score is below `N` (a CI gate).
 
@@ -502,6 +512,14 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . \
 ```bash
 npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --rounds 5   # run 5x, aggregate stability stats
 npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
+```
+
+**Baseline, trend & regression.** Persist each run's health as an append-only baseline history (`--baseline FILE` + `--save-baseline`), recording timestamp, label, score/grade, pass counts, and the target repo's git commit/branch. `--check-regression` compares the current score to the most recent prior snapshot and exits `6` when it drops by at least `--regression-threshold` points (default `5`); `--trend FILE` renders the history as a Markdown table with per-snapshot deltas and regression flags. It composes with any run mode and with `--score`.
+
+```bash
+npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after -o results.json \
+  --baseline baselines/history.json --save-baseline --check-regression   # save + gate on regressions
+npx ai-harness-doctor eval --trend baselines/history.json                  # render the recorded trend
 ```
 
 </details>
