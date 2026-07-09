@@ -145,8 +145,14 @@ _MAKE_CMD_RE = re.compile(r"\bmake\s+([A-Za-z0-9_.-]+)\b")
 _CARGO_BIN_RE = re.compile(r"\bcargo\s+(?:run|build|install)\b[^`\n]*?--bin[= ]\s*([A-Za-z0-9._-]+)")
 # Go package/file invocations that reference a filesystem path: ``go run|build|test|vet ./pkg`` or ``foo.go``.
 _GO_PKG_RE = re.compile(r"\bgo\s+(?:run|build|test|vet)\s+(\.{1,2}/[A-Za-z0-9._/-]+|[A-Za-z0-9._/-]+\.go)\b")
-# Python console-script invocations: ``poetry|pdm|uv run NAME``.
-_PY_RUN_RE = re.compile(r"\b(?:poetry|pdm|uv)\s+run\s+([A-Za-z0-9._-]+)\b")
+# Python console-script invocations: ``poetry|pdm|uv run NAME``. Capture the
+# whole argument so a script-file path (``uv run examples/simple.py``) is not
+# truncated at the first ``/`` and mistaken for a console script named
+# ``examples``; declared_commands filters those file paths out below.
+_PY_RUN_RE = re.compile(r"\b(?:poetry|pdm|uv)\s+run\s+(\S+)")
+# Extensions that mark a ``... run <arg>`` target as a script *file* to execute
+# rather than a project console script.
+_PY_RUN_SCRIPT_SUFFIXES = (".py", ".pyw", ".sh")
 
 
 def declared_commands(text):
@@ -181,10 +187,16 @@ def declared_commands(text):
                 seen.add(key)
                 out.append({"kind": "go_pkg", "tool": "go", "path": m.group(1), "line": lineno})
         for m in _PY_RUN_RE.finditer(token):
-            key = ("py_run", m.group(1), lineno)
+            name = m.group(1)
+            # `uv run path/to/script.py` (or a bare `script.py`) executes a
+            # script *file*, not a project console script, so it must never be
+            # flagged as a missing console script.
+            if "/" in name or "\\" in name or name.endswith(_PY_RUN_SCRIPT_SUFFIXES):
+                continue
+            key = ("py_run", name, lineno)
             if key not in seen:
                 seen.add(key)
-                out.append({"kind": "py_run", "tool": "python", "name": m.group(1), "line": lineno})
+                out.append({"kind": "py_run", "tool": "python", "name": name, "line": lineno})
     return out
 
 
@@ -204,6 +216,13 @@ def declared_paths(text):
         for m in re.finditer(r"`([^`]+)`", line):
             token = m.group(1).strip()
             if not token or token in seen:
+                continue
+            # A backtick span wrapped in matching quotes is a string-literal
+            # example value (e.g. `'/usr/bin/google-chrome'`, `"./downloads"`),
+            # not a repo path reference. Only the backticks were stripped before,
+            # leaving the inner quotes to defeat the absolute-path / value guards
+            # below so the quoted value was wrongly flagged as a missing path.
+            if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
                 continue
             if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
                 continue
