@@ -15,6 +15,29 @@ from pathlib import Path
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 _REGISTRY_PATH = _PACKAGE_ROOT / "assets" / "agent-tools.json"
 
+# Single source of truth for the maximum size (in bytes) of a canonical pointer
+# stub. A tool file that references AGENTS.md but exceeds this has "regrown" past
+# the minimal-pointer budget. Shared by scan.py (gap analysis), check_drift.py
+# (D3 drift gate) and canonicalize.py (Phase 1 stub validation) so the threshold
+# cannot drift between stages. Reconciled to the value the canonical/writing
+# stage (canonicalize.py) already used; genuine minimal stubs are well under it
+# (<200 bytes) (CORR-06).
+STUB_POINTER_MAX_BYTES = 800
+
+# Single source of truth mapping a committed lockfile name -> the package manager
+# it implies. Shared by semantic.py, check_drift.py and canonicalize.py so the
+# drift gate, the semantic engine and the draft generator agree on which managers
+# exist — including bun (bun.lockb / bun.lock), which the drift gate previously
+# omitted and was therefore blind to (TD-01).
+LOCKFILE_MANAGERS = {
+    "package-lock.json": "npm",
+    "npm-shrinkwrap.json": "npm",
+    "pnpm-lock.yaml": "pnpm",
+    "yarn.lock": "yarn",
+    "bun.lockb": "bun",
+    "bun.lock": "bun",
+}
+
 
 def load_registry():
     """Return the full parsed registry as a dict."""

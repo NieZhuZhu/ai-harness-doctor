@@ -24,7 +24,14 @@ standard library only; no runtime dependencies.
 
 import json
 import re
+import sys
 from pathlib import Path
+
+# scripts/ holds the shared agent-config registry (single source of truth for the
+# lockfile->manager map, etc.). Add it to sys.path so importing this module
+# standalone still resolves ``registry``.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import registry  # noqa: E402
 
 # Package-manager subcommands that are always valid regardless of package.json;
 # mirrors check_drift.PACKAGE_MANAGER_BUILTINS so the two engines agree on what
@@ -107,15 +114,9 @@ PYTHON_RUN_BUILTINS = {
     "uv",
 }
 
-# Node lockfile -> package manager (single-ecosystem legacy map, kept for callers).
-LOCKFILE_MANAGERS = {
-    "package-lock.json": "npm",
-    "npm-shrinkwrap.json": "npm",
-    "pnpm-lock.yaml": "pnpm",
-    "yarn.lock": "yarn",
-    "bun.lockb": "bun",
-    "bun.lock": "bun",
-}
+# Node lockfile -> package manager map, from the shared registry single source of
+# truth (includes bun) so semantic.py, check_drift.py and canonicalize.py agree.
+LOCKFILE_MANAGERS = registry.LOCKFILE_MANAGERS
 
 # Ecosystems are compared in this fixed order so multi-ecosystem findings are
 # deterministic.

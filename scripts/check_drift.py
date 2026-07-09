@@ -253,7 +253,7 @@ def d3_stub_regrowth(root):
         # with NO AGENTS.md pointer is an independent, hand-authored doc (the
         # checkup/overlap subsystem's concern), not a broken stub, so D3 must not
         # claim it "lost" a pointer it never had.
-        if "AGENTS.md" in text and len(data) > 600:
+        if "AGENTS.md" in text and len(data) > registry.STUB_POINTER_MAX_BYTES:
             findings.append(
                 {
                     "check": "D3",
@@ -273,7 +273,7 @@ def d3_stub_regrowth(root):
             # Same rule as above: only a genuine pointer rule (references
             # AGENTS.md) that regrew past the size budget is drift; an
             # independent rule with no AGENTS.md pointer is not a broken stub.
-            if "AGENTS.md" in text and len(data) > 600:
+            if "AGENTS.md" in text and len(data) > registry.STUB_POINTER_MAX_BYTES:
                 findings.append(
                     {
                         "check": "D3",
@@ -319,12 +319,11 @@ def d4_size(root, max_bytes):
     return []
 
 
-LOCKFILE_MANAGERS = {
-    "package-lock.json": "npm",
-    "npm-shrinkwrap.json": "npm",
-    "pnpm-lock.yaml": "pnpm",
-    "yarn.lock": "yarn",
-}
+# Lockfile -> package-manager map, from the shared registry single source of
+# truth so the drift gate (D6/D8) tracks the SAME managers as semantic.py and
+# canonicalize.py — including bun (bun.lockb / bun.lock), which this map
+# previously omitted, leaving the gate blind to bun repos (TD-01).
+LOCKFILE_MANAGERS = registry.LOCKFILE_MANAGERS
 
 
 def declared_node_version(text):
