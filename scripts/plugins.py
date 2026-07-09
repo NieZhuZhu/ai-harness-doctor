@@ -25,9 +25,16 @@ A rule plugin is a plain Python module that exposes a single function::
 Plugins must stay deterministic and dependency-free (Python 3.9 standard library
 only) and must treat the audited repository as read-only.
 
-Where plugins live
--------------------
-Plugins are opt-in. Modules are discovered from:
+Security & opt-in
+-----------------
+Plugins execute arbitrary Python found *inside the scanned repository*, so they
+are DISABLED BY DEFAULT. No plugin directory is searched and no plugin code is
+imported unless the caller explicitly opts in (``run_plugins(...,
+allow_plugins=True)``, wired to the ``--allow-plugins`` CLI flag). Without that
+opt-in :func:`run_plugins` is a no-op returning an empty list, so auditing an
+untrusted repository never runs its code.
+
+When opt-in IS granted, modules are discovered from:
 
 1. the conventional ``<root>/.ai-harness-doctor/rules/*.py`` directory in the
    scanned repository, and
@@ -142,15 +149,25 @@ def _normalize_finding(raw, plugin):
     return finding
 
 
-def run_plugins(root, context=None, extra_dirs=None):
+def run_plugins(root, context=None, extra_dirs=None, allow_plugins=False):
     """Load and run every discovered rule plugin, returning merged findings.
 
-    Each plugin is isolated: an import failure, a missing/invalid ``check``
-    function, a runtime exception, or a bad return value is converted into an
-    ``ERROR`` finding instead of propagating. The core scan/drift therefore never
-    crashes because of a user plugin. Returns a list of normalized finding dicts
-    (empty when no plugins are present — the opt-out default).
+    Plugin execution is opt-in: unless ``allow_plugins`` is true this is a
+    no-op that returns an empty list *without* discovering or importing any
+    module. This is a security gate — plugin files live inside the scanned
+    (potentially untrusted) repository, so importing them runs arbitrary code
+    on the host/CI. Callers must explicitly opt in (via ``--allow-plugins``).
+
+    When opted in, each plugin is isolated: an import failure, a missing/invalid
+    ``check`` function, a runtime exception, or a bad return value is converted
+    into an ``ERROR`` finding instead of propagating. The core scan/drift
+    therefore never crashes because of a user plugin. Returns a list of
+    normalized finding dicts (empty when no plugins are present).
     """
+    # Security gate: never touch the scanned repo's plugin directory or import
+    # any code from it unless the caller explicitly opted in.
+    if not allow_plugins:
+        return []
     root = Path(root)
     context = dict(context or {})
     findings = []
