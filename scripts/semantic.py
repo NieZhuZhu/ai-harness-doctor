@@ -142,40 +142,10 @@ PM_TO_ECOSYSTEM = {
 _PM_NORMALIZE = {"mvn": "maven"}
 
 # Repo-root files that are referenced by bare name (no slash) yet are legitimate
-# repo-relative paths worth verifying. Covers every ecosystem's manifest/lockfile.
-KNOWN_ROOT_FILES = {
-    # Generic
-    "AGENTS.md",
-    "README.md",
-    "Makefile",
-    # Node
-    "package.json",
-    "package-lock.json",
-    "pnpm-lock.yaml",
-    "yarn.lock",
-    # Python
-    "pyproject.toml",
-    "setup.py",
-    "setup.cfg",
-    "requirements.txt",
-    "Pipfile",
-    "poetry.lock",
-    "uv.lock",
-    "pdm.lock",
-    # Go
-    "go.mod",
-    "go.sum",
-    "go.work",
-    # Rust
-    "Cargo.toml",
-    "Cargo.lock",
-    # Java
-    "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "settings.gradle",
-    "settings.gradle.kts",
-}
+# repo-relative paths worth verifying. Single-sourced in registry.py so the
+# Phase-0 declared-path check and the Phase-2 D2 drift gate share one definition
+# (TD-03).
+KNOWN_ROOT_FILES = registry.KNOWN_ROOT_FILES
 
 
 def _finding(category, level, message, suggestion, declared, actual, line=None):
@@ -328,64 +298,17 @@ def declared_commands(text):
 
 
 # Command prefixes that make a backtick token an invocation, not a path.
-_CMD_PATH_PREFIXES = (
-    "npm ",
-    "pnpm ",
-    "yarn ",
-    "bun ",
-    "make ",
-    "python",
-    "git ",
-    "node ",
-    "go ",
-    "cargo ",
-    "mvn ",
-    "gradle ",
-    "./gradlew",
-    "./mvnw",
-    "poetry ",
-    "pdm ",
-    "uv ",
-    "pip ",
-    "pipenv ",
-    "pytest",
-    "rustc ",
-    "javac ",
-    "java ",
-)
+# Single-sourced in registry.py (shared with the Phase-2 D2 drift gate) (TD-03).
+_CMD_PATH_PREFIXES = registry.CMD_PATH_PREFIXES
 
 
 def declared_paths(text):
-    """Return repo-relative paths referenced in inline backticks as ``{path, line}``."""
-    out = []
-    seen = set()
-    for lineno, line in enumerate(text.splitlines(), 1):
-        for m in re.finditer(r"`([^`]+)`", line):
-            token = m.group(1).strip()
-            if not token or token in seen:
-                continue
-            # A backtick span wrapped in matching quotes is a string-literal
-            # example value (e.g. `'/usr/bin/google-chrome'`, `"./downloads"`),
-            # not a repo path reference. Only the backticks were stripped before,
-            # leaving the inner quotes to defeat the absolute-path / value guards
-            # below so the quoted value was wrongly flagged as a missing path.
-            if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
-                continue
-            if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
-                continue
-            if token.startswith(("~", "/", "$")) or ":" in token:
-                continue
-            if token.startswith(_CMD_PATH_PREFIXES):
-                continue
-            if "*" in token or "?" in token:
-                continue
-            if any(ch.isspace() for ch in token):
-                continue
-            if "/" not in token and token not in KNOWN_ROOT_FILES:
-                continue
-            seen.add(token)
-            out.append({"path": token, "line": lineno})
-    return out
+    """Return repo-relative paths referenced in inline backticks as ``{path, line}``.
+
+    Delegates to the shared ``registry.declared_paths`` so this Phase-0 check and
+    the Phase-2 D2 drift gate agree on exactly what counts as a declared path
+    (TD-03)."""
+    return registry.declared_paths(text)
 
 
 def declared_package_managers(text):

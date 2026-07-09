@@ -65,6 +65,126 @@ def node_version_major(line):
     return int(m.group(1)) if m else None
 
 
+# ---------------------------------------------------------------------------
+# Backtick-quoted repo path detection (single source of truth).
+#
+# The Phase-0 semantic engine (semantic.declared_paths) and the Phase-2 drift
+# gate (check_drift.d2_path_drift) both need to answer "which backtick-quoted
+# tokens in AGENTS.md are repo-relative file paths worth existence-checking?".
+# They previously carried two separate, drifted rulesets (different command
+# prefixes, a smaller known-root-file set, and a missing quoted-literal guard),
+# so the same AGENTS.md line could be a "declared path" in one stage and ignored
+# in the other (TD-03). ``declared_paths`` below is the ONE shared classifier both
+# call, so the two stages can no longer disagree on what counts as a path.
+# ---------------------------------------------------------------------------
+
+# Command prefixes that make a backtick token a shell invocation, not a path.
+CMD_PATH_PREFIXES = (
+    "npm ",
+    "pnpm ",
+    "yarn ",
+    "bun ",
+    "make ",
+    "python",
+    "git ",
+    "node ",
+    "go ",
+    "cargo ",
+    "mvn ",
+    "gradle ",
+    "./gradlew",
+    "./mvnw",
+    "poetry ",
+    "pdm ",
+    "uv ",
+    "pip ",
+    "pipenv ",
+    "pytest",
+    "rustc ",
+    "javac ",
+    "java ",
+)
+
+# Repo-root files that are referenced by bare name (no slash) yet are legitimate
+# repo-relative paths worth verifying. Covers every ecosystem's manifest/lockfile.
+KNOWN_ROOT_FILES = {
+    # Generic
+    "AGENTS.md",
+    "README.md",
+    "Makefile",
+    # Node
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    # Python
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "requirements.txt",
+    "Pipfile",
+    "poetry.lock",
+    "uv.lock",
+    "pdm.lock",
+    # Go
+    "go.mod",
+    "go.sum",
+    "go.work",
+    # Rust
+    "Cargo.toml",
+    "Cargo.lock",
+    # Java
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+}
+
+_BACKTICK_RE = re.compile(r"`([^`]+)`")
+
+
+def declared_paths(text):
+    """Return repo-relative paths referenced in inline backticks as ``{path, line}``.
+
+    Single shared classifier used by both ``semantic.declared_paths`` (Phase-0)
+    and ``check_drift.d2_path_drift`` (Phase-2) so the two stages agree on exactly
+    what counts as a declared path (TD-03). This only decides candidacy from the
+    token text; callers still apply their own containment (``_within_root``) and
+    existence checks. Tokens are de-duplicated across the whole document.
+    """
+    out = []
+    seen = set()
+    for lineno, line in enumerate(text.splitlines(), 1):
+        for m in _BACKTICK_RE.finditer(line):
+            token = m.group(1).strip()
+            if not token or token in seen:
+                continue
+            # A backtick span wrapped in matching quotes is a string-literal
+            # example value (e.g. `'/usr/bin/google-chrome'`, `"./downloads"`),
+            # not a repo path reference. Only the backticks were stripped, leaving
+            # the inner quotes to defeat the absolute-path / value guards below.
+            if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
+                continue
+            if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
+                continue
+            # Home-relative (~/.claude), absolute (/etc/...), env-var ($HOME/...),
+            # or scheme/drive-like paths reference locations outside the repo tree.
+            if token.startswith(("~", "/", "$")) or ":" in token:
+                continue
+            if token.startswith(CMD_PATH_PREFIXES):
+                continue
+            if "*" in token or "?" in token:
+                continue
+            if any(ch.isspace() for ch in token):
+                continue
+            if "/" not in token and token not in KNOWN_ROOT_FILES:
+                continue
+            seen.add(token)
+            out.append({"path": token, "line": lineno})
+    return out
+
+
 def load_registry():
     """Return the full parsed registry as a dict."""
     with _REGISTRY_PATH.open(encoding="utf-8") as fh:
