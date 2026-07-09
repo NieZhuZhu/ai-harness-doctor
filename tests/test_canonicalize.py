@@ -123,6 +123,35 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertFalse(report["ok"])
             self.assertTrue(any(f["check"] == "SECTION" and f["level"] == "ERROR" for f in report["findings"]))
 
+    def test_validate_custom_require_sections_is_honored(self):
+        # A custom --require-sections list overrides the defaults: a heading not
+        # in the list is not required, and a heading in the list that is missing
+        # is flagged as a SECTION error.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text("# Overview\n# Deployment\nContent.\n", encoding="utf-8")
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--validate",
+                    str(repo),
+                    "--require-sections",
+                    "Overview,Rollback plan",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            report = json.loads(proc.stdout)
+            sections = [f["message"] for f in report["findings"] if f["check"] == "SECTION"]
+            # 'Overview' is present → not flagged; 'Rollback plan' is required but
+            # missing → flagged; the default 'Build & test' is NOT required here.
+            self.assertTrue(any("Rollback plan" in m for m in sections), report["findings"])
+            self.assertFalse(any("Overview" in m for m in sections), report["findings"])
+            self.assertFalse(any("Build & test" in m for m in sections), report["findings"])
+
     def test_validate_library_doc_downgrades_section_and_size_errors(self):
         # A large end-user library/reference AGENTS.md (installation + API
         # reference + support sections + import examples) must not be hard-failed

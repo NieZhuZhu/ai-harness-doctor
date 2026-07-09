@@ -729,7 +729,14 @@ def main(argv=None):
     parser.add_argument("--tools", default="claude,cursor,windsurf,copilot,gemini,cline")
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--max-bytes", type=int, default=32768)
-    parser.add_argument("--require-sections", default="Project overview,Build & test,Conventions")
+    parser.add_argument(
+        "--require-sections",
+        default="Project overview,Build & test,Conventions",
+        help="Comma-separated list of H1 headings that --validate requires the "
+        "canonical AGENTS.md to contain (default: 'Project overview,Build & test,"
+        "Conventions'). A missing heading is reported as a SECTION finding "
+        "(ERROR, or WARN for a library/reference doc). Only affects --validate.",
+    )
     args = parser.parse_args(argv)
     if args.plan:
         write_plan(args)

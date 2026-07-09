@@ -397,6 +397,12 @@ Every inferred line is tagged `(inferred — confirm)` and safe conventions `(su
 
 Validates the canonical `AGENTS.md` structure after you write it. It is a read-only passthrough to `scripts/canonicalize.py --validate`.
 
+By default it requires the `Project overview`, `Build & test`, and `Conventions` headings. Pass `--require-sections` with your own comma-separated list to change which headings are mandatory (a missing one is reported as a `SECTION` finding):
+
+```bash
+python3 scripts/canonicalize.py --validate . --require-sections "Project overview,Build & test,Security"
+```
+
 </details>
 
 <details>
