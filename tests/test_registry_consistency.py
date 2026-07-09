@@ -131,7 +131,9 @@ class SharedConstantConsistencyTests(unittest.TestCase):
         def scan_major(line):
             sigs = [s for s in scan.extract_signals({"text": line, "path": "AGENTS.md"})
                     if s["signal"] == "node_version"]
-            return int(sigs[0]["value"].split()[1]) if sigs else None
+            # scan now stores the full declared version (e.g. "node 18.17.0");
+            # normalize via the shared helper to compare the MAJOR across stages.
+            return registry.node_version_major(sigs[0]["value"]) if sigs else None
 
         cases = {
             "node 18": 18,

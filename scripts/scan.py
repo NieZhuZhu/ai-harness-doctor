@@ -482,7 +482,13 @@ def extract_signals(file_entry):
                 match = pattern.search(line)
                 if not match:
                     continue
-                actual = f"node {match.group(1)}" if signal == "node_version" and match.groups() else value
+                # Preserve the full declared Node version (e.g. "node 18.17.0")
+                # for user-facing evidence; conflict grouping normalizes it to
+                # the major so 18 and 18.17.0 are not a false conflict (CORR-05).
+                if signal == "node_version" and match.groupdict().get("version"):
+                    actual = f"node {match.group('version')}"
+                else:
+                    actual = value
                 signals.append(
                     {
                         "signal": signal,
@@ -495,23 +501,44 @@ def extract_signals(file_entry):
     return signals
 
 
+def _conflict_key(signal, value):
+    """Return the normalization key used to decide if two signal values conflict.
+
+    Version signals are compared by normalized semantic version so a bare major
+    (``node 18``) is recognized as compatible with a fuller version
+    (``node 18.17.0``) — only a differing MAJOR is a genuine conflict (CORR-05).
+    All other signals compare by their exact value. Reuses the shared
+    ``registry.node_version_major`` helper so scan agrees with the other stages.
+    """
+    if signal == "node_version":
+        major = registry.node_version_major(value)
+        if major is not None:
+            return f"node {major}"
+    return value
+
+
 def find_conflicts(files):
     by_signal = {}
     for f in files:
-        values = {}
+        # De-duplicate within a file by CONFLICT KEY (not raw value) so two
+        # compatible references in one file — e.g. "node 18" and "node 18.17.0"
+        # — collapse to one entry instead of manufacturing a conflict.
+        seen = {}
         for sig in extract_signals(f):
-            values.setdefault(sig["signal"], {})[sig["value"]] = sig
-        for signal, vals in values.items():
-            for value, sig in vals.items():
-                by_signal.setdefault(signal, {}).setdefault(value, []).append(sig)
+            seen[(sig["signal"], _conflict_key(sig["signal"], sig["value"]))] = sig
+        for (signal, key), sig in seen.items():
+            by_signal.setdefault(signal, {}).setdefault(key, []).append(sig)
     conflicts = []
-    for signal, values in by_signal.items():
-        if len(values) <= 1:
+    for signal, groups in by_signal.items():
+        # A conflict needs at least two DISTINCT normalized values (keys).
+        if len(groups) <= 1:
             continue
         conflicts.append(
             {
                 "signal": signal,
-                "values": {value: entries[:3] for value, entries in values.items()},
+                # Key the reported values by a representative actual value string
+                # (the first occurrence) so users still see the real version(s).
+                "values": {entries[0]["value"]: entries[:3] for entries in groups.values()},
             }
         )
     return conflicts

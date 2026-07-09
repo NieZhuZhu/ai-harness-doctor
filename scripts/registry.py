@@ -48,10 +48,15 @@ LOCKFILE_MANAGERS = {
 # so every stage extracts the identical value. The pattern accepts: an optional
 # ``.js`` suffix, an optional ``:`` separator, an optional ``version``/``v`` word,
 # an optional comparator (``>=``/``<=``/``==``/``^``/``~``), an optional ``v``
-# prefix and an optional surrounding quote, then the version; only the MAJOR
-# component is captured and any ``.minor`` / ``.x`` suffix is consumed.
+# prefix and an optional surrounding quote, then the version. The full version
+# token (major plus any ``.minor`` / ``.patch`` / ``.x`` suffix) is captured as
+# the ``version`` group; the leading MAJOR component alone as the ``major``
+# group. ``node_version_major`` normalizes to the major for cross-stage
+# comparison, while ``node_version_ref`` preserves the full token for display
+# and for semantic-version conflict comparison (CORR-05).
 NODE_VERSION_RE = re.compile(
-    r"\bnode(?:\.js)?\s*:?\s*(?:v|version)?\s*(?:>=?|<=?|==?|\^|~)?\s*v?[\"']?(\d+)(?:\.\d+|\.x)*",
+    r"\bnode(?:\.js)?\s*:?\s*(?:v|version)?\s*(?:>=?|<=?|==?|\^|~)?\s*v?[\"']?"
+    r"(?P<version>(?P<major>\d+)(?:\.\d+|\.x)*)",
     re.I,
 )
 
@@ -62,7 +67,19 @@ def node_version_major(line):
     Single shared extractor used by scan.py, semantic.py and check_drift.py so all
     three stages normalize a Node version reference to the same value (TD-06)."""
     m = NODE_VERSION_RE.search(line)
-    return int(m.group(1)) if m else None
+    return int(m.group("major")) if m else None
+
+
+def node_version_ref(line):
+    """Return the full declared Node.js version token (str) in ``line``, else ``None``.
+
+    Unlike ``node_version_major``, this preserves the minor/patch/``.x`` suffix
+    (e.g. ``"18.17.0"``, ``"18.x"``, ``"20"``) so callers can display the exact
+    declared version. Semantic conflict comparison still normalizes to the major
+    via ``node_version_major`` so ``18`` and ``18.17.0`` are treated as
+    compatible, not a false conflict (CORR-05)."""
+    m = NODE_VERSION_RE.search(line)
+    return m.group("version") if m else None
 
 
 # ---------------------------------------------------------------------------
