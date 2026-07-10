@@ -170,6 +170,7 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             "Command `./gradlew build` and `go build ./cmd`.\n"
             "Bare tool `pytest`.\n"
             "Home `~/.claude`, absolute `/etc/hosts`, escape `../outside.txt`.\n"
+            "Scoped package `@ai-sdk/provider` and alias `@/components`.\n"
             "Existing root `README.md`.\n"
             "Duplicate `docs/missing.md` again.\n"
         )

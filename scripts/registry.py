@@ -189,6 +189,14 @@ def declared_paths(text):
             # or scheme/drive-like paths reference locations outside the repo tree.
             if token.startswith(("~", "/", "$")) or ":" in token:
                 continue
+            # Scoped npm package names (`@ai-sdk/provider`) and path-alias imports
+            # (`@/components`) contain a slash but are package/module identifiers,
+            # not repo-relative filesystem paths; probing `root/@scope/...` always
+            # misses and produced false "path does not exist" findings on real
+            # AGENTS.md files (e.g. vercel/ai). npm scopes are `@`-prefixed, which
+            # no legitimate repo-relative path uses.
+            if token.startswith("@"):
+                continue
             if token.startswith(CMD_PATH_PREFIXES):
                 continue
             if "*" in token or "?" in token:
