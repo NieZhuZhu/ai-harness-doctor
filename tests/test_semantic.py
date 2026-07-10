@@ -119,6 +119,18 @@ class SemanticPathTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
 
+    def test_scoped_package_names_ignored(self):
+        # Scoped npm package names (`@ai-sdk/provider`) and path-alias imports
+        # (`@/components`) contain a slash but are package/module identifiers, not
+        # repo-relative paths, so they must not be flagged as missing paths.
+        with tempfile.TemporaryDirectory() as td:
+            text = (
+                "Providers live in `@ai-sdk/provider` and `@ai-sdk/provider-utils`; "
+                "aliases like `@/components` are imports."
+            )
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
     def test_quoted_absolute_path_and_example_value_ignored(self):
         # Backtick spans wrapped in quotes are string-literal example values, not
         # repo path references; only backticks were stripped before, leaving the
