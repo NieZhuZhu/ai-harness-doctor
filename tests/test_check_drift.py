@@ -71,6 +71,25 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(len(d1), 1)
         self.assertIn("nonexist", d1[0]["message"])
 
+    def test_bun_run_unknown_script_triggers_d1(self):
+        # The Phase-2 gate must match semantic.py's (npm|pnpm|bun) command
+        # detection; a `bun run <script>` referencing a missing package.json
+        # script previously slipped past the drift gate (bun blindness).
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\nbun run nonexist\n```\n", encoding="utf-8"
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d1 = [f for f in report["findings"] if f["check"] == "D1"]
+        self.assertEqual(len(d1), 1)
+        self.assertIn("nonexist", d1[0]["message"])
+
     def test_glob_backtick_does_not_trigger_d2(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
@@ -378,6 +397,22 @@ class DriftTests(unittest.TestCase):
             + "\nSee the [guide](docs/guide.md) and the [site](https://example.com/x).\n"
             + "Jump to the [top](#project-overview) or email [us](mailto:a@b.com).\n"
         )
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D7"])
+
+    def test_url_encoded_markdown_link_does_not_trigger_d7(self):
+        # Markdown percent-encodes spaces in link targets; the D7 probe must
+        # decode before checking existence, else a valid file is falsely
+        # flagged as a broken link and fails CI.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "docs").mkdir()
+        (repo / "docs" / "my guide.md").write_text("# Guide\n", encoding="utf-8")
+        body = CLEAN_AGENTS + "\nSee the [guide](docs/my%20guide.md) for details.\n"
         (repo / "AGENTS.md").write_text(body, encoding="utf-8")
         self._stub_pointers(repo)
         proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)

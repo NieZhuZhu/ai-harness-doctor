@@ -7,6 +7,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 # canonicalize.py lives in the same scripts/ dir; reuse its canonical stub
 # content/logic instead of duplicating it here.
@@ -42,8 +43,11 @@ def d1_command_drift(root, text):
     findings = []
     scripts = package_scripts(root)
     targets = make_targets(root)
+    # Keep the package-manager alternation in lock-step with semantic.py's
+    # _NODE_CMD_RE (npm|pnpm|bun); omitting bun left this CI gate blind to
+    # `bun run <script>` references that the Phase-0 engine already audits.
     cmd_re = re.compile(
-        r"\b(?:(npm|pnpm)\s+(?:run\s+)?([A-Za-z0-9:_-]+)|yarn\s+([A-Za-z0-9:_-]+)|make\s+([A-Za-z0-9_.-]+))\b"
+        r"\b(?:(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_-]+)|yarn\s+([A-Za-z0-9:_-]+)|make\s+([A-Za-z0-9_.-]+))\b"
     )
     for lineno, code in line_collected_code(text):
         # Skip English prose sentences so imperatives like "make sure the tests
@@ -316,6 +320,10 @@ def d7_markdown_link_drift(root, text):
             target = _link_target_is_probeable(m.group(1))
             if target is None:
                 continue
+            # Markdown may percent-encode spaces/specials in link targets
+            # (`docs/my%20file.md`); decode before probing so a valid file is
+            # not falsely reported as a broken link and failing CI.
+            target = unquote(target)
             if not _within_root(root, target):
                 continue
             if not (root / target).exists():
