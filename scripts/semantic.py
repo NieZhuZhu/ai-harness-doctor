@@ -618,6 +618,8 @@ def compare_commands(root, text):
             name = decl["name"]
             if name in PACKAGE_MANAGER_BUILTINS:
                 continue
+            if facts.is_yarn_bin_passthrough(root, decl["tool"], name):
+                continue
             if scripts is not None and name not in scripts:
                 findings.append(
                     _finding(

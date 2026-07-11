@@ -71,6 +71,69 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(len(d1), 1)
         self.assertIn("nonexist", d1[0]["message"])
 
+    def test_yarn_workspace_builtin_does_not_trigger_d1(self):
+        # `yarn workspace <name> <cmd>` / `yarn workspaces foreach ...` are Yarn
+        # subcommands, not package.json scripts (found scanning tldraw/tldraw's
+        # AGENTS.md, which documents `yarn workspace examples.tldraw.com dev`).
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\nyarn workspace examples dev\nyarn workspaces info\n```\n",
+            encoding="utf-8",
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
+
+    def test_yarn_bin_passthrough_does_not_trigger_d1(self):
+        # Yarn Classic/Berry run a binary straight out of node_modules/.bin when
+        # no matching script exists (`yarn vitest`). Found scanning tldraw's
+        # AGENTS.md, which documents `yarn vitest` even though the root
+        # package.json has no "vitest" script — only a "vitest" devDependency.
+        # This previously failed the CI gate (D1 ERROR) on a legitimate command.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "package.json").write_text(
+            json.dumps({"scripts": {"test": "node src/index.js"}, "devDependencies": {"vitest": "^2.0.0"}}),
+            encoding="utf-8",
+        )
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\nyarn vitest\n```\n", encoding="utf-8"
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
+
+    def test_npm_bin_style_reference_still_triggers_d1(self):
+        # The yarn bin-passthrough exemption must not leak to npm, which has no
+        # such fallback (`npm vitest` errors with "Unknown command").
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "package.json").write_text(
+            json.dumps({"scripts": {"test": "node src/index.js"}, "devDependencies": {"vitest": "^2.0.0"}}),
+            encoding="utf-8",
+        )
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\nnpm vitest\n```\n", encoding="utf-8"
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d1 = [f for f in report["findings"] if f["check"] == "D1"]
+        self.assertEqual(len(d1), 1)
+        self.assertIn("vitest", d1[0]["message"])
+
     def test_bun_run_unknown_script_triggers_d1(self):
         # The Phase-2 gate must match semantic.py's (npm|pnpm|bun) command
         # detection; a `bun run <script>` referencing a missing package.json
@@ -107,6 +170,25 @@ class DriftTests(unittest.TestCase):
         self.addCleanup(td.cleanup)
         (repo / "AGENTS.md").write_text(
             CLEAN_AGENTS + "Never write into the real `~/.claude`, `~/.codex`, or `/etc/hosts`.\n",
+            encoding="utf-8",
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D2"])
+
+    def test_placeholder_name_segment_does_not_trigger_d2(self):
+        # A leading `<word>-name` segment (`skill-name/SKILL.md`) documents a
+        # naming pattern in prose, not a literal path (found scanning
+        # tldraw/tldraw's AGENTS.md). This previously failed the CI gate (D2
+        # ERROR) on a legitimate, common documentation idiom.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "Skill folders use `skill-name/SKILL.md` as a template.\n",
             encoding="utf-8",
         )
         (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")

@@ -33,6 +33,59 @@ class SemanticCommandTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
 
+    def test_yarn_workspace_builtin_not_flagged(self):
+        # `yarn workspace <name> <cmd>` / `yarn workspaces foreach ...` are Yarn
+        # subcommands, not package.json scripts (found scanning tldraw/tldraw's
+        # AGENTS.md, which documents `yarn workspace examples.tldraw.com dev`).
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}}')
+            text = "Run `yarn workspace examples dev` or `yarn workspaces info`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_yarn_bin_passthrough_via_dependency_not_flagged(self):
+        # Yarn Classic/Berry run a binary straight out of node_modules/.bin when
+        # no matching script exists (`yarn vitest`). Found scanning tldraw's
+        # AGENTS.md, which documents `yarn vitest` even though the root
+        # package.json has no "vitest" script — only a "vitest" devDependency.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}, "devDependencies": {"vitest": "^2.0.0"}}')
+            text = "Run `yarn vitest` to test everything."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_yarn_bin_passthrough_via_installed_node_modules_bin_not_flagged(self):
+        # When node_modules/.bin is actually installed it is the more accurate
+        # ground truth (covers binaries whose name differs from the package that
+        # provides them, e.g. `tsc` from the `typescript` package).
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}, "devDependencies": {"typescript": "^5.0.0"}}')
+            write(td, "node_modules/.bin/tsc", "#!/bin/sh\n")
+            text = "Run `yarn tsc --noEmit`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_yarn_bin_passthrough_does_not_apply_to_npm_or_pnpm(self):
+        # npm has no such fallback (`npm vitest` errors) and pnpm does not resolve
+        # node_modules/.bin this way either, so the exemption must stay yarn-only.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}, "devDependencies": {"vitest": "^2.0.0"}}')
+            text = "Run `npm vitest` or `pnpm vitest`."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 2)
+
+    def test_yarn_unknown_binary_still_flagged(self):
+        # A yarn invocation with no matching script AND no matching dependency
+        # (nor an installed bin) is still a genuine drift, not a passthrough.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}, "devDependencies": {}}')
+            text = "Run `yarn totally-made-up-tool`."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("totally-made-up-tool", cmds[0]["message"])
+
     def test_make_target_missing(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "Makefile", "build:\n\techo hi\n")
@@ -130,6 +183,22 @@ class SemanticPathTests(unittest.TestCase):
             )
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_placeholder_name_segment_ignored(self):
+        # A leading `<word>-name` segment (`skill-name/SKILL.md`) documents a
+        # naming pattern in prose, not a literal path (found scanning
+        # tldraw/tldraw's AGENTS.md, which uses this idiom for its skill-folder
+        # convention). A real path segment that merely contains "name"
+        # (`username/profile.py`) must still be checked for existence.
+        with tempfile.TemporaryDirectory() as td:
+            text = (
+                "Skill folders use `skill-name/SKILL.md` as a template. "
+                "See `username/profile.py` for the real handler."
+            )
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("username/profile.py", paths[0]["message"])
 
     def test_quoted_absolute_path_and_example_value_ignored(self):
         # Backtick spans wrapped in quotes are string-literal example values, not
