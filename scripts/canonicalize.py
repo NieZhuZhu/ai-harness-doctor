@@ -180,9 +180,17 @@ def recommend_conflict_default(signal, values, root=None):
     if signal == "node_version":
         version, source = _ground_node_version(root)
         if version is not None:
-            target = f"node {version}"
-            if target in values:
-                return target, f"matches `{source}`"
+            # `values` is keyed by the full declared string (e.g. "node 18.2.0"),
+            # not the bare major `_ground_node_version` returns, so compare by
+            # normalized major (registry.node_version_major) rather than exact
+            # string equality — otherwise a repo pinned to Node 20 via .nvmrc
+            # with only dotted-version conflicts (e.g. "node 18.2.0") never
+            # matches and silently falls through to the vote-count tiebreak,
+            # contradicting this function's own "prefers a repository fact"
+            # docstring. Mirrors scan.py's `_conflict_key` fix for the same bug.
+            for candidate in values:
+                if registry.node_version_major(candidate) == version:
+                    return candidate, f"matches `{source}`"
     return recommend_conflict_value(values), "most configuration files agree; ties broken alphabetically"
 
 

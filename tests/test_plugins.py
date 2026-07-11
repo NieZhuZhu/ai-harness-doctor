@@ -45,6 +45,26 @@ def check(root, context):
     raise ValueError("boom from plugin")
 """
 
+# SystemExit is a BaseException, not an Exception — a plugin calling sys.exit()
+# must still be isolated as an ERROR finding, not kill the whole scan/drift run.
+IMPORT_SYSTEM_EXIT_PLUGIN = """\
+import sys
+
+sys.exit(1)
+
+
+def check(root, context):
+    return []
+"""
+
+RUNTIME_SYSTEM_EXIT_PLUGIN = """\
+import sys
+
+
+def check(root, context):
+    sys.exit("boom from plugin exit")
+"""
+
 NO_CHECK_PLUGIN = """\
 def not_check(root, context):
     return []
@@ -134,6 +154,29 @@ class PluginScanIntegrationTests(unittest.TestCase):
             errors = [f for f in report["custom"] if f["level"] == "ERROR"]
             self.assertTrue(any(f["rule"] == "plugin-error" for f in errors))
             self.assertTrue(any("boom from plugin" in f["message"] for f in errors))
+
+    def test_import_time_sys_exit_is_isolated_as_error(self):
+        # SystemExit is a BaseException; a bare `except Exception` previously let
+        # a plugin's top-level sys.exit() kill the whole scan process instead of
+        # degrading to an ERROR finding.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _make_repo(tmp)
+            _write_rule(repo, "exiter.py", IMPORT_SYSTEM_EXIT_PLUGIN)
+            _write_rule(repo, "good.py", GOOD_PLUGIN)
+            report = self.run_json(repo, "--allow-plugins")  # must NOT crash (returncode 0 asserted)
+            errors = [f for f in report["custom"] if f["level"] == "ERROR"]
+            self.assertTrue(any(f["rule"] == "plugin-load" for f in errors))
+            # A sibling good plugin still runs despite the exiting one.
+            self.assertTrue(any(f["rule"] == "demo/hello" for f in report["custom"]))
+
+    def test_runtime_sys_exit_is_isolated_as_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = _make_repo(tmp)
+            _write_rule(repo, "exiter.py", RUNTIME_SYSTEM_EXIT_PLUGIN)
+            report = self.run_json(repo, "--allow-plugins")
+            errors = [f for f in report["custom"] if f["level"] == "ERROR"]
+            self.assertTrue(any(f["rule"] == "plugin-error" for f in errors))
+            self.assertTrue(any("boom from plugin exit" in f["message"] for f in errors))
 
     def test_optout_default_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:

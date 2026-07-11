@@ -839,6 +839,22 @@ def secret_hits(text):
     return [label for label, pattern in SECRET_PATTERNS if pattern.search(text)]
 
 
+def _md_safe(value):
+    """Neutralize Markdown-breakout characters in a value read from attacker-
+    controlled JSON (MCP server/env names, permission rules, hook event/command
+    strings) before it is embedded in a finding ``message``.
+
+    Unlike the command/path values extracted elsewhere in this module via
+    bounded regexes, these come straight from JSON keys/values with no
+    constraint on content: a literal backtick closes an inline code span early,
+    and a literal newline injects extra lines into a rendered report or a
+    posted GitHub PR review comment (SEC-01). Findings are read both by humans
+    and by agents/CI tooling (``pr_review.py`` posts them verbatim as PR
+    comments), so this is a real injection surface, not just cosmetic.
+    """
+    return " ".join(str(value).replace("`", "'").split())
+
+
 def security_findings(root, files, mcp, hooks, permissions, ctx=None):
     ctx = ctx or ScanContext(root)
     findings = []
@@ -902,7 +918,7 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                             "level": "HIGH",
                             "category": "secret",
                             "path": rel_path,
-                            "message": f"Possible {label} in MCP server `{name}` env `{key}`",
+                            "message": f"Possible {label} in MCP server `{_md_safe(name)}` env `{_md_safe(key)}`",
                         }
                     )
     # 2) MCP transport / credential hygiene.
@@ -913,7 +929,7 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                     "level": "MEDIUM",
                     "category": "mcp",
                     "path": s["config"],
-                    "message": f"MCP server `{s['name']}` uses insecure http:// transport",
+                    "message": f"MCP server `{_md_safe(s['name'])}` uses insecure http:// transport",
                 }
             )
         for key in s["env_keys"]:
@@ -923,8 +939,8 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                         "level": "MEDIUM",
                         "category": "mcp",
                         "path": s["config"],
-                        "message": f"MCP server `{s['name']}` sets credential-shaped "
-                        f"env `{key}`; reference an env var instead of a literal",
+                        "message": f"MCP server `{_md_safe(s['name'])}` sets credential-shaped "
+                        f"env `{_md_safe(key)}`; reference an env var instead of a literal",
                     }
                 )
     # 3) Permission breadth.
@@ -936,7 +952,7 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                         "level": "HIGH",
                         "category": "permission",
                         "path": p["config"],
-                        "message": f"Overly broad allow rule `{entry}` grants unrestricted execution",
+                        "message": f"Overly broad allow rule `{_md_safe(entry)}` grants unrestricted execution",
                     }
                 )
         mode = p.get("defaultMode", "")
@@ -967,7 +983,7 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                         "level": "HIGH",
                         "category": "hook",
                         "path": h["config"],
-                        "message": f"{h['event']} hook contains {label}: `{h['command'][:80]}`",
+                        "message": f"{_md_safe(h['event'])} hook contains {label}: `{_md_safe(h['command'][:80])}`",
                     }
                 )
     # 5) Risky flags recommended inside instruction files.
@@ -1414,6 +1430,13 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
+    if not root.is_dir():
+        message = f"error: not a directory: {args.repo_root}"
+        if args.as_json:
+            print(json.dumps({"error": message}, ensure_ascii=False, indent=2))
+        else:
+            print(message, file=sys.stderr)
+        return 1
     # Single shared scan context: the repo tree is walked once here and the same
     # read/parse cache is reused by the root scan and every package scan below.
     ctx = ScanContext(root)

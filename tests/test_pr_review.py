@@ -133,6 +133,31 @@ class BuildReviewTests(unittest.TestCase):
         second = pr_review.build_review(report)["body"]
         self.assertEqual(first, second)
 
+    def test_embedded_newline_in_message_cannot_inject_extra_lines(self):
+        # A custom rule plugin's message/suggestion is fully attacker-controlled
+        # free text (SEC-01 defense-in-depth); a raw newline must never splice
+        # extra lines into the posted comment body.
+        report = {
+            "findings": [
+                {
+                    "check": "custom",
+                    "level": "ERROR",
+                    "message": "evil\n# Fake heading\n![x](http://evil.example/beacon)",
+                    "suggestion": "also\nmulti\nline",
+                },
+            ],
+        }
+        payload = pr_review.build_review(report)
+        # This finding has neither path nor line, so it lands in the summary.
+        self.assertEqual(payload["summary_count"], 1)
+        self.assertEqual(payload["comments"], [])
+        self.assertFalse(any(line.strip() == "# Fake heading" for line in payload["body"].splitlines()))
+
+    def test_embedded_newline_in_path_does_not_break_summary_location(self):
+        report = {"findings": [{"check": "custom", "level": "WARN", "path": "x\n# injected", "message": "m"}]}
+        payload = pr_review.build_review(report)
+        self.assertNotIn("\n# injected", payload["body"])
+
 
 class CliTests(unittest.TestCase):
     def test_dry_run_prints_valid_json_via_stdin(self):

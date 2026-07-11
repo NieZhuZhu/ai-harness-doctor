@@ -223,15 +223,35 @@ def is_yarn_bin_passthrough(root, tool, name):
     return deps is not None and name in deps
 
 
+# Matches a rule/assignment header: one or more whitespace-separated names,
+# then `:` or `::`, then an optional immediately-following `=`. Group 3 only
+# captures when `=` has NO whitespace before it, which is what distinguishes an
+# immediate-expansion assignment (`CFLAGS := -O2`) from a genuine rule with a
+# target-specific variable value (`debug: CFLAGS = -g`, space-separated).
+_MAKE_TARGET_LINE_RE = re.compile(r"^([A-Za-z0-9_.-]+(?:[ \t]+[A-Za-z0-9_.-]+)*)[ \t]*(::?)(=?)")
+
+
 def make_targets(root):
     path = root / "Makefile"
     if not path.is_file():
         return None
     targets = set()
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        m = re.match(r"^([A-Za-z0-9_.-]+):", line)
-        if m and not line.startswith("\t"):
-            targets.add(m.group(1))
+        if line.startswith("\t"):
+            continue
+        m = _MAKE_TARGET_LINE_RE.match(line)
+        if not m:
+            continue
+        # `VAR := value` / `VAR ::= value` is a variable assignment, not a rule.
+        if m.group(3) == "=":
+            continue
+        for name in m.group(1).split():
+            # A standard multi-target rule (`build test: deps`) declares every
+            # space-separated name before the colon as its own target. Dot-
+            # prefixed names are GNU Make's own special targets (.PHONY,
+            # .SUFFIXES, ...), never real invokable targets.
+            if not name.startswith("."):
+                targets.add(name)
     return targets
 
 

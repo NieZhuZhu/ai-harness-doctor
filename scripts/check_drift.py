@@ -597,6 +597,13 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
+    if not root.is_dir():
+        message = f"error: not a directory: {args.repo_root}"
+        if args.as_json:
+            print(json.dumps({"error": message}, ensure_ascii=False, indent=2))
+        else:
+            print(message, file=sys.stderr)
+        return 1
     # Executing plugins runs untrusted code from the scanned repo; warn loudly.
     if args.allow_plugins:
         print(

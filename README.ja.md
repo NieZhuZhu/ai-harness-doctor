@@ -379,7 +379,7 @@ scan output から Phase 1 の merge plan を組み立てます。inventory、ov
 <details>
 <summary><code>draft</code></summary>
 
-空の skeleton ではなく、具体的で事実由来の内容を埋めた **スターター `AGENTS.md`** を自動ドラフトします。`python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]` として起動します（scan の read-only passthrough で、スキャン対象 repo を一切変更しません）。
+空の skeleton ではなく、具体的で事実由来の内容を埋めた **スターター `AGENTS.md`** を自動ドラフトします。`npx ai-harness-doctor draft <repo> [-o AGENTS.md]`（または直接 `python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]`）として起動します。scan の read-only passthrough で、スキャン対象 repo を一切変更しません。
 
 ドラフトは `scan.py` / `semantic.py` の決定的な repository facts を再利用し、すべての canonical section（`Project overview`、`Build & test`、`Conventions`、`Testing requirements`、`Safety`、`Commit & PR`）を埋めます:
 

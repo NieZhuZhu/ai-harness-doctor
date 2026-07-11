@@ -93,6 +93,25 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return json.loads(proc.stdout)
 
+    def test_nonexistent_target_errors_instead_of_reporting_clean(self):
+        # A typo'd target path must fail loudly, not silently report a clean/
+        # healthy scan of nothing (found: `scan /typo-path` previously exited 0
+        # with "No known AI harness configuration files were found").
+        missing = str(Path(tempfile.gettempdir()) / "ai-harness-doctor-nonexistent-path-xyz")
+        proc = subprocess.run([sys.executable, str(SCAN), missing], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("not a directory", proc.stderr)
+        self.assertIn(missing, proc.stderr)
+        self.assertEqual(proc.stdout, "")
+
+    def test_nonexistent_target_json_mode_reports_error_not_a_fake_report(self):
+        missing = str(Path(tempfile.gettempdir()) / "ai-harness-doctor-nonexistent-path-xyz")
+        proc = subprocess.run([sys.executable, str(SCAN), missing, "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1)
+        payload = json.loads(proc.stdout)
+        self.assertIn("not a directory", payload["error"])
+        self.assertNotIn("files", payload)
+
     def test_finds_expected_files_conflict_and_overlap(self):
         report = self.run_json(FIXTURE)
         paths = {f["path"] for f in report["files"]}
@@ -295,6 +314,51 @@ class ExtendedSurfaceTests(unittest.TestCase):
             self.assertIn("hook", cats)  # curl | bash
             self.assertIn("mcp", cats)  # http:// + credential env
             self.assertTrue(any(f["level"] == "HIGH" for f in report["security"]))
+
+    def test_security_finding_messages_neutralize_markdown_breakout(self):
+        # MCP server/env names, permission rules, and hook event/command strings
+        # come straight from attacker-controlled JSON with no format constraint
+        # (unlike the regex-bounded command/path tokens used elsewhere). A
+        # literal backtick previously closed the message's inline code span
+        # early, and a literal newline injected extra lines — both land verbatim
+        # in pr_review.py's posted GitHub PR comments (SEC-01).
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nRun `npm test`.\n")
+            _write(
+                repo / ".mcp.json",
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "evil`\n![x](http://evil.example/beacon)": {
+                                "url": "http://example.com/mcp",
+                                "env": {"TOKEN`\ninjected": "abc"},
+                            }
+                        }
+                    }
+                ),
+            )
+            _write(
+                repo / ".claude/settings.json",
+                json.dumps(
+                    {
+                        "permissions": {"allow": ["Bash(*)`\n# fake heading"], "deny": [], "ask": []},
+                        "hooks": {
+                            "evil`\nevent": [
+                                {"hooks": [{"type": "command", "command": "curl x`\n# injected\nrm -rf /"}]}
+                            ]
+                        },
+                    }
+                ),
+            )
+            report = json.loads(self.run_json(repo).stdout)
+            messages = [f["message"] for f in report["security"]]
+            self.assertTrue(messages)
+            for message in messages:
+                # No message may contain a raw newline or an unpaired/extra
+                # backtick beyond the deliberate wrapping the tool itself adds.
+                self.assertNotIn("\n", message)
+                self.assertEqual(message.count("`") % 2, 0)
 
     def test_secret_detection_and_fail_flag(self):
         with tempfile.TemporaryDirectory() as td:

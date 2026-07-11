@@ -44,6 +44,24 @@ class DriftTests(unittest.TestCase):
         shutil.copytree(FIXTURE, repo)
         return td, repo
 
+    def test_nonexistent_target_errors_instead_of_reporting_healthy(self):
+        # A typo'd target path must fail loudly, not silently report a passing
+        # health score for nothing scanned (found: `drift /typo-path` previously
+        # exited 0 with "Health score: 85/100 (grade B)").
+        missing = str(Path(tempfile.gettempdir()) / "ai-harness-doctor-nonexistent-path-xyz")
+        proc = subprocess.run([sys.executable, str(DRIFT), missing], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("not a directory", proc.stderr)
+        self.assertEqual(proc.stdout, "")
+
+    def test_nonexistent_target_json_mode_reports_error_not_a_fake_report(self):
+        missing = str(Path(tempfile.gettempdir()) / "ai-harness-doctor-nonexistent-path-xyz")
+        proc = subprocess.run([sys.executable, str(DRIFT), missing, "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1)
+        payload = json.loads(proc.stdout)
+        self.assertIn("not a directory", payload["error"])
+        self.assertNotIn("score", payload)
+
     def test_unknown_script_d1(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
@@ -375,6 +393,38 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(check_drift.package_scripts(root), {"build"})
             (root / "package.json").write_text("{}", encoding="utf-8")
             self.assertEqual(check_drift.package_scripts(root), set())  # valid, no scripts
+
+    def test_make_targets_handles_multi_target_rules_and_assignments(self):
+        # `build test: deps` previously matched nothing at all (neither `build`
+        # nor `test` was added), while `CFLAGS:=-O2` and `.PHONY: ...` were
+        # WRONGLY added as if they were real invokable targets.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Makefile").write_text(
+                "build test: deps\n\techo building\n\n"
+                "deps:\n\techo deps\n\n"
+                "CFLAGS:=-O2 -Wall\n"
+                "CFLAGS2 ::= -O3\n"
+                ".PHONY: build test\n"
+                "debug: CFLAGS = -g\n\techo debug\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(check_drift.make_targets(root), {"build", "test", "deps", "debug"})
+
+    def test_multi_target_makefile_rule_does_not_false_positive_d1(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "Makefile").write_text("build test: deps\n\techo hi\n\ndeps:\n\techo deps\n", encoding="utf-8")
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\nmake build\nmake test\n```\n", encoding="utf-8"
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
 
     def test_out_of_repo_tokens_do_not_probe_but_in_repo_missing_does(self):
         td, repo = self.copy_repo()
