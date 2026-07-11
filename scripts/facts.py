@@ -64,6 +64,8 @@ PACKAGE_MANAGER_BUILTINS = {
     "help",
     "test",
     "start",
+    "workspace",
+    "workspaces",
 }
 
 
@@ -157,6 +159,68 @@ def package_scripts(root):
         return None
     scripts = data.get("scripts")
     return set(scripts.keys()) if isinstance(scripts, dict) else set()
+
+
+def package_dependency_names(root):
+    """Return dependency names declared in package.json, or ``None`` if unreadable.
+
+    Covers ``dependencies``, ``devDependencies``, ``peerDependencies``, and
+    ``optionalDependencies``. Used as a fallback ground truth for yarn's binary
+    passthrough (see ``is_yarn_bin_passthrough``) when ``node_modules/.bin`` has
+    not been installed. Mirrors ``package_scripts``'s None-vs-empty-set contract
+    (CORR-01).
+    """
+    path = root / "package.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    names = set()
+    for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+        section = data.get(key)
+        if isinstance(section, dict):
+            names.update(section.keys())
+    return names
+
+
+def node_modules_bin_names(root):
+    """Return binary names present in ``node_modules/.bin``, or ``None`` if absent."""
+    bin_dir = root / "node_modules" / ".bin"
+    if not bin_dir.is_dir():
+        return None
+    try:
+        return {p.name for p in bin_dir.iterdir()}
+    except OSError:
+        return None
+
+
+# Yarn Classic and Berry fall back to executing a binary straight out of
+# ``node_modules/.bin`` when the token after ``yarn`` does not match a
+# package.json script name — e.g. `yarn vitest` runs the vitest binary directly
+# even though no "vitest" script is declared. npm has no such fallback (`npm
+# vitest` errors with "Unknown command"), and pnpm does not resolve
+# node_modules/.bin entries this way either (pnpm/pnpm#3297), so this passthrough
+# is scoped to yarn only.
+_BIN_PASSTHROUGH_TOOLS = {"yarn"}
+
+
+def is_yarn_bin_passthrough(root, tool, name):
+    """True if ``tool name`` is a legitimate yarn binary passthrough, not a missing script.
+
+    Prefers the installed ``node_modules/.bin`` ground truth when available (it
+    reflects the binary's real name, e.g. ``tsc`` from the ``typescript``
+    package); falls back to the declared dependency names for repositories
+    scanned without ``node_modules`` installed.
+    """
+    if tool not in _BIN_PASSTHROUGH_TOOLS:
+        return False
+    bin_names = node_modules_bin_names(root)
+    if bin_names is not None:
+        return name in bin_names
+    deps = package_dependency_names(root)
+    return deps is not None and name in deps
 
 
 def make_targets(root):

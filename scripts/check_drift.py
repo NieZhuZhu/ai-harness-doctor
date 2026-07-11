@@ -75,6 +75,10 @@ def d1_command_drift(root, text):
             # are cheaper than noisy false positives here.
             if tool != "make" and name in PACKAGE_MANAGER_BUILTINS:
                 continue
+            # Same for yarn's node_modules/.bin passthrough (`yarn vitest`) — see
+            # facts.is_yarn_bin_passthrough (TD-02).
+            if tool != "make" and facts.is_yarn_bin_passthrough(root, tool, name):
+                continue
             if tool != "make" and scripts is not None and name not in scripts:
                 findings.append(
                     {

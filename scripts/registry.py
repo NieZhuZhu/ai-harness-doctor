@@ -159,6 +159,8 @@ KNOWN_ROOT_FILES = {
 }
 
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
+# Matches a bare "<word>-name" placeholder path segment; see declared_paths.
+_PLACEHOLDER_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9]*-name$")
 
 
 def declared_paths(text):
@@ -196,6 +198,15 @@ def declared_paths(text):
             # AGENTS.md files (e.g. vercel/ai). npm scopes are `@`-prefixed, which
             # no legitimate repo-relative path uses.
             if token.startswith("@"):
+                continue
+            # A leading `<word>-name` segment (`skill-name/SKILL.md`,
+            # `package-name/index.js`) documents a naming *pattern* in prose, not
+            # a literal repo path — no real directory is ever named literally
+            # "skill-name". Found scanning tldraw/tldraw's AGENTS.md, which uses
+            # this idiom to describe its skill-folder convention. Only the exact
+            # "<word>-name" shape matches, so a real path segment that merely
+            # contains "name" (`username/profile.py`) is still checked.
+            if _PLACEHOLDER_SEGMENT_RE.fullmatch(token.split("/", 1)[0]):
                 continue
             if token.startswith(CMD_PATH_PREFIXES):
                 continue
