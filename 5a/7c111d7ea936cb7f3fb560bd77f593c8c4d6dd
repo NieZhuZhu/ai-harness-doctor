@@ -1,0 +1,39 @@
+README.ja.md
+  s_9ca63cdefc4780::t_4c69c0096c39c7 303-304,317
+README.md
+  s_9ca63cdefc4780::t_4cc74ff82f966f 303-304,317
+README.zh-CN.md
+  s_9ca63cdefc4780::t_d0be998d1a8ff3 303-304,317
+scripts/eval_run.py
+  s_9ca63cdefc4780::t_f0829831a2d738 695-704,707-720,724-725,778-783
+scripts/scan.py
+  s_9ca63cdefc4780::t_46ba489bf100a1 31,1370-1431,1446-1488,1548-1557,1559-1563
+scripts/scan_render.py
+  s_9ca63cdefc4780::t_c7fab1ad11d373 111-167
+scripts/semantic.py
+  s_9ca63cdefc4780::t_27e9e52f44f17f 109-115,258
+tests/test_eval_run.py
+  s_9ca63cdefc4780::t_56faf0dfcc6e1b 1074-1108,1140-1159
+tests/test_scan.py
+  s_9ca63cdefc4780::t_9186f7e8facded 640-748
+tests/test_semantic.py
+  s_9ca63cdefc4780::t_89a1e7cec54dec 501-529
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "5a7c111d7ea936cb7f3fb560bd77f593c8c4d6dd",
+  "prompts": {},
+  "sessions": {
+    "s_9ca63cdefc4780": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9ca63cdefc4780",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
