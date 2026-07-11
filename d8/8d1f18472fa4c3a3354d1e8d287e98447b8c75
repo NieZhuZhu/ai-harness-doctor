@@ -1,0 +1,31 @@
+scripts/check_drift.py
+  s_39e0df005676da::t_a36fd03b886808 78-81
+scripts/facts.py
+  s_39e0df005676da::t_3c656adebd5a7c 67-68,164-225
+scripts/registry.py
+  s_39e0df005676da::t_0a76fb2bd3d198 162-163,202-210
+scripts/semantic.py
+  s_39e0df005676da::t_7c4cb617608ade 621-622
+tests/test_check_drift.py
+  s_39e0df005676da::t_c012bce83e14c7 74-136,183-201
+tests/test_semantic.py
+  s_39e0df005676da::t_9bd569da7ad40b 36-88,187-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d88d1f18472fa4c3a3354d1e8d287e98447b8c75",
+  "prompts": {},
+  "sessions": {
+    "s_39e0df005676da": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "613712da-b738-47a5-813c-1be965afb7fc",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
