@@ -122,6 +122,27 @@ class SharedConstantConsistencyTests(unittest.TestCase):
         for lockfile in ("bun.lockb", "bun.lock"):
             self.assertEqual(registry.LOCKFILE_MANAGERS.get(lockfile), "bun")
 
+    def test_phase0_and_phase2_agree_on_competing_node_lockfiles(self):
+        # TD-01 single-sourced the lockfile->manager map, but semantic.py's Node
+        # ground-truth picker (_node_ground_pm) independently re-scanned lockfiles
+        # in priority order instead of calling the shared, ambiguity-safe
+        # facts.lockfile_managers — so a repo with two competing lockfiles got a
+        # confident Phase-0 MISMATCH finding while Phase-2's D6 stayed silent and
+        # D8 flagged it as ambiguous. Both stages must now agree: no package
+        # manager conflict is reported on either side.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pnpm-lock.yaml").write_text("lockfileVersion: 6\n", encoding="utf-8")
+            (root / "package-lock.json").write_text("{}", encoding="utf-8")
+            (root / "AGENTS.md").write_text("# Project overview\n\nUse `npm install`.\n", encoding="utf-8")
+            text = "Use `npm install`."
+
+            phase0 = semantic.compare_package_manager(root, text)
+            self.assertEqual(phase0, [])
+
+            phase2 = check_drift.d6_fact_drift(root, text)
+            self.assertFalse([f for f in phase2 if "package manager" in f["message"].lower()])
+
     def test_node_version_regex_single_sourced_across_stages(self):
         # TD-06: the scan conflict signal, the Phase-0 semantic check and the
         # Phase-2 D6 drift gate all extract a Node version through the SAME shared

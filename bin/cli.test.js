@@ -63,10 +63,17 @@ test('parseInstallArgs accepts --agent=<value> and --link', () => {
 });
 
 test('SCRIPT_COMMANDS maps every Python-backed subcommand to a script', () => {
-  assert.deepStrictEqual(Object.keys(SCRIPT_COMMANDS).sort(), ['drift', 'eval', 'plan', 'scan', 'stubs', 'validate']);
+  assert.deepStrictEqual(
+    Object.keys(SCRIPT_COMMANDS).sort(),
+    ['draft', 'drift', 'eval', 'plan', 'scan', 'stubs', 'validate']
+  );
   for (const spec of Object.values(SCRIPT_COMMANDS)) {
     assert.ok(spec[0].endsWith('.py'), `expected a .py script, got ${spec[0]}`);
   }
+});
+
+test('SCRIPT_COMMANDS.draft routes to canonicalize.py --draft', () => {
+  assert.deepStrictEqual(SCRIPT_COMMANDS.draft, ['canonicalize.py', '--draft']);
 });
 
 test('parseDoctorArgs accepts --self-test and --json', () => {
@@ -112,6 +119,25 @@ test('dispatcher fails cleanly when Python runtime is missing', () => {
     assert.match(result.stderr, /AI_HARNESS_DOCTOR_PYTHON/);
     // Should not leak a Node stack trace.
     assert.doesNotMatch(result.stderr, /at Object\.<anonymous>|node:internal/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// Regression: `draft` fully exists in canonicalize.py but was never added to
+// the dispatcher's command whitelist, so `npx ai-harness-doctor draft .`
+// (documented in README's Quick Start) hit "Unknown command: draft" (DIRECTION-01).
+test('draft dispatches to canonicalize.py --draft instead of "Unknown command"', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ahd-draft-'));
+  try {
+    fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({ scripts: { test: 'node t.js' } }));
+    const result = childProcess.spawnSync(process.execPath, [CLI, 'draft', tmp], {
+      encoding: 'utf8',
+      env: { ...process.env, AI_HARNESS_DOCTOR_NO_UPDATE_CHECK: '1' },
+    });
+    assert.doesNotMatch(result.stderr || '', /Unknown command/);
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Auto-drafted by/);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

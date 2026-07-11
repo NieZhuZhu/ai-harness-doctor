@@ -379,7 +379,7 @@ These are suggestions for human review, not automatic adjudication; the existing
 <details>
 <summary><code>draft</code></summary>
 
-Auto-drafts a **starter `AGENTS.md`** filled with concrete, fact-derived content instead of an empty skeleton. Invoked as `python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]` (read-only passthrough of the scan; it never mutates the scanned repo).
+Auto-drafts a **starter `AGENTS.md`** filled with concrete, fact-derived content instead of an empty skeleton. Invoked as `npx ai-harness-doctor draft <repo> [-o AGENTS.md]` (or directly as `python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]`); a read-only passthrough of the scan, it never mutates the scanned repo.
 
 The draft fills every canonical section (`Project overview`, `Build & test`, `Conventions`, `Testing requirements`, `Safety`, `Commit & PR`) using deterministic repository facts reused from `scan.py` / `semantic.py`:
 

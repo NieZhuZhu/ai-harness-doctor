@@ -377,6 +377,35 @@ class ConflictDefaultTests(unittest.TestCase):
             self.assertEqual(value, "node 20")
             self.assertIn(".nvmrc", rationale)
 
+    def test_node_version_recommendation_matches_nvmrc_against_dotted_versions(self):
+        # `values` is keyed by the full declared string scan.py preserves (e.g.
+        # "node 18.2.0"), not the bare major .nvmrc/engines.node resolve to.
+        # Comparing by exact string equality never matches a dotted conflict
+        # value, silently falling through to the vote-count tiebreak and
+        # recommending a version that contradicts the repo's own .nvmrc.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".nvmrc").write_text("20\n", encoding="utf-8")
+            values = {
+                "node 18.2.0": [{"path": "CLAUDE.md", "line": 3}, {"path": "README.md", "line": 1}],
+                "node 20.1.0": [{"path": ".cursorrules", "line": 3}],
+            }
+            value, rationale = canonicalize.recommend_conflict_default("node_version", values, root)
+            self.assertEqual(value, "node 20.1.0")
+            self.assertIn(".nvmrc", rationale)
+
+    def test_node_version_recommendation_falls_back_when_nvmrc_matches_no_candidate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".nvmrc").write_text("22\n", encoding="utf-8")
+            values = {
+                "node 18.2.0": [{"path": "CLAUDE.md", "line": 3}, {"path": "README.md", "line": 1}],
+                "node 20.1.0": [{"path": ".cursorrules", "line": 3}],
+            }
+            value, rationale = canonicalize.recommend_conflict_default("node_version", values, root)
+            self.assertEqual(value, "node 18.2.0")
+            self.assertIn("configuration files agree", rationale)
+
 
 if __name__ == "__main__":
     unittest.main()

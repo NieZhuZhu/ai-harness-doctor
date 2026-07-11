@@ -368,10 +368,16 @@ def _two_part(s):
 
 
 def _java_major(s):
-    """Normalize a Java version token: ``1.8`` -> 8, ``17`` -> 17."""
+    """Normalize a Java version token: ``1.8`` -> 8, ``1_8`` -> 8, ``17`` -> 17.
+
+    The underscore form is Gradle's legacy ``JavaVersion.VERSION_1_8`` enum
+    spelling (still common in pre-Java-11 builds); without it the regex falls
+    through to the bare-digit branch, captures only the leading "1", and
+    reports a nonsensical "Java 1" mismatch (found scanning a real Gradle repo).
+    """
     if s is None:
         return None
-    m = re.match(r"\s*1\.(\d+)", s)
+    m = re.match(r"\s*1[._](\d+)", s)
     if m:
         return int(m.group(1))
     m = re.match(r"\s*(\d+)", s)
@@ -441,9 +447,24 @@ lockfile_managers = facts.lockfile_managers
 
 
 def _node_ground_pm(root):
-    for name in ("pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock", "package-lock.json", "npm-shrinkwrap.json"):
-        if (root / name).is_file():
-            return LOCKFILE_MANAGERS[name], name
+    """Return ``(manager, evidence_lockfile)`` for the repo's Node package manager.
+
+    Delegates to the shared, ambiguity-safe ``facts.lockfile_managers`` (TD-02)
+    instead of independently re-scanning lockfiles in priority order. A repo
+    with two competing lockfiles (e.g. a leftover `package-lock.json` next to
+    the real `pnpm-lock.yaml`, common mid-migration) is exactly what
+    `check_drift.py`'s D8 gate flags as "ambiguous, human must decide" while D6
+    stays silent — the old first-match scan here instead confidently picked one
+    manager, producing a Phase-0 MISMATCH finding that contradicted Phase-2's
+    own verdict on the identical repo state.
+    """
+    managers = facts.lockfile_managers(root)
+    if len(managers) != 1:
+        return None, None
+    manager = next(iter(managers))
+    for name, mgr in LOCKFILE_MANAGERS.items():
+        if mgr == manager and (root / name).is_file():
+            return manager, name
     return None, None
 
 
@@ -585,7 +606,9 @@ def java_ground_versions(root):
         gradle = root / name
         if gradle.is_file():
             text = _read(gradle)
-            m = re.search(r"(?:source|target)Compatibility\s*=?\s*(?:JavaVersion\.VERSION_)?[\"']?(1\.\d+|\d+)", text)
+            m = re.search(
+                r"(?:source|target)Compatibility\s*=?\s*(?:JavaVersion\.VERSION_)?[\"']?(1[._]\d+|\d+)", text
+            )
             if not m:
                 m = re.search(r"languageVersion\s*=\s*JavaLanguageVersion\.of\((\d+)\)", text)
             if m:

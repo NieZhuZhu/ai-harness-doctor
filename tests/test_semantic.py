@@ -231,6 +231,20 @@ class SemanticPackageManagerTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
 
+    def test_competing_lockfiles_not_flagged(self):
+        # A repo with two committed lockfiles (e.g. a leftover package-lock.json
+        # next to the real pnpm-lock.yaml, common mid-migration) is genuinely
+        # ambiguous — check_drift.py's D8 gate already treats this as "human
+        # must decide" and D6 stays silent. `_node_ground_pm` previously
+        # first-matched pnpm-lock.yaml and confidently reported a MISMATCH here,
+        # contradicting Phase-2's own verdict on the identical repo state.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pnpm-lock.yaml", "lockfileVersion: 6\n")
+            write(td, "package-lock.json", "{}")
+            text = "Use `npm install` for dependencies."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
+
 
 class SemanticNodeVersionTests(unittest.TestCase):
     def test_nvmrc_and_engines_mismatch(self):
@@ -420,6 +434,26 @@ class SemanticJavaTests(unittest.TestCase):
             text = "Requires Java 8."
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "java_version"], [])
+
+    def test_gradle_legacy_version_1_8_enum_normalized_ok(self):
+        # Gradle's legacy Java-8-and-below enum spelling uses an underscore
+        # (`JavaVersion.VERSION_1_8`), not a dot. The dot-only regex previously
+        # captured only the leading "1" and reported a nonsensical "Java 1"
+        # mismatch against a correct "Requires Java 8" declaration.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "build.gradle", "sourceCompatibility = JavaVersion.VERSION_1_8\n")
+            text = "Requires Java 8."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "java_version"], [])
+
+    def test_gradle_legacy_version_1_8_enum_mismatch_still_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "build.gradle", "sourceCompatibility = JavaVersion.VERSION_1_8\n")
+            text = "Requires Java 11."
+            result = semantic.analyze(td, text)
+            jv = [f for f in result["findings"] if f["category"] == "java_version"]
+            self.assertEqual(len(jv), 1)
+            self.assertIn("8", jv[0]["message"])
 
 
 class SemanticMultiEcosystemTests(unittest.TestCase):

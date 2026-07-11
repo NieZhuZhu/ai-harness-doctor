@@ -175,7 +175,12 @@ def run_plugins(root, context=None, extra_dirs=None, allow_plugins=False):
         plugin = _plugin_label(path, root)
         try:
             module = _load_module(path)
-        except Exception as exc:  # noqa: BLE001 - isolate any import-time failure
+        # SystemExit is a BaseException, not an Exception, so a plugin that calls
+        # sys.exit() at import time previously escaped isolation and killed the
+        # whole scan/drift process — contradicting this function's own "never
+        # crashes because of a user plugin" guarantee. KeyboardInterrupt is left
+        # to propagate deliberately (an operator's own Ctrl-C during a scan).
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - isolate any import-time failure
             findings.append(
                 _error_finding(
                     "plugin-load",
@@ -198,7 +203,10 @@ def run_plugins(root, context=None, extra_dirs=None, allow_plugins=False):
             continue
         try:
             results = check(root, context)
-        except Exception as exc:  # noqa: BLE001 - isolate any runtime failure
+        # See the import-time except above: SystemExit must be caught here too,
+        # or a plugin's check() calling sys.exit() kills the whole run instead of
+        # degrading to an ERROR finding.
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - isolate any runtime failure
             findings.append(
                 _error_finding(
                     "plugin-error",

@@ -379,7 +379,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 <details>
 <summary><code>draft</code></summary>
 
-自动起草一份填充了具体、基于事实内容的**初始 `AGENTS.md`**，而不是空骨架。调用方式为 `python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]`（对 scan 的只读透传，绝不修改被扫描的仓库）。
+自动起草一份填充了具体、基于事实内容的**初始 `AGENTS.md`**，而不是空骨架。调用方式为 `npx ai-harness-doctor draft <repo> [-o AGENTS.md]`（或直接调用 `python3 scripts/canonicalize.py <repo> --draft [-o AGENTS.md]`）；它是对 scan 的只读透传，绝不修改被扫描的仓库。
 
 草稿会复用 `scan.py` / `semantic.py` 的确定性仓库事实，填充每个 canonical 章节（`Project overview`、`Build & test`、`Conventions`、`Testing requirements`、`Safety`、`Commit & PR`）：
 

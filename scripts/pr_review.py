@@ -83,6 +83,21 @@ def finding_label(finding):
     return "finding"
 
 
+def _no_embedded_newlines(value):
+    """Collapse embedded newlines so one finding can never inject extra lines
+    into a posted GitHub PR comment (SEC-01).
+
+    Most finding text is already backtick-free by construction (scan.py's
+    security findings escape their few free-form JSON-sourced fields; the
+    semantic/drift engines only ever extract regex-bounded command/path
+    tokens), but a custom rule plugin's ``message``/``suggestion`` (opt-in via
+    ``--allow-plugins``) is fully attacker-controlled free text. A literal
+    newline there could otherwise splice a fake heading, image, or mention into
+    the review body/comment; this is the defense-in-depth backstop for that.
+    """
+    return " ".join(str(value).split())
+
+
 def format_body(finding):
     """Render one finding into a Markdown comment body.
 
@@ -98,10 +113,10 @@ def format_body(finding):
     parts = [header]
     message = finding.get("message")
     if message:
-        parts.append(str(message))
+        parts.append(_no_embedded_newlines(message))
     suggestion = finding.get("suggestion")
     if suggestion:
-        parts.append(f"Suggestion: {suggestion}")
+        parts.append(f"Suggestion: {_no_embedded_newlines(suggestion)}")
     return " ".join(parts)
 
 
@@ -194,7 +209,7 @@ def build_summary(summary_findings, inline_count, marker=MARKER):
             # could not become an inline comment) so the summary still points at
             # the right file.
             path = finding.get("path")
-            location = f"`{path}`: " if path else ""
+            location = f"`{_no_embedded_newlines(path)}`: " if path else ""
             lines.append(f"- {location}{format_body(finding)}")
     return "\n".join(lines) + "\n"
 

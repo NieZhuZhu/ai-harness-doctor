@@ -29,6 +29,7 @@ Usage:
   ai-harness-doctor update
   ai-harness-doctor scan [...args]
   ai-harness-doctor plan [...args]
+  ai-harness-doctor draft [...args]
   ai-harness-doctor validate [...args]
   ai-harness-doctor stubs [...args]
   ai-harness-doctor drift [...args]
@@ -44,6 +45,7 @@ Examples:
   npx ai-harness-doctor@latest update
   npm i -g ai-harness-doctor && ai-harness-doctor install --link
   npx ai-harness-doctor scan .
+  npx ai-harness-doctor draft . -o AGENTS.md   # fact-derived starter AGENTS.md instead of an empty skeleton
   npx ai-harness-doctor validate .
   npx ai-harness-doctor drift . --strict
   npx ai-harness-doctor doctor --self-test   # verify the Node + Python runtime is ready
@@ -581,6 +583,7 @@ function updateInstalled() {
 const SCRIPT_COMMANDS = {
   scan: ['scan.py'],
   plan: ['canonicalize.py', '--plan'],
+  draft: ['canonicalize.py', '--draft'],
   validate: ['canonicalize.py', '--validate'],
   stubs: ['canonicalize.py', '--write-stubs'],
   drift: ['check_drift.py'],
@@ -1003,7 +1006,7 @@ function main() {
   if (command === 'guard') return guard(rest);
   if (command === 'mcp') return runMcpServer();
   if (command === 'doctor') return doctor(rest);
-  if (['scan', 'plan', 'validate', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
+  if (['scan', 'plan', 'draft', 'validate', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
   fail(`Unknown command: ${command}`);
 }
 
