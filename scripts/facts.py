@@ -90,8 +90,21 @@ _PROSE_TARGET_WORDS = frozenset(
 
 def looks_like_prose(segment):
     """Return True when a code span reads as an English prose sentence rather than
-    a shell command line, so command extraction from it would be spurious."""
-    words = re.findall(r"[A-Za-z']+", segment.lower())
+    a shell command line, so command extraction from it would be spurious.
+
+    Splits on whitespace only, not on internal punctuation: a hyphen/colon-
+    joined identifier (``lint-and-fix``, ``build:on:save``) is a single
+    command/target/script token, not standalone English words. Previously
+    ``[A-Za-z']+`` extracted sub-words from inside such identifiers too, so
+    e.g. the "and" in ``make lint-and-fix`` counted as a prose-word hit and
+    the whole line was misread as a sentence, silently disabling the D1
+    command-drift check for any command name shaped like that (CORRECTNESS-01).
+    """
+    words = []
+    for token in segment.lower().split():
+        if "-" in token or ":" in token:
+            continue
+        words.extend(re.findall(r"[a-z']+", token))
     if len(words) < 4:
         return False
     return any(w in _PROSE_WORDS for w in words)

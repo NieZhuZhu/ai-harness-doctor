@@ -687,7 +687,8 @@ def validate(args):
                     }
                 )
     if agents.is_file():
-        for change in collect_stub_targets(root, ["claude", "cursor", "windsurf", "copilot", "gemini", "cline"]):
+        all_canonicalizable = [t["id"] for t in registry.canonicalizable_tools()]
+        for change in collect_stub_targets(root, all_canonicalizable):
             path = change["path"]
             if not path.is_file():
                 continue
@@ -734,7 +735,12 @@ def main(argv=None):
     parser.add_argument("-o", "--output")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--tools", default="claude,cursor,windsurf,copilot,gemini,cline")
+    parser.add_argument(
+        "--tools",
+        default=",".join(t["id"] for t in registry.canonicalizable_tools()),
+        help="Comma-separated tool ids to write/validate stubs for (default: every "
+        "canonicalizable tool in the registry — see assets/agent-tools.json).",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     parser.add_argument("--max-bytes", type=int, default=32768)
     parser.add_argument(

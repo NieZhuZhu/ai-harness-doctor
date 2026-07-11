@@ -422,6 +422,8 @@ Downgrades existing tool files to minimal pointers after `AGENTS.md` exists.
 | Gemini | `GEMINI.md` becomes a pointer and recommends `contextFileName`. |
 | Cline | `.clinerules` becomes a pointer. |
 | Roo | Detected by `scan` (`.roo/rules/*.md`) but **not** downgraded — a rules-directory tool with no single conventional stub location, so it stays scan-only. |
+| Continue | `.continuerules` points to `AGENTS.md`; `.continue/rules/*.md` is detected by `scan` but not downgraded. |
+| Trae | Detected by `scan` (`.trae/rules/project_rules.md`) but **not** downgraded — same shape as Roo, no single conventional stub location. |
 
 Dry-run by default. `--apply` requires a clean git tree; `--force` overrides that safety check.
 

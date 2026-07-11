@@ -369,6 +369,24 @@ class DriftTests(unittest.TestCase):
         self.assertIn("deploy", messages)
         self.assertNotIn("sure", messages)
 
+    def test_hyphenated_command_name_missing_target_triggers_d1(self):
+        # CORRECTNESS-01: `make lint-and-fix` was previously misread as an
+        # English sentence (the "and" inside the hyphenated identifier counted
+        # as a prose-word hit), silently disabling the D1 gate for it.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "Makefile").write_text("build:\n\techo hi\n", encoding="utf-8")
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "\nRun `make lint-and-fix` before committing.\n", encoding="utf-8"
+        )
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d1 = [f for f in report["findings"] if f["check"] == "D1"]
+        self.assertEqual(len(d1), 1)
+        self.assertIn("lint-and-fix", d1[0]["message"])
+
     def test_invalid_package_json_does_not_produce_false_unknown_script_d1(self):
         # A present-but-unparseable package.json must not be treated as "no
         # scripts": package_scripts returns None so D1 skips the unknown-script

@@ -120,6 +120,52 @@ class SemanticCommandTests(unittest.TestCase):
             self.assertIn("deploy", cmds[0]["message"])
             self.assertFalse(any("sure" in f["message"] for f in cmds))
 
+    def test_hyphenated_command_name_missing_target_still_flagged(self):
+        # CORRECTNESS-01: `[A-Za-z']+` used to extract sub-words from INSIDE a
+        # hyphen/colon-joined identifier too, so "and" in "lint-and-fix" (or
+        # "on" in "build:on:save") counted as a prose-word hit and the whole
+        # line was misread as an English sentence — silently disabling the D1
+        # command-drift check for any command shaped like that.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Makefile", "build:\n\techo hi\n")
+            text = "Run `make lint-and-fix` before committing."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("lint-and-fix", cmds[0]["message"])
+
+    def test_hyphenated_command_name_present_target_not_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Makefile", "lint-and-fix:\n\techo ok\n")
+            text = "Run `make lint-and-fix` before committing."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+
+class ProseHeuristicTests(unittest.TestCase):
+    """Direct unit coverage for facts.looks_like_prose (CORRECTNESS-01):
+    previously exercised only indirectly through compare_commands/D1."""
+
+    def test_hyphen_or_colon_joined_identifiers_are_not_prose(self):
+        for segment in (
+            "make lint-and-fix",
+            "npm run build:on:save",
+            "make test-and-build",
+            "make build-and-deploy",
+        ):
+            self.assertFalse(semantic._looks_like_prose(segment), segment)
+
+    def test_genuine_english_sentences_are_still_prose(self):
+        for segment in (
+            "Please make sure the tests pass before committing.",
+            "Make sure to run the tests first before you commit anything.",
+        ):
+            self.assertTrue(semantic._looks_like_prose(segment), segment)
+
+    def test_short_segments_are_never_prose(self):
+        self.assertFalse(semantic._looks_like_prose("make sure"))
+        self.assertFalse(semantic._looks_like_prose("make deploy"))
+
 
 class SemanticPackageScriptsTests(unittest.TestCase):
     def test_valid_package_json_with_scripts(self):

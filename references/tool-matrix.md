@@ -65,3 +65,19 @@ Use this table during Phase 1 — Treat to decide which files should be downgrad
 - Priority/merge order: follow official documentation.
 - Size limits: follow official documentation.
 - Downgrade strategy: v1 mainly scans and reports; whether to downgrade to a pointer requires human confirmation.
+
+## Continue
+
+- Read files: legacy `.continuerules` single file; current `.continue/rules/*.md` directory (loaded in lexicographical order).
+- Import/reference: follow official documentation.
+- Priority/merge order: follow official documentation.
+- Size limits: follow official documentation.
+- Downgrade strategy: write a pointer in `.continuerules`; `.continue/rules/*.md` is detected and reported but not automatically collapsed, the same treatment as Cursor's `.cursor/rules/`.
+
+## Trae
+
+- Read files: `.trae/rules/project_rules.md` (project-scoped); `.trae/rules/user_rules.md` is personal/global and intentionally not treated as a repo config file.
+- Import/reference: follow official documentation.
+- Priority/merge order: follow official documentation.
+- Size limits: follow official documentation.
+- Downgrade strategy: scans and reports only; no single conventional stub-file location exists to downgrade to, so it stays scan-only like Roo.
