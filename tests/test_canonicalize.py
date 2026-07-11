@@ -85,6 +85,39 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertFalse((repo / ".cursor" / "rules" / "extra.mdc").exists())
             self.assertTrue((repo / ".cursor" / "rules" / "agents-md.mdc").is_file())
 
+    def test_write_stubs_default_tools_covers_every_canonicalizable_registry_tool(self):
+        # Regression: --tools' default used to be a hand-maintained string
+        # ("claude,cursor,windsurf,copilot,gemini,cline") instead of being
+        # derived from the registry, so a newly-added canonicalizable tool
+        # (e.g. continue, added alongside this test) silently fell through
+        # write_stubs's default run even though STUBS itself (used by --apply)
+        # already covered it — a two-tier drift within this single script.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            shutil.copytree(FIXTURE, repo)
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            (repo / ".continuerules").write_text("old continue rule, not yet a stub\n", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo)], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("--- a/.continuerules", proc.stdout)
+
+    def test_validate_default_tools_covers_every_canonicalizable_registry_tool(self):
+        # Same regression as above, for validate()'s independently
+        # hand-maintained tool list (a second, separate hardcoded copy).
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            (repo / ".continuerules").write_text("old continue rule, not yet a stub\n", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True
+            )
+            report = json.loads(proc.stdout)
+            stub_findings = [f for f in report["findings"] if f["check"] == "STUB" and f["path"] == ".continuerules"]
+            self.assertEqual(len(stub_findings), 1)
+
     def test_validate_missing_and_present(self):
         proc = subprocess.run([sys.executable, str(CANON), "--validate", str(FIXTURE)], text=True, capture_output=True)
         self.assertNotEqual(proc.returncode, 0)

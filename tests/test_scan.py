@@ -125,6 +125,28 @@ class ScanTests(unittest.TestCase):
         self.assertIn("npm", values)
         self.assertTrue(any({o["a"], o["b"]} == {"CLAUDE.md", ".cursorrules"} for o in report["overlaps"]))
 
+    def test_continue_and_trae_config_files_are_detected(self):
+        # Continue and Trae are real tools with real config directories seen
+        # in this maintainer's own working environment (.continue/, .trae/)
+        # but were never in the registry until now (DIRECTION-05).
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nDemo.\n")
+            _write(repo / ".continuerules", "old continue rule\n")
+            _write(repo / ".continue" / "rules" / "01-general.md", "# general rules\n")
+            _write(repo / ".trae" / "rules" / "project_rules.md", "# project rules\n")
+            # A Trae user_rules.md is personal/global, not a repo config file —
+            # must NOT be scanned.
+            _write(repo / ".trae" / "rules" / "user_rules.md", "# personal preferences\n")
+            proc = subprocess.run([sys.executable, str(SCAN), str(repo), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads(proc.stdout)
+            by_path = {f["path"]: f["tool"] for f in report["files"]}
+            self.assertEqual(by_path.get(".continuerules"), "Continue")
+            self.assertEqual(by_path.get(".continue/rules/01-general.md"), "Continue")
+            self.assertEqual(by_path.get(".trae/rules/project_rules.md"), "Trae")
+            self.assertNotIn(".trae/rules/user_rules.md", by_path)
+
     def test_size_warning_for_generated_big_file(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td) / "repo"

@@ -68,6 +68,25 @@
       "stub_content": "",
       "canonicalizable": false,
       "canonicalizable_note": "Roo is a rules-directory tool (.roo/rules/*.md) with no single conventional stub-file location (no flat .roorules is scanned). Collapsing a rules directory into one canonical pointer requires the same bespoke directory-handling Cursor has, which is semantic-merge logic that belongs in SKILL.md and is out of scope for this refactor. Marked canonicalizable:false so it is an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
+    },
+    {
+      "id": "continue",
+      "label": "Continue",
+      "scan_patterns": [".continuerules", ".continue/rules/*.md"],
+      "stub_paths": [".continuerules"],
+      "stub_kind": "pointer",
+      "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "trae",
+      "label": "Trae",
+      "scan_patterns": [".trae/rules/project_rules.md"],
+      "stub_paths": [],
+      "stub_kind": "none",
+      "stub_content": "",
+      "canonicalizable": false,
+      "canonicalizable_note": "Trae's project rules live at .trae/rules/project_rules.md (Markdown, with an optional user_rules.md for personal/global preferences that is intentionally not scanned as a repo config file) with no flat single-file legacy location to stub, the same shape as Roo. Marked canonicalizable:false so it is an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
     }
   ]
 }
