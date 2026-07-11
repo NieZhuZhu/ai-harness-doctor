@@ -300,6 +300,8 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
 
 **Custom rule plugins.** `scan` (and `drift`) can be extended with your own DETERMINISTIC rules. Drop Python modules in the target repo's `.ai-harness-doctor/rules/*.py` directory and/or pass `--rules DIR` (repeatable). Each module exposes `def check(root, context) -> list[dict]:` returning findings (`level`, `message`, optional `path`/`line`/`suggestion`, and a `rule` id); `context` carries the run `phase` and the `AGENTS.md` text. Findings are merged into a `custom` section (markdown `## Custom rule plugins` and the `--json` `custom` array). Plugins are opt-in — with no rules directory and no `--rules`, behavior is unchanged. A plugin that fails to import or raises at runtime is isolated and reported as a `level: "ERROR"` finding instead of crashing the scan; see `references/example-rule-plugin.py` for a template.
 
+**Multi-repo batch mode.** `scan --repos-file PATH` scans every repository listed in `PATH` (one path per line; blank lines and `#` comments ignored) instead of a single `repo_root`, and prints an org-wide health summary — for the "Mixed-tool team" and "OSS maintainer" personas that otherwise have no story beyond running the tool once per repo by hand. Each repo is scanned independently at its own root (this mode does not expand monorepo packages within a repo); a path that does not resolve to a directory is reported under "Repos that could not be scanned" instead of aborting the whole batch. `--json` returns `{ summary: { repo_count, error_count, aggregate }, repos: [{ path, resolved, name, has_agents_md, summary, report } | { path, resolved, error }] }`. `--fail-on-security` / `--fail-on-gaps` / `--fail-on-semantic` consider every scanned repo, so this mode is CI-gateable across a whole org. Mutually exclusive with the `repo_root` positional argument.
+
 | Flag | Purpose |
 |---|---|
 | `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
@@ -312,6 +314,7 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
 | `--no-report-file` | Do not write the full JSON report to a temp file (markdown mode only). |
 | `--monorepo` | Force monorepo mode: scan each package subdir even without a workspace config (falls back to nested `package.json` / `AGENTS.md` subtrees). |
 | `--no-monorepo` | Disable monorepo detection; scan only the repo root. |
+| `--repos-file PATH` | Scan every repo listed in `PATH` and print a cross-repo summary instead of a single repo (see above). Mutually exclusive with `repo_root`. |
 | `--rules DIR` | Load custom rule plugins from `DIR` (repeatable); merged into the `custom` section alongside `.ai-harness-doctor/rules/`. |
 | `--no-custom` | Skip custom rule plugins (drops the `custom` key). |
 

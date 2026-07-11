@@ -106,6 +106,13 @@ PM_TO_ECOSYSTEM = {
     # install`, `bundle exec rspec`); the token map keys on the command name,
     # matching every other ecosystem here (npm, pip, cargo, mvn, ...).
     "bundle": "ruby",
+    # `gem install X` (manual, unlocked gem management) is a real Ruby
+    # anti-pattern once a repo has committed a Gemfile.lock: it bypasses the
+    # dependency lock the project otherwise relies on. Mapping it into the
+    # same ecosystem lets compare_package_manager flag "AGENTS.md says gem
+    # but the repo has a Gemfile.lock, implying bundle" the same way it
+    # already flags npm-vs-yarn.
+    "gem": "ruby",
 }
 # Aliases spelled differently in prose than their canonical manager name.
 _PM_NORMALIZE = {"mvn": "maven"}
@@ -248,7 +255,7 @@ def declared_paths(text):
 declared_package_managers = facts.declared_package_managers
 
 
-_PM_TOKEN_RE = re.compile(r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|mvn|maven|gradle|bundle)\b")
+_PM_TOKEN_RE = re.compile(r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|mvn|maven|gradle|bundle|gem)\b")
 _GO_TOOL_RE = re.compile(r"\bgo\s+(?:build|test|run|mod|vet|install|get|work|generate)\b")
 
 

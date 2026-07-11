@@ -300,6 +300,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 **自定义规则插件。** `scan`（以及 `drift`）可以用你自己的确定性规则来扩展。把 Python 模块放到目标仓库的 `.ai-harness-doctor/rules/*.py` 目录，和/或传入 `--rules DIR`（可重复）。每个模块暴露一个 `def check(root, context) -> list[dict]:`，返回发现项（`level`、`message`，可选的 `path`/`line`/`suggestion`，以及一个 `rule` id）；`context` 携带本次运行的 `phase` 和 `AGENTS.md` 文本。这些发现会被合并进 `custom` 一节（markdown 的 `## Custom rule plugins` 和 `--json` 的 `custom` 数组）。插件是可选加入的——没有规则目录也没有 `--rules` 时，行为保持不变。导入失败或运行时抛异常的插件会被隔离，并作为一个 `level: "ERROR"` 发现项报告，而不会让扫描崩溃；模板见 `references/example-rule-plugin.py`。
 
+**多仓库批量模式。** `scan --repos-file PATH` 会扫描 `PATH` 中列出的每个仓库（每行一个路径；空行和 `#` 注释会被忽略），而不是单个 `repo_root`，并打印一份组织级别的健康摘要——面向"多工具混用团队"和"OSS 维护者"这两类人设，他们此前除了对每个仓库手动跑一遍之外没有别的方案。每个仓库都在自己的根目录独立扫描（该模式不会在单个仓库内部展开 monorepo 的包）；一个解析不到目录的路径会被列在"无法扫描的仓库"下，而不会中断整个批次。`--json` 返回 `{ summary: { repo_count, error_count, aggregate }, repos: [{ path, resolved, name, has_agents_md, summary, report } | { path, resolved, error }] }`。`--fail-on-security` / `--fail-on-gaps` / `--fail-on-semantic` 会综合考虑每个被扫描的仓库，因此这个模式可以作为整个组织范围的 CI 门禁。与 `repo_root` 位置参数互斥。
+
 | Flag | 用途 |
 |---|---|
 | `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |
@@ -312,6 +314,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | `--no-report-file` | 不把完整 JSON 报告写入临时文件（仅 markdown 模式）。 |
 | `--monorepo` | 强制 monorepo 模式：即使没有工作区配置也扫描每个包子目录（回退到嵌套的 `package.json` / `AGENTS.md` 子树）。 |
 | `--no-monorepo` | 关闭 monorepo 检测；只扫描仓库根目录。 |
+| `--repos-file PATH` | 扫描 `PATH` 中列出的每个仓库，打印跨仓库摘要而非单仓库结果（见上文）。与 `repo_root` 互斥。 |
 | `--rules DIR` | 从 `DIR` 加载自定义规则插件（可重复）；与 `.ai-harness-doctor/rules/` 一起合并进 `custom` 一节。 |
 | `--no-custom` | 跳过自定义规则插件（不输出 `custom` key）。 |
 
