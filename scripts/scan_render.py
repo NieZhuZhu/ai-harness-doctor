@@ -108,6 +108,63 @@ def render_monorepo(lines, monorepo, packages):
     lines.append("")
 
 
+def render_repos_file(summary, repos, report_path=None):
+    """Render the ``--repos-file`` (multi-repo) cross-repo summary report.
+
+    Separate top-level entry point from :func:`render_markdown`: a batch
+    result has no ``files``/``warnings``/single-repo shape to render, only a
+    per-repo summary table plus each repo's own report nested underneath.
+    """
+    lines = ["# Multi-repo Checkup Report", ""]
+    agg = summary.get("aggregate", {})
+    lines.append(
+        f"Scanned {summary.get('repo_count', 0)} repo(s) "
+        f"({summary.get('error_count', 0)} could not be scanned). "
+        f"Aggregate: {agg.get('files', 0)} config file(s), "
+        f"{agg.get('gaps', 0)} gap(s), "
+        f"{agg.get('security_high', 0)} HIGH security finding(s), "
+        f"{agg.get('overlaps', 0)} overlap(s), "
+        f"{agg.get('conflicts', 0)} conflict(s), "
+        f"{agg.get('repos_with_agents_md', 0)} repo(s) with AGENTS.md."
+    )
+    ok_repos = [r for r in repos if "error" not in r]
+    if ok_repos:
+        lines.append("")
+        lines.append("| Repo | Name | AGENTS.md | Config files | Gaps | HIGH sec | Semantic mismatches |")
+        lines.append("|---|---|:---:|---:|---:|---:|---:|")
+        for r in ok_repos:
+            s = r.get("summary", {})
+            lines.append(
+                f"| `{r['path']}` | {r.get('name') or '—'} | "
+                f"{'yes' if r.get('has_agents_md') else 'no'} | "
+                f"{s.get('files', 0)} | {s.get('gaps', 0)} | "
+                f"{s.get('security_high', 0)} | {s.get('semantic_mismatches', 0)} |"
+            )
+    error_repos = [r for r in repos if "error" in r]
+    if error_repos:
+        lines.append("")
+        lines.append("## Repos that could not be scanned")
+        for r in error_repos:
+            lines.append(f"- `{r['path']}`: {r['error']}")
+    if report_path:
+        lines.extend(
+            [
+                "",
+                "## Full JSON report",
+                f"The complete machine-readable report (every scanned repo's full findings) "
+                f"was written to `{report_path}`. An agent can read this file to reason over "
+                "every repo's snapshot, gaps, and security findings without re-scanning.",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "> Per-repo details are in the `repos` array of the JSON report (`--json`).",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
 def render_surface(lines, surface):
     lines.extend(["", "## Extended surface"])
     mcp = surface.get("mcp_servers", [])

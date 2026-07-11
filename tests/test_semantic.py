@@ -498,6 +498,35 @@ class SemanticRubyTests(unittest.TestCase):
             self.assertEqual([f for f in result["findings"] if f["category"] == "ruby_version"], [])
             self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
 
+    def test_gem_install_flagged_when_gemfile_lock_implies_bundle(self):
+        # `gem install X` (manual, unlocked gem management) bypasses the
+        # dependency lock a committed Gemfile.lock says the project relies on
+        # — the same anti-pattern class as declaring npm when the lockfile
+        # implies yarn.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Gemfile.lock", "GEM\n  remote: https://rubygems.org/\n")
+            text = "Install deps with `gem install rails`."
+            result = semantic.analyze(td, text)
+            pms = [f for f in result["findings"] if f["category"] == "package_manager"]
+            self.assertEqual(len(pms), 1)
+            self.assertEqual(pms[0]["declared"], "gem")
+            self.assertEqual(pms[0]["actual"], "bundle")
+
+    def test_gem_alongside_bundle_is_ambiguous_not_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Gemfile.lock", "GEM\n  remote: https://rubygems.org/\n")
+            text = "Run `bundle install`, or `gem install rails` for a one-off."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
+
+    def test_gem_without_gemfile_lock_not_flagged(self):
+        # A standalone gem library (only a .gemspec, no Gemfile.lock) has no
+        # ground truth to compare against — `_ruby_ground_pm` returns None.
+        with tempfile.TemporaryDirectory() as td:
+            text = "Install deps with `gem install rails`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
+
 
 class SemanticMultiEcosystemTests(unittest.TestCase):
     def test_polyglot_all_matching_no_findings(self):

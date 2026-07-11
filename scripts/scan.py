@@ -28,6 +28,7 @@ from scan_render import (  # noqa: E402,F401  (re-exported for backward compatib
     render_gaps,
     render_markdown,
     render_monorepo,
+    render_repos_file,
     render_security,
     render_semantic,
     render_snapshot,
@@ -1366,6 +1367,68 @@ def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_
     return monorepo, packages
 
 
+def read_repos_file(path):
+    """Parse a ``--repos-file``: one repository path per line, blank lines and
+    ``#``-prefixed comments ignored. Returns the raw path strings in order,
+    exactly as written (not yet resolved)."""
+    text = Path(path).read_text(encoding="utf-8")
+    out = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        out.append(stripped)
+    return out
+
+
+def scan_repos_file(paths, max_bytes, rules_dirs=None, allow_plugins=False):
+    """Scan a list of independent repository roots and build a cross-repo
+    summary (an org-wide health snapshot; README's "Mixed-tool team" and "OSS
+    maintainer" personas otherwise have no story beyond running the tool once
+    per repo by hand).
+
+    Each entry is scanned with its OWN :class:`ScanContext` — unlike
+    ``scan_monorepo``'s package subdirectories, these are unrelated
+    filesystem trees with nothing to share a walk/read cache over. A path
+    that does not resolve to a directory produces an ``{"error": ...}`` entry
+    instead of aborting the batch, so one bad line in the file never hides
+    the findings for every other repo.
+
+    Returns ``(summary, repos)`` where ``repos`` is a list of
+    ``{path, resolved, name, has_agents_md, summary, report}`` for a scanned
+    repo, or ``{path, resolved, error}`` for one that could not be scanned.
+    """
+    repos = []
+    for raw_path in paths:
+        root = Path(raw_path).expanduser().resolve()
+        if not root.is_dir():
+            repos.append({"path": raw_path, "resolved": str(root), "error": f"not a directory: {raw_path}"})
+            continue
+        report = scan_repo(root, max_bytes, rules_dirs, allow_plugins=allow_plugins)
+        repos.append(
+            {
+                "path": raw_path,
+                "resolved": str(root),
+                "name": _package_name(root),
+                "has_agents_md": (root / "AGENTS.md").is_file(),
+                "summary": _package_summary(report),
+                "report": report,
+            }
+        )
+    ok = [r for r in repos if "error" not in r]
+    aggregate = _aggregate_packages(ok)
+    # _aggregate_packages was written for scan_monorepo's package-subdirectory
+    # unit; rename its "packages_with_agents_md" key so the batch JSON output
+    # reads correctly for its own unit (independent repos, not sub-packages).
+    aggregate["repos_with_agents_md"] = aggregate.pop("packages_with_agents_md")
+    summary = {
+        "repo_count": len(repos),
+        "error_count": len(repos) - len(ok),
+        "aggregate": aggregate,
+    }
+    return summary, repos
+
+
 def _apply_section_flags(report, args):
     """Drop optional report sections per the --no-* flags (in place)."""
     if args.no_snapshot:
@@ -1378,6 +1441,49 @@ def _apply_section_flags(report, args):
         report.pop("semantic", None)
     if args.no_custom:
         report.pop("custom", None)
+
+
+def _run_repos_file(args):
+    """``main()``'s ``--repos-file`` branch: scan every listed repo and print
+    a cross-repo summary instead of a single repo's report."""
+    try:
+        paths = read_repos_file(args.repos_file)
+    except OSError as exc:
+        print(f"error: could not read --repos-file {args.repos_file}: {exc}", file=sys.stderr)
+        return 1
+    if not paths:
+        print(f"error: --repos-file {args.repos_file} has no repository paths", file=sys.stderr)
+        return 1
+    if args.allow_plugins:
+        print(
+            "WARNING: --allow-plugins enabled: executing untrusted rule plugin code from every "
+            "scanned repository (<repo>/.ai-harness-doctor/rules/ and any --rules DIR).",
+            file=sys.stderr,
+        )
+    summary, repos = scan_repos_file(paths, args.max_bytes, args.rules, allow_plugins=args.allow_plugins)
+
+    # Same fail-on-gate precedence and pre-suppression evaluation as the
+    # single-repo path (CORR-03): decide on the actual findings before the
+    # --no-* flags drop any report sections.
+    ok_reports = [r["report"] for r in repos if "error" not in r]
+    exit_code = 0
+    if args.fail_on_security and any(any(s["level"] == "HIGH" for s in r.get("security", [])) for r in ok_reports):
+        exit_code = 2
+    elif args.fail_on_gaps and any(any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in ok_reports):
+        exit_code = 3
+    elif args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in ok_reports):
+        exit_code = 4
+
+    for report in ok_reports:
+        _apply_section_flags(report, args)
+
+    payload = {"summary": summary, "repos": repos}
+    if args.as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        report_path = None if args.no_report_file else write_report_file(payload, args.repos_file)
+        print(render_repos_file(summary, repos, report_path), end="")
+    return exit_code
 
 
 def main(argv=None):
@@ -1439,7 +1545,22 @@ def main(argv=None):
     parser.add_argument(
         "--no-monorepo", action="store_true", help="Disable monorepo detection; scan only the repo root."
     )
+    parser.add_argument(
+        "--repos-file",
+        metavar="PATH",
+        help="Scan every repository listed in PATH (one path per line, blank lines and "
+        "# comments ignored) instead of a single repo_root, and print a cross-repo health "
+        "summary (an org-wide checkup for the 'Mixed-tool team' / 'OSS maintainer' personas). "
+        "Mutually exclusive with the repo_root positional argument. Each repo is scanned at "
+        "its own root only — this mode does not expand monorepo packages within a repo, so "
+        "--monorepo/--no-monorepo are ignored alongside it.",
+    )
     args = parser.parse_args(argv)
+    if args.repos_file:
+        if args.repo_root != ".":
+            print("error: repo_root and --repos-file are mutually exclusive", file=sys.stderr)
+            return 1
+        return _run_repos_file(args)
     root = Path(args.repo_root).resolve()
     if not root.is_dir():
         message = f"error: not a directory: {args.repo_root}"

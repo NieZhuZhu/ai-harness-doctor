@@ -637,6 +637,115 @@ class MonorepoTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 3, proc.stdout)
 
 
+class ReposFileTests(unittest.TestCase):
+    """DIRECTION-07: org-wide `scan --repos-file` batch mode. README's "Mixed-tool
+    team"/"OSS maintainer" personas otherwise have no story beyond running the
+    tool once per repo by hand; scan_repo() was already factored out cleanly
+    enough to reuse for this without touching single-repo behavior."""
+
+    def _write_repos_file(self, tmp, lines):
+        path = Path(tmp) / "repos.txt"
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return path
+
+    def test_repo_root_and_repos_file_are_mutually_exclusive(self):
+        with tempfile.TemporaryDirectory() as td:
+            repos_file = self._write_repos_file(td, [td])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), td, "--repos-file", str(repos_file)], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("mutually exclusive", proc.stderr)
+
+    def test_missing_repos_file_errors(self):
+        proc = subprocess.run(
+            [sys.executable, str(SCAN), "--repos-file", "/nonexistent-repos-file.txt"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("could not read", proc.stderr)
+
+    def test_empty_repos_file_errors(self):
+        with tempfile.TemporaryDirectory() as td:
+            repos_file = self._write_repos_file(td, ["# only a comment", ""])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file)], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("no repository paths", proc.stderr)
+
+    def _build_two_repos(self, td):
+        repo_a = Path(td) / "repo-a"
+        repo_b = Path(td) / "repo-b"
+        _write(repo_a / "AGENTS.md", "# Project overview\nRepo A.\n")
+        _write(repo_b / "CLAUDE.md", "Old claude notes, not a stub.\n")
+        return repo_a, repo_b
+
+    def test_json_mode_aggregates_across_repos_and_reports_errors(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo_a, repo_b = self._build_two_repos(td)
+            missing = Path(td) / "does-not-exist"
+            repos_file = self._write_repos_file(
+                td, ["# comment, blank line below", "", str(repo_a), str(repo_b), str(missing)]
+            )
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--json"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["summary"]["repo_count"], 3)
+            self.assertEqual(payload["summary"]["error_count"], 1)
+            self.assertEqual(payload["summary"]["aggregate"]["repos_with_agents_md"], 1)
+            self.assertEqual(payload["summary"]["aggregate"]["files"], 2)
+            by_path = {r["path"]: r for r in payload["repos"]}
+            self.assertTrue(by_path[str(repo_a)]["has_agents_md"])
+            self.assertFalse(by_path[str(repo_b)]["has_agents_md"])
+            self.assertIn("report", by_path[str(repo_a)])
+            self.assertIn("error", by_path[str(missing)])
+            self.assertNotIn("report", by_path[str(missing)])
+
+    def test_markdown_mode_lists_repos_and_errored_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo_a, repo_b = self._build_two_repos(td)
+            missing = Path(td) / "does-not-exist"
+            repos_file = self._write_repos_file(td, [str(repo_a), str(repo_b), str(missing)])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file)], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("Multi-repo Checkup Report", proc.stdout)
+            self.assertIn(str(repo_a), proc.stdout)
+            self.assertIn(str(repo_b), proc.stdout)
+            self.assertIn("Repos that could not be scanned", proc.stdout)
+            self.assertIn(str(missing), proc.stdout)
+
+    def test_fail_on_gaps_considers_every_repo(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo_a, repo_b = self._build_two_repos(td)  # repo-b has no AGENTS.md -> G1 ERROR gap
+            repos_file = self._write_repos_file(td, [str(repo_a), str(repo_b)])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--fail-on-gaps"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 3, proc.stdout)
+
+    def test_no_report_file_flag_is_honored_in_batch_mode(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo_a, _repo_b = self._build_two_repos(td)
+            repos_file = self._write_repos_file(td, [str(repo_a)])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--no-report-file"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn("Full JSON report", proc.stdout)
+
+
 class DetectPackagesUnitTests(unittest.TestCase):
     def test_detect_off_mode_returns_nothing(self):
         dirs, source = scan.detect_packages(MONOREPO_FIXTURE, mode="off")
