@@ -1,0 +1,29 @@
+README.ja.md
+  s_39e0df005676da::t_ace3a43bb1bf19 283
+README.md
+  s_39e0df005676da::t_228a914345181c 283
+README.zh-CN.md
+  s_39e0df005676da::t_32c15638efc1f3 283
+scripts/scan.py
+  s_39e0df005676da::t_b04e02a73f2132 562-574,577,579-580,582,588,596-640,1183-1186
+tests/test_scan.py
+  s_39e0df005676da::t_e83b83eff470b8 211-259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8831c1349bebc11c9104276f1a883b42fbcae835",
+  "prompts": {},
+  "sessions": {
+    "s_39e0df005676da": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "613712da-b738-47a5-813c-1be965afb7fc",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
