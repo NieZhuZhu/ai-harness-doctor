@@ -422,6 +422,8 @@ python3 scripts/canonicalize.py --validate . --require-sections "Project overvie
 | Gemini | `GEMINI.md` becomes a pointer and recommends `contextFileName`. |
 | Cline | `.clinerules` becomes a pointer. |
 | Roo | 由 `scan` 识别（`.roo/rules/*.md`），但**不会**被降级——它是 rules-directory 类工具，没有单一的常规 stub 位置，因此保持为仅扫描（scan-only）。 |
+| Continue | `.continuerules` 指向 `AGENTS.md`；`.continue/rules/*.md` 由 `scan` 识别但不会被降级。 |
+| Trae | 由 `scan` 识别（`.trae/rules/project_rules.md`），但**不会**被降级——与 Roo 同样的情况，没有单一的常规 stub 位置。 |
 
 默认 dry-run。`--apply` 要求 git tree 干净；`--force` 会覆盖该安全检查。
 
