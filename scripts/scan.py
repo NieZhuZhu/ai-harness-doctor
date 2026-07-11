@@ -1252,26 +1252,37 @@ def _expand_workspace_globs(root, globs):
     return dict(sorted(dirs.items()))
 
 
-def _discover_nested_packages(root):
+def _discover_nested_packages(root, ctx=None):
     """Heuristic package discovery when no workspace config exists.
 
     Finds the shallowest subdirectories that contain a ``package.json`` or a
-    ``AGENTS.md`` (never descending into an already-detected package), pruning
-    the same vendored dirs the rest of the scan skips.
+    ``AGENTS.md`` (never descending into an already-detected package). Reuses
+    the shared file index (:class:`ScanContext`) instead of a fresh
+    ``os.walk``, which previously re-walked the whole tree a second time on
+    every ``--monorepo`` (force) run — the exact scenario the shared index was
+    built to avoid (PERF-01).
     """
-    dirs = {}
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
-        p = Path(dirpath)
-        if p == root:
+    root = Path(root)
+    ctx = ctx or ScanContext(root)
+    candidates = set()
+    for relposix, _path in ctx.index:
+        name = relposix.rsplit("/", 1)[-1]
+        if name not in ("package.json", "AGENTS.md"):
             continue
-        if "package.json" in filenames or "AGENTS.md" in filenames:
-            dirs[rel(p, root)] = p
-            dirnames[:] = []  # do not descend into a detected package subtree
+        parent = relposix.rsplit("/", 1)[0] if "/" in relposix else ""
+        if parent:  # a root-level manifest is not a "nested" package
+            candidates.add(parent)
+    dirs = {}
+    for relpath in sorted(candidates):
+        # Shallowest wins: skip any candidate nested under an already-accepted
+        # directory, matching the walk-and-prune semantics this replaces.
+        if any(relpath == accepted or relpath.startswith(accepted + "/") for accepted in dirs):
+            continue
+        dirs[relpath] = root / relpath
     return dict(sorted(dirs.items()))
 
 
-def detect_packages(root, mode="auto"):
+def detect_packages(root, mode="auto", ctx=None):
     """Detect workspace/monorepo packages under ``root``.
 
     ``mode`` is one of ``"auto"`` (explicit workspace config only — the default,
@@ -1288,7 +1299,7 @@ def detect_packages(root, mode="auto"):
     if dirs:
         return dirs, "pnpm-workspace.yaml"
     if mode == "force":
-        dirs = _discover_nested_packages(root)
+        dirs = _discover_nested_packages(root, ctx)
         if dirs:
             return dirs, "nested packages"
     return {}, None
@@ -1450,7 +1461,7 @@ def main(argv=None):
     report = scan_repo(root, args.max_bytes, args.rules, allow_plugins=args.allow_plugins, ctx=ctx)
 
     mode = "force" if args.monorepo else ("off" if args.no_monorepo else "auto")
-    package_dirs, source = detect_packages(root, mode)
+    package_dirs, source = detect_packages(root, mode, ctx=ctx)
     if package_dirs:
         monorepo, packages = scan_monorepo(
             root, args.max_bytes, package_dirs, source, args.rules, allow_plugins=args.allow_plugins, ctx=ctx

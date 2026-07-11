@@ -195,7 +195,7 @@ Why detection over regeneration? Silently “fixing” drift removes human aware
 | Cursor | Command adapters for `.cursor/commands/`. |
 | Gemini CLI | TOML custom command adapters for `~/.gemini/commands/harness/`. Google retired Gemini CLI for individual tiers on 2026-06-18; enterprise Gemini Code Assist is unaffected, and these adapters still work for enterprise/existing installs. |
 | Windsurf / Cline / others | Universal mode: point the agent at the installed playbook and say “run phase N”. |
-| MCP clients | `ai-harness-doctor mcp` exposes `harness_scan`/`drift`/`validate`/`plan` as MCP tools over stdio. |
+| MCP clients | `ai-harness-doctor mcp` exposes `harness_scan`/`drift`/`validate`/`plan`/`stubs`/`eval_generate` as MCP tools over stdio. |
 | Humans & CI | Plain `npx ai-harness-doctor ...`; no agent required. |
 
 Honest note: non-Claude adapters are thin pointers and lightly verified. If a command format changed, please file an issue.
@@ -292,7 +292,7 @@ For everything that depends on the project's tech stack (rather than being unive
 
 The stack-dependent judgements that used to be static `G5`–`G8` gaps (pre-commit guard, maintenance contract, MCP config, permission config) are now facts in this snapshot, left for an agent to reason about.
 
-It also runs a **semantic consistency** check that compares what `AGENTS.md` *declares* against what the code actually *is*, so stale instructions surface at checkup time (not just in the Phase 2 drift gate). It is **multi-ecosystem** — beyond Node/npm it understands Python (`pyproject.toml` / `setup.py` / `requirements.txt`, with pip/poetry/uv/pdm/pipenv), Go (`go.mod`), Rust (`Cargo.toml`), and Java (`pom.xml` / `build.gradle`). It cross-checks build/test commands (`npm run <script>` / `make <target>`, plus `cargo run --bin <name>`, `go run ./<pkg>`, and `poetry run <script>`) against `package.json` scripts, `Makefile` targets, Cargo binary targets, Go package paths, and pyproject console scripts; backtick-quoted repo-relative paths against the filesystem; the declared package manager against each ecosystem's committed lockfile/manifest; and the declared language/runtime version against the ecosystem's pin (`.nvmrc` / `engines.node`, `requires-python` / `.python-version`, the `go.mod` `go` directive, `Cargo.toml` `rust-version`, and the Java compiler level). Each finding carries a `category` (`command`/`path`/`package_manager`/`node_version`/`python_version`/`go_version`/`rust_version`/`java_version`), a `level` (`MISMATCH`/`MISSING`), the `declared` value, the `actual` fact, an optional `line`, and a `suggestion`. With `--fail-on-semantic` it exits `4` when any declaration contradicts the code.
+It also runs a **semantic consistency** check that compares what `AGENTS.md` *declares* against what the code actually *is*, so stale instructions surface at checkup time (not just in the Phase 2 drift gate). It is **multi-ecosystem** — beyond Node/npm it understands Python (`pyproject.toml` / `setup.py` / `requirements.txt`, with pip/poetry/uv/pdm/pipenv), Go (`go.mod`), Rust (`Cargo.toml`), Java (`pom.xml` / `build.gradle`), and Ruby (`Gemfile` / `.ruby-version`, with bundler). It cross-checks build/test commands (`npm run <script>` / `make <target>`, plus `cargo run --bin <name>`, `go run ./<pkg>`, and `poetry run <script>`) against `package.json` scripts, `Makefile` targets, Cargo binary targets, Go package paths, and pyproject console scripts; backtick-quoted repo-relative paths against the filesystem; the declared package manager against each ecosystem's committed lockfile/manifest (including bundler via `Gemfile.lock`); and the declared language/runtime version against the ecosystem's pin (`.nvmrc` / `engines.node`, `requires-python` / `.python-version`, the `go.mod` `go` directive, `Cargo.toml` `rust-version`, the Java compiler level, and `.ruby-version` / the `Gemfile` `ruby` directive). Each finding carries a `category` (`command`/`path`/`package_manager`/`node_version`/`python_version`/`go_version`/`rust_version`/`java_version`/`ruby_version`), a `level` (`MISMATCH`/`MISSING`), the `declared` value, the `actual` fact, an optional `line`, and a `suggestion`. With `--fail-on-semantic` it exits `4` when any declaration contradicts the code.
 
 **Full JSON report for agents.** In markdown mode `scan` writes the complete machine-readable report (files, surface, security, `project_snapshot`, `semantic`, and `gaps`) to a stable temp file — `${TMPDIR}/harness-scan-<hash>.json`, where `<hash>` is derived from the resolved repo path — and appends a `## Full JSON report` section pointing to it. An agent driving the workflow can read that file to reason over the snapshot and gaps and plan fixes, without re-parsing the markdown. The `--json` mode already prints the full report to stdout, so no temp file is written there. Use `--no-report-file` to skip writing it.
 
@@ -543,10 +543,10 @@ Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line 
 
 - `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
 - `notifications/initialized` → notification, no response.
-- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, each with an input schema `{ repo: string (default "."), ... }`.
+- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, `harness_eval_generate`, each with an input schema `{ repo: string (default "."), ... }`.
 - `tools/call` → dispatches to the matching Python script and returns `{ content: [{ type: "text", text }] }`.
 
-Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`. Unknown methods and tools return a JSON-RPC error object.
+Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, `harness_eval_generate`. `harness_stubs` (Phase 1 stub downgrade preview) and `harness_eval_generate` (Phase 3 task-set bootstrap) are always read-only over MCP: neither ever receives `--apply`/`-o`, so they can only preview a diff or print generated JSON, never write to the repository. Unknown methods and tools return a JSON-RPC error object.
 
 </details>
 
@@ -638,7 +638,7 @@ As of 2026-07, based on each project's public documentation — see their repos 
 ```text
 SKILL.md                         # Skill playbook and phase stop conditions
 bin/cli.js                       # npm CLI and installer
-bin/mcp-server.js                # MCP stdio server (harness_scan/drift/validate/plan)
+bin/mcp-server.js                # MCP stdio server (harness_scan/drift/validate/plan/stubs/eval_generate)
 commands/                        # Claude Code slash commands
 adapters/                        # Codex, Cursor, Gemini, universal pointers
 scripts/                         # Python stdlib deterministic mechanics

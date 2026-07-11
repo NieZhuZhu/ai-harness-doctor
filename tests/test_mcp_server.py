@@ -61,7 +61,17 @@ class McpServerTests(unittest.TestCase):
 
             tools = by_id[2]["result"]["tools"]
             names = {t["name"] for t in tools}
-            self.assertEqual(names, {"harness_scan", "harness_drift", "harness_validate", "harness_plan"})
+            self.assertEqual(
+                names,
+                {
+                    "harness_scan",
+                    "harness_drift",
+                    "harness_validate",
+                    "harness_plan",
+                    "harness_stubs",
+                    "harness_eval_generate",
+                },
+            )
             for tool in tools:
                 self.assertEqual(tool["inputSchema"]["type"], "object")
                 self.assertIn("repo", tool["inputSchema"]["properties"])
@@ -89,6 +99,60 @@ class McpServerTests(unittest.TestCase):
             by_id = {r.get("id"): r for r in responses if "id" in r}
             text = by_id[2]["result"]["content"][0]["text"]
             self.assertIn("Drift Guard Report", text)
+
+    def test_call_stubs_previews_without_writing(self):
+        # DIRECTION-02: expose canonicalize.py --write-stubs over MCP, always as
+        # a dry-run preview (never --apply), so it stays a read-only capability.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
+            (repo / "CLAUDE.md").write_text("Old CLAUDE instructions, not yet a stub.\n", encoding="utf-8")
+            messages = [
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "harness_stubs", "arguments": {"repo": str(repo)}},
+                },
+            ]
+            responses = self._exchange(messages)
+            by_id = {r.get("id"): r for r in responses if "id" in r}
+            call = by_id[2]["result"]
+            self.assertFalse(call.get("isError"))
+            text = call["content"][0]["text"]
+            self.assertIn("CLAUDE.md", text)
+            # The file on disk must be untouched — this tool must never --apply.
+            self.assertEqual(
+                (repo / "CLAUDE.md").read_text(encoding="utf-8"), "Old CLAUDE instructions, not yet a stub.\n"
+            )
+
+    def test_call_eval_generate_returns_tasks_json(self):
+        # DIRECTION-02: expose eval_run.py --generate over MCP as a read-only
+        # bootstrap for the Phase 3 Efficacy harness (no file written, no agent
+        # or LLM calls made).
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Build & test\nRun `npm test`.\n", encoding="utf-8")
+            (repo / "package.json").write_text('{"scripts": {"test": "echo ok"}}', encoding="utf-8")
+            messages = [
+                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/call",
+                    "params": {"name": "harness_eval_generate", "arguments": {"repo": str(repo)}},
+                },
+            ]
+            responses = self._exchange(messages)
+            by_id = {r.get("id"): r for r in responses if "id" in r}
+            call = by_id[2]["result"]
+            self.assertFalse(call.get("isError"))
+            tasks = json.loads(call["content"][0]["text"])
+            self.assertTrue(tasks)
+            self.assertTrue(all("prompt" in t and "check" in t for t in tasks))
+            # Never writes a file — no -o/--output flag is ever passed over MCP.
+            self.assertEqual({p.name for p in repo.iterdir()}, {"AGENTS.md", "package.json"})
 
     def test_unknown_method_and_tool_produce_errors(self):
         messages = [

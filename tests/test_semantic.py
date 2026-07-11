@@ -456,6 +456,49 @@ class SemanticJavaTests(unittest.TestCase):
             self.assertIn("8", jv[0]["message"])
 
 
+class SemanticRubyTests(unittest.TestCase):
+    def test_ruby_version_mismatch_from_ruby_version_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, ".ruby-version", "3.2.0\n")
+            text = "Requires ruby 3.1."
+            result = semantic.analyze(td, text)
+            rv = [f for f in result["findings"] if f["category"] == "ruby_version"]
+            self.assertEqual(len(rv), 1)
+            self.assertIn("3.2", rv[0]["message"])
+            self.assertIn(".ruby-version", rv[0]["message"])
+
+    def test_ruby_version_mismatch_from_gemfile_directive(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Gemfile", 'source "https://rubygems.org"\nruby "3.3.1"\n')
+            text = "Requires ruby 3.2."
+            result = semantic.analyze(td, text)
+            rv = [f for f in result["findings"] if f["category"] == "ruby_version"]
+            self.assertEqual(len(rv), 1)
+            self.assertIn("3.3", rv[0]["message"])
+            self.assertIn("Gemfile", rv[0]["message"])
+
+    def test_ruby_version_match_not_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, ".ruby-version", "3.2.0\n")
+            text = "Requires ruby 3.2."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "ruby_version"], [])
+
+    def test_bundle_package_manager_declared_and_present_not_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Gemfile.lock", "GEM\n  remote: https://rubygems.org/\n")
+            text = "Install with `bundle install`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
+
+    def test_no_gemfile_means_no_ruby_findings(self):
+        with tempfile.TemporaryDirectory() as td:
+            text = "Requires ruby 3.2. Run `bundle install`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "ruby_version"], [])
+            self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
+
+
 class SemanticMultiEcosystemTests(unittest.TestCase):
     def test_polyglot_all_matching_no_findings(self):
         with tempfile.TemporaryDirectory() as td:
