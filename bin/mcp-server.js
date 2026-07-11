@@ -82,6 +82,30 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'harness_stubs',
+    description: 'Preview downgrading existing tool config files (CLAUDE.md, .cursorrules, ...) to minimal AGENTS.md pointer stubs (Phase 1 — Treat). Read-only: always a dry-run diff preview, never writes to the repository. Requires AGENTS.md to already exist.',
+    script: ['canonicalize.py', '--write-stubs'],
+    booleans: {},
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Target repository root.', default: '.' },
+      },
+    },
+  },
+  {
+    name: 'harness_eval_generate',
+    description: 'Auto-generate a benchmark task set from repository facts (AGENTS.md content plus detected build/test commands) for the Phase 3 — Efficacy eval harness. Read-only: prints the generated tasks as JSON without writing a file or running any agent/LLM calls.',
+    script: ['eval_run.py', '--generate'],
+    booleans: {},
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Target repository root.', default: '.' },
+      },
+    },
+  },
 ];
 
 const TOOL_BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));

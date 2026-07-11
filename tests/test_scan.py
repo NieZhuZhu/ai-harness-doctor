@@ -709,6 +709,32 @@ class ScannerPerformanceTests(unittest.TestCase):
         # Exactly one full-tree walk to build the shared file index (PERF-01).
         self.assertEqual(calls["n"], 1)
 
+    def test_monorepo_nested_discovery_reuses_shared_index_no_extra_walk(self):
+        # `--monorepo` (force) nested-package discovery previously ran its own
+        # independent os.walk in addition to the one that built the shared
+        # ScanContext index, walking the tree twice on exactly the large-repo,
+        # no-workspace-config path the shared index exists to make cheap
+        # (PERF-01). detect_packages(mode="force") must not call os.walk at all
+        # once a ScanContext is already built.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "services" / "api" / "package.json", '{"name": "api"}')
+            _write(repo / "services" / "worker" / "package.json", '{"name": "worker"}')
+            ctx = scan.ScanContext(repo)
+
+            calls = {"n": 0}
+            real_walk = scan.os.walk
+
+            def counting_walk(*a, **k):
+                calls["n"] += 1
+                return real_walk(*a, **k)
+
+            with unittest.mock.patch.object(scan.os, "walk", counting_walk):
+                dirs, source = scan.detect_packages(repo, "force", ctx=ctx)
+            self.assertEqual(calls["n"], 0)
+            self.assertEqual(source, "nested packages")
+            self.assertEqual(set(dirs), {"services/api", "services/worker"})
+
     def test_vendored_dirs_are_pruned_not_descended(self):
         repo = self._make_repo()
         # A huge vendored tree must never be descended: its files must be absent

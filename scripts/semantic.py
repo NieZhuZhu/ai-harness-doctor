@@ -9,8 +9,9 @@ against ground truth in the repository.
 
 It is **multi-ecosystem**: beyond Node/npm it understands Python
 (``pyproject.toml`` / ``setup.py`` / ``requirements.txt`` with pip/poetry/uv/pdm/
-pipenv), Go (``go.mod``), Rust (``Cargo.toml``), and Java (``pom.xml`` /
-``build.gradle``). For each ecosystem it detects the package manager from the
+pipenv), Go (``go.mod``), Rust (``Cargo.toml``), Java (``pom.xml`` /
+``build.gradle``), and Ruby (``Gemfile`` / ``.ruby-version`` with bundler). For
+each ecosystem it detects the package manager from the
 committed lockfile/manifest, the pinned language version, and — where a repo has a
 verifiable command namespace (``package.json`` scripts, ``Makefile`` targets,
 ``[project.scripts]`` / ``[tool.poetry.scripts]`` console scripts, Cargo ``[[bin]]``
@@ -84,7 +85,7 @@ LOCKFILE_MANAGERS = registry.LOCKFILE_MANAGERS
 
 # Ecosystems are compared in this fixed order so multi-ecosystem findings are
 # deterministic.
-ECOSYSTEM_ORDER = ("node", "python", "go", "rust", "java")
+ECOSYSTEM_ORDER = ("node", "python", "go", "rust", "java", "ruby")
 
 # Package-manager token -> ecosystem it belongs to.
 PM_TO_ECOSYSTEM = {
@@ -101,6 +102,10 @@ PM_TO_ECOSYSTEM = {
     "go": "go",
     "maven": "java",
     "gradle": "java",
+    # The gem is named "bundler" but its CLI command is `bundle` (`bundle
+    # install`, `bundle exec rspec`); the token map keys on the command name,
+    # matching every other ecosystem here (npm, pip, cargo, mvn, ...).
+    "bundle": "ruby",
 }
 # Aliases spelled differently in prose than their canonical manager name.
 _PM_NORMALIZE = {"mvn": "maven"}
@@ -243,7 +248,7 @@ def declared_paths(text):
 declared_package_managers = facts.declared_package_managers
 
 
-_PM_TOKEN_RE = re.compile(r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|mvn|maven|gradle)\b")
+_PM_TOKEN_RE = re.compile(r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|mvn|maven|gradle|bundle)\b")
 _GO_TOOL_RE = re.compile(r"\bgo\s+(?:build|test|run|mod|vet|install|get|work|generate)\b")
 
 
@@ -297,6 +302,10 @@ def declared_go_version(text):
 
 def declared_rust_version(text):
     return _declared_two_part(text, "rust")
+
+
+def declared_ruby_version(text):
+    return _declared_two_part(text, "ruby")
 
 
 def declared_java_version(text):
@@ -516,12 +525,23 @@ def _java_ground_pm(root):
     return None, None  # ambiguous (both) or neither
 
 
+def _ruby_ground_pm(root):
+    # Bundler is Ruby's de facto standard dependency manager; the ground truth
+    # is "bundle" (the CLI command), matching every other ecosystem's token
+    # convention here — see the PM_TO_ECOSYSTEM comment.
+    for name in ("Gemfile.lock", "Gemfile"):
+        if (root / name).is_file():
+            return "bundle", name
+    return None, None
+
+
 ECOSYSTEM_GROUND_PM = {
     "node": _node_ground_pm,
     "python": _python_ground_pm,
     "go": _go_ground_pm,
     "rust": _rust_ground_pm,
     "java": _java_ground_pm,
+    "ruby": _ruby_ground_pm,
 }
 
 
@@ -587,6 +607,21 @@ def rust_ground_versions(root):
             if v:
                 out.append((name, v))
             break
+    return out
+
+
+def ruby_ground_versions(root):
+    out = []
+    ruby_version_file = root / ".ruby-version"
+    if ruby_version_file.is_file():
+        v = _two_part(_read(ruby_version_file))
+        if v:
+            out.append((".ruby-version", v))
+    gemfile = root / "Gemfile"
+    if gemfile.is_file():
+        m = re.search(r'^\s*ruby\s+["\'](\d+)\.(\d+)', _read(gemfile), re.MULTILINE)
+        if m:
+            out.append(("Gemfile", (int(m.group(1)), int(m.group(2)))))
     return out
 
 
@@ -849,6 +884,11 @@ def compare_java_version(root, text):
     return _compare_language_version("java_version", "Java", declared, line, java_ground_versions(root))
 
 
+def compare_ruby_version(root, text):
+    declared, line = declared_ruby_version(text)
+    return _compare_language_version("ruby_version", "Ruby", declared, line, ruby_ground_versions(root))
+
+
 def _count_declarations(root, text):
     """How many concrete claims were checked (used for the consistency summary)."""
     count = 0
@@ -870,6 +910,7 @@ def _count_declarations(root, text):
         (declared_go_version, go_ground_versions),
         (declared_rust_version, rust_ground_versions),
         (declared_java_version, java_ground_versions),
+        (declared_ruby_version, ruby_ground_versions),
     ):
         declared_v, _ = declared_fn(text)
         if declared_v is not None:
@@ -886,6 +927,7 @@ ORDER = {
     "go_version": 5,
     "rust_version": 6,
     "java_version": 7,
+    "ruby_version": 8,
 }
 
 
@@ -907,6 +949,7 @@ def analyze(root, text):
         findings.extend(compare_go_version(root, text))
         findings.extend(compare_rust_version(root, text))
         findings.extend(compare_java_version(root, text))
+        findings.extend(compare_ruby_version(root, text))
     findings.sort(key=lambda f: (ORDER.get(f["category"], 9), f.get("line", 0)))
     checked = _count_declarations(root, text) if text else 0
     return {"findings": findings, "checked": checked, "mismatches": len(findings)}
