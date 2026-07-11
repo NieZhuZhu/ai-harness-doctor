@@ -559,26 +559,83 @@ def normalized_lines(text):
     return out
 
 
+def _line_overlap(text_a, text_b):
+    """Return ``(shared_line_count, ratio)`` of normalized-line overlap between
+    two texts, or ``None`` if either has no comparable content. ``ratio`` is
+    shared lines over the SMALLER file's line count. Factored out of
+    :func:`find_overlaps` so :func:`find_wholesale_dumping` reuses the exact
+    same similarity metric instead of a second bespoke heuristic."""
+    la, lb = set(normalized_lines(text_a)), set(normalized_lines(text_b))
+    if not la or not lb:
+        return None
+    shared = la & lb
+    return len(shared), len(shared) / float(min(len(la), len(lb)))
+
+
 def find_overlaps(files):
     overlaps = []
-    indexed = {f["path"]: set(normalized_lines(f["text"])) for f in files}
+    texts = {f["path"]: f["text"] for f in files}
     for a, b in combinations(files, 2):
-        la, lb = indexed[a["path"]], indexed[b["path"]]
-        if not la or not lb:
+        overlap = _line_overlap(texts[a["path"]], texts[b["path"]])
+        if overlap is None:
             continue
-        shared = la & lb
-        ratio = len(shared) / float(min(len(la), len(lb)))
+        shared, ratio = overlap
         if ratio > 0.30:
             overlaps.append(
                 {
                     "a": a["path"],
                     "b": b["path"],
-                    "shared_lines": len(shared),
+                    "shared_lines": shared,
                     "ratio": round(ratio, 4),
                     "percent": round(ratio * 100, 1),
                 }
             )
     return sorted(overlaps, key=lambda x: x["ratio"], reverse=True)
+
+
+# Thresholds for the Wholesale Dumping check (see find_wholesale_dumping):
+# higher than find_overlaps's 30% because AGENTS.md and README.md serve
+# different audiences and some natural overlap (project name, one-line
+# description) is expected and not itself a problem; a minimum shared-line
+# floor avoids noise on very short files where a handful of coincidental
+# matches would otherwise cross the ratio threshold.
+_WHOLESALE_DUMPING_RATIO = 0.5
+_WHOLESALE_DUMPING_MIN_SHARED_LINES = 5
+
+
+def find_wholesale_dumping(root, agents_text, ctx=None):
+    """SKILL.md's "Wholesale Dumping" anti-pattern: AGENTS.md content copied
+    verbatim from README.md instead of distilled into agent-specific,
+    non-inferable rules. Of the five anti-patterns named in SKILL.md, this one
+    and Silent Adjudication previously had no enforcement code at all — the
+    other three (Copy-Paste Stubs / D3, Silent Truncation / D4, Big-Bang
+    Migration / the phased workflow itself) already do.
+    """
+    if not agents_text:
+        return []
+    ctx = ctx or ScanContext(root)
+    readme = root / "README.md"
+    if not readme.is_file():
+        return []
+    readme_text = ctx.read_text(readme) or ""
+    overlap = _line_overlap(agents_text, readme_text)
+    if overlap is None:
+        return []
+    shared, ratio = overlap
+    if ratio <= _WHOLESALE_DUMPING_RATIO or shared < _WHOLESALE_DUMPING_MIN_SHARED_LINES:
+        return []
+    return [
+        gap(
+            "G9",
+            "WARN",
+            "Wholesale dumping: AGENTS.md ↔ README.md",
+            f"AGENTS.md shares {round(ratio * 100, 1)}% of its normalized lines with `README.md` "
+            f"({shared} shared lines) — content looks copied wholesale rather than distilled "
+            'into agent-specific rules (SKILL.md\'s "Wholesale Dumping" anti-pattern).',
+            "Keep only rules an agent cannot infer from code or README alone; replace duplicated "
+            "project-description prose with a brief pointer to README.md.",
+        )
+    ]
 
 
 SIGNAL_PATTERNS = {
@@ -1123,6 +1180,10 @@ def find_gaps(root, surface, ctx=None):
     # are stack-dependent judgement calls rather than mandatory infrastructure,
     # so they are now surfaced as facts in `project_snapshot`, which an agent can
     # read from the full JSON report (see write_report_file) to reason about.
+
+    # 5) Wholesale Dumping (SKILL.md's "Named anti-patterns").
+    gaps.extend(find_wholesale_dumping(root, agents_text, ctx))
+
     order = {"ERROR": 0, "WARN": 1, "NOTICE": 2}
     return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
 

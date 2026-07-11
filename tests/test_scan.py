@@ -208,6 +208,55 @@ class ScanTests(unittest.TestCase):
             report = json.loads(proc.stdout)
             self.assertEqual(report["gaps"], [], report["gaps"])
 
+    def test_wholesale_dumping_flagged_when_agents_md_copies_readme(self):
+        # SKILL.md's "Wholesale Dumping" anti-pattern: AGENTS.md content copied
+        # verbatim from README.md instead of distilled into agent-specific,
+        # non-inferable rules. Previously had no enforcement code at all.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            readme = (
+                "# My Project\n\nThis is a demo project that does interesting things.\n\n"
+                "## Installation\n\nRun `npm install` to get started.\n\n"
+                "## Usage\n\nRun `npm start` to launch the app.\n\n"
+                "## Testing\n\nRun `npm test` to execute the test suite.\n\n"
+                "## Contributing\n\nPlease open a pull request.\n\n"
+                "## License\n\nMIT licensed.\n"
+            )
+            (tmp / "README.md").write_text(readme, encoding="utf-8")
+            (tmp / "AGENTS.md").write_text(readme + "\n# Project overview\n", encoding="utf-8")
+            report = self.run_json(tmp)
+            g9 = [g for g in report["gaps"] if g["check"] == "G9"]
+            self.assertEqual(len(g9), 1)
+            self.assertEqual(g9[0]["level"], "WARN")
+            self.assertIn("README.md", g9[0]["message"])
+
+    def test_wholesale_dumping_not_flagged_for_natural_overlap(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            (tmp / "README.md").write_text(
+                "# My Project\n\nThis is a demo project.\n\n## Installation\n\nRun npm install.\n",
+                encoding="utf-8",
+            )
+            (tmp / "AGENTS.md").write_text(
+                "# Project overview\n\nThis is a demo project used to test agent workflows.\n\n"
+                "# Build & test\n\nRun `npm run build` then `npm test`.\n\n"
+                "# Conventions\n\nAlways use TypeScript strict mode.\n\n"
+                "# Safety\n\nNever commit secrets.\n",
+                encoding="utf-8",
+            )
+            report = self.run_json(tmp)
+            self.assertEqual([g for g in report["gaps"] if g["check"] == "G9"], [])
+
+    def test_wholesale_dumping_not_flagged_without_readme(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            (tmp / "AGENTS.md").write_text("# Project overview\n\nSome docs.\n", encoding="utf-8")
+            report = self.run_json(tmp)
+            self.assertEqual([g for g in report["gaps"] if g["check"] == "G9"], [])
+
     def test_fail_on_gaps_exit_code(self):
         proc = subprocess.run(
             [sys.executable, str(SCAN), str(FIXTURE), "--fail-on-gaps"], text=True, capture_output=True
