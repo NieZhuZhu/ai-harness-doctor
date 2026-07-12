@@ -606,10 +606,10 @@ _WHOLESALE_DUMPING_MIN_SHARED_LINES = 5
 def find_wholesale_dumping(root, agents_text, ctx=None):
     """SKILL.md's "Wholesale Dumping" anti-pattern: AGENTS.md content copied
     verbatim from README.md instead of distilled into agent-specific,
-    non-inferable rules. Of the five anti-patterns named in SKILL.md, this one
-    and Silent Adjudication previously had no enforcement code at all — the
-    other three (Copy-Paste Stubs / D3, Silent Truncation / D4, Big-Bang
-    Migration / the phased workflow itself) already do.
+    non-inferable rules. See :func:`find_silent_adjudication` for the sibling
+    check covering SKILL.md's other named anti-pattern; together they complete
+    code support for all five (Copy-Paste Stubs / D3, Silent Truncation / D4,
+    and Big-Bang Migration / the phased workflow itself already had it).
     """
     if not agents_text:
         return []
@@ -636,6 +636,67 @@ def find_wholesale_dumping(root, agents_text, ctx=None):
             "project-description prose with a brief pointer to README.md.",
         )
     ]
+
+
+# Phrases whose presence in AGENTS.md indicates a signal conflict WAS
+# surfaced for human review rather than picked silently. Kept short and
+# generic so it works across every conflict signal (package manager, node
+# version, formatter, ...), not just package_manager.
+_ADJUDICATION_MARKERS = re.compile(
+    r"instead of|rather than|migrated from|replaces|chosen over|decision:|decided by|"
+    r"adjudicat|see merge-plan|per (?:team|owner|maintainer|stakeholder)|confirmed by",
+    re.I,
+)
+
+
+def find_silent_adjudication(agents_text, conflicts):
+    """SKILL.md's "Silent Adjudication" anti-pattern: AGENTS.md declares one
+    side of a live signal conflict (e.g. `pnpm` over `npm`) with no trace that
+    the losing value was ever surfaced for the repo owner to adjudicate, as
+    the conflict-resolution escalation path requires. Reuses ``find_conflicts``
+    — which already scans AGENTS.md alongside every other tool file — so a
+    conflict entry with one AGENTS.md-sourced value and one still-live
+    non-AGENTS.md value is exactly this anti-pattern's signature.
+    """
+    if not agents_text or not conflicts:
+        return []
+    if _ADJUDICATION_MARKERS.search(agents_text):
+        return []
+    gaps_found = []
+    for conflict in conflicts:
+        agents_entry = None
+        other_entries = []
+        for entries in conflict["values"].values():
+            source = next((e for e in entries if e["path"] == "AGENTS.md"), None)
+            if source:
+                agents_entry = source
+            else:
+                other_entries.append(entries[0])
+        if agents_entry is None or not other_entries:
+            continue
+        # Word-boundary search, not substring: "npm" is a substring of "pnpm"
+        # and a plain `in` check would wrongly treat that as a mention.
+        unmentioned = [
+            e for e in other_entries if not re.search(rf"\b{re.escape(e['value'])}\b", agents_text, re.I)
+        ]
+        if not unmentioned:
+            continue
+        others = ", ".join(f"`{e['value']}` ({e['path']}:{e['line']})" for e in unmentioned)
+        gaps_found.append(
+            gap(
+                "G10",
+                "WARN",
+                f"Silent adjudication: {conflict['signal']}",
+                f"AGENTS.md declares `{agents_entry['value']}` for `{conflict['signal']}` "
+                f"(AGENTS.md:{agents_entry['line']}), but {others} still disagrees, with no "
+                "trace of adjudication in AGENTS.md — no mention of the other value, no "
+                'rationale like "instead of" / "migrated from" — SKILL.md\'s "Silent '
+                'Adjudication" anti-pattern.',
+                "Cite both values with file:line evidence and let the repo owner adjudicate, "
+                'or add a short rationale (e.g. "pnpm, migrated from npm") if already decided.',
+            )
+        )
+    return gaps_found
 
 
 SIGNAL_PATTERNS = {
@@ -1101,7 +1162,7 @@ def gap(check, level, item, message, suggestion):
     return {"check": check, "level": level, "item": item, "message": message, "suggestion": suggestion}
 
 
-def find_gaps(root, surface, ctx=None):
+def find_gaps(root, surface, conflicts=None, ctx=None):
     """Diff the repo against a harness completeness checklist and report what is
     missing. Read-only: never writes or mutates the target repository."""
     ctx = ctx or ScanContext(root)
@@ -1184,8 +1245,14 @@ def find_gaps(root, surface, ctx=None):
     # 5) Wholesale Dumping (SKILL.md's "Named anti-patterns").
     gaps.extend(find_wholesale_dumping(root, agents_text, ctx))
 
+    # 6) Silent Adjudication (SKILL.md's "Named anti-patterns").
+    gaps.extend(find_silent_adjudication(agents_text, conflicts or []))
+
     order = {"ERROR": 0, "WARN": 1, "NOTICE": 2}
-    return sorted(gaps, key=lambda g: (order.get(g["level"], 3), g["check"]))
+    # Sort check ids numerically (G10 after G9, not before it lexicographically).
+    return sorted(
+        gaps, key=lambda g: (order.get(g["level"], 3), int(g["check"][1:]) if g["check"][1:].isdigit() else 99)
+    )
 
 
 def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=None):
@@ -1213,17 +1280,18 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
     }
     agents_path = root / "AGENTS.md"
     agents_text = (ctx.read_text(agents_path) or "") if agents_path.is_file() else ""
+    conflicts = find_conflicts(files)
     report = {
         "files": result_files,
         "warnings": warnings,
         "overlaps": find_overlaps(files),
-        "conflicts": find_conflicts(files),
+        "conflicts": conflicts,
         "nested": nested_agents(result_files),
         "surface": surface,
         "security": security_findings(root, files, mcp, hooks, permissions, ctx),
         "project_snapshot": build_project_snapshot(root, surface, agents_text, ctx),
         "semantic": semantic.analyze(root, agents_text),
-        "gaps": find_gaps(root, surface, ctx),
+        "gaps": find_gaps(root, surface, conflicts, ctx),
     }
     # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
     # files live inside the scanned repo, so importing them runs arbitrary code
