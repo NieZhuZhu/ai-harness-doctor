@@ -111,6 +111,18 @@ SECRET_PATTERNS = [
     ),
 ]
 
+# Documentation/example placeholders, not real committed secrets — checked
+# against the MATCHED SPAN only (not the whole line), so an unrelated comment
+# elsewhere on the same line can't hide a genuine secret. Found scanning
+# continuedev/continue's `.continue/rules/dev-data-guide.md`, which has
+# `apiKey: "your-api-key-here"` in an example config block; that shape passes
+# every other check (quoted, 12+ chars, no spaces) and was flagged HIGH.
+_SECRET_PLACEHOLDER_RE = re.compile(
+    r"\byour[_-]|\bmy[_-]|\bexample\b|\bsample\b|\bdummy\b|\bplaceholder\b|\bchangeme\b|"
+    r"\bxxx|\binsert[_-]|\bredacted\b|\bhere\b|<[^<>]*>|\$\{",
+    re.I,
+)
+
 # Permission entries that grant broad/unrestricted execution.
 BROAD_PERMISSION_RE = re.compile(r"^(?:Bash|Execute|Shell)?\(\s*\*+\s*\)$|^\*$|:\s*\*\s*\)$")
 # Hook / command bodies that fetch-and-run remote code or do destructive things.
@@ -955,7 +967,12 @@ def scan_permissions(root, ctx=None):
 
 
 def secret_hits(text):
-    return [label for label, pattern in SECRET_PATTERNS if pattern.search(text)]
+    hits = []
+    for label, pattern in SECRET_PATTERNS:
+        match = pattern.search(text)
+        if match and not _SECRET_PLACEHOLDER_RE.search(match.group(0)):
+            hits.append(label)
+    return hits
 
 
 def _md_safe(value):
