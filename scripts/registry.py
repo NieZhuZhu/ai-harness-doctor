@@ -168,12 +168,36 @@ KNOWN_ROOT_FILES = {
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 # Matches a bare "<word>-name" placeholder path segment; see declared_paths.
 _PLACEHOLDER_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9]*-name$")
-# A line telling the agent NOT to create/use something is documenting an
-# anti-pattern, not asserting the path exists — see declared_paths. Found
-# scanning vercel/ai's AGENTS.md: "Do not create flat top-level provider
-# files like `src/stream-text/openai.ts`" was flagged MISSING even though
-# the whole point of the sentence is that this path should never exist.
-_PATH_NEGATION_RE = re.compile(r"\b(?:do not|don't|never|avoid|shouldn't|should not)\b", re.I)
+# A negation trigger word, followed by everything up to the next clause
+# terminator (deliberately NOT a comma — "never npm, yarn, or bun" needs the
+# whole comma-separated list to stay inside one negated span). A token/signal
+# whose match position falls inside one of these spans is being named as an
+# anti-pattern or a forbidden alternative, not asserted as real/current.
+#
+# Found scanning two real AGENTS.md files:
+# - vercel/ai: "Do not create flat top-level provider files like
+#   `src/stream-text/openai.ts`" flagged the path MISSING even though the
+#   sentence documents that this path should never exist.
+# - better-auth/better-auth: "ALWAYS use `pnpm` (never npm, yarn, or bun)"
+#   and "NEVER run `pnpm test` ... Use `vitest ...`" both manufactured a
+#   package_manager/test_command conflict out of the explicitly-rejected
+#   alternatives, even though the doc is unusually unambiguous.
+_NEGATED_CLAUSE_RE = re.compile(
+    r"\b(?:do not|don't|never|avoid|shouldn't|should not)\b[^.;)\n]*",
+    re.I,
+)
+
+
+def negated_spans(line):
+    """Return ``[(start, end), ...]`` character spans of ``line`` that fall
+    inside a negation clause (see ``_NEGATED_CLAUSE_RE``). Shared by
+    ``declared_paths`` here and ``scan.extract_signals`` so a match's own
+    start position can be checked against ``any(start <= pos < end for ...)``
+    instead of blanket-skipping the whole line — which would also throw away
+    a real positive declaration living earlier on the same line (e.g. the
+    asserted `pnpm` in "ALWAYS use `pnpm` (never npm, yarn, or bun)").
+    """
+    return [m.span() for m in _NEGATED_CLAUSE_RE.finditer(line)]
 
 
 def declared_paths(text):
@@ -188,9 +212,10 @@ def declared_paths(text):
     out = []
     seen = set()
     for lineno, line in enumerate(text.splitlines(), 1):
-        if _PATH_NEGATION_RE.search(line):
-            continue
+        negated = negated_spans(line)
         for m in _BACKTICK_RE.finditer(line):
+            if any(start <= m.start() < end for start, end in negated):
+                continue
             token = m.group(1).strip()
             if not token or token in seen:
                 continue

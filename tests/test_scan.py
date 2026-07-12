@@ -58,6 +58,35 @@ class PackageManagerConflictTests(unittest.TestCase):
             {"npm", "pnpm"},
         )
 
+    def test_rejected_alternatives_in_parens_are_not_a_conflict(self):
+        # Found scanning better-auth/better-auth's AGENTS.md: "ALWAYS use
+        # `pnpm` (never npm, yarn, or bun)" manufactured a bogus 4-way
+        # conflict — npm/yarn/bun are named only as forbidden alternatives,
+        # not declared package managers.
+        self.assertEqual(
+            self._pm_conflict_values("ALWAYS use `pnpm` (never npm, yarn, or bun)."),
+            set(),
+        )
+
+    def test_asserted_value_before_negation_is_still_extracted(self):
+        # The negation exclusion must only suppress the REJECTED alternatives
+        # inside the negated clause, not the real, asserted value earlier on
+        # the same line — `pnpm` here must still be a real signal.
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": "ALWAYS use `pnpm` (never npm, yarn, or bun)."})
+            if s["signal"] == "package_manager"
+        ]
+        self.assertEqual({s["value"] for s in sigs}, {"pnpm"})
+
+    def test_rejected_test_command_alternative_is_not_a_conflict(self):
+        # "NEVER run `pnpm test` ... Use `vitest ...`" — same pattern for
+        # test_command, also found scanning better-auth/better-auth.
+        conflicts = scan.find_conflicts(
+            [{"path": "AGENTS.md", "text": "NEVER run `pnpm test` (runs all packages). Use `vitest path/to/test`."}]
+        )
+        self.assertEqual([c for c in conflicts if c["signal"] == "test_command"], [])
+
 
 class NodeVersionConflictTests(unittest.TestCase):
     """CORR-05: Node version conflicts must be compared as normalized semantic

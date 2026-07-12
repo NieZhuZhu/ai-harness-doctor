@@ -778,10 +778,18 @@ SIGNAL_PATTERNS = {
 def extract_signals(file_entry):
     signals = []
     for lineno, line in enumerate(file_entry["text"].splitlines(), 1):
+        negated = registry.negated_spans(line)
         for signal, patterns in SIGNAL_PATTERNS.items():
             for value, pattern in patterns:
                 match = pattern.search(line)
                 if not match:
+                    continue
+                # A value named only as a rejected alternative — "ALWAYS use
+                # `pnpm` (never npm, yarn, or bun)" — is not a declaration
+                # that this repo uses npm/yarn/bun (found scanning
+                # better-auth/better-auth's AGENTS.md, where this
+                # manufactured a bogus 4-way package_manager conflict).
+                if any(start <= match.start() < end for start, end in negated):
                     continue
                 # Preserve the full declared Node version (e.g. "node 18.17.0")
                 # for user-facing evidence; conflict grouping normalizes it to
