@@ -175,6 +175,24 @@ def package_scripts(root):
     return set(scripts.keys()) if isinstance(scripts, dict) else set()
 
 
+def _walk_package_jsons(root):
+    """Yield the parsed dict of every readable ``package.json`` under root
+    (root plus nested/workspace packages), skipping vendored dirs. Shared by
+    ``all_package_scripts`` and ``all_package_names`` so a repo-wide walk
+    happens at most once per fact, not once per fact PER CALLER. Uses
+    ``os.walk`` with directory pruning (not ``Path.rglob``) so a huge
+    unrelated ``node_modules`` never gets traversed.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
+        if "package.json" not in filenames:
+            continue
+        try:
+            yield json.loads((Path(dirpath) / "package.json").read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+
 def all_package_scripts(root):
     """Union of package.json script names across every package.json in the
     repo (root plus nested/workspace packages), skipping vendored dirs.
@@ -187,25 +205,34 @@ def all_package_scripts(root):
     package.json, not the pnpm-workspace root's).
 
     ``None`` only when there is no package.json anywhere under root, mirroring
-    ``package_scripts``'s None-vs-empty-set contract (CORR-01). Uses
-    ``os.walk`` with directory pruning (not ``Path.rglob``) so a huge
-    unrelated ``node_modules`` never gets traversed.
+    ``package_scripts``'s None-vs-empty-set contract (CORR-01).
     """
     found_any = False
     names = set()
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
-        if "package.json" not in filenames:
-            continue
+    for data in _walk_package_jsons(root):
         found_any = True
-        try:
-            data = json.loads((Path(dirpath) / "package.json").read_text(encoding="utf-8"))
-        except Exception:
-            continue
         scripts = data.get("scripts")
         if isinstance(scripts, dict):
             names.update(scripts.keys())
     return names if found_any else None
+
+
+def all_package_names(root):
+    """Union of every package.json ``name`` field under root (root plus
+    nested/workspace packages), skipping vendored dirs.
+
+    A backtick-quoted token whose first path segment matches one of these is
+    a package self-import specifier — `better-auth/test` imports
+    packages/better-auth's own `test` export subpath — not a repo-relative
+    filesystem path. Found scanning better-auth/better-auth's AGENTS.md,
+    where this was flagged MISSING even though the package resolves fine.
+    """
+    names = set()
+    for data in _walk_package_jsons(root):
+        name = data.get("name")
+        if isinstance(name, str) and name:
+            names.add(name)
+    return names
 
 
 def package_dependency_names(root):

@@ -280,6 +280,40 @@ class SemanticPathTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
 
+    def test_negation_is_position_aware_not_whole_line(self):
+        # A negated path earlier on the line must not suppress checking a
+        # SEPARATE, genuinely-missing path later on the same line — negation
+        # is scoped to its own clause (up to `;`), not the whole line. If
+        # this regressed to a whole-line skip, `src/missing.ts` would go
+        # unchecked and this test would wrongly pass with zero findings.
+        with tempfile.TemporaryDirectory() as td:
+            text = "Never import from `src/banned.ts`; the real entry point is `src/missing.ts`."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("src/missing.ts", paths[0]["message"])
+
+    def test_package_self_import_specifier_not_flagged(self):
+        # `better-auth/test` imports packages/better-auth's own `test` export
+        # subpath (package.json `exports` map) — not a filesystem path.
+        # Found scanning better-auth/better-auth's AGENTS.md: "Use
+        # `getTestInstance()` from `better-auth/test`" was flagged MISSING
+        # even though the import resolves fine.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "packages/better-auth/package.json", '{"name": "better-auth"}')
+            text = "Use `getTestInstance()` from `better-auth/test`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_unrelated_missing_path_with_similar_prefix_still_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "packages/better-auth/package.json", '{"name": "better-auth"}')
+            text = "See `totally-unrelated/missing-file.ts` for details."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("totally-unrelated/missing-file.ts", paths[0]["message"])
+
     def test_scoped_package_names_ignored(self):
         # Scoped npm package names (`@ai-sdk/provider`) and path-alias imports
         # (`@/components`) contain a slash but are package/module identifiers, not

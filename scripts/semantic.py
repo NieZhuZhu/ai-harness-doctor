@@ -775,11 +775,19 @@ def compare_commands(root, text):
 
 def compare_paths(root, text):
     findings = []
+    # Lazily computed only on a potential MISSING finding, mirroring
+    # compare_commands's all_scripts laziness so the common case (path
+    # exists) never pays for a repo walk.
+    package_names = "not computed"
     for decl in declared_paths(text):
         token, line = decl["path"], decl["line"]
         if not _within_root(root, token):
             continue
         if not (root / token).exists():
+            if package_names == "not computed":
+                package_names = facts.all_package_names(root)
+            if token.split("/", 1)[0] in package_names:
+                continue
             findings.append(
                 _finding(
                     "path",
