@@ -14,6 +14,7 @@ Python 3.9 standard library only; no runtime dependencies.
 """
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -172,6 +173,39 @@ def package_scripts(root):
         return None
     scripts = data.get("scripts")
     return set(scripts.keys()) if isinstance(scripts, dict) else set()
+
+
+def all_package_scripts(root):
+    """Union of package.json script names across every package.json in the
+    repo (root plus nested/workspace packages), skipping vendored dirs.
+
+    Monorepo AGENTS.md commonly documents per-package commands ("run these
+    from within packages/foo") that a root-only lookup can't see — checking
+    a monorepo's AGENTS.md against just ``package_scripts(root)`` produced a
+    false MISMATCH (found scanning vercel/ai, whose root AGENTS.md documents
+    `pnpm test:node` / `pnpm build:watch`, which live in packages/ai's
+    package.json, not the pnpm-workspace root's).
+
+    ``None`` only when there is no package.json anywhere under root, mirroring
+    ``package_scripts``'s None-vs-empty-set contract (CORR-01). Uses
+    ``os.walk`` with directory pruning (not ``Path.rglob``) so a huge
+    unrelated ``node_modules`` never gets traversed.
+    """
+    found_any = False
+    names = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
+        if "package.json" not in filenames:
+            continue
+        found_any = True
+        try:
+            data = json.loads((Path(dirpath) / "package.json").read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        scripts = data.get("scripts")
+        if isinstance(scripts, dict):
+            names.update(scripts.keys())
+    return names if found_any else None
 
 
 def package_dependency_names(root):

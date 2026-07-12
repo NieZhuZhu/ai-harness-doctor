@@ -35,7 +35,7 @@ from scan_render import (  # noqa: E402,F401  (re-exported for backward compatib
     render_surface,
 )
 
-SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
+SKIP_DIRS = registry.SKIP_DIRS
 
 
 def _build_config_patterns():
@@ -714,7 +714,20 @@ def find_silent_adjudication(agents_text, conflicts):
 SIGNAL_PATTERNS = {
     "package_manager": [
         ("pnpm", re.compile(r"\bpnpm\b")),
-        ("npm", re.compile(r"\bnpm\b")),
+        # Two npm phrasings that are not a "use npm" signal, both found
+        # scanning vercel/ai's AGENTS.md:
+        # 1. `npm install -g pnpm`/`yarn`/`bun` bootstraps ANOTHER package
+        #    manager via npm (npm ships with Node, so it's the standard way to
+        #    install the others globally): "`npm install -g pnpm@10`".
+        # 2. "`ai` on npm" names the npm REGISTRY a package is published to,
+        #    regardless of which tool the project itself uses to install.
+        # Both manufactured a bogus npm-vs-pnpm conflict.
+        (
+            "npm",
+            re.compile(
+                r"(?<!on )\bnpm\b(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"
+            ),
+        ),
         ("yarn", re.compile(r"\byarn\b")),
         ("bun", re.compile(r"\bbun\b")),
         ("poetry", re.compile(r"\bpoetry\b")),

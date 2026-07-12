@@ -32,6 +32,32 @@ class PackageManagerConflictTests(unittest.TestCase):
             {"uv", "pip"},
         )
 
+    def test_npm_install_g_bootstrap_is_not_an_npm_conflict(self):
+        # `npm install -g pnpm` bootstraps pnpm via npm (npm ships with Node);
+        # it is not a declaration that this project uses npm. Found scanning
+        # vercel/ai's AGENTS.md: "- **pnpm**: v10+ (`npm install -g pnpm@10`)".
+        self.assertEqual(
+            self._pm_conflict_values("- **pnpm**: v10+ (`npm install -g pnpm@10`) and `pnpm install`."),
+            set(),
+        )
+        for text in ("Run `npm i -g yarn` first.", "Run `npm install -g bun` first."):
+            self.assertEqual(self._pm_conflict_values(text), set(), text)
+
+    def test_on_npm_registry_mention_is_not_an_npm_conflict(self):
+        # "`ai` on npm" names the npm REGISTRY a package is published to, not
+        # the tool used to install dependencies. Found scanning vercel/ai's
+        # AGENTS.md: "Main SDK package (`ai` on npm)" next to `pnpm install`.
+        self.assertEqual(
+            self._pm_conflict_values("Main SDK package (`ai` on npm). Run `pnpm install` to set up."),
+            set(),
+        )
+
+    def test_real_npm_usage_still_conflicts_with_pnpm(self):
+        self.assertEqual(
+            self._pm_conflict_values("Run `npm test` here, but `pnpm install` there."),
+            {"npm", "pnpm"},
+        )
+
 
 class NodeVersionConflictTests(unittest.TestCase):
     """CORR-05: Node version conflicts must be compared as normalized semantic
