@@ -25,6 +25,13 @@ _REGISTRY_PATH = _PACKAGE_ROOT / "assets" / "agent-tools.json"
 # (<200 bytes) (CORR-06).
 STUB_POINTER_MAX_BYTES = 800
 
+# Single source of truth for directories a repository walk should never descend
+# into: version control internals and build/dependency output that is either
+# huge (node_modules), not source the agent should read, or both. Shared by
+# scan.py (the main scanner) and facts.py (the fact-reader engines) so a
+# repo-wide walk in one module can't drift from the other (TD-02).
+SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
+
 # Single source of truth mapping a committed lockfile name -> the package manager
 # it implies. Shared by semantic.py, check_drift.py and canonicalize.py so the
 # drift gate, the semantic engine and the draft generator agree on which managers
@@ -161,6 +168,12 @@ KNOWN_ROOT_FILES = {
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 # Matches a bare "<word>-name" placeholder path segment; see declared_paths.
 _PLACEHOLDER_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9]*-name$")
+# A line telling the agent NOT to create/use something is documenting an
+# anti-pattern, not asserting the path exists — see declared_paths. Found
+# scanning vercel/ai's AGENTS.md: "Do not create flat top-level provider
+# files like `src/stream-text/openai.ts`" was flagged MISSING even though
+# the whole point of the sentence is that this path should never exist.
+_PATH_NEGATION_RE = re.compile(r"\b(?:do not|don't|never|avoid|shouldn't|should not)\b", re.I)
 
 
 def declared_paths(text):
@@ -175,6 +188,8 @@ def declared_paths(text):
     out = []
     seen = set()
     for lineno, line in enumerate(text.splitlines(), 1):
+        if _PATH_NEGATION_RE.search(line):
+            continue
         for m in _BACKTICK_RE.finditer(line):
             token = m.group(1).strip()
             if not token or token in seen:

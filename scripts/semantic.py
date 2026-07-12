@@ -673,6 +673,11 @@ _within_root = facts.within_root
 def compare_commands(root, text):
     findings = []
     scripts = package_scripts(root)
+    # Lazily computed only on a potential root-level mismatch, so the common
+    # case (root package.json already has the script) never pays for a repo
+    # walk. `None` means "not computed yet", distinct from `all_package_scripts`
+    # itself returning `None` for "no package.json anywhere".
+    all_scripts = "not computed"
     targets = make_targets(root)
     py_scripts = python_scripts(root)
     cargo_bins = cargo_bin_targets(root)
@@ -686,6 +691,10 @@ def compare_commands(root, text):
             if facts.is_yarn_bin_passthrough(root, decl["tool"], name):
                 continue
             if scripts is not None and name not in scripts:
+                if all_scripts == "not computed":
+                    all_scripts = facts.all_package_scripts(root) or set()
+                if name in all_scripts:
+                    continue
                 findings.append(
                     _finding(
                         "command",

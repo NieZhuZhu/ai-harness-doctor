@@ -141,6 +141,42 @@ class SemanticCommandTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
 
+    def test_script_in_nested_workspace_package_not_flagged(self):
+        # Found scanning vercel/ai's root AGENTS.md: it documents `pnpm
+        # test:node` / `pnpm build:watch` as commands to "run from within a
+        # package directory (e.g., packages/ai)" — those scripts live in
+        # packages/ai/package.json, not the pnpm-workspace root's, so a
+        # root-only lookup produced a false MISMATCH.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {"build": "turbo build"}}')
+            write(td, "packages/ai/package.json", '{"scripts": {"test:node": "vitest --run"}}')
+            text = "Run `pnpm test:node` from within `packages/ai`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_script_missing_everywhere_still_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {"build": "turbo build"}}')
+            write(td, "packages/ai/package.json", '{"scripts": {"test:node": "vitest --run"}}')
+            text = "Run `pnpm totally-made-up-script`."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("totally-made-up-script", cmds[0]["message"])
+
+    def test_nested_node_modules_not_walked_for_scripts(self):
+        # A script name that only exists inside a vendored dependency's own
+        # package.json must not count as "found" — node_modules is not a
+        # workspace package.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {"build": "turbo build"}}')
+            write(td, "node_modules/some-dep/package.json", '{"scripts": {"vendored-only-script": "x"}}')
+            text = "Run `pnpm vendored-only-script`."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("vendored-only-script", cmds[0]["message"])
+
 
 class ProseHeuristicTests(unittest.TestCase):
     """Direct unit coverage for facts.looks_like_prose (CORRECTNESS-01):
@@ -211,6 +247,32 @@ class SemanticPathTests(unittest.TestCase):
             text = "See `https://example.com/x`, `<your-path>`, `${VAR}`, `~/.config`."
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_negated_anti_pattern_path_not_flagged(self):
+        # Found scanning vercel/ai's AGENTS.md: "Do not create flat top-level
+        # provider files like `src/stream-text/openai.ts`" was flagged MISSING
+        # even though the whole point of the sentence is that this path
+        # should never exist — it's documenting an anti-pattern, not
+        # asserting the path is real.
+        with tempfile.TemporaryDirectory() as td:
+            text = (
+                "Do not create flat top-level provider files like `src/stream-text/openai.ts`.\n"
+                "Never write helpers directly to `src/legacy-helpers.ts`.\n"
+                "Avoid adding new code to `src/old/deprecated.ts`."
+            )
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_non_negated_path_on_different_line_still_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            text = (
+                "Do not create flat top-level provider files like `src/stream-text/openai.ts`.\n"
+                "The real entry point is `src/index.ts`."
+            )
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("src/index.ts", paths[0]["message"])
 
     def test_escape_outside_root_ignored(self):
         with tempfile.TemporaryDirectory() as td:
