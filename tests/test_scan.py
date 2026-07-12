@@ -553,6 +553,20 @@ class SecretRecallTests(unittest.TestCase):
         ):
             self.assertEqual(scan.secret_hits(benign), [], benign)
 
+    def test_example_placeholder_values_are_not_flagged(self):
+        # Found scanning continuedev/continue's .continue/rules/dev-data-guide.md:
+        # `apiKey: "your-api-key-here"` passed every other check (quoted, 12+
+        # chars, no spaces) and was flagged HIGH — a genuine false positive on
+        # a documentation example, not a committed credential.
+        for benign in (
+            'apiKey: "your-api-key-here"',
+            "SECRET_KEY=changeme-please-set-this",
+            'token: "<your-github-token>"',
+            'api_key: "${OPENAI_API_KEY}"',
+            'password: "example-password-123"',
+        ):
+            self.assertEqual(scan.secret_hits(benign), [], benign)
+
     def test_mcp_env_secret_value_is_flagged(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
