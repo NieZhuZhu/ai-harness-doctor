@@ -314,6 +314,30 @@ class SemanticPathTests(unittest.TestCase):
             self.assertEqual(len(paths), 1)
             self.assertIn("totally-unrelated/missing-file.ts", paths[0]["message"])
 
+    def test_go_module_and_import_paths_ignored(self):
+        # Go import/module paths are `domain.tld/org/pkg[/vN]` — the first
+        # segment looks like a hostname, never a real repo directory. Found
+        # scanning charmbracelet/crush's AGENTS.md: "The module path is
+        # `github.com/charmbracelet/crush`" and "`charm.land/bubbletea/v2`"
+        # (a dependency import path) were both flagged MISSING.
+        with tempfile.TemporaryDirectory() as td:
+            text = (
+                "The module path is `github.com/charmbracelet/crush`. "
+                "Key dependency: `charm.land/bubbletea/v2`."
+            )
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_real_go_relative_package_path_still_flagged(self):
+        # A genuine (non-hostname-looking) Go package path that has moved
+        # must still be caught — this is the tool's real job.
+        with tempfile.TemporaryDirectory() as td:
+            text = "Run `go test ./internal/llm/prompt -run TestFoo`."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("internal/llm/prompt", cmds[0]["message"])
+
     def test_scoped_package_names_ignored(self):
         # Scoped npm package names (`@ai-sdk/provider`) and path-alias imports
         # (`@/components`) contain a slash but are package/module identifiers, not
