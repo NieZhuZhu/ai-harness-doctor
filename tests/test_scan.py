@@ -279,6 +279,62 @@ class ScanTests(unittest.TestCase):
             report = self.run_json(tmp)
             self.assertEqual([g for g in report["gaps"] if g["check"] == "G9"], [])
 
+    def test_silent_adjudication_flagged_when_agents_md_picks_a_side_silently(self):
+        # SKILL.md's "Silent Adjudication" anti-pattern: after finding `pnpm`
+        # vs `npm`, AGENTS.md declares one with no trace the other was ever
+        # surfaced. Previously had no enforcement code at all.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            (tmp / "AGENTS.md").write_text(
+                "# Project overview\n\nA demo repo.\n\n# Build & test\n\nRun `pnpm install` then `pnpm test`.\n",
+                encoding="utf-8",
+            )
+            (tmp / "CLAUDE.md").write_text("# Setup\n\nRun `npm install` to set things up.\n", encoding="utf-8")
+            report = self.run_json(tmp)
+            g10 = [g for g in report["gaps"] if g["check"] == "G10"]
+            self.assertEqual(len(g10), 1)
+            self.assertEqual(g10[0]["level"], "WARN")
+            self.assertIn("pnpm", g10[0]["message"])
+            self.assertIn("npm", g10[0]["message"])
+            self.assertIn("CLAUDE.md:", g10[0]["message"])
+
+    def test_silent_adjudication_not_flagged_when_agents_md_cites_the_other_value(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            (tmp / "AGENTS.md").write_text(
+                "# Project overview\n\nA demo repo.\n\n# Build & test\n\nUse pnpm, migrated from npm.\n",
+                encoding="utf-8",
+            )
+            (tmp / "CLAUDE.md").write_text("# Setup\n\nRun `npm install` to set things up.\n", encoding="utf-8")
+            report = self.run_json(tmp)
+            self.assertEqual([g for g in report["gaps"] if g["check"] == "G10"], [])
+
+    def test_silent_adjudication_not_flagged_without_a_live_conflict(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td) / "repo"
+            tmp.mkdir()
+            (tmp / "AGENTS.md").write_text(
+                "# Project overview\n\nA demo repo.\n\n# Build & test\n\nRun `pnpm install` then `pnpm test`.\n",
+                encoding="utf-8",
+            )
+            report = self.run_json(tmp)
+            self.assertEqual([g for g in report["gaps"] if g["check"] == "G10"], [])
+
+    def test_silent_adjudication_pnpm_substring_of_npm_does_not_false_negative(self):
+        # "npm" is a substring of "pnpm"; the mention check must use word
+        # boundaries or this case would wrongly look like a citation.
+        conflicts = scan.find_conflicts(
+            [
+                {"path": "AGENTS.md", "text": "Use pnpm for installs."},
+                {"path": "CLAUDE.md", "text": "Use npm for installs."},
+            ]
+        )
+        gaps = scan.find_silent_adjudication("Use pnpm for installs.", conflicts)
+        self.assertEqual(len(gaps), 1)
+        self.assertEqual(gaps[0]["check"], "G10")
+
     def test_fail_on_gaps_exit_code(self):
         proc = subprocess.run(
             [sys.executable, str(SCAN), str(FIXTURE), "--fail-on-gaps"], text=True, capture_output=True
