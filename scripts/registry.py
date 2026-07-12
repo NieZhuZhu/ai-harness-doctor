@@ -168,6 +168,11 @@ KNOWN_ROOT_FILES = {
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 # Matches a bare "<word>-name" placeholder path segment; see declared_paths.
 _PLACEHOLDER_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9]*-name$")
+# A path segment that looks like a hostname (contains a literal `.`, not a
+# leading one like `.github`) — the first component of a Go import/module
+# path (`github.com/org/pkg`, `charm.land/bubbletea/v2`), never a real
+# repo-relative directory. See declared_paths.
+_GO_IMPORT_HOST_RE = re.compile(r"^[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+$")
 # A negation trigger word, followed by everything up to the next clause
 # terminator (deliberately NOT a comma — "never npm, yarn, or bun" needs the
 # whole comma-separated list to stay inside one negated span). A token/signal
@@ -247,6 +252,18 @@ def declared_paths(text):
             # "<word>-name" shape matches, so a real path segment that merely
             # contains "name" (`username/profile.py`) is still checked.
             if _PLACEHOLDER_SEGMENT_RE.fullmatch(token.split("/", 1)[0]):
+                continue
+            # Go import/module paths are conventionally `domain.tld/org/pkg`
+            # (a "vanity" or SCM-hosted path) — the first segment looks like
+            # a hostname, never a real repo-relative directory name. Found
+            # scanning charmbracelet/crush's AGENTS.md, which references both
+            # its own module path ("The module path is
+            # `github.com/charmbracelet/crush`") and dependency import paths
+            # ("`charm.land/bubbletea/v2`"); neither is a filesystem path.
+            # Gated on an actual "/" so this never catches a bare dotted
+            # filename like `go.mod` or `Cargo.toml` (single-segment tokens
+            # are handled entirely by the KNOWN_ROOT_FILES check below).
+            if "/" in token and _GO_IMPORT_HOST_RE.match(token.split("/", 1)[0]):
                 continue
             if token.startswith(CMD_PATH_PREFIXES):
                 continue
