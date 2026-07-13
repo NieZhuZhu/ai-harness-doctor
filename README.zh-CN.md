@@ -6,7 +6,8 @@
 
 AI Harness Doctor 让这种漂移可见，把散落的 agent 配置收敛到唯一 canonical `AGENTS.md`，并守护它，让仓库不再悄悄遗忘 —— 支持 Claude Code、Codex、Cursor、Gemini 以及纯 CI。一条零安装的 `scan` 就能给你一份完整体检：配置清单、冲突证据、安全审计、缺失的基础设施缺口，以及技术栈快照。
 
-[![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml) [![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg) ![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
+<p><a href="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml"><img align="left" alt="CI" src="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg"></a> <a href="https://www.npmjs.com/package/ai-harness-doctor"><img align="left" alt="npm version" src="https://img.shields.io/npm/v/ai-harness-doctor.svg"></a> <img align="left" alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"> <img align="left" alt="Python 3.9+" src="https://img.shields.io/badge/Python-3.9%2B-blue.svg"> <img align="left" alt="Node >=16" src="https://img.shields.io/badge/Node-%3E%3D16-green.svg"></p>
+<br clear="left">
 
 > **在我们的 14-task benchmark 中，把一个仓库 canonical 化后，agent 的正确答案从 6/28 提升到 28/28 —— 同时消除了同一个问题在不同轮次答案反复横跳的情况。** [看数据 ↓](#benchmark)
 
