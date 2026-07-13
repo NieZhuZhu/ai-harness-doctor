@@ -461,9 +461,7 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
     # --rules DIR; each plugin is isolated so a broken one is reported as an
     # ERROR finding, never a crash. Custom findings are reported additively
     # under `custom`; they do not alter the built-in D1-D8 health score.
-    custom = plugins.run_plugins(
-        root, {"phase": "drift", "agents_text": text}, rules_dirs, allow_plugins=allow_plugins
-    )
+    custom = plugins.run_plugins(root, {"phase": "drift", "agents_text": text}, rules_dirs, allow_plugins=allow_plugins)
     if strict:
         for f in custom:
             if f.get("level") == "NOTICE":
@@ -599,6 +597,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Check AGENTS.md drift.")
     parser.add_argument("repo_root", nargs="?", default=".")
     parser.add_argument("--json", action="store_true", dest="as_json")
+    parser.add_argument("--sarif", action="store_true", help="Emit SARIF 2.1.0 JSON for GitHub code scanning.")
     parser.add_argument("--strict", action="store_true")
     parser.add_argument(
         "--fix", action="store_true", help="Auto-repair the safe subset (D3 stub regrowth); dry run unless --apply."
@@ -647,13 +646,20 @@ def main(argv=None):
         print(text, end="")
         return code
     report = run_checks(root, args.max_bytes, args.strict, args.rules, allow_plugins=args.allow_plugins)
+    exit_code = 0 if report["ok"] else 1
+    if args.min_score is not None and report["score"] < args.min_score:
+        exit_code = exit_code or 2
+    # SARIF takes precedence over --json/markdown but preserves the same exit
+    # semantics (--strict / --min-score) as the normal path.
+    if args.sarif:
+        import sarif  # noqa: E402  # sibling module (scripts/ is on sys.path)
+
+        print(json.dumps(sarif.drift_report_to_sarif(report), ensure_ascii=False, indent=2))
+        return exit_code
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         print(render(report), end="")
-    exit_code = 0 if report["ok"] else 1
-    if args.min_score is not None and report["score"] < args.min_score:
-        exit_code = exit_code or 2
     return exit_code
 
 

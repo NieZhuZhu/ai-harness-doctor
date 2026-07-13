@@ -1,0 +1,39 @@
+name: "AI Harness Doctor"
+description: "Audit AI agent configs and emit SARIF 2.1.0 for GitHub code scanning."
+author: "NieZhuZhu"
+branding:
+  icon: "check-circle"
+  color: "purple"
+inputs:
+  path:
+    description: "Repository path to scan."
+    required: false
+    default: "."
+  command:
+    description: "Subcommand to run (scan or drift)."
+    required: false
+    default: "scan"
+  args:
+    description: "Extra arguments passed through to the command."
+    required: false
+    default: ""
+  sarif-file:
+    description: "Path to write the SARIF output file."
+    required: false
+    default: "ai-harness-doctor.sarif"
+  version:
+    description: "npm version/tag of ai-harness-doctor to run."
+    required: false
+    default: "latest"
+outputs:
+  sarif-file:
+    description: "Path to the generated SARIF file."
+    value: ${{ steps.run.outputs.sarif-file }}
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      run: |
+        npx -y ai-harness-doctor@${{ inputs.version }} ${{ inputs.command }} "${{ inputs.path }}" --sarif ${{ inputs.args }} > "${{ inputs.sarif-file }}" || true
+        echo "sarif-file=${{ inputs.sarif-file }}" >> "$GITHUB_OUTPUT"

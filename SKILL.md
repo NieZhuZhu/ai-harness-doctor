@@ -40,6 +40,7 @@ python3 scripts/scan.py /path/to/repo --no-security        # inventory only
 python3 scripts/scan.py /path/to/monorepo --json           # auto-detects workspaces
 python3 scripts/scan.py /path/to/repo --monorepo           # force per-package scan
 python3 scripts/scan.py /path/to/repo --rules ./my-rules   # add custom rule plugins (also reads .ai-harness-doctor/rules/)
+python3 scripts/scan.py /path/to/repo --sarif              # emit SARIF 2.1.0 JSON for GitHub code scanning
 ```
 
 The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`). It additionally runs a **semantic consistency** check (via `scripts/semantic.py`) that cross-checks the concrete claims in `AGENTS.md` — build/test commands, repo-relative paths, the package manager, and the Node.js version — against ground truth in `package.json`, `Makefile`, the filesystem, lockfiles, and `.nvmrc` / `engines.node`, surfacing declaration-vs-code mismatches at checkup time.
@@ -134,6 +135,7 @@ python3 scripts/check_drift.py /path/to/repo
 python3 scripts/check_drift.py /path/to/repo --json
 python3 scripts/check_drift.py /path/to/repo --strict
 python3 scripts/check_drift.py /path/to/repo --min-score 80
+python3 scripts/check_drift.py /path/to/repo --sarif        # emit SARIF 2.1.0 JSON for GitHub code scanning
 ```
 
 Checks:
