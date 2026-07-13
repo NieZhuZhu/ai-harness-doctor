@@ -302,6 +302,27 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
 
 **Multi-repo batch mode.** `scan --repos-file PATH` scans every repository listed in `PATH` (one path per line; blank lines and `#` comments ignored) instead of a single `repo_root`, and prints an org-wide health summary — for the "Mixed-tool team" and "OSS maintainer" personas that otherwise have no story beyond running the tool once per repo by hand. Each repo is scanned independently at its own root (this mode does not expand monorepo packages within a repo); a path that does not resolve to a directory is reported under "Repos that could not be scanned" instead of aborting the whole batch. `--json` returns `{ summary: { repo_count, error_count, aggregate }, repos: [{ path, resolved, name, has_agents_md, summary, report } | { path, resolved, error }] }`. `--fail-on-security` / `--fail-on-gaps` / `--fail-on-semantic` consider every scanned repo, so this mode is CI-gateable across a whole org. Mutually exclusive with the `repo_root` positional argument.
 
+**GitHub-native findings (SARIF).** Both `scan` and `drift` accept `--sarif` to emit a SARIF 2.1.0 document to stdout, so findings surface in GitHub's Security tab and as inline PR annotations. `--sarif` takes precedence over `--json`/markdown and is built from the complete report (root + every monorepo package) regardless of any `--no-*` suppression. Source levels map to SARIF levels (`HIGH`/`ERROR`→`error`, `MEDIUM`/`WARN`/`NOTICE`→`warning`, everything else→`note`).
+
+```bash
+# Emit SARIF 2.1.0 to a file for GitHub code scanning
+npx ai-harness-doctor scan . --sarif > ai-harness-doctor.sarif
+npx ai-harness-doctor drift . --sarif > drift.sarif
+```
+
+A reusable composite GitHub Action ships at the repo root (`action.yml`) so any repo can run the tool and upload SARIF in two steps:
+
+```yaml
+# .github/workflows/harness-sarif.yml (excerpt)
+- uses: NieZhuZhu/ai-harness-doctor@v1
+  with:
+    command: scan
+    path: .
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: ai-harness-doctor.sarif
+```
+
 | Flag | Purpose |
 |---|---|
 | `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
@@ -317,6 +338,7 @@ It also runs a **semantic consistency** check that compares what `AGENTS.md` *de
 | `--repos-file PATH` | Scan every repo listed in `PATH` and print a cross-repo summary instead of a single repo (see above). Mutually exclusive with `repo_root`. |
 | `--rules DIR` | Load custom rule plugins from `DIR` (repeatable); merged into the `custom` section alongside `.ai-harness-doctor/rules/`. |
 | `--no-custom` | Skip custom rule plugins (drops the `custom` key). |
+| `--sarif` | Emit SARIF 2.1.0 JSON to stdout for GitHub code scanning (precedence over `--json`). |
 
 `--json` returns (existing keys are unchanged — backward compatible):
 

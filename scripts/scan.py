@@ -498,7 +498,7 @@ class ScanContext:
             return ScanContext(subroot)
         prefix = "" if prefix == "." else prefix + "/"
         sub_index = [
-            (relposix[len(prefix):], path)
+            (relposix[len(prefix) :], path)
             for relposix, path in self.index
             if not prefix or relposix.startswith(prefix)
         ]
@@ -696,9 +696,7 @@ def find_silent_adjudication(agents_text, conflicts):
             continue
         # Word-boundary search, not substring: "npm" is a substring of "pnpm"
         # and a plain `in` check would wrongly treat that as a mention.
-        unmentioned = [
-            e for e in other_entries if not re.search(rf"\b{re.escape(e['value'])}\b", agents_text, re.I)
-        ]
+        unmentioned = [e for e in other_entries if not re.search(rf"\b{re.escape(e['value'])}\b", agents_text, re.I)]
         if not unmentioned:
             continue
         others = ", ".join(f"`{e['value']}` ({e['path']}:{e['line']})" for e in unmentioned)
@@ -732,9 +730,7 @@ SIGNAL_PATTERNS = {
         # Both manufactured a bogus npm-vs-pnpm conflict.
         (
             "npm",
-            re.compile(
-                r"(?<!on )\bnpm\b(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"
-            ),
+            re.compile(r"(?<!on )\bnpm\b(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"),
         ),
         ("yarn", re.compile(r"\byarn\b")),
         ("bun", re.compile(r"\bbun\b")),
@@ -1665,6 +1661,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Scan AI harness config files.")
     parser.add_argument("repo_root", nargs="?", default=".")
     parser.add_argument("--json", action="store_true", dest="as_json")
+    parser.add_argument("--sarif", action="store_true", help="Emit SARIF 2.1.0 JSON for GitHub code scanning.")
     parser.add_argument("--max-bytes", type=int, default=32768)
     parser.add_argument("--no-security", action="store_true", help="Skip the security checkup section.")
     parser.add_argument(
@@ -1781,6 +1778,16 @@ def main(argv=None):
         exit_code = 3
     elif args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in reports):
         exit_code = 4
+
+    # SARIF emission happens on the COMPLETE report (root + every package) before
+    # any --no-* suppression below, so GitHub code scanning always receives the
+    # full set of findings regardless of which sections are hidden from the
+    # human-readable output. --sarif takes precedence over --json/markdown.
+    if args.sarif:
+        import sarif  # noqa: E402  # sibling module (scripts/ is on sys.path)
+
+        print(json.dumps(sarif.scan_report_to_sarif(report), ensure_ascii=False, indent=2))
+        return exit_code
 
     # Output suppression only: drop optional sections per the --no-* flags. This
     # runs AFTER the gate decision above so suppression cannot change the exit.

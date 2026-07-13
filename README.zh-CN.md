@@ -302,6 +302,27 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 
 **多仓库批量模式。** `scan --repos-file PATH` 会扫描 `PATH` 中列出的每个仓库（每行一个路径；空行和 `#` 注释会被忽略），而不是单个 `repo_root`，并打印一份组织级别的健康摘要——面向"多工具混用团队"和"OSS 维护者"这两类人设，他们此前除了对每个仓库手动跑一遍之外没有别的方案。每个仓库都在自己的根目录独立扫描（该模式不会在单个仓库内部展开 monorepo 的包）；一个解析不到目录的路径会被列在"无法扫描的仓库"下，而不会中断整个批次。`--json` 返回 `{ summary: { repo_count, error_count, aggregate }, repos: [{ path, resolved, name, has_agents_md, summary, report } | { path, resolved, error }] }`。`--fail-on-security` / `--fail-on-gaps` / `--fail-on-semantic` 会综合考虑每个被扫描的仓库，因此这个模式可以作为整个组织范围的 CI 门禁。与 `repo_root` 位置参数互斥。
 
+**GitHub 原生发现（SARIF）。** `scan` 和 `drift` 都支持 `--sarif`，将 SARIF 2.1.0 文档输出到 stdout，使发现出现在 GitHub 的 Security 页签以及 PR 内联注释中。`--sarif` 优先于 `--json`/markdown，并基于完整报告（根 + 每个 monorepo 包）生成，不受任何 `--no-*` 抑制影响。源级别映射到 SARIF 级别（`HIGH`/`ERROR`→`error`，`MEDIUM`/`WARN`/`NOTICE`→`warning`，其余→`note`）。
+
+```bash
+# Emit SARIF 2.1.0 to a file for GitHub code scanning
+npx ai-harness-doctor scan . --sarif > ai-harness-doctor.sarif
+npx ai-harness-doctor drift . --sarif > drift.sarif
+```
+
+仓库根目录附带一个可复用的组合式 GitHub Action（`action.yml`），任何仓库都可以用两步运行该工具并上传 SARIF：
+
+```yaml
+# .github/workflows/harness-sarif.yml (excerpt)
+- uses: NieZhuZhu/ai-harness-doctor@v1
+  with:
+    command: scan
+    path: .
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: ai-harness-doctor.sarif
+```
+
 | Flag | 用途 |
 |---|---|
 | `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |
@@ -317,6 +338,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。安装会记
 | `--repos-file PATH` | 扫描 `PATH` 中列出的每个仓库，打印跨仓库摘要而非单仓库结果（见上文）。与 `repo_root` 互斥。 |
 | `--rules DIR` | 从 `DIR` 加载自定义规则插件（可重复）；与 `.ai-harness-doctor/rules/` 一起合并进 `custom` 一节。 |
 | `--no-custom` | 跳过自定义规则插件（不输出 `custom` key）。 |
+| `--sarif` | 将 SARIF 2.1.0 JSON 输出到 stdout 供 GitHub code scanning 使用（优先于 `--json`）。 |
 
 `--json` returns（已有的 key 保持不变——向后兼容）:
 
