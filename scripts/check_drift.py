@@ -38,6 +38,19 @@ line_collected_code = facts.iter_code_tokens
 package_scripts = facts.package_scripts
 make_targets = facts.make_targets
 
+# Positive evidence that a file IS a managed pointer stub written by
+# canonicalize.py: either the Claude `@AGENTS.md` import directive, or the
+# canonical "instructions live in AGENTS.md" redirect phrase shared by the
+# cursor/windsurf/cline/continue/copilot/gemini stubs. Matching a bare
+# "AGENTS.md" mention (the old D3 heuristic) over-fires on full hand-authored
+# configs that merely *link* to nested `dir/AGENTS.md` files or name the file in
+# prose — e.g. pydantic-ai's CLAUDE.md, a complete duplicate of AGENTS.md that
+# indexes ten nested `*/AGENTS.md` docs, was wrongly flagged as a regrown stub.
+_STUB_POINTER_SIGNAL_RE = re.compile(
+    r"(?m)^\s*@AGENTS\.md\b|instructions live in\s+`?AGENTS\.md`?",
+    re.IGNORECASE,
+)
+
 
 def d1_command_drift(root, text):
     findings = []
@@ -148,12 +161,13 @@ def d3_stub_regrowth(root):
         data = path.read_bytes()
         text = data.decode("utf-8", errors="replace")
         # Only flag a file as a regrown/broken canonical stub when there is
-        # positive evidence it IS a managed pointer stub: it references AGENTS.md
-        # as a pointer but has grown past the minimal-stub size budget. A file
-        # with NO AGENTS.md pointer is an independent, hand-authored doc (the
-        # checkup/overlap subsystem's concern), not a broken stub, so D3 must not
-        # claim it "lost" a pointer it never had.
-        if "AGENTS.md" in text and len(data) > registry.STUB_POINTER_MAX_BYTES:
+        # positive evidence it IS a managed pointer stub: it carries a canonical
+        # pointer signal (`@AGENTS.md` import or the "instructions live in
+        # AGENTS.md" redirect phrase) but has grown past the minimal-stub size
+        # budget. A file that merely mentions or links to AGENTS.md (a full
+        # hand-authored doc indexing nested `dir/AGENTS.md` files) is not a
+        # broken stub, so D3 must not claim it "lost" a pointer it never had.
+        if _STUB_POINTER_SIGNAL_RE.search(text) and len(data) > registry.STUB_POINTER_MAX_BYTES:
             findings.append(
                 {
                     "check": "D3",
@@ -170,10 +184,11 @@ def d3_stub_regrowth(root):
                 continue
             data = p.read_bytes()
             text = data.decode("utf-8", errors="replace")
-            # Same rule as above: only a genuine pointer rule (references
-            # AGENTS.md) that regrew past the size budget is drift; an
-            # independent rule with no AGENTS.md pointer is not a broken stub.
-            if "AGENTS.md" in text and len(data) > registry.STUB_POINTER_MAX_BYTES:
+            # Same rule as above: only a genuine pointer rule (carries a
+            # canonical `@AGENTS.md`/"instructions live in AGENTS.md" signal)
+            # that regrew past the size budget is drift; a rule that merely
+            # mentions or links to AGENTS.md is not a broken stub.
+            if _STUB_POINTER_SIGNAL_RE.search(text) and len(data) > registry.STUB_POINTER_MAX_BYTES:
                 findings.append(
                     {
                         "check": "D3",

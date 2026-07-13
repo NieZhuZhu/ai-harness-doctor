@@ -320,6 +320,34 @@ class DriftTests(unittest.TestCase):
         d3 = [f for f in report["findings"] if f["check"] == "D3"]
         self.assertTrue(any(f["path"] == "CLAUDE.md" for f in d3))
 
+    def test_full_duplicate_linking_nested_agents_md_not_flagged_d3(self):
+        # A full hand-authored CLAUDE.md that is a complete duplicate of AGENTS.md
+        # and only *links* to nested `dir/AGENTS.md` files (no `@AGENTS.md` import,
+        # no "instructions live in AGENTS.md" redirect phrase) is NOT a managed
+        # pointer stub. The old `"AGENTS.md" in text` heuristic wrongly flagged it
+        # as a regrown stub (an ERROR that fails `drift --strict` in CI) — this
+        # mirrors pydantic-ai's CLAUDE.md, which indexes ten nested `*/AGENTS.md`
+        # docs. D3 must stay silent here.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        full_dup = (
+            "# Project guidance\n\n"
+            "This document is the primary guidance for this repository.\n\n"
+            + "A substantial hand-authored paragraph of real guidance.\n" * 200
+            + "\n## Nested agent docs\n\n"
+            "- [docs/AGENTS.md](docs/AGENTS.md)\n"
+            "- [packages/core/AGENTS.md](packages/core/AGENTS.md)\n"
+            "- [tests/AGENTS.md](tests/AGENTS.md)\n"
+        )
+        (repo / "CLAUDE.md").write_text(full_dup, encoding="utf-8")
+        self.assertGreater(len((repo / "CLAUDE.md").read_bytes()), 800)
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D3"])
+
     def test_pre_migration_without_agents_suppresses_d3_but_reports_d4(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)

@@ -123,8 +123,16 @@ _SECRET_PLACEHOLDER_RE = re.compile(
     re.I,
 )
 
-# Permission entries that grant broad/unrestricted execution.
-BROAD_PERMISSION_RE = re.compile(r"^(?:Bash|Execute|Shell)?\(\s*\*+\s*\)$|^\*$|:\s*\*\s*\)$")
+# Permission entries that grant broad/unrestricted execution. A wildcard rule
+# is "broad" only when the COMMAND itself is unconstrained: `Bash(*)`,
+# `Execute(*)`, `Shell(*)`, a bare `*`, or a wildcard command such as
+# `Bash(*:*)`. An argument wildcard on a *named* command (`Bash(git log:*)`,
+# `Bash(rg:*)`, `Bash(uv run:*)`) is Claude Code's recommended per-command
+# scoping, NOT unrestricted execution, so it must not be flagged — the old
+# `:\s*\*\s*\)$` alternative matched every `cmd:*` rule and buried real repos
+# (e.g. pydantic-ai's 19 scoped rules) under spurious HIGH findings that break
+# `--fail-on-security` CI.
+BROAD_PERMISSION_RE = re.compile(r"^(?:Bash|Execute|Shell)?\(\s*\*+\s*\)$|^\*$|\(\s*\*+\s*:")
 # Hook / command bodies that fetch-and-run remote code or do destructive things.
 RISKY_COMMAND_RES = [
     ("remote code execution", re.compile(r"(?:curl|wget)\b[^\n|]*\|\s*(?:sh|bash|zsh|python[0-9.]*|node)\b", re.I)),

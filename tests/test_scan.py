@@ -497,6 +497,54 @@ class ExtendedSurfaceTests(unittest.TestCase):
             self.assertIn("mcp", cats)  # http:// + credential env
             self.assertTrue(any(f["level"] == "HIGH" for f in report["security"]))
 
+    def test_argument_scoped_permission_rules_are_not_flagged(self):
+        # `Bash(cmd:*)` is Claude Code's recommended per-command scoping — the
+        # `*` is an argument wildcard for one named command, NOT unrestricted
+        # execution. Flagging every such rule (as the old `:\s*\*\s*\)$`
+        # alternative did) buries real repos like pydantic-ai under spurious
+        # HIGH findings that break `--fail-on-security` CI, so none of these
+        # scoped rules may produce a permission finding.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nRun `npm test`.\n")
+            _write(
+                repo / ".claude/settings.json",
+                json.dumps(
+                    {
+                        "permissions": {
+                            "allow": [
+                                "Bash(git log:*)",
+                                "Bash(rg:*)",
+                                "Bash(ls:*)",
+                                "Bash(gh pr view:*)",
+                                "Bash(uv run:*)",
+                                "Bash(make:*)",
+                            ]
+                        }
+                    }
+                ),
+            )
+            report = json.loads(self.run_json(repo).stdout)
+            perms = [f for f in report["security"] if f["category"] == "permission"]
+            self.assertEqual(perms, [], perms)
+
+    def test_wildcard_command_permission_rules_still_flagged(self):
+        # Guard rail for the scoping fix: a genuinely broad rule whose COMMAND is
+        # a wildcard (`Bash(*)`, `Bash(*:*)`, bare `*`) must still be flagged, so
+        # the fix does not open a hole for unrestricted-execution grants.
+        for rule in ("Bash(*)", "Bash(*:*)", "*"):
+            with tempfile.TemporaryDirectory() as td:
+                repo = Path(td) / "repo"
+                _write(repo / "AGENTS.md", "# Project overview\nRun `npm test`.\n")
+                _write(
+                    repo / ".claude/settings.json",
+                    json.dumps({"permissions": {"allow": [rule]}}),
+                )
+                report = json.loads(self.run_json(repo).stdout)
+                perms = [f for f in report["security"] if f["category"] == "permission"]
+                self.assertTrue(perms, f"{rule!r} should be flagged as broad")
+                self.assertTrue(all(f["level"] == "HIGH" for f in perms))
+
     def test_security_finding_messages_neutralize_markdown_breakout(self):
         # MCP server/env names, permission rules, and hook event/command strings
         # come straight from attacker-controlled JSON with no format constraint
