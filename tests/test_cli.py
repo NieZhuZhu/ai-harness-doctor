@@ -2,9 +2,10 @@ import hashlib
 import json
 import os
 import subprocess
-import tempfile
 import unittest
 from pathlib import Path
+
+from tmp_support import ResilientTemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "bin" / "cli.js"
@@ -47,7 +48,7 @@ class CliInstallerTests(unittest.TestCase):
         return repo
 
     def test_install_update_link_uninstall_manifest_flow(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             home = Path(home_dir)
             project = Path(project_dir)
             (project / "package.json").write_text("{}\n", encoding="utf-8")
@@ -85,7 +86,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertEqual(manifest["installs"], [])
 
     def test_guard_dry_run_prints_plan_and_writes_nothing(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
 
@@ -101,7 +102,7 @@ class CliInstallerTests(unittest.TestCase):
             )
 
     def test_guard_apply_installs_and_is_idempotent(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
 
@@ -126,7 +127,7 @@ class CliInstallerTests(unittest.TestCase):
             )
 
     def test_guard_without_agents_exits_1(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir), with_agents=False)
 
@@ -136,7 +137,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("run the treat phase first", proc.stderr)
 
     def test_guard_preserves_foreign_pre_commit_while_installing_other_items(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             hook = repo / ".git" / "hooks" / "pre-commit"
@@ -162,8 +163,8 @@ class CliInstallerTests(unittest.TestCase):
         for original_agents_bytes in variants:
             with (
                 self.subTest(original=original_agents_bytes),
-                tempfile.TemporaryDirectory() as home_dir,
-                tempfile.TemporaryDirectory() as parent_dir,
+                ResilientTemporaryDirectory() as home_dir,
+                ResilientTemporaryDirectory() as parent_dir,
             ):
                 home = Path(home_dir)
                 repo = self.make_git_repo(Path(parent_dir))
@@ -184,7 +185,7 @@ class CliInstallerTests(unittest.TestCase):
                 self.assertEqual(hashlib.sha256(agents_after_bytes).hexdigest(), original_hash)
 
     def test_guard_remove_strips_block_and_preserves_user_appended_hook_lines(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             self.run_cli(["guard", str(repo), "--apply"], home, repo)
@@ -203,7 +204,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("strip", proc.stdout)
 
     def test_guard_remove_does_not_delete_user_edited_workflow(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             self.run_cli(["guard", str(repo), "--apply"], home, repo)
@@ -219,7 +220,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("skip", proc.stdout)
 
     def test_guard_reinstall_does_not_overwrite_user_edited_workflow(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             self.run_cli(["guard", str(repo), "--apply"], home, repo)
@@ -234,7 +235,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertEqual(drift.read_text(encoding="utf-8"), edited)
 
     def test_guard_provider_gitlab_installs_gitlab_ci(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             proc = self.run_cli(["guard", str(repo), "--apply", "--provider", "gitlab"], home, repo)
@@ -246,7 +247,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertFalse((repo / ".gitlab" / "harness-ci.yml").exists())
 
     def test_guard_provider_codebase_installs_portable_script(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             proc = self.run_cli(["guard", str(repo), "--apply", "--provider", "codebase"], home, repo)
@@ -269,7 +270,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertFalse(pipeline.exists())
 
     def test_guard_auto_detects_gitlab_from_ci_file(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             (repo / ".gitlab-ci.yml").write_text("stages: [test]\n", encoding="utf-8")
@@ -277,14 +278,14 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("CI provider: gitlab (auto-detected)", proc.stdout)
 
     def test_guard_rejects_unknown_provider(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as parent_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
             repo = self.make_git_repo(Path(parent_dir))
             proc = self.run_cli_raw(["guard", str(repo), "--provider", "bogus"], home, repo)
             self.assertNotEqual(proc.returncode, 0)
 
     def test_forced_update_check_unreachable_registry_does_not_crash_help(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             env = os.environ.copy()
             env["HOME"] = home_dir
             env.pop("AI_HARNESS_DOCTOR_NO_UPDATE_CHECK", None)
@@ -320,13 +321,13 @@ class CliInstallerTests(unittest.TestCase):
             self.assertNotIn("TypeError", proc.stderr)
 
     def test_help_lists_mcp_command(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             home = Path(home_dir)
             proc = self.run_cli(["help"], home, Path(project_dir))
             self.assertIn("ai-harness-doctor mcp", proc.stdout)
 
     def test_mcp_command_starts_and_responds_to_initialize(self):
-        with tempfile.TemporaryDirectory() as home_dir, tempfile.TemporaryDirectory() as project_dir:
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             env = os.environ.copy()
             env["HOME"] = home_dir
             env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"

@@ -2,9 +2,10 @@ import json
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+
+from tmp_support import ResilientTemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "messy-repo"
@@ -49,7 +50,7 @@ class CanonicalizeTests(unittest.TestCase):
         self.assertIn("`.cursorrules:4`", out)
 
     def test_write_stubs_dry_run_prints_diff_and_writes_nothing(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             shutil.copytree(FIXTURE, repo)
             (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
@@ -66,7 +67,7 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertTrue((repo / ".cursor" / "rules" / "extra.mdc").is_file())
 
     def test_write_stubs_apply_rewrites_claude(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             shutil.copytree(FIXTURE, repo)
             (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
@@ -92,7 +93,7 @@ class CanonicalizeTests(unittest.TestCase):
         # (e.g. continue, added alongside this test) silently fell through
         # write_stubs's default run even though STUBS itself (used by --apply)
         # already covered it — a two-tier drift within this single script.
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             shutil.copytree(FIXTURE, repo)
             (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
@@ -106,7 +107,7 @@ class CanonicalizeTests(unittest.TestCase):
     def test_validate_default_tools_covers_every_canonicalizable_registry_tool(self):
         # Same regression as above, for validate()'s independently
         # hand-maintained tool list (a second, separate hardcoded copy).
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
@@ -121,7 +122,7 @@ class CanonicalizeTests(unittest.TestCase):
     def test_validate_missing_and_present(self):
         proc = subprocess.run([sys.executable, str(CANON), "--validate", str(FIXTURE)], text=True, capture_output=True)
         self.assertNotEqual(proc.returncode, 0)
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             shutil.copytree(FIXTURE, repo)
             (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
@@ -129,7 +130,7 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     def test_validate_stub_notice_does_not_fail(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
@@ -144,7 +145,7 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertTrue(any("CLAUDE.md" == f.get("path") for f in notices))
 
     def test_validate_missing_required_section_still_fails(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text("# Project overview\nOnly overview.\n", encoding="utf-8")
@@ -160,7 +161,7 @@ class CanonicalizeTests(unittest.TestCase):
         # A custom --require-sections list overrides the defaults: a heading not
         # in the list is not required, and a heading in the list that is missing
         # is flagged as a SECTION error.
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text("# Overview\n# Deployment\nContent.\n", encoding="utf-8")
@@ -200,7 +201,7 @@ class CanonicalizeTests(unittest.TestCase):
             + "Reference paragraph describing the public API in detail.\n"
             * 800
         )
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text(library_doc, encoding="utf-8")
@@ -220,7 +221,7 @@ class CanonicalizeTests(unittest.TestCase):
     def test_validate_contributor_doc_not_treated_as_library_doc(self):
         # A conventional contributor guide missing required sections must still
         # hard-fail: the library-doc relaxation must not misclassify it.
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "AGENTS.md").write_text(
@@ -268,7 +269,7 @@ class DraftTests(unittest.TestCase):
         self.assertIn("(suggested default)", out)
 
     def test_draft_suggests_conflict_defaults_backed_by_lockfile(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "package.json").write_text('{"name":"x","scripts":{"test":"node t.js"}}\n', encoding="utf-8")
@@ -290,7 +291,7 @@ class DraftTests(unittest.TestCase):
             self.assertIn("pnpm install", out)
 
     def test_draft_o_writes_file_and_refuses_to_overwrite(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             shutil.copytree(FIXTURE, repo)
             out_path = Path(td) / "AGENTS.draft.md"
@@ -322,7 +323,7 @@ class DraftTests(unittest.TestCase):
         # A Python repo (pyproject + uv + a console script + a pytest setup) must
         # yield real inferred build/test commands, not the "could not be inferred"
         # TODO that only Node/Make repos used to avoid.
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "pyproject.toml").write_text(
@@ -353,7 +354,7 @@ class DraftTests(unittest.TestCase):
     def test_draft_reuses_python_commands_documented_in_claude_md(self):
         # When a CLAUDE.md already documents build/test/lint commands, --draft
         # reuses them verbatim instead of guessing.
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
             (repo / "pyproject.toml").write_text(
@@ -375,7 +376,7 @@ class DraftTests(unittest.TestCase):
 
 class ConflictDefaultTests(unittest.TestCase):
     def test_lockfile_backs_package_manager_recommendation(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             root = Path(td)
             (root / "yarn.lock").write_text("# yarn lockfile\n", encoding="utf-8")
             values = {
@@ -387,7 +388,7 @@ class ConflictDefaultTests(unittest.TestCase):
             self.assertIn("yarn.lock", rationale)
 
     def test_falls_back_to_vote_when_no_lockfile(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             root = Path(td)
             values = {
                 "npm": [{"path": ".cursorrules", "line": 3}],
@@ -399,7 +400,7 @@ class ConflictDefaultTests(unittest.TestCase):
             self.assertIn("configuration files agree", rationale)
 
     def test_node_version_recommendation_matches_nvmrc(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             root = Path(td)
             (root / ".nvmrc").write_text("20\n", encoding="utf-8")
             values = {
@@ -416,7 +417,7 @@ class ConflictDefaultTests(unittest.TestCase):
         # Comparing by exact string equality never matches a dotted conflict
         # value, silently falling through to the vote-count tiebreak and
         # recommending a version that contradicts the repo's own .nvmrc.
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             root = Path(td)
             (root / ".nvmrc").write_text("20\n", encoding="utf-8")
             values = {
@@ -428,7 +429,7 @@ class ConflictDefaultTests(unittest.TestCase):
             self.assertIn(".nvmrc", rationale)
 
     def test_node_version_recommendation_falls_back_when_nvmrc_matches_no_candidate(self):
-        with tempfile.TemporaryDirectory() as td:
+        with ResilientTemporaryDirectory() as td:
             root = Path(td)
             (root / ".nvmrc").write_text("22\n", encoding="utf-8")
             values = {
