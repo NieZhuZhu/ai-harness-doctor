@@ -142,6 +142,16 @@ class RepoReadmesTests(unittest.TestCase):
                 len(badge_markers),
                 f"{name} must float every Marketplace badge",
             )
+            self.assertIn(
+                'alt="Node &gt;=16"',
+                badge_lines[0],
+                f"{name} must HTML-escape the Node badge comparison operator",
+            )
+            self.assertNotIn(
+                'alt="Node >=16"',
+                badge_lines[0],
+                f"{name} contains an HTML-breaking Node badge alt attribute",
+            )
             self.assertIn('<br clear="left">', lines, f"{name} must clear the floated Marketplace badges")
 
 
