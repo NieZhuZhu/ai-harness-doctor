@@ -76,6 +76,16 @@ The repeatable loop for turning a single high-value finding into a shipped relea
 7. **Release by version bump.** From an up-to-date `main`, bump the version and push the tag to trigger the tag-driven release workflow (see `RELEASING.md`): `npm version patch` for a bugfix-only change, `npm version minor` when a feature shipped (`major` for a breaking change), then `git push --follow-tags`. Confirm the workflow published to npm (with provenance) and created the GitHub Release; allow for npm CDN propagation lag before assuming the publish failed.
 8. **No finding, no release.** A clean incremental round with nothing actionable does not force a version bump — record the clean result (and, for an external round, log it in `EXTERNAL_VALIDATION.md`) and stop.
 
+# Premium-upgrade (feature) loop
+
+A research-driven variant of the loop above, for shipping net-new capability rather than a single fix. Use it when the goal is "what would make this tool best-in-class next?".
+
+1. **Research the gap.** Survey both the tool's own capabilities and the wider ecosystem — the AGENTS.md standard, adjacent linters/config tools, and the integration surfaces premium dev-tools expose (SARIF, GitHub Actions, pre-commit, config/ignore files, autofix, baselines/ratcheting). Produce a short ranked list of candidate improvements scored by impact × feasibility.
+2. **Select 1–3 high-value items** that fit the stack (Node >=16 / Python 3.9+, standard-library-only, deterministic) and can ship as one coherent, reviewable PR under a single theme — prefer depth over scattered edits.
+3. **Design, then build.** Write the smallest sound implementation plus matching tests; keep new engines stdlib-only and additive (never regress existing exit codes or output formats). Update the synchronized English/Chinese/Japanese READMEs and `SKILL.md` for any user-facing surface.
+4. **Land through the same gate** as the incremental loop: green baseline → PR (English) → every CI check green (lint + Python 3.9/3.10/3.12 × Node 16/20/22 + self drift `--strict` grade A) → squash-merge and delete the branch.
+5. **Release by change type.** From an up-to-date `main`, `npm version minor` when a feature shipped (`patch` for bugfix-only, `major` for a breaking change), then `git push --follow-tags` to trigger the tag-driven release (see `RELEASING.md`). Confirm the npm publish (with provenance) and the GitHub Release; allow for npm CDN propagation lag.
+
 # Commit & PR
 
 - See `CONTRIBUTING.md` for the full contribution workflow (when to open an issue, the PR checklist, and releasing).
