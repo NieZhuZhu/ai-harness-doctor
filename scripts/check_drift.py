@@ -104,6 +104,11 @@ def d2_path_drift(root, text):
     # the Phase-0 semantic check agree on exactly what counts as a declared path
     # (TD-03). Candidacy is decided by the shared token rules; this gate then
     # applies its own containment (_within_root) and existence checks.
+    #
+    # Lazily computed only on a potential finding, mirroring
+    # semantic.compare_paths so the common case (path exists) never pays for a
+    # repo walk.
+    package_names = "not computed"
     for decl in registry.declared_paths(text):
         token, lineno = decl["path"], decl["line"]
         # Never probe outside the repo root: an absolute or `../`-escaping token
@@ -111,6 +116,15 @@ def d2_path_drift(root, text):
         if not _within_root(root, token):
             continue
         if not (root / token).exists():
+            # Monorepo package self-import guard — mirrors semantic.compare_paths
+            # so both gates agree (TD-03). A token whose first segment matches a
+            # package.json `name` (e.g. `better-auth/test`) is a package export
+            # subpath, not a repo-relative filesystem path. Without this, `scan`
+            # stays silent while `drift` ERRORs on the identical token.
+            if package_names == "not computed":
+                package_names = facts.all_package_names(root)
+            if token.split("/", 1)[0] in package_names:
+                continue
             findings.append(
                 {
                     "check": "D2",

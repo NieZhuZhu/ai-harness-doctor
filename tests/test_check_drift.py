@@ -217,6 +217,54 @@ class DriftTests(unittest.TestCase):
         report = json.loads(proc.stdout)
         self.assertFalse([f for f in report["findings"] if f["check"] == "D2"])
 
+    def test_package_self_import_specifier_does_not_trigger_d2(self):
+        # A token whose first segment is a package.json `name` (e.g.
+        # `better-auth/test`) is a package export subpath, not a repo-relative
+        # path. semantic.compare_paths (Phase-0 `scan`) already skips these via
+        # the monorepo package-name guard, so D2 (Phase-2 `drift`) must skip them
+        # too — otherwise `scan` stays silent while `drift` ERRORs on the
+        # identical token, violating the TD-03 "both gates agree" invariant.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "packages" / "better-auth").mkdir(parents=True, exist_ok=True)
+        (repo / "packages" / "better-auth" / "package.json").write_text(
+            '{"name": "better-auth"}\n', encoding="utf-8"
+        )
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "Use `getTestInstance()` from `better-auth/test`.\n",
+            encoding="utf-8",
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        d2 = [f for f in report["findings"] if f["check"] == "D2"]
+        self.assertFalse(d2, d2)
+
+    def test_unrelated_missing_path_still_triggers_d2(self):
+        # Guard rail for the package self-import skip: a token whose first
+        # segment is NOT a package name must still be flagged, so the fix does
+        # not open a false-negative hole for genuinely drifted paths.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "packages" / "better-auth").mkdir(parents=True, exist_ok=True)
+        (repo / "packages" / "better-auth" / "package.json").write_text(
+            '{"name": "better-auth"}\n', encoding="utf-8"
+        )
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "See `totally-unrelated/missing-file.ts` for details.\n",
+            encoding="utf-8",
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        report = json.loads(proc.stdout)
+        d2 = [f for f in report["findings"] if f["check"] == "D2"]
+        self.assertTrue(any("totally-unrelated/missing-file.ts" in f["message"] for f in d2), d2)
+
     def test_clean_fixture_exit_zero(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
