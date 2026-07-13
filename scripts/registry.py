@@ -168,6 +168,11 @@ KNOWN_ROOT_FILES = {
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 # Matches a bare "<word>-name" placeholder path segment; see declared_paths.
 _PLACEHOLDER_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9]*-name$")
+# Code-expression punctuation that never appears in a legitimate repo-relative
+# path an AGENTS.md would reference. A backtick token carrying any of these is a
+# code snippet — an attribute macro, a function/index expression, or a
+# quoted-argument literal — not a filesystem path; see declared_paths.
+_CODE_EXPR_CHARS = frozenset("#()[]{}\"'!=;|&<>")
 # A path segment that looks like a hostname (contains a literal `.`, not a
 # leading one like `.github`) — the first component of a Go import/module
 # path (`github.com/org/pkg`, `charm.land/bubbletea/v2`), never a real
@@ -231,6 +236,13 @@ def declared_paths(text):
             if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
                 continue
             if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
+                continue
+            # A token carrying code-expression punctuation (`#`, brackets,
+            # parentheses, quotes, operators) is a code snippet, not a path —
+            # e.g. the Rust attribute macro `#[experimental("method/or/field")]`
+            # whose inner `/` made it look path-like and produced a false "path
+            # does not exist" finding (found scanning openai/codex's AGENTS.md).
+            if any(ch in _CODE_EXPR_CHARS for ch in token):
                 continue
             # Home-relative (~/.claude), absolute (/etc/...), env-var ($HOME/...),
             # or scheme/drive-like paths reference locations outside the repo tree.
