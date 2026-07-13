@@ -56,9 +56,25 @@ node bin/cli.js help
 
 # External validation
 
-- `EXTERNAL_VALIDATION.md` is the single source of truth for real-world spot checks (running the dev checkout against popular open-source repos). Every repo we have already validated is logged there as a numbered row plus, where relevant, a per-round detail section.
+- **What a round is**: run the dev checkout (not just the published package) against a real, popular open-source repo to see whether the tool holds up outside our own fixtures and benchmark demo repo. Use the full four-stage chain (`scan` → `treat` → `check_drift` → `eval`) for a deep round, or `scan` alone for a quick pass. Every round is **read-only against the target repo** — never write back into the repo being scanned.
+- **Repo-selection principle**: pick popular, actively AI-assisted repos that have genuine agent config to exercise (root or nested `AGENTS.md`, a `CLAUDE.md`, Cursor rules, Continue rule files, Claude Code permission settings, and the like), and vary the stack (Node/Python/Go/Rust/…) and layout (single package vs. monorepo). Prefer small, quickly clonable repos; if a target times out cloning, note it and move on rather than silently retrying it every round.
+- `EXTERNAL_VALIDATION.md` is the single source of truth for these spot checks. Every repo we have already validated is logged there as a numbered row plus, where relevant, a per-round detail section.
 - Before starting any new external validation round, **read `EXTERNAL_VALIDATION.md` first** and check the log to avoid re-running a repo that has already been covered.
-- After finishing a round, **update `EXTERNAL_VALIDATION.md`** in the same change: add the repo (name, date, why this repo, result) to the table, record any bug/false positive found and its fix, and keep the log consolidated (one unified table, no stray duplicate rows).
+- When a round surfaces a real bug, false positive, or missing coverage, fix it through the **Incremental quality-check & release loop** below (scoped fix + regression test → PR → CI → release). A finding that is merely "this repo hasn't adopted a canonical `AGENTS.md` yet" (e.g. only G1/G2/G4 gaps) is not actionable — log it as a clean run.
+- After finishing a round, **update `EXTERNAL_VALIDATION.md`** in the same change: add the repo (name, date, why this repo, result, and the fixing PR/release if any) to the table, record any bug/false positive found and its fix, and keep the log consolidated (one unified table, no stray duplicate rows).
+
+# Incremental quality-check & release loop
+
+The repeatable loop for turning a single high-value finding into a shipped release. It backs both the self-audit rounds and the external-validation rounds above; run it end to end so another agent can reproduce it from a clean checkout.
+
+1. **Baseline on the latest `main`.** Sync to the newest `main` and confirm it is green *before* changing anything: `npm run check` (lint + full test suite) plus a self-checkup (`python3 scripts/scan.py .` and `python3 scripts/check_drift.py .`, expecting drift grade A). Never build a fix on a red baseline — fix or report that first.
+2. **Find one high-value issue.** Run the engines (`scan.py` Phase 0, `check_drift.py` Phase 2, and the semantic cross-check) against this repo itself and a few external target repos. Prioritize findings that would break a real adopter — a `--fail-on-security` false positive, a `drift --strict` ERROR false positive, or a genuine cross-engine inconsistency where two commands disagree on identical input. Skip anything already logged as known/pending, and anything ambiguous enough to need a larger design change (log it instead of rushing a narrow heuristic).
+3. **Reproduce before fixing.** Prove the issue with a minimal synthetic fixture or a concrete `file:line` citation so the fix is provably targeted, not speculative. For a cross-engine inconsistency, demonstrate the two commands' contradictory verdicts on the identical input.
+4. **Implement one scoped fix + test.** Branch from the latest `main` (`aime/{timestamp}-{slug}`), make the smallest deterministic, standard-library-only change, and add a matching regression test in the same commit (mirror the nearest existing test's style). One fix per PR; keep fixtures under `tests/fixtures/` read-only.
+5. **Verify green locally.** Re-run the synthetic repro (it should now be silent), then `npm run check` and the self-checkup; keep the drift health score at grade A. If user-facing behavior changed, update the synchronized English/Chinese/Japanese READMEs in the same PR.
+6. **PR → CI → squash-merge.** Commit with a Conventional Commit message (English), open a PR (English title/body), and wait until *every* CI check is green — the lint job plus the Python 3.9/3.10/3.12 × Node 16/20/22 matrix. Then squash-merge and delete the branch; never merge on red or pending CI.
+7. **Release by version bump.** From an up-to-date `main`, bump the version and push the tag to trigger the tag-driven release workflow (see `RELEASING.md`): `npm version patch` for a bugfix-only change, `npm version minor` when a feature shipped (`major` for a breaking change), then `git push --follow-tags`. Confirm the workflow published to npm (with provenance) and created the GitHub Release; allow for npm CDN propagation lag before assuming the publish failed.
+8. **No finding, no release.** A clean incremental round with nothing actionable does not force a version bump — record the clean result (and, for an external round, log it in `EXTERNAL_VALIDATION.md`) and stop.
 
 # Commit & PR
 
