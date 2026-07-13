@@ -54,6 +54,12 @@ node bin/cli.js help
 - Never commit secrets, tokens, or credentials.
 - The eval / LLM-as-judge harness makes external model calls — be mindful of cost and token usage when running or expanding it.
 
+# External validation
+
+- `EXTERNAL_VALIDATION.md` is the single source of truth for real-world spot checks (running the dev checkout against popular open-source repos). Every repo we have already validated is logged there as a numbered row plus, where relevant, a per-round detail section.
+- Before starting any new external validation round, **read `EXTERNAL_VALIDATION.md` first** and check the log to avoid re-running a repo that has already been covered.
+- After finishing a round, **update `EXTERNAL_VALIDATION.md`** in the same change: add the repo (name, date, why this repo, result) to the table, record any bug/false positive found and its fix, and keep the log consolidated (one unified table, no stray duplicate rows).
+
 # Commit & PR
 
 - See `CONTRIBUTING.md` for the full contribution workflow (when to open an issue, the PR checklist, and releasing).
