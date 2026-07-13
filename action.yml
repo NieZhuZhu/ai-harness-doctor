@@ -1,5 +1,5 @@
 name: "AI Harness Doctor"
-description: "Audit AI agent configs and emit SARIF 2.1.0 for GitHub code scanning."
+description: "Audit AI agent configs for drift, conflicts, stale instructions, and security risks—with SARIF output for GitHub."
 author: "NieZhuZhu"
 branding:
   icon: "check-circle"
@@ -22,9 +22,9 @@ inputs:
     required: false
     default: "ai-harness-doctor.sarif"
   version:
-    description: "npm version/tag of ai-harness-doctor to run."
+    description: "Implementation to run: bundled (selected Action ref) or an npm version/tag."
     required: false
-    default: "latest"
+    default: "bundled"
 outputs:
   sarif-file:
     description: "Path to the generated SARIF file."
@@ -34,6 +34,43 @@ runs:
   steps:
     - id: run
       shell: bash
+      env:
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+        INPUT_VERSION: ${{ inputs.version }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        npx -y ai-harness-doctor@${{ inputs.version }} ${{ inputs.command }} "${{ inputs.path }}" --sarif ${{ inputs.args }} > "${{ inputs.sarif-file }}" || true
-        echo "sarif-file=${{ inputs.sarif-file }}" >> "$GITHUB_OUTPUT"
+        set -euo pipefail
+
+        case "$INPUT_COMMAND" in
+          scan|drift) ;;
+          *)
+            echo "Unsupported command: $INPUT_COMMAND (expected scan or drift)" >&2
+            exit 2
+            ;;
+        esac
+
+        if [ "$INPUT_VERSION" = "bundled" ]; then
+          cli="$ACTION_PATH/bin/cli.js"
+        else
+          install_dir="$RUNNER_TEMP/ai-harness-doctor-action"
+          rm -rf "$install_dir"
+          mkdir -p "$install_dir"
+          npm install \
+            --prefix "$install_dir" \
+            --no-audit \
+            --no-fund \
+            --ignore-scripts \
+            "ai-harness-doctor@$INPUT_VERSION"
+          cli="$install_dir/node_modules/ai-harness-doctor/bin/cli.js"
+        fi
+
+        run_args=("$INPUT_COMMAND" "$INPUT_PATH" "--sarif")
+        if [ -n "$INPUT_ARGS" ]; then
+          read -r -a extra_args <<< "$INPUT_ARGS"
+          run_args+=("${extra_args[@]}")
+        fi
+        node "$cli" "${run_args[@]}" > "$INPUT_SARIF_FILE"
+        echo "sarif-file=$INPUT_SARIF_FILE" >> "$GITHUB_OUTPUT"

@@ -320,6 +320,8 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
     sarif_file: ai-harness-doctor.sarif
 ```
 
+Action はデフォルトで選択した Action ref に同梱された実装を実行するため、`uses:` で指定したバージョンが実際に動くコードになります。別の npm バージョンまたはタグを意図的に使う場合に限り、任意の `version` input を設定してください。インストールまたは CLI の失敗は workflow にそのまま伝播し、空の SARIF ファイルを残したままジョブが成功扱いになることはありません。
+
 | Flag | Purpose |
 |---|---|
 | `--no-security` | inventory のみ。security checkup をスキップします（`security` key を出力しません）。 |

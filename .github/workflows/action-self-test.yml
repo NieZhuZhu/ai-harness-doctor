@@ -1,0 +1,64 @@
+name: action-self-test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Dogfood the repository-root Action rather than bypassing its composite
+      # wrapper with a direct CLI invocation. The default bundled implementation
+      # executes the code from this exact Action ref.
+      - name: Run repository Action against itself
+        id: scan
+        uses: ./
+        with:
+          command: scan
+          path: .
+
+      - name: Validate SARIF output
+        env:
+          SARIF_FILE: ${{ steps.scan.outputs.sarif-file }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const sarif = JSON.parse(fs.readFileSync(process.env.SARIF_FILE, "utf8"));
+            if (sarif.version !== "2.1.0" || !Array.isArray(sarif.runs)) {
+              throw new Error("Action output is not a SARIF 2.1.0 document");
+            }
+          '
+
+      # A composite Action must not turn installation/CLI failures into a green
+      # check. This deliberately invalid command should fail the Action step.
+      - name: Reject an invalid command
+        id: invalid
+        continue-on-error: true
+        uses: ./
+        with:
+          command: definitely-not-a-command
+          path: .
+
+      - name: Assert invalid command failed
+        env:
+          OUTCOME: ${{ steps.invalid.outcome }}
+        run: |
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "Expected invalid Action command to fail, got: $OUTCOME" >&2
+            exit 1
+          fi
