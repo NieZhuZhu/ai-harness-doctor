@@ -2,6 +2,8 @@ name: action-self-test
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -20,22 +22,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Read package metadata
-        id: package
-        shell: bash
-        run: |
-          echo "json=$(node -p 'JSON.stringify(require("./package.json"))')" >> "$GITHUB_OUTPUT"
-
       # Dogfood the repository-root Action rather than bypassing its composite
-      # wrapper with a direct CLI invocation. Pin the package version to the
-      # current checkout so the self-test covers this Action + package pair.
+      # wrapper with a direct CLI invocation. The default bundled implementation
+      # executes the code from this exact Action ref.
       - name: Run repository Action against itself
         id: scan
         uses: ./
         with:
           command: scan
           path: .
-          version: ${{ fromJSON(steps.package.outputs.json).version }}
 
       - name: Validate SARIF output
         env:
@@ -58,7 +53,6 @@ jobs:
         with:
           command: definitely-not-a-command
           path: .
-          version: ${{ fromJSON(steps.package.outputs.json).version }}
 
       - name: Assert invalid command failed
         env:

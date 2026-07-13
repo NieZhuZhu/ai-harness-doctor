@@ -320,6 +320,8 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
     sarif_file: ai-harness-doctor.sarif
 ```
 
+Action 默认运行所选 Action ref 内自带的实现，因此 `uses:` 指向的版本就是实际执行的代码。只有在明确想覆盖为其他 npm 版本或标签时，才需要设置可选的 `version` 输入。安装或 CLI 失败会真实传递给 workflow，不会在绿色任务中留下空 SARIF 文件。
+
 | Flag | 用途 |
 |---|---|
 | `--no-security` | 只做清单；跳过安全体检（不输出 `security` key）。 |

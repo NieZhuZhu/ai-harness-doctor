@@ -320,6 +320,8 @@ A reusable composite GitHub Action ships at the repo root (`action.yml`) so any 
     sarif_file: ai-harness-doctor.sarif
 ```
 
+By default, the Action runs the implementation bundled with the selected Action ref, so the `uses:` version is the code that actually executes. Set the optional `version` input only when you intentionally want to run a different npm version or tag. Installation and CLI failures propagate to the workflow instead of leaving an empty SARIF file behind in a green job.
+
 | Flag | Purpose |
 |---|---|
 | `--no-security` | Inventory only; skip the security checkup (drops the `security` key). |
