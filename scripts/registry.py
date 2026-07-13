@@ -173,6 +173,15 @@ _PLACEHOLDER_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9]*-name$")
 # code snippet — an attribute macro, a function/index expression, or a
 # quoted-argument literal — not a filesystem path; see declared_paths.
 _CODE_EXPR_CHARS = frozenset("#()[]{}\"'!=;|&<>")
+# Matches a git branch-type prefix written as a namespace convention: a single
+# path segment followed by a trailing slash and nothing else (`feat/`, `fix/`,
+# `release/`). AGENTS.md documents these as branch-naming rules, not as concrete
+# repo directories worth existence-checking; see declared_paths.
+_BRANCH_PREFIX_RE = re.compile(r"^[A-Za-z][\w.-]*/$")
+# Git remote-ref prefixes. A token like `origin/dev` or `upstream/main` is a
+# `<remote>/<branch>` ref used for diffs, not a directory named `origin`; see
+# declared_paths.
+_GIT_REMOTE_PREFIXES = ("origin/", "upstream/")
 # A path segment that looks like a hostname (contains a literal `.`, not a
 # leading one like `.github`) — the first component of a Go import/module
 # path (`github.com/org/pkg`, `charm.land/bubbletea/v2`), never a real
@@ -264,6 +273,20 @@ def declared_paths(text):
             # "<word>-name" shape matches, so a real path segment that merely
             # contains "name" (`username/profile.py`) is still checked.
             if _PLACEHOLDER_SEGMENT_RE.fullmatch(token.split("/", 1)[0]):
+                continue
+            # A git branch/ref convention is not a repo path. AGENTS.md routinely
+            # documents branch-naming rules and diff refs in backticks:
+            #   - branch-type prefixes (`feat/`, `fix/`, `release/`): a single
+            #     segment plus a trailing slash — a namespace convention, not a
+            #     concrete directory the repo is expected to contain;
+            #   - remote refs (`origin/dev`, `upstream/main`): `<remote>/<branch>`
+            #     refs used for diffs, not a directory literally named `origin`.
+            # Both slipped through because their `/` made them look path-like,
+            # producing false "path does not exist" findings in the Phase-0
+            # semantic scan and the Phase-2 D2 gate (found scanning sst/opencode's
+            # AGENTS.md, which states: "use `dev` or `origin/dev` for diffs" and
+            # "do not use ... type prefixes such as `feat/` or `fix/`").
+            if _BRANCH_PREFIX_RE.match(token) or token.startswith(_GIT_REMOTE_PREFIXES):
                 continue
             # Go import/module paths are conventionally `domain.tld/org/pkg`
             # (a "vanity" or SCM-hosted path) — the first segment looks like

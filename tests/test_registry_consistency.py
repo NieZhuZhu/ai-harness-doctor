@@ -249,6 +249,46 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             ["docs/api.md"],
         )
 
+    def test_git_branch_and_ref_tokens_are_not_declared_paths(self):
+        # A backtick token naming a git branch/ref convention is not a repo path.
+        # AGENTS.md routinely documents branch-naming rules and diff refs in
+        # backticks: branch-type prefixes (`feat/`, `fix/`, `release/`) are a
+        # single segment plus a trailing slash (a namespace convention, not a
+        # concrete directory), and remote refs (`origin/dev`, `upstream/main`)
+        # are `<remote>/<branch>` refs used for diffs, not a directory named
+        # `origin`. Both slipped through because their `/` made them look
+        # path-like, producing false "path does not exist" findings on
+        # sst/opencode's AGENTS.md.
+        non_path_tokens = [
+            "feat/",
+            "fix/",
+            "release/",
+            "chore/",
+            "origin/dev",
+            "origin/main",
+            "upstream/main",
+        ]
+        for tok in non_path_tokens:
+            text = f"Branch convention `{tok}` in prose.\n"
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"git convention {tok!r} wrongly classified as a declared path",
+            )
+            # Both stages go through the shared classifier, so neither the
+            # Phase-0 semantic check nor the Phase-2 D2 gate can flag it.
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # A real multi-segment path is unaffected: a concrete file and a
+        # multi-segment directory (`docs/guide/`, which has an interior slash and
+        # so is not a bare branch-prefix) are still detected/checked. Only a
+        # single-segment trailing-slash token is treated as a branch prefix.
+        keep = "See `src/generated/index.ts` and dir `docs/guide/`.\n"
+        self.assertEqual(
+            [d["path"] for d in registry.declared_paths(keep)],
+            ["src/generated/index.ts", "docs/guide/"],
+        )
+
     def test_fact_readers_single_sourced_across_engines(self):
         # TD-02: the generic repo fact-readers and declaration extractors used to
         # be copy-pasted into both semantic.py (Phase-0) and check_drift.py
