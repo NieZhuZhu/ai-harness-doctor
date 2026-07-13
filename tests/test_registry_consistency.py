@@ -214,6 +214,41 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             # Sanity: the shared classifier's in-repo, existence-failing tokens.
             self.assertEqual(sem_missing, {"docs/missing.md", "go.mod", "Cargo.toml"})
 
+    def test_code_expression_tokens_are_not_declared_paths(self):
+        # A backtick token carrying code-expression punctuation (attribute
+        # macros, function/index calls, quoted-argument literals) is a code
+        # snippet, not a filesystem path. The Rust attribute macro
+        # `#[experimental("method/or/field")]` slipped through because its inner
+        # `/` made it look path-like and it had no whitespace or `:` to trip the
+        # existing guards, producing a false "path does not exist" finding on
+        # openai/codex's AGENTS.md.
+        code_tokens = [
+            '#[experimental("method/or/field")]',
+            "#[serde(rename_all)]",
+            "foo(bar/baz)",
+            "arr[idx/2]",
+            "a && b/c",
+            "x = y/z",
+        ]
+        for tok in code_tokens:
+            text = f"Rule uses `{tok}` in prose.\n"
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"code snippet {tok!r} wrongly classified as a declared path",
+            )
+            # Both stages go through the shared classifier, so neither the
+            # Phase-0 semantic check nor the Phase-2 D2 gate can flag it.
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # A genuine path sitting on the same line as a code snippet is still
+        # detected — the guard rejects only the offending token, not the line.
+        mixed = 'See `docs/api.md` and `#[experimental("m/f")]`.\n'
+        self.assertEqual(
+            [d["path"] for d in registry.declared_paths(mixed)],
+            ["docs/api.md"],
+        )
+
     def test_fact_readers_single_sourced_across_engines(self):
         # TD-02: the generic repo fact-readers and declaration extractors used to
         # be copy-pasted into both semantic.py (Phase-0) and check_drift.py
