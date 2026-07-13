@@ -6,7 +6,8 @@
 
 AI Harness Doctor makes that drift visible, consolidates every scattered agent config into one canonical `AGENTS.md`, and guards it so your repo forgets less silently — for Claude Code, Codex, Cursor, Gemini, and plain CI. One zero-install `scan` gives you a full checkup: inventory, conflict evidence, a security audit, missing-infrastructure gaps, and a tech-stack snapshot.
 
-[![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml) [![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg) ![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
+<p><a href="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml"><img align="left" alt="CI" src="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg"></a> <a href="https://www.npmjs.com/package/ai-harness-doctor"><img align="left" alt="npm version" src="https://img.shields.io/npm/v/ai-harness-doctor.svg"></a> <img align="left" alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"> <img align="left" alt="Python 3.9+" src="https://img.shields.io/badge/Python-3.9%2B-blue.svg"> <img align="left" alt="Node >=16" src="https://img.shields.io/badge/Node-%3E%3D16-green.svg"></p>
+<br clear="left">
 
 > **In our 14-task benchmark, canonicalizing one repo took agents from 6/28 → 28/28 correct answers — and eliminated the flip-flopping where the same question got different answers on different runs.** [See the numbers ↓](#benchmark)
 

@@ -118,9 +118,10 @@ class RepoReadmesTests(unittest.TestCase):
             problems = sync.compare(sync.README_FILES[0], reference_text, name, path.read_text(encoding="utf-8"))
             self.assertEqual(problems, [], f"{name} diverged: {problems}")
 
-    def test_marketplace_badges_share_one_source_line(self):
-        # GitHub's Marketplace renderer turns line breaks between inline badges
-        # into <br> elements, so keep the complete badge strip on one line.
+    def test_marketplace_badges_use_one_floated_source_line(self):
+        # Marketplace forces README images to display:block. GitHub's supported
+        # align attribute floats them back into one row; the following clear
+        # keeps subsequent prose from wrapping around the floated badge strip.
         badge_markers = [
             "test.yml/badge.svg",
             "img.shields.io/npm/v/ai-harness-doctor.svg",
@@ -136,6 +137,12 @@ class RepoReadmesTests(unittest.TestCase):
                 all(marker in badge_lines[0] for marker in badge_markers),
                 f"{name} is missing a Marketplace badge",
             )
+            self.assertEqual(
+                badge_lines[0].count('align="left"'),
+                len(badge_markers),
+                f"{name} must float every Marketplace badge",
+            )
+            self.assertIn('<br clear="left">', lines, f"{name} must clear the floated Marketplace badges")
 
 
 if __name__ == "__main__":
