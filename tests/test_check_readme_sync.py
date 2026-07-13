@@ -118,6 +118,25 @@ class RepoReadmesTests(unittest.TestCase):
             problems = sync.compare(sync.README_FILES[0], reference_text, name, path.read_text(encoding="utf-8"))
             self.assertEqual(problems, [], f"{name} diverged: {problems}")
 
+    def test_marketplace_badges_share_one_source_line(self):
+        # GitHub's Marketplace renderer turns line breaks between inline badges
+        # into <br> elements, so keep the complete badge strip on one line.
+        badge_markers = [
+            "test.yml/badge.svg",
+            "img.shields.io/npm/v/ai-harness-doctor.svg",
+            "img.shields.io/badge/License-MIT-yellow.svg",
+            "img.shields.io/badge/Python-3.9%2B-blue.svg",
+            "img.shields.io/badge/Node-%3E%3D16-green.svg",
+        ]
+        for name in sync.README_FILES:
+            lines = (ROOT / name).read_text(encoding="utf-8").splitlines()
+            badge_lines = [line for line in lines if any(marker in line for marker in badge_markers)]
+            self.assertEqual(len(badge_lines), 1, f"{name} must keep its Marketplace badges on one line")
+            self.assertTrue(
+                all(marker in badge_lines[0] for marker in badge_markers),
+                f"{name} is missing a Marketplace badge",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

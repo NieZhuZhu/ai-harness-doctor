@@ -6,11 +6,7 @@
 
 AI Harness Doctor は、そのドリフトを見える化し、散らばった agent 設定を 1 つの正本 `AGENTS.md` にまとめ、それを守ってリポジトリが静かに忘れないようにします —— Claude Code、Codex、Cursor、Gemini、そして素の CI に対応。ゼロインストールの `scan` 一発で、設定インベントリ、衝突の根拠、セキュリティ監査、欠けているインフラのギャップ、技術スタックのスナップショットまでを一括で健診します。
 
-[![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml)
-[![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)
-![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
+[![CI](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg)](https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml) [![npm version](https://img.shields.io/npm/v/ai-harness-doctor.svg)](https://www.npmjs.com/package/ai-harness-doctor) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg) ![Node >=16](https://img.shields.io/badge/Node-%3E%3D16-green.svg)
 
 > **私たちの 14 タスク benchmark では、リポジトリを正本化することで agent の正答が 6/28 → 28/28 に改善し、同じ質問が実行のたびに違う答えになる「ブレ」も解消しました。** [数値を見る ↓](#benchmark)
 
