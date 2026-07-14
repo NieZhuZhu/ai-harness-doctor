@@ -183,6 +183,8 @@ Defense in depth、強い順です。
 
 なぜ regeneration ではなく detection なのか。ドリフトを静かに「修正」すると、人間の認識が消えてしまいます。AI Harness Doctor は代わりに drift を表面化します。大事なのはファイルを書き換えることではなく、repo の真実と agent の真実がズレたことにチームが気づくことだからです。[Positioning & Non-goals & Comparison](#positioning--non-goals--comparison) も参照してください。
 
+すでにドリフトした repo に gate を導入したいですか。まず `drift --write-baseline FILE` で現在の findings を一度記録し、次に `drift --baseline FILE` でそれらだけを正確に抑制すれば、CI は新しい drift でのみ失敗します——ruff・mypy・detekt が提供するのと同じ導入パスです。baseline のフィンガープリントは行番号に依存せず、抑制された findings は `baselined` 配列で引き続き可視化され、health score は新しい drift のみを数えるため、完全に baseline 化した repo でも grade A のままです。
+
 ## Works with
 
 | Surface | Support |

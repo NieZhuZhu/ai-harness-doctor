@@ -183,6 +183,8 @@ Defense in depth, strongest to weakest:
 
 Why detection over regeneration? Silently “fixing” drift removes human awareness. AI Harness Doctor surfaces drift instead, because the important part is not rewriting files; it is making the team notice that repo truth and agent truth diverged. See [Positioning & Non-goals & Comparison](#positioning--non-goals--comparison).
 
+Adopting the gate on a repo that already drifted? `drift --write-baseline FILE` records today's findings once, then `drift --baseline FILE` suppresses exactly those so CI fails only on new drift — the same on-ramp ruff, mypy, and detekt offer. Baseline fingerprints ignore line numbers, suppressed findings stay visible under a `baselined` array, and the health score counts only new drift, so a fully baselined repo still reads grade A.
+
 ## Works with
 
 | Surface | Support |
