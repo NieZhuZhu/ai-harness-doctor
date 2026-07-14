@@ -314,6 +314,61 @@ class SemanticPathTests(unittest.TestCase):
             self.assertEqual(len(paths), 1)
             self.assertIn("totally-unrelated/missing-file.ts", paths[0]["message"])
 
+    def test_subdir_scoped_multiseg_path_not_flagged(self):
+        # A root AGENTS.md whose section is scoped to a subdirectory documents
+        # paths relative to that subdir. Found scanning openai/codex (root
+        # AGENTS.md: "In the codex-rs folder ..." then `app-server/README.md`)
+        # and sst/opencode (root AGENTS.md documents `src/config`, which lives
+        # at packages/opencode/src/config). The full declared path exists as a
+        # trailing path one level down, so it must not be flagged MISSING.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "packages/opencode/src/config/agent.ts", "// exists")
+            write(td, "codex-rs/app-server/README.md", "# docs")
+            text = (
+                "In `src/config`, follow the existing self-export pattern.\n"
+                "See `app-server/README.md` for the protocol overview."
+            )
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_subdir_scoped_manifest_basename_not_flagged(self):
+        # codex's root AGENTS.md (scoped to codex-rs/) says "If you change Rust
+        # dependencies (`Cargo.toml` or `Cargo.lock`), run ...". Both are bare,
+        # ubiquitous manifest/lockfile basenames that live under codex-rs/, not
+        # at the repo root; a bare mention is a generic reference, not a
+        # root-path assertion, so neither should be flagged MISSING.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "codex-rs/Cargo.toml", "[workspace]")
+            write(td, "codex-rs/Cargo.lock", "# lock")
+            text = "If you change `Cargo.toml` or `Cargo.lock`, run `just bazel-lock-update`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_fully_qualified_missing_path_still_flagged_despite_subtree(self):
+        # The subtree resolver must not mask genuine drift: codex's AGENTS.md
+        # points at `codex-rs/codex-mcp/src/mcp_connection_manager.rs`, but the
+        # file was renamed to connection_manager.rs — a different basename, so
+        # no subtree match rescues it and it must stay flagged.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "codex-rs/codex-mcp/src/connection_manager.rs", "// renamed")
+            text = "Prefer `codex-rs/codex-mcp/src/mcp_connection_manager.rs` for tool calls."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("mcp_connection_manager.rs", paths[0]["message"])
+
+    def test_bare_manifest_missing_everywhere_still_flagged(self):
+        # A known manifest basename that exists NOWHERE in the repo must still
+        # be flagged — the subtree leniency only rescues manifests that really
+        # exist somewhere, it does not blanket-suppress every manifest mention.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "src/index.ts", "// exists")
+            text = "If you change `Cargo.toml`, run the lock update."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("Cargo.toml", paths[0]["message"])
+
     def test_go_module_and_import_paths_ignored(self):
         # Go import/module paths are `domain.tld/org/pkg[/vN]` — the first
         # segment looks like a hostname, never a real repo directory. Found
