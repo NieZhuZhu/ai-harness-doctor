@@ -43,7 +43,8 @@ jobs:
       # located findings into inline comments and posts a single review. It runs
       # even when the gate above failed so reviewers see the annotations. Drift
       # findings (D1/D2/D6) are line-based against AGENTS.md, so --default-path
-      # attaches them to that file.
+      # attaches them to that file. Anchor comments to the PR head commit, not
+      # github.sha (which can be a synthetic merge ref).
       - name: Post drift findings as PR review comments
         if: ${{ always() && github.event_name == 'pull_request' }}
         env:
@@ -55,8 +56,8 @@ jobs:
             --report drift-report.json \
             --default-path AGENTS.md \
             --post \
-            --pr ${{ github.event.number }} \
-            --commit ${{ github.sha }}
+            --pr "${{ github.event.number }}" \
+            --commit "${{ github.event.pull_request.head.sha }}"
       # Eval health-score gate: fail CI when the committed eval results drop
       # below the threshold. Point --score at a results JSON produced by
       # `eval_run.py` (or its --matrix mode) and committed to the repo; the gate

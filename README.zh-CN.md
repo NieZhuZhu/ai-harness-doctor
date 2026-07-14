@@ -164,7 +164,7 @@ npx ai-harness-doctor guard . --apply
 
 CI 卡点是 provider 感知的：传入 `--provider github|gitlab|codebase`（默认 `auto`）以安装匹配的 CI 文件。各 provider 的文件布局见 [`guard`](#command-reference) 命令参考。
 
-在 pull request 上，GitHub guard 模板还会多做两件事。其一，把漂移发现项呈现为**可操作的 PR review 反馈**：`scripts/pr_review.py` 读取 `check_drift.py --json`（或 `scan.py --json`）报告并发布一条 review。可定位的发现项会变成内联评论，包含规则、严重度、发现内容、对 AI agent 的影响、已有证据和修复建议。最终总结会展示健康分/等级、严重度分布、内联与汇总数量、完整 findings 索引、每个 finding 的可折叠完整详情，以及按优先级排列的下一步，并带有稳定标记 `<!-- ai-harness-doctor:pr-review -->`；若报告干净，则说明已覆盖的检查范围并明确无需操作。它默认 dry-run（打印 JSON 负载，绝不触网），仅在 `--post` 时用 `GITHUB_TOKEN` 发布。其二，运行一个 **eval 健康分卡点**——`python3 scripts/eval_run.py --score <已提交的 results.json> --fail-under <N>`——当 eval 健康分低于阈值时使 CI 失败（退出码 5）。PR review 反馈仅限 GitHub；GitLab/Codebase 模板只获得 eval 卡点。
+在 pull request 上，GitHub guard 模板还会多做两件事。其一，把漂移发现项呈现为**可操作的 PR review 反馈**：`scripts/pr_review.py` 读取 `check_drift.py --json`（或 `scan.py --json`）报告并尝试发布一条 review。可定位的发现项会变成内联评论，包含规则、严重度、发现内容、对 AI agent 的影响、已有证据和修复建议。最终总结会展示健康分/等级、严重度分布、内联与汇总数量、完整 findings 索引、每个 finding 的可折叠完整详情，以及按优先级排列的下一步，并带有稳定标记 `<!-- ai-harness-doctor:pr-review -->`。若 GitHub 因内联位置无效而返回 HTTP 422，工具会把这份完整总结改发为普通 PR 评论，确保所有修复指引得以保留；权限、网络、限流和服务端错误仍会明确暴露。若报告干净，则说明已覆盖的检查范围并明确无需操作。它默认 dry-run（打印 JSON 负载，绝不触网），仅在 `--post` 时用 `GITHUB_TOKEN` 发布。其二，运行一个 **eval 健康分卡点**——`python3 scripts/eval_run.py --score <已提交的 results.json> --fail-under <N>`——当 eval 健康分低于阈值时使 CI 失败（退出码 5）。PR review 反馈仅限 GitHub；GitLab/Codebase 模板只获得 eval 卡点。
 
 纵深防御，从强到弱：
 

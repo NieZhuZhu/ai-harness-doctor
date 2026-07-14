@@ -458,13 +458,33 @@ def load_report(path):
     return json.loads(raw)
 
 
+class _GitHubAPIError(Exception):
+    """Internal HTTP error retaining the status needed for narrow recovery."""
+
+    def __init__(self, method, url, code, reason, detail):
+        super().__init__(method, url, code, reason, detail)
+        self.method = method
+        self.url = url
+        self.code = code
+        self.reason = reason
+        self.detail = detail
+
+    def __str__(self):
+        return (
+            f"GitHub API {self.method} {self.url} failed: "
+            f"{self.code} {self.reason}\n{self.detail}"
+        )
+
+
 def post_review(payload, repo, pr_number, commit_sha, token):
     """Post the assembled review to GitHub via the REST API (stdlib only).
 
     Uses inline comments through the pulls "create review" endpoint when there
-    are any; otherwise falls back to a single general issue comment carrying the
-    summary body. All network imports happen here so ``--dry-run`` stays fully
-    offline. Returns the parsed JSON response dict.
+    are any. If GitHub rejects their placement with HTTP 422, retries once as a
+    single general issue comment carrying the complete summary body. Payloads
+    without inline comments use that summary endpoint directly. All network
+    imports happen here so ``--dry-run`` stays fully offline. Returns the parsed
+    JSON response dict.
     """
     # Import network machinery lazily so importing this module (and running
     # --dry-run) never pulls in urllib/sockets.
@@ -483,8 +503,11 @@ def post_review(payload, repo, pr_number, commit_sha, token):
             with urllib.request.urlopen(req) as resp:
                 return json.loads(resp.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise SystemExit(f"GitHub API {method} {url} failed: {exc.code} {exc.reason}\n{detail}")
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+            finally:
+                exc.close()
+            raise _GitHubAPIError(method, url, exc.code, exc.reason, detail) from None
 
     comments = payload.get("comments", [])
     if comments:
@@ -495,10 +518,25 @@ def post_review(payload, repo, pr_number, commit_sha, token):
             "body": payload.get("body", ""),
             "comments": comments,
         }
-        return _request(url, data, "POST")
+        try:
+            return _request(url, data, "POST")
+        except _GitHubAPIError as exc:
+            if exc.code != 422:
+                raise SystemExit(str(exc)) from None
+            # A source line can exist but still be outside the PR diff. GitHub
+            # then rejects the entire review; preserve all repair guidance by
+            # delivering the already self-contained summary instead.
+            url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+            try:
+                return _request(url, {"body": payload.get("body", "")}, "POST")
+            except _GitHubAPIError as fallback_exc:
+                raise SystemExit(str(fallback_exc)) from None
     # No inline comments -> a single general issue comment with the summary.
     url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-    return _request(url, {"body": payload.get("body", "")}, "POST")
+    try:
+        return _request(url, {"body": payload.get("body", "")}, "POST")
+    except _GitHubAPIError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def main(argv=None):

@@ -6,6 +6,8 @@ ACTION = ROOT / "action.yml"
 SELF_TEST = ROOT / ".github" / "workflows" / "action-self-test.yml"
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 RELEASING = ROOT / "RELEASING.md"
+HARNESS_DRIFT = ROOT / ".github" / "workflows" / "harness-drift.yml"
+HARNESS_DRIFT_TEMPLATE = ROOT / "assets" / "guard" / "harness-drift.yml"
 
 MARKETPLACE_DESCRIPTION = (
     "Audit and drift-guard AGENTS.md and AI agent configs for stale commands/paths, "
@@ -40,6 +42,16 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertGreaterEqual(text.count("uses: ./"), 2)
         self.assertIn("Validate SARIF output", text)
         self.assertIn("Assert invalid command failed", text)
+
+    def test_pr_review_workflows_anchor_comments_to_pull_request_head(self):
+        head_sha = "${{ github.event.pull_request.head.sha }}"
+        merge_sha = "${{ github.sha }}"
+        for path in (HARNESS_DRIFT, HARNESS_DRIFT_TEMPLATE):
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn(f'--commit "{head_sha}"', text)
+                self.assertNotIn(f"--commit {merge_sha}", text)
+                self.assertNotIn(f'--commit "{merge_sha}"', text)
 
     def test_release_only_triggers_for_full_semver_tags(self):
         text = RELEASE.read_text(encoding="utf-8")
