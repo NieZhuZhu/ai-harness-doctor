@@ -16,6 +16,19 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import scan  # noqa: E402
 
 
+def _can_symlink_files():
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        target = root / "target"
+        link = root / "link"
+        target.write_text("target\n", encoding="utf-8")
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            return False
+        return link.is_symlink()
+
+
 class PackageManagerConflictTests(unittest.TestCase):
     def _pm_conflict_values(self, text):
         conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
@@ -1120,6 +1133,73 @@ class ScannerPerformanceTests(unittest.TestCase):
             (d / "AGENTS.md").write_text("vendored", encoding="utf-8")
         index = scan.build_file_index(repo)
         self.assertFalse(any("node_modules" in rp for rp, _ in index))
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_file_symlink_is_excluded_from_every_scan_output(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            repo.mkdir()
+            outside = base / "outside.txt"
+            sentinel = "EXTERNAL-SENTINEL-ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            outside.write_text(
+                f"# Project overview\nUse `{sentinel}` and `npm run external-only`.\n",
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").symlink_to(outside)
+
+            report = scan.scan_repo(repo, 32768)
+            serialized = json.dumps(report, ensure_ascii=False)
+
+            self.assertEqual(report["files"], [])
+            self.assertNotIn(sentinel, serialized)
+            self.assertFalse(report["security"])
+            self.assertFalse(report["conflicts"])
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_direct_config_symlink_is_not_read(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
+            outside = base / "outside-mcp.json"
+            sentinel = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            outside.write_text(
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "outside": {
+                                "url": "http://outside.example/mcp",
+                                "env": {"API_TOKEN": sentinel},
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (repo / ".mcp.json").symlink_to(outside)
+
+            report = scan.scan_repo(repo, 32768)
+            serialized = json.dumps(report, ensure_ascii=False)
+
+            self.assertNotIn(sentinel, serialized)
+            self.assertEqual(report["surface"]["mcp_servers"], [])
+            self.assertFalse(report["security"])
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_in_repo_file_symlink_keeps_lexical_config_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve() / "repo"
+            source = repo / "shared" / "instructions.md"
+            source.parent.mkdir(parents=True)
+            source.write_text("# Project overview\nUse `npm test`.\n", encoding="utf-8")
+            (repo / "AGENTS.md").symlink_to(source)
+
+            report = scan.scan_repo(repo, 32768)
+
+            self.assertEqual([entry["path"] for entry in report["files"]], ["AGENTS.md"])
+            self.assertEqual(report["files"][0]["tool"], "AGENTS.md")
 
     def test_shared_config_file_is_read_once(self):
         repo = self._make_repo()
