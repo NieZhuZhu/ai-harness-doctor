@@ -234,8 +234,7 @@ jobs:
             echo "The automated release pipeline completed for $TAG."
             echo
             echo "- [ ] Confirm the GitHub Release is published to the Actions Marketplace"
-            echo "- [ ] Confirm the primary category is AI Assisted"
-            echo "- [ ] Confirm the secondary category is Code review"
+            echo "- [ ] Confirm the categories include AI Assisted and Code review"
             echo "- [ ] Confirm the Marketplace page shows $TAG as Latest"
             echo "- [ ] Close this issue after the checks pass"
             echo

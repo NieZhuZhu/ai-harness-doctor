@@ -71,7 +71,7 @@ opens a deduplicated issue named `Marketplace release confirmation: <tag>` with
 links and this checklist:
 
 - publish the GitHub Release to Marketplace;
-- keep `AI Assisted` as the primary category;
-- keep `Code review` as the secondary category;
+- confirm the category set includes `AI Assisted` and `Code review` (GitHub may
+  choose their display order);
 - confirm the Marketplace page shows the new tag as Latest;
 - close the reminder issue.
