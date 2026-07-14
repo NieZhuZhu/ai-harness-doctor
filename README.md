@@ -17,6 +17,8 @@ Try it in one command — no install, nothing written to your repo:
 npx ai-harness-doctor scan .
 ```
 
+> **Repository boundary:** the read-only scanner never follows a matched config-file symlink outside the audited repository. In-repo file symlinks remain supported and keep their lexical repo-relative report path.
+
 ## Why
 
 Agent config drift is a repo disease. One tool reads `CLAUDE.md`, another reads `.cursorrules`, another reads `GEMINI.md`, and each file slowly becomes its own folklore: old commands, moved paths, copied style rules, contradictory package managers, and context files large enough to be truncated.

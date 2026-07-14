@@ -374,6 +374,15 @@ def is_skipped(path, root):
     return any(part in SKIP_DIRS for part in parts)
 
 
+def _resolves_within_root(path, resolved_root):
+    """Return True only when an existing path resolves inside a normalized root."""
+    try:
+        Path(path).resolve(strict=True).relative_to(Path(resolved_root))
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def build_file_index(root):
     """Walk ``root`` ONCE (pruning vendored dirs) and return every file under it.
 
@@ -384,14 +393,21 @@ def build_file_index(root):
     against this single inventory (see :func:`index_glob`) instead of calling
     ``Path.glob`` once per pattern, which re-walked (and re-filtered) the whole
     tree ~90 times per scan (PERF-01).
+
+    File symlinks are allowed only when their resolved target remains inside the
+    audited root. This preserves intentional in-repo aliases while preventing a
+    matched config path from making the read-only scanner ingest content outside
+    the repository boundary (SEC-03).
     """
-    root = Path(root)
+    root = Path(root).resolve()
     index = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         base = Path(dirpath)
         for name in filenames:
             path = base / name
+            if not _resolves_within_root(path, root):
+                continue
             index.append((path.relative_to(root).as_posix(), path))
     index.sort(key=lambda item: item[0])
     return index
@@ -459,7 +475,7 @@ class ScanContext:
     """
 
     def __init__(self, root, index=None):
-        self.root = Path(root)
+        self.root = Path(root).resolve()
         self.index = build_file_index(self.root) if index is None else index
         self._bytes = {}
         self._json = {}
@@ -470,10 +486,13 @@ class ScanContext:
     def read_bytes(self, path):
         key = str(path)
         if key not in self._bytes:
-            try:
-                self._bytes[key] = Path(path).read_bytes()
-            except OSError:
+            if not _resolves_within_root(path, self.root):
                 self._bytes[key] = None
+            else:
+                try:
+                    self._bytes[key] = Path(path).read_bytes()
+                except OSError:
+                    self._bytes[key] = None
         return self._bytes[key]
 
     def read_text(self, path, errors="replace"):

@@ -17,6 +17,8 @@ AI Harness Doctor は、そのドリフトを見える化し、散らばった a
 npx ai-harness-doctor scan .
 ```
 
+> **Repository boundary:** read-only scanner は、マッチした config-file symlink が audited repository の外を指す場合、そのリンクをたどりません。repository 内の file symlink は引き続きサポートされ、lexical repo-relative report path を保持します。
+
 ## Why
 
 Agent 設定のドリフトは、リポジトリに起きる病気です。あるツールは `CLAUDE.md` を読み、別のツールは `.cursorrules` を読み、また別のツールは `GEMINI.md` を読みます。そうして各ファイルは少しずつ独自の言い伝えになっていきます。古いコマンド、移動済みのパス、コピーされたスタイルルール、矛盾するパッケージマネージャー、そして切り捨てられるほど大きくなったコンテキストファイルです。
