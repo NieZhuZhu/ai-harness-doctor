@@ -230,6 +230,32 @@ def _is_gitignored_dotenv(token):
     return False
 
 
+# A slash-joined run of two or more package-manager names — e.g.
+# "npm/yarn/pnpm workspaces" or "pnpm/yarn" — enumerates the tools a doc
+# *supports* or *detects*, it does not declare the ONE package manager the repo
+# itself uses. Found self-scanning this repo's own AGENTS.md, where the
+# feature description "auto-detects npm/yarn/pnpm workspaces" manufactured a
+# bogus 3-way npm/yarn/pnpm package_manager conflict against the real `npm`
+# declaration elsewhere in the same file.
+_PM_TOKEN = (
+    r"(?:npm|pnpm|yarn|bun|pip3?|poetry|pipenv|pdm|uv|cargo|maven|mvn|gradlew?)"
+)
+_PM_ENUMERATION_RE = re.compile(
+    rf"\b{_PM_TOKEN}(?:\s*/\s*{_PM_TOKEN})+\b",
+    re.I,
+)
+
+
+def pm_enumeration_spans(line):
+    """Return ``[(start, end), ...]`` char spans of slash-joined package-manager
+    enumerations (see ``_PM_ENUMERATION_RE``). A match whose start falls inside
+    one of these spans lists a manager as *supported*, not *declared*, so
+    ``scan.extract_signals`` skips it instead of manufacturing a false
+    package_manager conflict.
+    """
+    return [m.span() for m in _PM_ENUMERATION_RE.finditer(line)]
+
+
 def negated_spans(line):
     """Return ``[(start, end), ...]`` character spans of ``line`` that fall
     inside a negation clause (see ``_NEGATED_CLAUSE_RE``). Shared by

@@ -58,6 +58,28 @@ class PackageManagerConflictTests(unittest.TestCase):
             {"npm", "pnpm"},
         )
 
+    def test_slash_joined_pm_enumeration_is_not_a_conflict(self):
+        # A slash-joined enumeration lists SUPPORTED managers, not the one this
+        # repo uses. Found self-scanning this repo's own AGENTS.md: the feature
+        # description "auto-detects npm/yarn/pnpm workspaces" manufactured a
+        # bogus 3-way npm/yarn/pnpm package_manager conflict.
+        self.assertEqual(
+            self._pm_conflict_values("Monorepo-aware: auto-detects npm/yarn/pnpm workspaces."),
+            set(),
+        )
+        self.assertEqual(self._pm_conflict_values("Supports pnpm/yarn."), set())
+
+    def test_declaration_on_other_line_still_extracted(self):
+        # The enumeration guard is scoped per-line, so a real declaration on a
+        # different line than the slash-joined enumeration must still register.
+        text = "Detects npm/yarn/pnpm workspaces.\nRun `pnpm install` to set up."
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+            if s["signal"] == "package_manager"
+        ]
+        self.assertEqual({s["value"] for s in sigs}, {"pnpm"})
+
     def test_rejected_alternatives_in_parens_are_not_a_conflict(self):
         # Found scanning better-auth/better-auth's AGENTS.md: "ALWAYS use
         # `pnpm` (never npm, yarn, or bun)" manufactured a bogus 4-way
