@@ -311,7 +311,7 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
 
 ```yaml
 # .github/workflows/harness-sarif.yml (excerpt)
-- uses: NieZhuZhu/ai-harness-doctor@v1
+- uses: NieZhuZhu/ai-harness-doctor@v0
   with:
     command: scan
     path: .
@@ -656,6 +656,7 @@ As of 2026-07, based on each project's public documentation — see their repos 
 ## Releases
 
 - Releases are tag-driven through CI with npm provenance.
+- Each release self-tests the tagged Action before npm publish, moves the floating `v0` Action tag, verifies `@v0` as a consumer would, and opens a Marketplace confirmation reminder.
 - See [`RELEASING.md`](RELEASING.md).
 - Every published version has a git tag.
 
