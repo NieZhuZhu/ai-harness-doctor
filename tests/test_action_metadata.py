@@ -92,6 +92,34 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertNotIn("git tag -f v0", text)
         self.assertIn("contents: write", text)
 
+    def test_release_routes_stable_and_prerelease_channels_safely(self):
+        text = RELEASE.read_text(encoding="utf-8")
+        self.assertIn("is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}", text)
+        self.assertIn("npm_tag: ${{ steps.release_meta.outputs.npm_tag }}", text)
+        self.assertIn('if [[ "$package_version" == *-* ]]; then', text)
+        self.assertIn('is_prerelease="true"', text)
+        self.assertIn('npm_tag="next"', text)
+        self.assertIn('floating_tag=""', text)
+        self.assertIn('is_prerelease="false"', text)
+        self.assertIn('npm_tag="latest"', text)
+        self.assertIn('floating_tag="v$major"', text)
+        self.assertIn('echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"', text)
+        self.assertIn('echo "npm_tag=$npm_tag" >> "$GITHUB_OUTPUT"', text)
+        self.assertIn("NPM_TAG: ${{ steps.release_meta.outputs.npm_tag }}", text)
+        self.assertIn('npm publish --provenance --access public --tag "$NPM_TAG"', text)
+
+    def test_prereleases_do_not_move_or_verify_stable_action_refs(self):
+        text = RELEASE.read_text(encoding="utf-8")
+        stable_only = "if: steps.release_meta.outputs.is_prerelease != 'true'"
+        self.assertIn(stable_only, text)
+        self.assertGreaterEqual(
+            text.count("needs.publish.outputs.is_prerelease != 'true'"),
+            2,
+        )
+        self.assertIn('release_args+=(--prerelease)', text)
+        self.assertIn("needs: [publish, verify-action]", text)
+        self.assertIn('grep -v -- \'-\'', text)
+
     def test_release_creates_marketplace_confirmation_reminder(self):
         text = RELEASE.read_text(encoding="utf-8")
         self.assertIn("issues: write", text)

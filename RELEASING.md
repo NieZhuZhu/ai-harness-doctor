@@ -16,15 +16,30 @@ Releases are tag-driven and published by GitHub Actions.
    - runs the full release tests;
    - self-tests the exact tagged checkout through `uses: ./`;
    - verifies the tag version matches `package.json`;
-   - publishes to npm with provenance;
+   - publishes to npm with provenance and an explicit release-channel dist-tag;
    - creates the GitHub Release when it does not already exist;
-   - force-updates the matching floating major Action tag to the release commit;
-   - checks out that public floating tag and validates its Action SARIF version;
-   - opens a Marketplace confirmation issue for the maintainer.
+   - for a stable version, force-updates the matching floating major Action tag
+     to the release commit, checks out that public tag, validates its Action
+     SARIF version, and opens a Marketplace confirmation issue.
 
-The npm publish never runs before the tagged Action self-test passes. The public
-The floating major tag verification runs after publish so it exercises the same
-ref consumers will use.
+The npm publish never runs before the tagged Action self-test passes. For stable
+versions, floating-major verification runs after publish so it exercises the
+same ref consumers will use.
+
+## Stable and prerelease channels
+
+The version in `package.json` determines the release channel:
+
+- A stable version such as `1.0.1` publishes to npm dist-tag `latest`, creates
+  the exact GitHub Release, moves and verifies `v1`, and opens the Marketplace
+  confirmation reminder.
+- A prerelease such as `1.1.0-beta.1` publishes to npm dist-tag `next` and
+  creates an exact GitHub prerelease. It does **not** move `latest` or `v1`, run
+  stable floating-tag verification, or open a Marketplace reminder.
+
+This keeps both stable consumer pointers — npm `latest` and the Action's
+floating `vN` tag — isolated from prerelease builds. Exact prerelease tags
+remain usable by consumers who opt in explicitly.
 
 ## Version guard
 
@@ -61,9 +76,11 @@ derives and maintains a floating major tag for Action consumers (`0.x` -> `v0`,
 - uses: NieZhuZhu/ai-harness-doctor@v1
 ```
 
-Only full `v*.*.*` tags trigger npm publishing; moving a bare major tag cannot
-recursively start another release. Publishing a new major does not move the
-previous major's tag, so `v0` remains on the final `0.x` release after `v1.0.0`.
+Only exact `v*.*.*` tags (stable or prerelease) trigger npm publishing; moving a
+bare major tag cannot recursively start another release. Stable publication
+ignores prerelease tags when selecting the newest version eligible to move
+`vN`. Publishing a new major does not move the previous major's tag, so `v0`
+remains on the final `0.x` release after `v1.0.0`.
 
 ## Marketplace confirmation
 
