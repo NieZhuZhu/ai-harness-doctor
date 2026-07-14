@@ -328,6 +328,30 @@ class SemanticPathTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
 
+    def test_gitignored_dotenv_paths_not_flagged(self):
+        # Runtime dotenv files (`.env`, `frontend/.env`, `.env.local`, ...) are
+        # conventionally gitignored and never committed — AGENTS.md references
+        # them as where to PUT local config, not as paths the repo contains.
+        # Found running the full chain against All-Hands-AI/OpenHands: "Set in
+        # `frontend/.env` or as environment variables" was flagged MISSING.
+        with tempfile.TemporaryDirectory() as td:
+            text = (
+                "Set config in `frontend/.env` or as environment variables.\n"
+                "Local overrides go in `.env.local`; production uses `.env.production`."
+            )
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_committed_dotenv_template_still_flagged(self):
+        # The committed *template* variants ARE meant to be tracked, so a
+        # reference to a missing one is genuine drift and must still be caught.
+        with tempfile.TemporaryDirectory() as td:
+            text = "Copy `frontend/.env.example` to `frontend/.env` before running."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("frontend/.env.example", paths[0]["message"])
+
     def test_real_go_relative_package_path_still_flagged(self):
         # A genuine (non-hostname-looking) Go package path that has moved
         # must still be caught — this is the tool's real job.
