@@ -60,20 +60,24 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("uses: ./", text)
         self.assertIn("Reject invalid tagged Action command", text)
         self.assertIn("Validate tagged Action failure propagation", text)
-        self.assertIn("ref: v0", text)
+        self.assertIn("ref: ${{ needs.publish.outputs.floating_tag }}", text)
         self.assertIn("path: published-action", text)
         self.assertIn("uses: ./published-action", text)
         self.assertIn("Verify floating tag target", text)
 
-    def test_release_updates_v0_without_recursively_triggering_publish(self):
+    def test_release_updates_dynamic_major_tag_without_recursively_triggering_publish(self):
         text = RELEASE.read_text(encoding="utf-8")
         self.assertIn("group: release", text)
         self.assertIn("cancel-in-progress: false", text)
         self.assertIn("fetch-depth: 0", text)
-        self.assertIn("--sort=-v:refname", text)
+        self.assertIn('major="${package_version%%.*}"', text)
+        self.assertIn('floating_tag="v$major"', text)
+        self.assertIn("floating_tag=$floating_tag", text)
+        self.assertIn('git tag --list "$FLOATING_TAG.*.*" --sort=-v:refname', text)
         self.assertIn('latest_tag" != "$GITHUB_REF_NAME', text)
-        self.assertIn('git tag -f v0 "$release_commit"', text)
-        self.assertIn("git push origin refs/tags/v0 --force", text)
+        self.assertIn('git tag -f "$FLOATING_TAG" "$release_commit"', text)
+        self.assertIn('git push origin "refs/tags/$FLOATING_TAG" --force', text)
+        self.assertNotIn("git tag -f v0", text)
         self.assertIn("contents: write", text)
 
     def test_release_creates_marketplace_confirmation_reminder(self):
@@ -85,12 +89,13 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertNotIn("secondary category", text)
         self.assertIn("marketplace=true", text)
 
-    def test_release_docs_use_the_maintained_v0_action_tag(self):
+    def test_release_docs_use_the_maintained_v1_action_tag(self):
         release_docs = RELEASING.read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("NieZhuZhu/ai-harness-doctor@v0", readme)
-        self.assertNotIn("NieZhuZhu/ai-harness-doctor@v1", readme)
-        self.assertIn("floating `v0`", release_docs)
+        self.assertIn("NieZhuZhu/ai-harness-doctor@v1", readme)
+        self.assertNotIn("NieZhuZhu/ai-harness-doctor@v0", readme)
+        self.assertIn("floating major tag", release_docs)
+        self.assertIn("`1.x` -> `v1`", release_docs)
         self.assertIn("Marketplace", release_docs)
 
 

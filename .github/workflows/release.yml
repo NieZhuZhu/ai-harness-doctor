@@ -3,8 +3,9 @@ name: release
 on:
   push:
     tags:
-      # Full release tags only. The workflow itself maintains the floating `v0`
-      # Action tag, which must never recursively trigger another npm release.
+      # Full release tags only. The workflow itself maintains a floating major
+      # Action tag (v0, v1, ...), which must never recursively trigger another
+      # npm release.
       - "v*.*.*"
 
 concurrency:
@@ -82,6 +83,8 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      floating_tag: ${{ steps.release_meta.outputs.floating_tag }}
     permissions:
       contents: write
       id-token: write
@@ -89,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # The floating-tag update verifies this is the highest release tag
-          # before moving v0, preventing an old workflow rerun from rolling
+          # before moving vN, preventing an old workflow rerun from rolling
           # Action consumers back to an earlier release.
           fetch-depth: 0
 
@@ -106,6 +109,15 @@ jobs:
             echo "Version mismatch: tag $GITHUB_REF_NAME resolves to $tag_version, but package.json is $package_version."
             exit 1
           fi
+
+      - name: Determine release metadata
+        id: release_meta
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          major="${package_version%%.*}"
+          floating_tag="v$major"
+          echo "floating_tag=$floating_tag" >> "$GITHUB_OUTPUT"
+          echo "Release $GITHUB_REF_NAME will update floating Action tag $floating_tag."
 
       - name: Check whether this version is already on npm
         id: npm_version
@@ -134,18 +146,21 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --generate-notes
           fi
 
-      # Keep the floating pre-1.0 Action ref on the same commit as the exact
-      # release tag. The trigger above excludes `v0`, preventing recursion.
+      # Keep the floating major Action ref on the same commit as the exact
+      # release tag. The trigger above excludes bare vN tags, preventing
+      # recursion.
       - name: Update floating Action tag
+        env:
+          FLOATING_TAG: ${{ steps.release_meta.outputs.floating_tag }}
         run: |
-          latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          latest_tag="$(git tag --list "$FLOATING_TAG.*.*" --sort=-v:refname | head -n 1)"
           if [ "$latest_tag" != "$GITHUB_REF_NAME" ]; then
-            echo "Refusing to move v0 backwards: latest tag is $latest_tag, current workflow is $GITHUB_REF_NAME."
+            echo "Refusing to move $FLOATING_TAG backwards: latest tag is $latest_tag, current workflow is $GITHUB_REF_NAME."
             exit 1
           fi
           release_commit="$(git rev-parse "$GITHUB_REF_NAME^{commit}")"
-          git tag -f v0 "$release_commit"
-          git push origin refs/tags/v0 --force
+          git tag -f "$FLOATING_TAG" "$release_commit"
+          git push origin "refs/tags/$FLOATING_TAG" --force
 
   verify-action:
     name: verify-published-action
@@ -157,7 +172,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: v0
+          ref: ${{ needs.publish.outputs.floating_tag }}
           path: published-action
       - uses: actions/setup-node@v4
         with:
@@ -167,16 +182,18 @@ jobs:
           python-version: "3.12"
 
       - name: Verify floating tag target
+        env:
+          FLOATING_TAG: ${{ needs.publish.outputs.floating_tag }}
         run: |
           release_commit="$(git rev-parse HEAD)"
           floating_commit="$(git -C published-action rev-parse HEAD)"
           if [ "$floating_commit" != "$release_commit" ]; then
-            echo "v0 points to $floating_commit, expected release commit $release_commit."
+            echo "$FLOATING_TAG points to $floating_commit, expected release commit $release_commit."
             exit 1
           fi
 
       # Execute the separately checked-out floating ref. This avoids resolving
-      # `@v0` before the publish job has moved it, while still testing the exact
+      # `@vN` before the publish job has moved it, while still testing the exact
       # remote Action content consumers receive.
       - name: Verify published floating Action
         id: action
@@ -184,11 +201,12 @@ jobs:
         with:
           command: scan
           path: .
-          sarif-file: published-v0.sarif
+          sarif-file: published-major.sarif
 
       - name: Validate published Action SARIF and version
         env:
           SARIF_FILE: ${{ steps.action.outputs.sarif-file }}
+          FLOATING_TAG: ${{ needs.publish.outputs.floating_tag }}
         run: |
           node -e '
             const fs = require("node:fs");
@@ -197,7 +215,8 @@ jobs:
             const driver = sarif.runs && sarif.runs[0] && sarif.runs[0].tool.driver;
             if (sarif.version !== "2.1.0" || !driver || driver.version !== expected) {
               throw new Error(
-                `Published v0 Action mismatch: expected ${expected}, got ${driver && driver.version}`
+                `Published ${process.env.FLOATING_TAG} Action mismatch: ` +
+                `expected ${expected}, got ${driver && driver.version}`
               );
             }
           '
