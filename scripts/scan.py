@@ -783,10 +783,19 @@ def extract_signals(file_entry):
     signals = []
     for lineno, line in enumerate(file_entry["text"].splitlines(), 1):
         negated = registry.negated_spans(line)
+        pm_enumeration = registry.pm_enumeration_spans(line)
         for signal, patterns in SIGNAL_PATTERNS.items():
             for value, pattern in patterns:
                 match = pattern.search(line)
                 if not match:
+                    continue
+                # A package manager named inside a slash-joined enumeration —
+                # "auto-detects npm/yarn/pnpm workspaces" — lists a supported
+                # tool, not the one this repo uses; skip it so the enumeration
+                # does not manufacture a false package_manager conflict.
+                if signal == "package_manager" and any(
+                    start <= match.start() < end for start, end in pm_enumeration
+                ):
                     continue
                 # A value named only as a rejected alternative — "ALWAYS use
                 # `pnpm` (never npm, yarn, or bun)" — is not a declaration
