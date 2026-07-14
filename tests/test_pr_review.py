@@ -374,6 +374,123 @@ class PostReviewTests(unittest.TestCase):
         self.assertIn("body", captured["data"])
         self.assertNotIn("comments", captured["data"])
 
+    def test_inline_review_422_falls_back_to_complete_issue_comment(self):
+        import urllib.error
+        import urllib.request
+        from unittest import mock
+
+        report = {
+            "score": 75,
+            "grade": "C",
+            "findings": [
+                {
+                    "check": "D2",
+                    "level": "ERROR",
+                    "path": "AGENTS.md",
+                    "line": 99,
+                    "message": "Referenced path no longer exists",
+                    "suggestion": "Update the canonical instruction.",
+                }
+            ],
+        }
+        payload = pr_review.build_review(report)
+        requests = []
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"html_url": "https://github.com/o/r/pull/7#issuecomment-1"}'
+
+        def _fake_urlopen(req, *args, **kwargs):
+            requests.append(
+                {
+                    "url": req.full_url,
+                    "data": json.loads(req.data.decode("utf-8")),
+                }
+            )
+            if len(requests) == 1:
+                raise urllib.error.HTTPError(
+                    req.full_url,
+                    422,
+                    "Unprocessable Entity",
+                    hdrs=None,
+                    fp=io.BytesIO(b'{"message":"Validation Failed"}'),
+                )
+            return _Resp()
+
+        with mock.patch.object(urllib.request, "urlopen", _fake_urlopen):
+            response = pr_review.post_review(
+                payload,
+                repo="o/r",
+                pr_number=7,
+                commit_sha="deadbeef",
+                token="tok",
+            )
+
+        self.assertEqual(
+            [request["url"] for request in requests],
+            [
+                "https://api.github.com/repos/o/r/pulls/7/reviews",
+                "https://api.github.com/repos/o/r/issues/7/comments",
+            ],
+        )
+        fallback_body = requests[1]["data"]["body"]
+        self.assertIn(pr_review.MARKER, fallback_body)
+        self.assertIn("Referenced path no longer exists", fallback_body)
+        self.assertIn("Update the canonical instruction.", fallback_body)
+        self.assertIn("75/100 (grade C)", fallback_body)
+        self.assertEqual(response["html_url"], "https://github.com/o/r/pull/7#issuecomment-1")
+
+    def test_inline_review_non_422_error_is_not_hidden(self):
+        import urllib.error
+        import urllib.request
+        from unittest import mock
+
+        payload = pr_review.build_review(
+            {
+                "findings": [
+                    {
+                        "check": "D2",
+                        "level": "ERROR",
+                        "path": "AGENTS.md",
+                        "line": 2,
+                        "message": "bad path",
+                    }
+                ]
+            }
+        )
+        requests = []
+
+        def _fake_urlopen(req, *args, **kwargs):
+            requests.append(req.full_url)
+            raise urllib.error.HTTPError(
+                req.full_url,
+                403,
+                "Forbidden",
+                hdrs=None,
+                fp=io.BytesIO(b'{"message":"Resource not accessible"}'),
+            )
+
+        with mock.patch.object(urllib.request, "urlopen", _fake_urlopen):
+            with self.assertRaisesRegex(
+                SystemExit,
+                r"(?s)403 Forbidden.*Resource not accessible",
+            ):
+                pr_review.post_review(
+                    payload,
+                    repo="o/r",
+                    pr_number=7,
+                    commit_sha="deadbeef",
+                    token="tok",
+                )
+
+        self.assertEqual(requests, ["https://api.github.com/repos/o/r/pulls/7/reviews"])
+
 
 if __name__ == "__main__":
     unittest.main()

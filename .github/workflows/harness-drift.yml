@@ -52,7 +52,8 @@ jobs:
       # the annotations. Located findings (D1/D2/D6/D7) are line-based against
       # AGENTS.md, so --default-path attaches them there. The whole step is made
       # tolerant of a missing/limited token (e.g. fork PRs) so it can never fail
-      # the job solely because the review API is unavailable.
+      # the job solely because the review API is unavailable. Anchor comments to
+      # the PR head commit, not github.sha (which can be a synthetic merge ref).
       - name: Post drift findings as PR review comments
         if: ${{ always() && github.event_name == 'pull_request' }}
         env:
@@ -65,7 +66,7 @@ jobs:
             --default-path AGENTS.md \
             --post \
             --pr "${{ github.event.number }}" \
-            --commit "${{ github.sha }}" \
+            --commit "${{ github.event.pull_request.head.sha }}" \
             || echo "pr_review: posting skipped (token/API unavailable)"
       # Eval health-score gate: fail CI when committed eval results drop below the
       # threshold. Kept soft (guarded by the file existing) so this repo is not

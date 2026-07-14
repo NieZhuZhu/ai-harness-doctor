@@ -19,7 +19,7 @@ gate, and update its status here.
 | Plan | Title | Priority | Effort | Depends on | Status |
 |---|---|---:|---:|---|---|
 | 001 | Keep scanner reads inside the audited repository | P1 | S | — | DONE |
-| 002 | Preserve PR feedback when inline review locations are invalid | P1 | S | — | TODO |
+| 002 | Preserve PR feedback when inline review locations are invalid | P1 | S | — | DONE |
 | 003 | Prevent prereleases from replacing stable npm and Action refs | P1 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
