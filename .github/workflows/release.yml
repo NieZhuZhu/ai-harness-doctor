@@ -3,7 +3,13 @@ name: release
 on:
   push:
     tags:
-      - "v*"
+      # Full release tags only. The workflow itself maintains the floating `v0`
+      # Action tag, which must never recursively trigger another npm release.
+      - "v*.*.*"
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -33,6 +39,46 @@ jobs:
       - name: Check npm package contents
         run: npm pack --dry-run
 
+      # Validate the exact tagged checkout through the composite wrapper before
+      # publishing an immutable npm version.
+      - name: Pre-publish Action self-test
+        id: action
+        uses: ./
+        with:
+          command: scan
+          path: .
+          sarif-file: release-preflight.sarif
+
+      - name: Validate pre-publish Action SARIF
+        env:
+          SARIF_FILE: ${{ steps.action.outputs.sarif-file }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const sarif = JSON.parse(fs.readFileSync(process.env.SARIF_FILE, "utf8"));
+            const run = sarif.runs && sarif.runs[0];
+            if (sarif.version !== "2.1.0" || !run || !Array.isArray(run.results)) {
+              throw new Error("Tagged Action did not emit a SARIF 2.1.0 document");
+            }
+          '
+
+      - name: Reject invalid tagged Action command
+        id: invalid-action
+        continue-on-error: true
+        uses: ./
+        with:
+          command: definitely-not-a-command
+          path: .
+
+      - name: Validate tagged Action failure propagation
+        env:
+          OUTCOME: ${{ steps.invalid-action.outcome }}
+        run: |
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "Expected invalid tagged Action command to fail, got: $OUTCOME" >&2
+            exit 1
+          fi
+
   publish:
     needs: test
     runs-on: ubuntu-latest
@@ -41,6 +87,11 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The floating-tag update verifies this is the highest release tag
+          # before moving v0, preventing an old workflow rerun from rolling
+          # Action consumers back to an earlier release.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -61,7 +112,7 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           if npm view "ai-harness-doctor@$version" version >/dev/null 2>&1; then
-            echo "ai-harness-doctor@$version is already published; skipping npm publish and GitHub release."
+            echo "ai-harness-doctor@$version is already published; skipping npm publish."
             echo "already_published=true" >> "$GITHUB_OUTPUT"
           else
             echo "already_published=false" >> "$GITHUB_OUTPUT"
@@ -73,8 +124,129 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
 
-      - name: Create GitHub Release
-        if: steps.npm_version.outputs.already_published != 'true'
+      - name: Create GitHub Release if missing
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "GitHub Release $GITHUB_REF_NAME already exists."
+          else
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+          fi
+
+      # Keep the floating pre-1.0 Action ref on the same commit as the exact
+      # release tag. The trigger above excludes `v0`, preventing recursion.
+      - name: Update floating Action tag
+        run: |
+          latest_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          if [ "$latest_tag" != "$GITHUB_REF_NAME" ]; then
+            echo "Refusing to move v0 backwards: latest tag is $latest_tag, current workflow is $GITHUB_REF_NAME."
+            exit 1
+          fi
+          release_commit="$(git rev-parse "$GITHUB_REF_NAME^{commit}")"
+          git tag -f v0 "$release_commit"
+          git push origin refs/tags/v0 --force
+
+  verify-action:
+    name: verify-published-action
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: v0
+          path: published-action
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify floating tag target
+        run: |
+          release_commit="$(git rev-parse HEAD)"
+          floating_commit="$(git -C published-action rev-parse HEAD)"
+          if [ "$floating_commit" != "$release_commit" ]; then
+            echo "v0 points to $floating_commit, expected release commit $release_commit."
+            exit 1
+          fi
+
+      # Execute the separately checked-out floating ref. This avoids resolving
+      # `@v0` before the publish job has moved it, while still testing the exact
+      # remote Action content consumers receive.
+      - name: Verify published floating Action
+        id: action
+        uses: ./published-action
+        with:
+          command: scan
+          path: .
+          sarif-file: published-v0.sarif
+
+      - name: Validate published Action SARIF and version
+        env:
+          SARIF_FILE: ${{ steps.action.outputs.sarif-file }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const expected = require("./package.json").version;
+            const sarif = JSON.parse(fs.readFileSync(process.env.SARIF_FILE, "utf8"));
+            const driver = sarif.runs && sarif.runs[0] && sarif.runs[0].tool.driver;
+            if (sarif.version !== "2.1.0" || !driver || driver.version !== expected) {
+              throw new Error(
+                `Published v0 Action mismatch: expected ${expected}, got ${driver && driver.version}`
+              );
+            }
+          '
+
+  marketplace-reminder:
+    needs: verify-action
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Create Marketplace confirmation reminder
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          title="Marketplace release confirmation: $TAG"
+          existing="$(
+            gh issue list \
+              --repo "$GH_REPO" \
+              --state all \
+              --search "$title in:title" \
+              --json number,title \
+              --jq ".[] | select(.title == \"$title\") | .number" \
+              | head -n 1
+          )"
+          if [ -n "$existing" ]; then
+            echo "Reminder issue #$existing already exists."
+            exit 0
+          fi
+
+          {
+            echo "The automated release pipeline completed for $TAG."
+            echo
+            echo "- [ ] Confirm the GitHub Release is published to the Actions Marketplace"
+            echo "- [ ] Confirm the primary category is AI Assisted"
+            echo "- [ ] Confirm the secondary category is Code review"
+            echo "- [ ] Confirm the Marketplace page shows $TAG as Latest"
+            echo "- [ ] Close this issue after the checks pass"
+            echo
+            echo "Release editor:"
+            echo "https://github.com/$GH_REPO/releases/edit/$TAG?marketplace=true"
+            echo
+            echo "Marketplace listing:"
+            echo "https://github.com/marketplace/actions/ai-harness-doctor"
+          } > "$RUNNER_TEMP/marketplace-reminder.md"
+
+          gh issue create \
+            --repo "$GH_REPO" \
+            --title "$title" \
+            --body-file "$RUNNER_TEMP/marketplace-reminder.md"

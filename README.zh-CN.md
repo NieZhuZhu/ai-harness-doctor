@@ -311,7 +311,7 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
 
 ```yaml
 # .github/workflows/harness-sarif.yml (excerpt)
-- uses: NieZhuZhu/ai-harness-doctor@v1
+- uses: NieZhuZhu/ai-harness-doctor@v0
   with:
     command: scan
     path: .
@@ -656,6 +656,7 @@ Regeneration 和 guarding 是两种有效哲学。Ruler/rulesync 让生成输出
 ## Releases
 
 - Releases 通过 CI 按 tag 驱动，并带 npm provenance。
+- 每次发布都会在 npm publish 前自测该 tag 对应的 Action、移动浮动 `v0` Action tag、以消费者方式验证 `@v0`，并创建 Marketplace 确认提醒。
 - 见 [`RELEASING.md`](RELEASING.md)。
 - 每个发布版本都有 git tag。
 
