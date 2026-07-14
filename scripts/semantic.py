@@ -788,6 +788,12 @@ def compare_paths(root, text):
                 package_names = facts.all_package_names(root)
             if token.split("/", 1)[0] in package_names:
                 continue
+            # A root AGENTS.md section scoped to a subdirectory (codex-rs's
+            # Rust section, opencode's packages/opencode section) documents
+            # paths relative to that subdir; resolve them against the subtree
+            # before flagging. Lazy walk, only reached on a would-be MISSING.
+            if facts.path_resolves_in_subtree(root, token):
+                continue
             findings.append(
                 _finding(
                     "path",

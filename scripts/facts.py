@@ -235,6 +235,59 @@ def all_package_names(root):
     return names
 
 
+# Build-system manifest/lockfile basenames that are ubiquitous and routinely
+# referenced generically in an AGENTS.md ("if you change `Cargo.toml` or
+# `Cargo.lock`, run ...", "check the closest `pyproject.toml`"). A bare mention
+# is not a repo-root path assertion, so it should resolve against any such file
+# anywhere in the repo, not just one sitting at the root. Single-source this
+# from the registry's KNOWN_ROOT_FILES (the same set the path detector uses to
+# emit single-segment tokens at all) so the two can never drift apart — the
+# exact TD-02 duplication failure this tool exists to catch.
+_MANIFEST_BASENAMES = registry.KNOWN_ROOT_FILES
+
+
+def path_resolves_in_subtree(root, token):
+    """True when a backtick path that is missing at the repo root still resolves
+    against a subdirectory of the repo.
+
+    Root ``AGENTS.md`` files are frequently scoped to a subdirectory: codex's
+    root ``AGENTS.md`` opens with "In the codex-rs folder where the rust code
+    lives" and then documents `app-server/README.md`, `Cargo.toml`, etc.
+    relative to ``codex-rs/``; opencode's root ``AGENTS.md`` documents
+    `src/config` relative to ``packages/opencode/``. A repo-root-only existence
+    check flags all of these MISSING even though the referenced file/dir plainly
+    exists one level down.
+
+    Resolution rules (both deliberately conservative to avoid masking genuine
+    drift):
+
+    - A multi-segment token (contains ``/``) resolves when some pruned
+      directory ``D`` in the repo has ``D/token`` existing — i.e. the full
+      declared path matches as a trailing path somewhere below root.
+    - A bare, single-segment token resolves only when it is a well-known build
+      manifest/config basename (``_MANIFEST_BASENAMES``) and any such file
+      exists anywhere in the repo.
+
+    ``os.walk`` with ``SKIP_DIRS`` pruning keeps this from traversing vendored
+    trees; it is called lazily (only on an otherwise-MISSING token) so the
+    common case never pays for a walk.
+    """
+    is_manifest = "/" not in token and token in _MANIFEST_BASENAMES
+    is_multiseg = "/" in token
+    if not (is_manifest or is_multiseg):
+        return False
+    rootp = Path(root)
+    for dirpath, dirnames, _filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
+        current = Path(dirpath)
+        if current == rootp:
+            # The repo root was already checked by the caller.
+            continue
+        if (current / token).exists():
+            return True
+    return False
+
+
 def package_dependency_names(root):
     """Return dependency names declared in package.json, or ``None`` if unreadable.
 
