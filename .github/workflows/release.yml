@@ -3,9 +3,9 @@ name: release
 on:
   push:
     tags:
-      # Full release tags only. The workflow itself maintains a floating major
-      # Action tag (v0, v1, ...), which must never recursively trigger another
-      # npm release.
+      # Exact stable and prerelease tags only. The workflow itself maintains a
+      # stable floating major Action tag (v0, v1, ...), which must never
+      # recursively trigger another npm release.
       - "v*.*.*"
 
 concurrency:
@@ -85,6 +85,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       floating_tag: ${{ steps.release_meta.outputs.floating_tag }}
+      is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
+      npm_tag: ${{ steps.release_meta.outputs.npm_tag }}
     permissions:
       contents: write
       id-token: write
@@ -115,9 +117,23 @@ jobs:
         run: |
           package_version="$(node -p "require('./package.json').version")"
           major="${package_version%%.*}"
-          floating_tag="v$major"
+          if [[ "$package_version" == *-* ]]; then
+            is_prerelease="true"
+            npm_tag="next"
+            floating_tag=""
+          else
+            is_prerelease="false"
+            npm_tag="latest"
+            floating_tag="v$major"
+          fi
+          echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$npm_tag" >> "$GITHUB_OUTPUT"
           echo "floating_tag=$floating_tag" >> "$GITHUB_OUTPUT"
-          echo "Release $GITHUB_REF_NAME will update floating Action tag $floating_tag."
+          if [ "$is_prerelease" = "true" ]; then
+            echo "Prerelease $GITHUB_REF_NAME will publish to npm tag $npm_tag without moving a stable Action tag."
+          else
+            echo "Stable release $GITHUB_REF_NAME will publish to npm tag $npm_tag and update Action tag $floating_tag."
+          fi
 
       - name: Check whether this version is already on npm
         id: npm_version
@@ -134,26 +150,37 @@ jobs:
         if: steps.npm_version.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public
+          NPM_TAG: ${{ steps.release_meta.outputs.npm_tag }}
+        run: npm publish --provenance --access public --tag "$NPM_TAG"
 
       - name: Create GitHub Release if missing
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ steps.release_meta.outputs.is_prerelease }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "GitHub Release $GITHUB_REF_NAME already exists."
           else
-            gh release create "$GITHUB_REF_NAME" --generate-notes
+            release_args=(--generate-notes)
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              release_args+=(--prerelease)
+            fi
+            gh release create "$GITHUB_REF_NAME" "${release_args[@]}"
           fi
 
-      # Keep the floating major Action ref on the same commit as the exact
-      # release tag. The trigger above excludes bare vN tags, preventing
-      # recursion.
+      # Stable releases keep the floating major Action ref on the same commit as
+      # the exact release tag. Prereleases never move that stable consumer ref.
+      # The trigger above excludes bare vN tags, preventing recursion.
       - name: Update floating Action tag
+        if: steps.release_meta.outputs.is_prerelease != 'true'
         env:
           FLOATING_TAG: ${{ steps.release_meta.outputs.floating_tag }}
         run: |
-          latest_tag="$(git tag --list "$FLOATING_TAG.*.*" --sort=-v:refname | head -n 1)"
+          latest_tag="$(
+            git tag --list "$FLOATING_TAG.*.*" --sort=-v:refname \
+              | grep -v -- '-' \
+              | head -n 1
+          )"
           if [ "$latest_tag" != "$GITHUB_REF_NAME" ]; then
             echo "Refusing to move $FLOATING_TAG backwards: latest tag is $latest_tag, current workflow is $GITHUB_REF_NAME."
             exit 1
@@ -165,6 +192,7 @@ jobs:
   verify-action:
     name: verify-published-action
     needs: publish
+    if: needs.publish.outputs.is_prerelease != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -222,7 +250,14 @@ jobs:
           '
 
   marketplace-reminder:
-    needs: verify-action
+    needs: [publish, verify-action]
+    if: >-
+      ${{
+        always() &&
+        needs.publish.result == 'success' &&
+        needs.publish.outputs.is_prerelease != 'true' &&
+        needs.verify-action.result == 'success'
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
