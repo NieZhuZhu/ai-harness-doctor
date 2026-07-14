@@ -80,8 +80,9 @@ class ActionMetadataTests(unittest.TestCase):
         text = RELEASE.read_text(encoding="utf-8")
         self.assertIn("issues: write", text)
         self.assertIn("Marketplace release confirmation:", text)
-        self.assertIn("AI Assisted", text)
-        self.assertIn("Code review", text)
+        self.assertIn("categories include AI Assisted and Code review", text)
+        self.assertNotIn("primary category", text)
+        self.assertNotIn("secondary category", text)
         self.assertIn("marketplace=true", text)
 
     def test_release_docs_use_the_maintained_v0_action_tag(self):
