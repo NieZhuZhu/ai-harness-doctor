@@ -138,6 +138,8 @@ python3 scripts/check_drift.py /path/to/repo --json
 python3 scripts/check_drift.py /path/to/repo --strict
 python3 scripts/check_drift.py /path/to/repo --min-score 80
 python3 scripts/check_drift.py /path/to/repo --sarif        # emit SARIF 2.1.0 JSON for GitHub code scanning
+python3 scripts/check_drift.py /path/to/repo --write-baseline .ai-harness-doctor/drift-baseline.json  # record current drift
+python3 scripts/check_drift.py /path/to/repo --baseline .ai-harness-doctor/drift-baseline.json         # fail only on NEW drift
 ```
 
 Checks:
@@ -166,6 +168,15 @@ python3 scripts/check_drift.py /path/to/repo --fix --apply  # actually rewrites 
 - `--fix --apply` rewrites the regrown stub files in place.
 - Drift that is NOT safely auto-fixable (D1 command drift, D2 path drift, D4 size, D7 Markdown-link drift, D8 competing lockfiles, and any other semantic drift) is never modified; instead it is listed under **"needs manual attention"** with copy-pasteable repair guidance.
 - A summary line reports `N fixed/fixable, M need manual attention`. The command exits non-zero while any drift remains (pending fixes in dry run, or unresolved manual items after `--apply`).
+
+#### Adopting the gate on an existing repo: `--baseline`
+
+A repo that already carries drift cannot flip on `--strict` without a wall of red. `--write-baseline FILE` records the current findings once, then `--baseline FILE` suppresses exactly those pre-existing findings so CI fails only on **new** drift introduced afterwards — the same adoption path ruff, mypy, and detekt offer. Fingerprints are `(check, message, path)` and ignore line numbers, so unrelated edits above a finding never re-open it. Suppressed findings are still surfaced (a `## Baseline` note and a `baselined` array in `--json`) but never count toward the score or exit code; the health score reflects only new drift, so a fully baselined repo scores grade A. The baseline file is deterministic (sorted, no timestamp) for clean diffs, and a missing or malformed baseline fails safe by suppressing nothing. Commit the baseline (e.g. under `.ai-harness-doctor/`) and shrink it as the team pays down drift.
+
+```bash
+python3 scripts/check_drift.py /path/to/repo --write-baseline .ai-harness-doctor/drift-baseline.json  # record once
+python3 scripts/check_drift.py /path/to/repo --baseline .ai-harness-doctor/drift-baseline.json --strict  # gate only new drift
+```
 
 ### Outputs
 

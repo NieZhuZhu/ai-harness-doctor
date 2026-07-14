@@ -434,7 +434,68 @@ def health_score(findings):
     return score, grade
 
 
-def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=False):
+# --- Baseline support ------------------------------------------------------
+# A baseline lets a repo adopt the drift gate immediately: record the current
+# (pre-existing) drift once, then fail CI only on NEW drift introduced later.
+# This mirrors the baseline feature every mature linter ships (ruff, mypy,
+# detekt, ktlint). It is opt-in and additive — with no --baseline flag the
+# engine behaves exactly as before.
+BASELINE_VERSION = 1
+
+
+def finding_fingerprint(finding):
+    """Stable identity for a drift finding, independent of line numbers.
+
+    Line numbers shift on any unrelated AGENTS.md edit, so a baseline keyed on
+    them would go stale immediately. The (check, message, path) trio is durable:
+    the message already embeds the offending token (script/path/lockfile), so it
+    uniquely identifies the drift while surviving line moves.
+    """
+    return (finding.get("check", ""), finding.get("message", ""), finding.get("path") or "")
+
+
+def load_baseline(path):
+    """Read a baseline file into a set of finding fingerprints.
+
+    Tolerant by design: a missing, blank, or malformed file yields an empty set
+    so the guard fails safe (every finding counts as new) rather than crashing
+    CI on a bad baseline.
+    """
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    entries = data.get("findings", []) if isinstance(data, dict) else []
+    return {
+        (e.get("check", ""), e.get("message", ""), e.get("path") or "")
+        for e in entries
+        if isinstance(e, dict)
+    }
+
+
+def baseline_payload(findings):
+    """Build the deterministic baseline document for the given findings.
+
+    Records every ERROR/NOTICE built-in finding (INFO/D5 inventory is not drift)
+    as a minimal ``{check, message, path}`` entry, de-duplicated and sorted so
+    the file is stable across runs and produces clean git diffs. No timestamp is
+    written, keeping the engine deterministic.
+    """
+    seen = set()
+    entries = []
+    for f in findings:
+        if f.get("level") not in ("ERROR", "NOTICE"):
+            continue
+        fp = finding_fingerprint(f)
+        if fp in seen:
+            continue
+        seen.add(fp)
+        entries.append({"check": f.get("check", ""), "message": f.get("message", ""), "path": f.get("path")})
+    entries.sort(key=lambda e: (e["check"] or "", e["message"] or "", e["path"] or ""))
+    return {"version": BASELINE_VERSION, "findings": entries}
+
+
+def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=False, baseline=None):
     agents = root / "AGENTS.md"
     text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
     findings = []
@@ -449,6 +510,16 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
         for f in findings:
             if f.get("level") == "NOTICE":
                 f["level"] = "ERROR"
+    # Baseline suppression: split off findings already recorded in the baseline
+    # so only NEW drift affects ok/score/exit code. Suppressed findings stay in
+    # the report under `baselined` for visibility but are never counted as
+    # failures. Fingerprints ignore line numbers, so re-runs stay stable.
+    baselined = []
+    if baseline:
+        kept = []
+        for f in findings:
+            (baselined if finding_fingerprint(f) in baseline else kept).append(f)
+        findings = kept
     info = [
         {"check": "D5", "level": "INFO", "path": p, "message": "Nested AGENTS.md inventory"}
         for p in nested_agents(root)
@@ -468,7 +539,15 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
                 f["level"] = "ERROR"
     failures = [f for f in findings if f.get("level") == "ERROR"]
     score, grade = health_score(findings)
-    return {"ok": not failures, "findings": findings, "info": info, "custom": custom, "score": score, "grade": grade}
+    return {
+        "ok": not failures,
+        "findings": findings,
+        "info": info,
+        "custom": custom,
+        "baselined": baselined,
+        "score": score,
+        "grade": grade,
+    }
 
 
 def render(report):
@@ -499,6 +578,16 @@ def render(report):
             )
     else:
         lines.append("None.")
+    baselined = report.get("baselined", [])
+    if baselined:
+        lines.extend(
+            [
+                "",
+                "## Baseline",
+                f"{len(baselined)} pre-existing finding(s) suppressed by the baseline "
+                "(not counted as failures).",
+            ]
+        )
     lines.extend(["", "## Health score", f"Score: {report['score']}/100 (grade {report['grade']})"])
     return "\n".join(lines) + "\n"
 
@@ -527,7 +616,7 @@ def _finding_loc(f):
     return ""
 
 
-def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None, allow_plugins=False):
+def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None, allow_plugins=False, baseline=None):
     """Auto-repair ONLY the safe, mechanical subset of drift (D3 stub regrowth).
 
     Dry run by default (writes nothing); with apply=True actually rewrites the
@@ -535,7 +624,7 @@ def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None, allow_plugins
     that is not safely auto-fixable is reported as "needs manual attention" and its
     files are left untouched.
     """
-    report = run_checks(root, max_bytes, strict, rules_dirs, allow_plugins=allow_plugins)
+    report = run_checks(root, max_bytes, strict, rules_dirs, allow_plugins=allow_plugins, baseline=baseline)
     d3 = [f for f in report["findings"] if f["check"] == "D3"]
     manual = [f for f in report["findings"] if f["check"] != "D3" and f.get("level") in ("ERROR", "NOTICE")]
 
@@ -623,6 +712,21 @@ def main(argv=None):
     parser.add_argument(
         "--min-score", type=int, default=None, help="Exit non-zero if the health score is below N (CI gating)."
     )
+    parser.add_argument(
+        "--baseline",
+        metavar="FILE",
+        default=None,
+        help="Suppress drift already recorded in FILE so CI fails only on NEW drift. "
+        "Fingerprints are line-number independent; a missing/malformed file suppresses nothing.",
+    )
+    parser.add_argument(
+        "--write-baseline",
+        metavar="FILE",
+        default=None,
+        dest="write_baseline",
+        help="Record the current findings to FILE as a baseline and exit 0 "
+        "(adopt the drift gate on a repo with pre-existing drift). Deterministic; no timestamp.",
+    )
     args = parser.parse_args(argv)
     root = Path(args.repo_root).resolve()
     if not root.is_dir():
@@ -639,13 +743,34 @@ def main(argv=None):
             "scanned repository (<repo>/.ai-harness-doctor/rules/ and any --rules DIR).",
             file=sys.stderr,
         )
+    # --write-baseline records the CURRENT natural findings (never baseline-filtered,
+    # strict OFF so NOTICE-level drift is captured too) and exits 0. It takes
+    # precedence over --baseline/--fix/report output so the recording step is a
+    # dedicated, side-effect-only mode.
+    if args.write_baseline:
+        report = run_checks(root, args.max_bytes, strict=False, rules_dirs=args.rules, allow_plugins=args.allow_plugins)
+        payload = baseline_payload(report["findings"])
+        Path(args.write_baseline).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        print(f"Wrote baseline with {len(payload['findings'])} finding(s) to {args.write_baseline}")
+        return 0
+    baseline = load_baseline(args.baseline) if args.baseline else None
     if args.fix:
         text, code = run_fix(
-            root, args.max_bytes, args.apply, args.strict, args.rules, allow_plugins=args.allow_plugins
+            root,
+            args.max_bytes,
+            args.apply,
+            args.strict,
+            args.rules,
+            allow_plugins=args.allow_plugins,
+            baseline=baseline,
         )
         print(text, end="")
         return code
-    report = run_checks(root, args.max_bytes, args.strict, args.rules, allow_plugins=args.allow_plugins)
+    report = run_checks(
+        root, args.max_bytes, args.strict, args.rules, allow_plugins=args.allow_plugins, baseline=baseline
+    )
     exit_code = 0 if report["ok"] else 1
     if args.min_score is not None and report["score"] < args.min_score:
         exit_code = exit_code or 2

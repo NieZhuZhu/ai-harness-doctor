@@ -764,5 +764,143 @@ class NestedAgentsWalkTests(unittest.TestCase):
             self.assertIn("sub/AGENTS.md", found)
 
 
+class BaselineTests(unittest.TestCase):
+    """--baseline / --write-baseline: adopt the drift gate on a repo that already
+    has drift, then fail CI only on NEW drift."""
+
+    def _repo_with_drift(self, script="nope"):
+        td = tempfile.TemporaryDirectory()
+        repo = Path(td.name) / "repo"
+        shutil.copytree(FIXTURE, repo)
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS.replace("npm run test", f"npm run {script}"), encoding="utf-8")
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        return td, repo
+
+    def test_write_baseline_records_current_findings_and_exits_zero(self):
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        bl = repo.parent / "drift-baseline.json"
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--write-baseline", str(bl)], text=True, capture_output=True
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertTrue(bl.is_file())
+        data = json.loads(bl.read_text(encoding="utf-8"))
+        self.assertEqual(data["version"], check_drift.BASELINE_VERSION)
+        self.assertIn("Unknown package.json script `nope`", [e["message"] for e in data["findings"]])
+
+    def test_baseline_suppresses_preexisting_drift(self):
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        bl = repo.parent / "bl.json"
+        subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--write-baseline", str(bl)],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--baseline", str(bl), "--json"], text=True, capture_output=True
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertTrue(report["ok"])
+        self.assertFalse(report["findings"])
+        self.assertEqual(len(report["baselined"]), 1)
+        self.assertEqual(report["score"], 100)
+        self.assertEqual(report["grade"], "A")
+
+    def test_new_drift_fails_while_baselined_is_suppressed(self):
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        bl = repo.parent / "bl.json"
+        subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--write-baseline", str(bl)],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        # Introduce a SECOND, new bad command; the baselined one must stay suppressed.
+        two = CLEAN_AGENTS.replace("Run `npm run test`.", "Run `npm run nope` and `npm run brandnew`.")
+        (repo / "AGENTS.md").write_text(two, encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--baseline", str(bl), "--json"], text=True, capture_output=True
+        )
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse(report["ok"])
+        new_msgs = [f["message"] for f in report["findings"]]
+        self.assertIn("Unknown package.json script `brandnew`", new_msgs)
+        self.assertNotIn("Unknown package.json script `nope`", new_msgs)
+        self.assertEqual(len(report["baselined"]), 1)
+
+    def test_baseline_survives_line_number_shift(self):
+        # Fingerprints ignore line numbers, so an unrelated edit above the drift
+        # must not "un-baseline" it (the whole point of a durable baseline).
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        bl = repo.parent / "bl.json"
+        subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--write-baseline", str(bl)],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        original = (repo / "AGENTS.md").read_text(encoding="utf-8")
+        (repo / "AGENTS.md").write_text("# Note\n\nUnrelated preamble line.\n\n" + original, encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--baseline", str(bl)], text=True, capture_output=True
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("suppressed by the baseline", proc.stdout)
+
+    def test_missing_or_malformed_baseline_suppresses_nothing(self):
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        missing = repo.parent / "does-not-exist.json"
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--baseline", str(missing), "--json"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 1)
+        report = json.loads(proc.stdout)
+        self.assertFalse(report["ok"])
+        self.assertFalse(report["baselined"])
+        bad = repo.parent / "bad.json"
+        bad.write_text("{ not json", encoding="utf-8")
+        proc2 = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--baseline", str(bad), "--json"], text=True, capture_output=True
+        )
+        self.assertEqual(proc2.returncode, 1)
+        self.assertFalse(json.loads(proc2.stdout)["baselined"])
+
+    def test_no_baseline_flag_means_no_baseline_section(self):
+        # Additive: without --baseline the output is unchanged and `baselined` is empty.
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(json.loads(proc.stdout)["baselined"], [])
+        md = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
+        self.assertNotIn("## Baseline", md.stdout)
+
+    def test_baseline_payload_is_deterministic_and_untimestamped(self):
+        findings = [
+            {"check": "D2", "level": "ERROR", "message": "b", "path": None, "line": 9},
+            {"check": "D1", "level": "ERROR", "message": "a", "line": 3},
+            {"check": "D1", "level": "ERROR", "message": "a", "line": 99},  # duplicate fingerprint
+            {"check": "D5", "level": "INFO", "message": "ignored inventory"},
+        ]
+        payload = check_drift.baseline_payload(findings)
+        self.assertEqual(payload["version"], check_drift.BASELINE_VERSION)
+        self.assertNotIn("generated", payload)  # deterministic: no timestamp
+        self.assertEqual(
+            [(e["check"], e["message"]) for e in payload["findings"]],
+            [("D1", "a"), ("D2", "b")],  # sorted, de-duplicated, INFO dropped
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
