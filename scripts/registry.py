@@ -207,6 +207,29 @@ _NEGATED_CLAUSE_RE = re.compile(
 )
 
 
+# Committed dotenv *template* variants: unlike a bare `.env` (gitignored), these
+# are meant to be tracked, so a reference to a missing one is genuine drift.
+_DOTENV_TEMPLATE_SUFFIXES = frozenset(
+    {"example", "sample", "template", "dist", "defaults"}
+)
+
+
+def _is_gitignored_dotenv(token):
+    """True when ``token`` names a conventionally-gitignored runtime dotenv file.
+
+    Matches a basename of exactly ``.env`` or ``.env.<suffix>`` (e.g.
+    ``frontend/.env``, ``.env.local``, ``.env.production``) but NOT the committed
+    template variants in ``_DOTENV_TEMPLATE_SUFFIXES`` (``.env.example`` etc.),
+    which stay checked so real drift is still caught.
+    """
+    base = token.rsplit("/", 1)[-1]
+    if base == ".env":
+        return True
+    if base.startswith(".env."):
+        return base[len(".env.") :].lower() not in _DOTENV_TEMPLATE_SUFFIXES
+    return False
+
+
 def negated_spans(line):
     """Return ``[(start, end), ...]`` character spans of ``line`` that fall
     inside a negation clause (see ``_NEGATED_CLAUSE_RE``). Shared by
@@ -299,6 +322,20 @@ def declared_paths(text):
             # filename like `go.mod` or `Cargo.toml` (single-segment tokens
             # are handled entirely by the KNOWN_ROOT_FILES check below).
             if "/" in token and _GO_IMPORT_HOST_RE.match(token.split("/", 1)[0]):
+                continue
+            # A conventional runtime dotenv file (`.env`, `frontend/.env`,
+            # `.env.local`, `.env.production`, ...) is deliberately gitignored
+            # and never committed — AGENTS.md references it as the place to PUT
+            # local config, not as a path the repo is expected to contain, so
+            # probing `root/.../.env` always misses. Found running the full
+            # chain against All-Hands-AI/OpenHands, whose AGENTS.md says "Set
+            # in `frontend/.env` or as environment variables" — flagged MISSING
+            # even though a committed `.env` would itself be the bug. The
+            # committed *template* variants (`.env.example`, `.env.sample`,
+            # `.env.template`, `.env.dist`, `.env.defaults`) are the exception:
+            # those ARE meant to be tracked, so a reference to a missing one is
+            # genuine drift and stays checked.
+            if _is_gitignored_dotenv(token):
                 continue
             if token.startswith(CMD_PATH_PREFIXES):
                 continue
