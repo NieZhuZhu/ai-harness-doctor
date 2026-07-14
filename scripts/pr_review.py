@@ -38,6 +38,55 @@ MARKER = "<!-- ai-harness-doctor:pr-review -->"
 # advisory gate.
 REVIEW_EVENT = "COMMENT"
 
+_ERROR_LEVELS = {"ERROR", "HIGH"}
+_WARNING_LEVELS = {"NOTICE", "WARN", "WARNING", "MEDIUM", "MISMATCH"}
+_INFO_LEVELS = {"INFO", "LOW"}
+
+_RULE_TITLES = {
+    "D1": "Command drift",
+    "D2": "Path drift",
+    "D3": "Tool-stub re-divergence",
+    "D4": "Canonical instruction size",
+    "D5": "Nested AGENTS.md inventory",
+    "D6": "Repository fact drift",
+    "D7": "Markdown-link drift",
+    "D8": "Competing lockfiles",
+    "secret": "Exposed secret",
+    "permission": "Broad agent permission",
+    "hook": "Risky lifecycle hook",
+    "mcp": "Insecure MCP configuration",
+    "instruction": "Risky agent instruction",
+    "command": "Command consistency",
+    "path": "Path consistency",
+    "package_manager": "Package-manager consistency",
+    "node_version": "Node.js version consistency",
+}
+
+_IMPACT_BY_LABEL = {
+    "D1": "AI coding agents may run commands that do not exist, wasting CI time or producing incomplete changes.",
+    "D2": "AI coding agents may read, edit, or cite a path that no longer exists.",
+    "D3": (
+        "Tool-specific instructions may diverge from the canonical AGENTS.md "
+        "and give different agents conflicting guidance."
+    ),
+    "D4": "Missing or oversized canonical instructions reduce the context available to AI coding agents.",
+    "D6": (
+        "Agents may choose the wrong runtime or package manager because "
+        "documented facts disagree with repository facts."
+    ),
+    "D7": "Agents and contributors may follow a documentation link that no longer resolves.",
+    "D8": "Competing lockfiles make the intended package manager ambiguous to agents and CI.",
+    "secret": "Credentials or sensitive values in agent configuration can be exposed to tools, logs, or pull requests.",
+    "permission": "Overly broad agent permissions can allow unintended commands or file access.",
+    "hook": "Risky hook commands can execute automatically during an agent lifecycle.",
+    "mcp": "An insecure MCP configuration can expose tool traffic or grant unsafe capabilities.",
+    "instruction": "Unsafe repository instructions can steer AI agents toward destructive or unreviewed actions.",
+    "command": "Agents may execute a command that no longer matches the repository.",
+    "path": "Agents may operate on a stale or missing repository path.",
+    "package_manager": "Agents may install dependencies or run scripts with the wrong package manager.",
+    "node_version": "Agents and CI may use a Node.js version that conflicts with the repository.",
+}
+
 
 def collect_findings(report):
     """Flatten the finding lists out of a check_drift and/or scan JSON report.
@@ -45,7 +94,7 @@ def collect_findings(report):
     Accepts either a single report dict, a list of finding dicts, or a list of
     report dicts, and gathers findings from all the shapes those two tools emit:
 
-      - ``check_drift.py --json`` -> ``{"findings": [...]}``
+      - ``check_drift.py --json`` -> ``{"findings": [...], "custom": [...]}``
       - ``scan.py --json``        -> ``{"security": [...], "gaps": [...],
                                          "semantic": {"findings": [...]}}``
 
@@ -59,11 +108,13 @@ def collect_findings(report):
     if not isinstance(report, dict):
         return findings
     # A bare finding dict (has a message but none of the container keys).
-    container_keys = ("findings", "security", "gaps", "semantic")
+    container_keys = ("findings", "custom", "security", "gaps", "semantic")
     if "message" in report and not any(k in report for k in container_keys):
         return [report]
     if isinstance(report.get("findings"), list):
         findings.extend(f for f in report["findings"] if isinstance(f, dict))
+    if isinstance(report.get("custom"), list):
+        findings.extend(f for f in report["custom"] if isinstance(f, dict))
     if isinstance(report.get("security"), list):
         findings.extend(f for f in report["security"] if isinstance(f, dict))
     if isinstance(report.get("gaps"), list):
@@ -76,7 +127,7 @@ def collect_findings(report):
 
 def finding_label(finding):
     """A short, stable prefix identifying the finding kind (D1/security/...)."""
-    for key in ("check", "category"):
+    for key in ("check", "category", "rule"):
         value = finding.get(key)
         if value:
             return str(value)
@@ -98,26 +149,90 @@ def _no_embedded_newlines(value):
     return " ".join(str(value).split())
 
 
-def format_body(finding):
+def _severity_group(level):
+    normalized = str(level or "").upper()
+    if normalized in _ERROR_LEVELS:
+        return "error"
+    if normalized in _WARNING_LEVELS:
+        return "warning"
+    if normalized in _INFO_LEVELS:
+        return "info"
+    return "info"
+
+
+def _severity_icon(level):
+    return {"error": "❌", "warning": "⚠️", "info": "ℹ️"}[_severity_group(level)]
+
+
+def _impact_text(finding):
+    """Explain why a finding matters to an AI-harness user."""
+    label = finding_label(finding)
+    return _IMPACT_BY_LABEL.get(
+        label,
+        "AI coding agents may act on inconsistent, stale, or unsafe repository guidance.",
+    )
+
+
+def _rule_title(label):
+    return _RULE_TITLES.get(label, str(label).replace("_", " ").replace("-", " ").title())
+
+
+def _display_location(path, line):
+    if not path:
+        return None
+    safe_path = _no_embedded_newlines(path)
+    return f"{safe_path}:{line}" if line is not None else safe_path
+
+
+def _evidence_lines(finding, path=None, line=None):
+    """Return deterministic Markdown bullets for the evidence fields available."""
+    evidence = []
+    location = _display_location(path or finding.get("path"), line)
+    if location:
+        evidence.append(f"- **Location:** `{location}`")
+    field_labels = (
+        ("declared", "Declared"),
+        ("actual", "Repository fact"),
+        ("evidence", "Source evidence"),
+        ("item", "Affected item"),
+        ("source", "Source"),
+    )
+    for key, label in field_labels:
+        value = finding.get(key)
+        if value not in (None, "", [], {}):
+            if isinstance(value, (list, tuple, set)):
+                value = ", ".join(str(item) for item in value)
+            elif isinstance(value, dict):
+                value = json.dumps(value, ensure_ascii=False, sort_keys=True)
+            evidence.append(f"- **{label}:** {_no_embedded_newlines(value)}")
+    return evidence
+
+
+def format_body(finding, path=None, line=None, heading_level=3):
     """Render one finding into a Markdown comment body.
 
     Deterministic: only reads fields present on the finding, always in the same
     order, so identical findings produce byte-identical bodies across re-runs.
     """
-    label = finding_label(finding)
-    level = finding.get("level")
-    header = f"**{label}"
-    if level:
-        header += f" — {level}"
-    header += "**"
-    parts = [header]
-    message = finding.get("message")
-    if message:
-        parts.append(_no_embedded_newlines(message))
-    suggestion = finding.get("suggestion")
-    if suggestion:
-        parts.append(f"Suggestion: {_no_embedded_newlines(suggestion)}")
-    return " ".join(parts)
+    label = _no_embedded_newlines(finding_label(finding))
+    level = _no_embedded_newlines(finding.get("level") or "FINDING").upper()
+    message = _no_embedded_newlines(finding.get("message") or "Harness inconsistency detected.")
+    suggestion = _no_embedded_newlines(
+        finding.get("suggestion")
+        or "Review the finding and align the repository guidance with the current codebase."
+    )
+    lines = [
+        f"{'#' * heading_level} {_severity_icon(level)} {label} · {_rule_title(label)} · {level}",
+        "",
+        f"**Finding:** {message}",
+        "",
+        f"**Why it matters:** {_impact_text(finding)}",
+    ]
+    evidence = _evidence_lines(finding, path=path, line=line)
+    if evidence:
+        lines.extend(["", "**Evidence:**", *evidence])
+    lines.extend(["", f"**Suggested fix:** {suggestion}"])
+    return "\n".join(lines)
 
 
 def _coerce_line(value):
@@ -170,11 +285,26 @@ def build_review(report, default_path=None, marker=MARKER, event=REVIEW_EVENT):
         # concrete line; otherwise GitHub 422-rejects the entire review. Route
         # everything else (no location, or path-without-line) to the summary.
         if path and line is not None:
-            comments.append({"path": str(path), "line": line, "body": format_body(finding)})
+            comments.append(
+                {
+                    "path": str(path),
+                    "line": line,
+                    "body": format_body(finding, path=str(path), line=line),
+                }
+            )
         else:
             summary_findings.append(finding)
 
-    body = build_summary(summary_findings, inline_count=len(comments), marker=marker)
+    metadata = report if isinstance(report, dict) else {}
+    body = build_summary(
+        findings,
+        summary_findings,
+        inline_count=len(comments),
+        marker=marker,
+        score=metadata.get("score"),
+        grade=metadata.get("grade"),
+        default_path=default_path,
+    )
     return {
         "event": event,
         "body": body,
@@ -184,33 +314,135 @@ def build_review(report, default_path=None, marker=MARKER, event=REVIEW_EVENT):
     }
 
 
-def build_summary(summary_findings, inline_count, marker=MARKER):
+def _plural(count, singular, plural=None):
+    return f"{count} {singular if count == 1 else (plural or singular + 's')}"
+
+
+def _severity_counts(findings):
+    counts = {"error": 0, "warning": 0, "info": 0}
+    for finding in findings:
+        counts[_severity_group(finding.get("level"))] += 1
+    return counts
+
+
+def _finding_index_line(finding, default_path=None):
+    label = _no_embedded_newlines(finding_label(finding))
+    level = _no_embedded_newlines(finding.get("level") or "FINDING").upper()
+    message = _no_embedded_newlines(finding.get("message") or "Harness inconsistency detected.")
+    path = finding.get("path") or (default_path if _coerce_line(finding.get("line")) is not None else None)
+    line = _coerce_line(finding.get("line"))
+    location = _display_location(path, line)
+    where = f" · `{location}`" if location else ""
+    return f"- {_severity_icon(level)} **{label} · {_rule_title(label)} · {level}**{where} — {message}"
+
+
+def _resolved_location(finding, default_path=None):
+    line = _coerce_line(finding.get("line"))
+    path = finding.get("path")
+    if not path and line is not None and default_path:
+        path = default_path
+    return (str(path), line) if path and line is not None else (path, line)
+
+
+def build_summary(
+    all_findings,
+    summary_findings,
+    inline_count,
+    marker=MARKER,
+    score=None,
+    grade=None,
+    default_path=None,
+):
     """Assemble the deterministic Markdown summary body for the review.
 
     Always starts with the identifying ``marker`` line so re-runs are
     recognizable. Reports the inline-comment count and lists every finding that
     could not be attached to a specific file location.
     """
-    lines = [marker, "## AI Harness Doctor — PR review", ""]
-    total = inline_count + len(summary_findings)
+    lines = [marker, "## 🩺 AI Harness Doctor — PR review", ""]
+    total = len(all_findings)
     if total == 0:
-        lines.append("No drift or scan findings. ✅")
+        lines.extend(
+            [
+                "### ✅ Harness checks passed",
+                "",
+                "No drift, semantic, gap, or security findings were reported.",
+                "",
+            ]
+        )
+        if score is not None:
+            health = f"**Health:** {score}/100"
+            if grade:
+                health += f" (grade {grade})"
+            lines.extend([health, ""])
+        lines.extend(
+            [
+                "**Coverage:** canonical instructions, commands, paths, tool stubs, "
+                "repository facts, and configured custom rules.",
+                "",
+                "**Next step:** No action is required for this review.",
+            ]
+        )
         return "\n".join(lines) + "\n"
 
-    if inline_count:
-        noun = "comment" if inline_count == 1 else "comments"
-        lines.append(f"{inline_count} inline {noun} added for located findings.")
-        lines.append("")
+    counts = _severity_counts(all_findings)
+    severity_parts = []
+    if counts["error"]:
+        severity_parts.append(_plural(counts["error"], "error"))
+    if counts["warning"]:
+        severity_parts.append(_plural(counts["warning"], "warning"))
+    if counts["info"]:
+        severity_parts.append(_plural(counts["info"], "informational finding"))
 
-    if summary_findings:
-        lines.append("### Findings without a file location")
-        for finding in summary_findings:
-            # Preserve the file path when the finding has one but no line (it
-            # could not become an inline comment) so the summary still points at
-            # the right file.
-            path = finding.get("path")
-            location = f"`{_no_embedded_newlines(path)}`: " if path else ""
-            lines.append(f"- {location}{format_body(finding)}")
+    lines.extend(
+        [
+            "### Review overview",
+            "",
+            f"**Delivery:** {total} total · {_plural(inline_count, 'inline thread')} · "
+            f"{len(summary_findings)} summary-only",
+            f"**Severity:** {', '.join(severity_parts) if severity_parts else 'none'}",
+        ]
+    )
+    if score is not None:
+        health = f"**Health:** {score}/100"
+        if grade:
+            health += f" (grade {grade})"
+        lines.append(health)
+
+    lines.extend(["", "### Findings index"])
+    for finding in all_findings:
+        lines.append(_finding_index_line(finding, default_path=default_path))
+
+    lines.extend(["", "<details>", f"<summary><strong>Detailed findings ({total})</strong></summary>", ""])
+    for finding in all_findings:
+        path, line = _resolved_location(finding, default_path=default_path)
+        if path and line is not None:
+            placement = f"Inline comment posted at `{_display_location(path, line)}`."
+        elif path:
+            placement = f"Summary only: `{_no_embedded_newlines(path)}` has no attachable line."
+        else:
+            placement = "Summary only: this finding has no attachable file and line."
+        lines.extend(
+            [
+                format_body(finding, path=path, line=line, heading_level=4),
+                "",
+                f"**Review placement:** {placement}",
+                "",
+                "---",
+                "",
+            ]
+        )
+    lines.extend(["</details>"])
+
+    lines.extend(
+        [
+            "",
+            "### Recommended next steps",
+            "1. Fix error-level findings first; they can make agent instructions or CI behavior incorrect.",
+            "2. Review warnings for stale or ambiguous guidance before merging.",
+            "3. Re-run the harness check and resolve or explicitly accept every remaining finding.",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 

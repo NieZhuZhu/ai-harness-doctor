@@ -16,6 +16,8 @@ import pr_review  # noqa: E402
 class BuildReviewTests(unittest.TestCase):
     def test_located_findings_become_inline_comments(self):
         report = {
+            "score": 85,
+            "grade": "B",
             "findings": [
                 {
                     "check": "D2",
@@ -39,14 +41,56 @@ class BuildReviewTests(unittest.TestCase):
         d2 = payload["comments"][0]
         self.assertEqual(d2["path"], "docs/x.md")
         self.assertEqual(d2["line"], 12)
-        self.assertIn("D2", d2["body"])
-        self.assertIn("Fix it.", d2["body"])
+        self.assertIn("### ❌ D2 · Path drift · ERROR", d2["body"])
+        self.assertIn("**Finding:** Referenced path missing", d2["body"])
+        self.assertIn("**Why it matters:**", d2["body"])
+        self.assertIn("AI coding agents", d2["body"])
+        self.assertIn("**Evidence:**", d2["body"])
+        self.assertIn("`docs/x.md:12`", d2["body"])
+        self.assertIn("**Suggested fix:** Fix it.", d2["body"])
 
         # Every posted inline comment MUST carry a concrete line, otherwise
         # GitHub 422-rejects the whole review.
         for comment in payload["comments"]:
             self.assertIn("line", comment)
             self.assertIsInstance(comment["line"], int)
+
+        # The final review summary is useful without opening each inline thread.
+        self.assertIn("### Review overview", payload["body"])
+        self.assertIn("**Health:** 85/100 (grade B)", payload["body"])
+        self.assertIn("**Severity:** 2 error", payload["body"])
+        self.assertIn("### Findings index", payload["body"])
+        self.assertIn("`docs/x.md:12`", payload["body"])
+        self.assertIn("Referenced path missing", payload["body"])
+        self.assertIn("<summary><strong>Detailed findings (2)</strong></summary>", payload["body"])
+        self.assertIn("**Review placement:** Inline comment posted at `docs/x.md:12`.", payload["body"])
+        self.assertIn("**Suggested fix:** Fix it.", payload["body"])
+        self.assertIn("### Recommended next steps", payload["body"])
+
+    def test_rich_comment_includes_declared_actual_and_evidence(self):
+        report = {
+            "semantic": {
+                "findings": [
+                    {
+                        "category": "package_manager",
+                        "level": "MISMATCH",
+                        "path": "AGENTS.md",
+                        "line": "8",
+                        "message": "Package manager declaration differs from the lockfile",
+                        "declared": "npm",
+                        "actual": "pnpm",
+                        "evidence": "pnpm-lock.yaml",
+                        "suggestion": "Align the declaration with the repository.",
+                    }
+                ]
+            }
+        }
+        comment = pr_review.build_review(report)["comments"][0]["body"]
+        self.assertIn("### ⚠️ package_manager · Package-manager consistency · MISMATCH", comment)
+        self.assertIn("- **Declared:** npm", comment)
+        self.assertIn("- **Repository fact:** pnpm", comment)
+        self.assertIn("- **Source evidence:** pnpm-lock.yaml", comment)
+        self.assertIn("**Suggested fix:** Align the declaration with the repository.", comment)
 
     def test_path_without_line_goes_to_summary_not_inline(self):
         # A finding with a path but no line must NOT become an inline comment
@@ -63,6 +107,9 @@ class BuildReviewTests(unittest.TestCase):
         self.assertEqual(payload["summary_count"], 1)
         self.assertIn("secret", payload["body"])
         self.assertIn("CLAUDE.md", payload["body"])
+        self.assertIn("Detailed findings", payload["body"])
+        self.assertIn("Summary only: `CLAUDE.md` has no attachable line.", payload["body"])
+        self.assertIn("**Why it matters:**", payload["body"])
 
     def test_unlocated_findings_go_to_summary(self):
         report = {
@@ -101,12 +148,35 @@ class BuildReviewTests(unittest.TestCase):
         self.assertEqual(withpath["comments"][0]["line"], 7)
 
     def test_empty_findings_case(self):
-        payload = pr_review.build_review({})
+        payload = pr_review.build_review({"score": 100, "grade": "A"})
         self.assertEqual(payload["comments"], [])
         self.assertEqual(payload["inline_count"], 0)
         self.assertEqual(payload["summary_count"], 0)
         self.assertIn(pr_review.MARKER, payload["body"])
-        self.assertIn("No drift or scan findings", payload["body"])
+        self.assertIn("### ✅ Harness checks passed", payload["body"])
+        self.assertIn("**Health:** 100/100 (grade A)", payload["body"])
+        self.assertIn("No drift, semantic, gap, or security findings were reported.", payload["body"])
+        self.assertIn("No action is required", payload["body"])
+
+    def test_summary_reports_severity_distribution_and_delivery(self):
+        report = {
+            "findings": [
+                {"check": "D1", "level": "ERROR", "path": "AGENTS.md", "line": 2, "message": "bad command"},
+                {"check": "D4", "level": "NOTICE", "message": "large file"},
+            ],
+            "custom": [{"rule": "org-policy", "level": "WARN", "message": "missing owner"}],
+            "score": 80,
+            "grade": "B",
+        }
+        payload = pr_review.build_review(report)
+        body = payload["body"]
+        self.assertIn("**Delivery:** 3 total", body)
+        self.assertIn("1 inline thread", body)
+        self.assertIn("2 summary-only", body)
+        self.assertIn("1 error", body)
+        self.assertIn("2 warnings", body)
+        self.assertIn("`AGENTS.md:2`", body)
+        self.assertIn("org-policy", body)
 
     def test_collects_from_scan_and_drift_shapes(self):
         report = {

@@ -6,8 +6,8 @@ ACTION = ROOT / "action.yml"
 SELF_TEST = ROOT / ".github" / "workflows" / "action-self-test.yml"
 
 MARKETPLACE_DESCRIPTION = (
-    "Audit AI agent configs for drift, conflicts, stale instructions, "
-    "and security risks—with SARIF output for GitHub."
+    "Audit and drift-guard AGENTS.md and AI agent configs for stale commands/paths, "
+    "conflicts, and security risks; emit SARIF."
 )
 
 

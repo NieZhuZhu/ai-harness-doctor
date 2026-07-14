@@ -1,5 +1,5 @@
 name: "AI Harness Doctor"
-description: "Audit AI agent configs for drift, conflicts, stale instructions, and security risks—with SARIF output for GitHub."
+description: "Audit and drift-guard AGENTS.md and AI agent configs for stale commands/paths, conflicts, and security risks; emit SARIF."
 author: "NieZhuZhu"
 branding:
   icon: "check-circle"
