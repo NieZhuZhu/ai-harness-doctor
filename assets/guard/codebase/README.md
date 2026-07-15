@@ -14,10 +14,15 @@ pipeline YAML as a starting point you can adapt.
 
 | Mode | When to run | Behaviour |
 |---|---|---|
-| `harness-guard.sh drift` | On every merge request | Runs `ai-harness-doctor drift . --strict`; non-zero exit fails the check. |
-| `harness-guard.sh checkup` | On a schedule (e.g. weekly) | Runs `scan` + `drift`, prints both reports, exits with the drift status. |
+| `harness-guard.sh drift` | On every merge request | Gates new scan debt (including HIGH security) and then runs `drift . --strict`; non-zero exit fails the check. |
+| `harness-guard.sh checkup` | On a schedule (e.g. weekly) | Runs gated `scan` + `drift`, prints both reports, and preserves scan-before-drift exit precedence. |
 
 The script prefers a locally installed `ai-harness-doctor` and falls back to `npx`.
+If `.ai-harness-doctor/scan-baseline.json` exists, the scan gate uses it for
+pre-existing gap/semantic/conflict debt. The guard never creates or updates the
+file, and HIGH security findings remain unsuppressible. Create it manually with
+`ai-harness-doctor scan . --write-baseline .ai-harness-doctor/scan-baseline.json`,
+review and commit it, then shrink it as debt is repaired.
 
 ## Wiring examples
 

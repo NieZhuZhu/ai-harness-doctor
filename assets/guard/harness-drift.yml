@@ -17,6 +17,7 @@ on:
       - GEMINI.md
       - .clinerules
       - .cursor/rules/**
+      - .ai-harness-doctor/scan-baseline.json
       - .github/workflows/**
   workflow_dispatch:
 
@@ -36,7 +37,22 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # actions/setup-python@v6
         with:
           python-version: "3.12"
+      - name: Check new scan debt
+        shell: bash
+        env:
+          SCAN_BASELINE: .ai-harness-doctor/scan-baseline.json
+        run: |
+          scan_args=(scan . --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts)
+          # Optional adoption path: commit this explicit debt register after
+          # reviewing `scan . --write-baseline "$SCAN_BASELINE"`.
+          # The guard never creates or refreshes it automatically, and HIGH
+          # security findings remain unsuppressible.
+          if [ -f "$SCAN_BASELINE" ]; then
+            scan_args+=(--baseline "$SCAN_BASELINE")
+          fi
+          npx -y ai-harness-doctor@latest "${scan_args[@]}"
       - name: Check AI harness drift
+        if: ${{ always() }}
         run: npx -y ai-harness-doctor@latest drift . --strict
       # On a pull request, surface drift findings as inline PR review comments.
       # check_drift.py --json emits a machine-readable report; pr_review.py turns

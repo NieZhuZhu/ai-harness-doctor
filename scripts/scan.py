@@ -25,6 +25,7 @@ import semantic  # noqa: E402  # declaration-vs-fact consistency engine
 # stable import path for any external caller.
 from scan_render import (  # noqa: E402,F401  (re-exported for backward compatibility)
     CATEGORY_LABELS,
+    render_baseline,
     render_custom,
     render_gaps,
     render_markdown,
@@ -37,6 +38,20 @@ from scan_render import (  # noqa: E402,F401  (re-exported for backward compatib
 )
 
 SKIP_DIRS = registry.SKIP_DIRS
+
+# Scan baselines are an auditable register of known non-security debt. Security
+# findings are deliberately absent from this allow-list so neither a generated
+# nor hand-crafted baseline can suppress a credential or unsafe permission.
+SCAN_BASELINE_VERSION = 1
+SCAN_BASELINE_FAMILIES = {"gap", "semantic", "conflict"}
+_LINE_EVIDENCE_RE = re.compile(
+    r"(?P<path>(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+):\d+\b"
+)
+
+
+def _without_line_evidence(text):
+    """Normalize file:line evidence so unrelated line shifts keep identity."""
+    return _LINE_EVIDENCE_RE.sub(r"\g<path>:<line>", str(text or ""))
 
 
 def _build_config_patterns():
@@ -1547,6 +1562,200 @@ def _aggregate_packages(packages):
     return aggregate
 
 
+def _scan_finding_records(report, package=""):
+    """Flatten suppressible scan debt into stable, structured records.
+
+    Identity uses structured rule/category/evidence fields plus the package
+    prefix. Line numbers and suggestions are presentation details, not identity.
+    Security findings never enter this function and therefore cannot be
+    baselined.
+    """
+    records = []
+    for finding in report.get("gaps", []):
+        records.append(
+            {
+                "family": "gap",
+                "rule": finding.get("check", ""),
+                "package": package,
+                "path": "",
+                "message": _without_line_evidence(finding.get("message", "")),
+                "item": finding.get("item", ""),
+            }
+        )
+    for finding in report.get("semantic", {}).get("findings", []):
+        records.append(
+            {
+                "family": "semantic",
+                "rule": finding.get("category", ""),
+                "package": package,
+                "path": "AGENTS.md",
+                "message": _without_line_evidence(finding.get("message", "")),
+                "declared": finding.get("declared", ""),
+                "actual": finding.get("actual", ""),
+            }
+        )
+    for finding in report.get("conflicts", []):
+        values = sorted(str(value) for value in finding.get("values", {}))
+        records.append(
+            {
+                "family": "conflict",
+                "rule": finding.get("signal", ""),
+                "package": package,
+                "path": "",
+                "message": f"Conflicting {finding.get('signal', '')} declarations: " + ", ".join(values),
+                "values": values,
+            }
+        )
+    return records
+
+
+def _scan_reports(report):
+    """Yield ``(package-prefix, report)`` for root followed by packages."""
+    yield "", report
+    for package in report.get("packages", []):
+        yield package.get("path", ""), package.get("report", {})
+
+
+def _baseline_entry(record):
+    """Canonical persisted shape for a scan debt record."""
+    entry = {
+        "family": record.get("family", ""),
+        "rule": record.get("rule", ""),
+        "package": record.get("package", ""),
+        "path": record.get("path", ""),
+        "message": record.get("message", ""),
+    }
+    family = entry["family"]
+    if family == "gap":
+        entry["item"] = record.get("item", "")
+    elif family == "semantic":
+        entry["declared"] = record.get("declared", "")
+        entry["actual"] = record.get("actual", "")
+    elif family == "conflict":
+        entry["values"] = sorted(str(value) for value in record.get("values", []))
+    return entry
+
+
+def scan_finding_fingerprint(record):
+    """Return a hashable public identity for one baseline-eligible finding."""
+    entry = _baseline_entry(record)
+    return json.dumps(entry, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def baseline_fingerprints(payload):
+    """Load valid non-security fingerprints from a decoded baseline payload."""
+    if not isinstance(payload, dict) or payload.get("version") != SCAN_BASELINE_VERSION:
+        return set()
+    fingerprints = set()
+    for entry in payload.get("findings", []):
+        if not isinstance(entry, dict) or entry.get("family") not in SCAN_BASELINE_FAMILIES:
+            continue
+        fingerprints.add(scan_finding_fingerprint(entry))
+    return fingerprints
+
+
+def load_scan_baseline(path):
+    """Load a scan baseline; missing/malformed files suppress nothing."""
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    return baseline_fingerprints(payload)
+
+
+def scan_baseline_payload(report):
+    """Build a deterministic, timestamp-free baseline for root + packages."""
+    unique = {}
+    for package, subreport in _scan_reports(report):
+        for record in _scan_finding_records(subreport, package):
+            entry = _baseline_entry(record)
+            unique[scan_finding_fingerprint(entry)] = entry
+    findings = sorted(
+        unique.values(),
+        key=lambda entry: (
+            entry["package"],
+            entry["family"],
+            entry["rule"],
+            entry["path"],
+            entry["message"],
+            json.dumps(entry, ensure_ascii=False, sort_keys=True),
+        ),
+    )
+    return {"version": SCAN_BASELINE_VERSION, "findings": findings}
+
+
+def _refresh_package_summaries(report):
+    """Recompute monorepo summaries after baseline suppression."""
+    packages = report.get("packages", [])
+    for package in packages:
+        package["summary"] = _package_summary(package.get("report", {}))
+    if "monorepo" in report:
+        report["monorepo"]["aggregate"] = _aggregate_packages(packages)
+
+
+def apply_scan_baseline(report, baseline, baseline_path):
+    """Suppress matching gap/semantic/conflict debt while retaining attribution."""
+    baselined = []
+
+    def visible_entry(record, finding):
+        entry = _baseline_entry(record)
+        if finding.get("message"):
+            entry["message"] = finding["message"]
+        for key in ("level", "line", "suggestion"):
+            if key in finding:
+                entry[key] = finding[key]
+        return entry
+
+    for package, subreport in _scan_reports(report):
+        kept_gaps = []
+        for finding in subreport.get("gaps", []):
+            record = _scan_finding_records({"gaps": [finding]}, package)[0]
+            if scan_finding_fingerprint(record) in baseline:
+                baselined.append(visible_entry(record, finding))
+            else:
+                kept_gaps.append(finding)
+        subreport["gaps"] = kept_gaps
+
+        kept_semantic = []
+        semantic = subreport.get("semantic", {})
+        for finding in semantic.get("findings", []):
+            record = _scan_finding_records(
+                {"semantic": {"findings": [finding]}},
+                package,
+            )[0]
+            if scan_finding_fingerprint(record) in baseline:
+                baselined.append(visible_entry(record, finding))
+            else:
+                kept_semantic.append(finding)
+        if semantic:
+            semantic["findings"] = kept_semantic
+            semantic["mismatches"] = len(kept_semantic)
+
+        kept_conflicts = []
+        for finding in subreport.get("conflicts", []):
+            record = _scan_finding_records({"conflicts": [finding]}, package)[0]
+            if scan_finding_fingerprint(record) in baseline:
+                baselined.append(visible_entry(record, finding))
+            else:
+                kept_conflicts.append(finding)
+        subreport["conflicts"] = kept_conflicts
+
+    # Keep one attributed, deterministic visibility surface at the top level.
+    baselined.sort(
+        key=lambda entry: (
+            entry["package"],
+            entry["family"],
+            entry["rule"],
+            entry["path"],
+            entry["message"],
+        )
+    )
+    report["baselined"] = baselined
+    report["baseline"] = {"path": str(baseline_path), "suppressed": len(baselined)}
+    _refresh_package_summaries(report)
+    return report
+
+
 def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_plugins=False, ctx=None):
     """Scan every detected package subdirectory and build the aggregate.
 
@@ -1683,6 +1892,8 @@ def _run_repos_file(args):
         exit_code = 3
     elif args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in ok_reports):
         exit_code = 4
+    elif args.fail_on_conflicts and any(r.get("conflicts") for r in ok_reports):
+        exit_code = 7
 
     for report in ok_reports:
         _apply_section_flags(report, args)
@@ -1719,6 +1930,26 @@ def main(argv=None):
         "--fail-on-semantic",
         action="store_true",
         help="Exit non-zero when any AGENTS.md declaration contradicts the code.",
+    )
+    parser.add_argument(
+        "--fail-on-conflicts",
+        action="store_true",
+        help="Exit 7 when any conflicting harness declaration is present.",
+    )
+    parser.add_argument(
+        "--baseline",
+        metavar="FILE",
+        default=None,
+        help="Suppress gap/semantic/conflict debt recorded in FILE so gates fail only on new findings. "
+        "HIGH security findings are never suppressible.",
+    )
+    parser.add_argument(
+        "--write-baseline",
+        metavar="FILE",
+        default=None,
+        dest="write_baseline",
+        help="Record current gap/semantic/conflict debt to FILE and exit 0. "
+        "The deterministic payload excludes all security findings.",
     )
     parser.add_argument(
         "--no-snapshot",
@@ -1771,6 +2002,13 @@ def main(argv=None):
         if args.repo_root != ".":
             print("error: repo_root and --repos-file are mutually exclusive", file=sys.stderr)
             return 1
+        if args.baseline or args.write_baseline:
+            print(
+                "error: --repos-file cannot be combined with --baseline or --write-baseline; "
+                "each repository must own and run its own scan baseline",
+                file=sys.stderr,
+            )
+            return 1
         return _run_repos_file(args)
     root = Path(args.repo_root).resolve()
     if not root.is_dir():
@@ -1801,14 +2039,32 @@ def main(argv=None):
         report["monorepo"] = monorepo
         report["packages"] = packages
 
+    # Recording is a dedicated explicit-output mode over the natural report.
+    # Security findings are structurally excluded by scan_baseline_payload().
+    if args.write_baseline:
+        payload = scan_baseline_payload(report)
+        baseline_path = Path(args.write_baseline)
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        baseline_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        print(f"Wrote scan baseline with {len(payload['findings'])} finding(s) to {args.write_baseline}")
+        return 0
+
+    # Apply suppression before gate and SARIF decisions. Only the explicitly
+    # suppressible report families are mutated; security remains untouched.
+    if args.baseline:
+        apply_scan_baseline(report, load_scan_baseline(args.baseline), args.baseline)
+
     # Evaluate the fail-on gates on the ACTUAL findings BEFORE the --no-* flags
     # suppress any report sections. Otherwise --no-security would pop the security
     # section and silently neuter --fail-on-security, letting HIGH findings pass
     # with exit 0 (CORR-03). --no-security must only hide the section from the
     # printed report, never disable the gate. Precedence: security > gaps >
-    # semantic, matching the previous return order. Fail-on gates consider the
-    # root report and every package report so a monorepo run cannot hide a
-    # failing package.
+    # semantic > conflicts, preserving every existing code meaning and adding 7
+    # for conflicts. Fail-on gates consider the root report and every package
+    # report so a monorepo run cannot hide a failing package.
     reports = [report] + [pkg["report"] for pkg in report.get("packages", [])]
     exit_code = 0
     if args.fail_on_security and any(any(s["level"] == "HIGH" for s in r.get("security", [])) for r in reports):
@@ -1817,6 +2073,8 @@ def main(argv=None):
         exit_code = 3
     elif args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in reports):
         exit_code = 4
+    elif args.fail_on_conflicts and any(r.get("conflicts") for r in reports):
+        exit_code = 7
 
     # SARIF emission happens on the COMPLETE report (root + every package) before
     # any --no-* suppression below, so GitHub code scanning always receives the

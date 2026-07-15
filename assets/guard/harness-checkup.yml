@@ -19,14 +19,35 @@ jobs:
         with:
           node-version: "20"
       - name: Scan harness
-        run: npx -y ai-harness-doctor@latest scan . > harness-scan-report.md
+        id: scan
+        shell: bash
+        run: |
+          set +e
+          scan_args=(scan . --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts)
+          # Optional adoption path: commit this explicit debt register after
+          # reviewing `scan . --write-baseline "$SCAN_BASELINE"`.
+          # The guard never creates or refreshes it automatically, and HIGH
+          # security findings remain unsuppressible.
+          if [ -f "$SCAN_BASELINE" ]; then
+            scan_args+=(--baseline "$SCAN_BASELINE")
+          fi
+          npx -y ai-harness-doctor@latest "${scan_args[@]}" > harness-scan-report.md 2>&1
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+        env:
+          SCAN_BASELINE: .ai-harness-doctor/scan-baseline.json
       - name: Check drift
         id: drift
         shell: bash
         run: |
           set +e
           npx -y ai-harness-doctor@latest drift . --strict > harness-drift-report.md 2>&1
-          status=$?
+          drift_status=$?
+          scan_status="${{ steps.scan.outputs.status }}"
+          status="$drift_status"
+          if [ "$scan_status" != "0" ]; then
+            status="$scan_status"
+          fi
           {
             echo "# Harness checkup"
             echo
@@ -46,11 +67,11 @@ jobs:
             harness-scan-report.md
             harness-drift-report.md
             harness-checkup-report.md
-      - name: Create or update drift issue
+      - name: Create or update harness issue
         if: steps.drift.outputs.status != '0'
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: "🩺 Harness checkup: drift detected"
+          TITLE: "🩺 Harness checkup: issues detected"
         shell: bash
         run: |
           set -euo pipefail

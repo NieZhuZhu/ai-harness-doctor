@@ -14,6 +14,8 @@ def render_markdown(report, report_path=None):
     lines = ["# Phase 0 — Checkup Report", ""]
     if "monorepo" in report:
         render_monorepo(lines, report["monorepo"], report.get("packages", []))
+    if "baseline" in report:
+        render_baseline(lines, report["baseline"], report.get("baselined", []))
     lines.append("## Configuration file inventory")
     if not report["files"]:
         lines.append("No known AI harness configuration files were found.")
@@ -75,6 +77,26 @@ def render_markdown(report, report_path=None):
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def render_baseline(lines, baseline, findings):
+    """Render transparent baseline debt without duplicating full finding prose."""
+    lines.extend(["", "## Scan baseline"])
+    count = baseline.get("suppressed", len(findings))
+    path = baseline.get("path", "")
+    lines.append(
+        f"{count} pre-existing non-security finding(s) suppressed by baseline `{path}` "
+        "(still available in the JSON `baselined` array; not counted by fail-on gates or SARIF)."
+    )
+    if findings:
+        counts = {}
+        for finding in findings:
+            family = finding.get("family", "unknown")
+            counts[family] = counts.get(family, 0) + 1
+        summary = ", ".join(f"{family}={counts[family]}" for family in sorted(counts))
+        lines.append(f"Suppressed debt by family: {summary}.")
+    lines.append("HIGH security findings are never baseline-eligible.")
+    lines.append("")
 
 
 def render_monorepo(lines, monorepo, packages):

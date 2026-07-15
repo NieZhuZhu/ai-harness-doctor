@@ -440,6 +440,403 @@ class ScanTests(unittest.TestCase):
         self.assertNotIn("gaps", report)
 
 
+class ScanBaselineTests(unittest.TestCase):
+    """Adoption baseline: preserve known non-security debt while gating new debt."""
+
+    def _semantic_finding(self, name="missing", line=3, category="command", message=None):
+        return {
+            "category": category,
+            "level": "MISMATCH",
+            "message": message or f"AGENTS.md references `npm run {name}` but package.json has no `{name}` script.",
+            "suggestion": "Update AGENTS.md.",
+            "declared": f"npm run {name}",
+            "actual": "no such package.json script",
+            "line": line,
+        }
+
+    def _report(self, semantic=None, gaps=None, conflicts=None, security=None):
+        findings = list(semantic or [])
+        return {
+            "files": [],
+            "warnings": [],
+            "overlaps": [],
+            "gaps": list(gaps or []),
+            "semantic": {"findings": findings, "checked": len(findings), "mismatches": len(findings)},
+            "conflicts": list(conflicts or []),
+            "security": list(security or []),
+            "nested": [],
+            "surface": {},
+            "project_snapshot": {},
+            "custom": [],
+        }
+
+    def _repo_with_semantic_debt(self, td):
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        (repo / "package.json").write_text('{"scripts": {"build": "tsc"}}\n', encoding="utf-8")
+        sections = [
+            "Project overview",
+            "Build & test",
+            "Conventions",
+            "Testing requirements",
+            "Safety",
+            "Commit & PR",
+        ]
+        agents = "\n\n".join(f"# {section}\n\nBody." for section in sections)
+        agents += "\n\nRun `npm run missing`.\n"
+        (repo / "AGENTS.md").write_text(agents, encoding="utf-8")
+        workflows = repo / ".github" / "workflows"
+        workflows.mkdir(parents=True)
+        (workflows / "harness-drift.yml").write_text("name: drift\n", encoding="utf-8")
+        (workflows / "harness-checkup.yml").write_text("name: checkup\n", encoding="utf-8")
+        return repo
+
+    def test_baseline_payload_is_structured_deterministic_and_line_independent(self):
+        report = self._report(
+            semantic=[
+                self._semantic_finding("zeta", line=90),
+                self._semantic_finding("alpha", line=2),
+                self._semantic_finding("alpha", line=999),
+            ]
+        )
+        payload = scan.scan_baseline_payload(report)
+        self.assertEqual(payload["version"], scan.SCAN_BASELINE_VERSION)
+        self.assertNotIn("generated", payload)
+        self.assertEqual([entry["message"] for entry in payload["findings"]], sorted({
+            self._semantic_finding("alpha")["message"],
+            self._semantic_finding("zeta")["message"],
+        }))
+        self.assertTrue(all("line" not in entry for entry in payload["findings"]))
+        self.assertTrue(all(entry["family"] == "semantic" for entry in payload["findings"]))
+
+    def test_line_numbers_embedded_in_gap_evidence_are_not_identity(self):
+        gap = {
+            "check": "G10",
+            "level": "WARN",
+            "item": "Silent adjudication",
+            "message": "AGENTS.md:3 disagrees with .cursorrules:9.",
+            "suggestion": "Review.",
+        }
+        shifted = {**gap, "message": "AGENTS.md:30 disagrees with .cursorrules:90."}
+        first = scan.scan_baseline_payload(self._report(gaps=[gap]))
+        second = scan.scan_baseline_payload(self._report(gaps=[shifted]))
+        self.assertEqual(first, second)
+        shifted_report = self._report(gaps=[shifted])
+        scan.apply_scan_baseline(shifted_report, scan.baseline_fingerprints(first), "baseline.json")
+        self.assertEqual(shifted_report["baselined"][0]["message"], shifted["message"])
+
+    def test_fingerprint_distinguishes_package_and_reopens_changed_identity(self):
+        finding = self._semantic_finding()
+        root = self._report(semantic=[finding])
+        package = self._report(semantic=[{**finding, "line": 500}])
+        combined = {
+            **root,
+            "packages": [{"path": "packages/app", "name": "app", "has_agents_md": True, "report": package}],
+        }
+        payload = scan.scan_baseline_payload(combined)
+        self.assertEqual([entry["package"] for entry in payload["findings"]], ["", "packages/app"])
+        root_entry = payload["findings"][0]
+        self.assertNotEqual(
+            scan.scan_finding_fingerprint(root_entry),
+            scan.scan_finding_fingerprint({**root_entry, "path": "docs/AGENTS.md"}),
+        )
+
+        changed = self._report(semantic=[{**finding, "message": finding["message"] + " Changed."}])
+        scan.apply_scan_baseline(changed, scan.baseline_fingerprints(payload), "baseline.json")
+        self.assertEqual(len(changed["semantic"]["findings"]), 1)
+        self.assertEqual(changed["baselined"], [])
+
+        changed_category = self._report(semantic=[{**finding, "category": "path"}])
+        scan.apply_scan_baseline(changed_category, scan.baseline_fingerprints(payload), "baseline.json")
+        self.assertEqual(len(changed_category["semantic"]["findings"]), 1)
+
+    def test_monorepo_suppression_is_visible_and_attributed_at_top_level(self):
+        gap = {
+            "check": "G1",
+            "level": "ERROR",
+            "item": "Root AGENTS.md",
+            "message": "No canonical AGENTS.md.",
+            "suggestion": "Create it.",
+        }
+        report = {
+            **self._report(gaps=[gap]),
+            "packages": [
+                {
+                    "path": "packages/app",
+                    "name": "app",
+                    "has_agents_md": False,
+                    "summary": {},
+                    "report": self._report(gaps=[gap]),
+                }
+            ],
+            "monorepo": {"source": "test", "package_count": 1, "aggregate": {}},
+        }
+        payload = scan.scan_baseline_payload(report)
+        scan.apply_scan_baseline(report, scan.baseline_fingerprints(payload), ".ai-harness-doctor/scan-baseline.json")
+        self.assertEqual(report["gaps"], [])
+        self.assertEqual(report["packages"][0]["report"]["gaps"], [])
+        self.assertEqual([entry["package"] for entry in report["baselined"]], ["", "packages/app"])
+        self.assertEqual(report["baseline"]["suppressed"], 2)
+        self.assertEqual(report["packages"][0]["summary"]["gaps"], 0)
+
+    def test_write_baseline_then_gate_only_new_semantic_finding(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo_with_semantic_debt(td)
+            baseline = Path(td) / "scan-baseline.json"
+            write = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--write-baseline", str(baseline)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(write.returncode, 0, write.stdout + write.stderr)
+            payload = json.loads(baseline.read_text(encoding="utf-8"))
+            self.assertTrue(any(entry["family"] == "semantic" for entry in payload["findings"]))
+
+            old = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--fail-on-semantic",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(old.returncode, 0, old.stdout + old.stderr)
+            old_report = json.loads(old.stdout)
+            self.assertEqual(old_report["semantic"]["findings"], [])
+            self.assertTrue(any(entry["family"] == "semantic" for entry in old_report["baselined"]))
+
+            agents = (repo / "AGENTS.md").read_text(encoding="utf-8")
+            (repo / "AGENTS.md").write_text(
+                "# Unrelated preamble\n\n" + agents + "\nRun `npm run brandnew`.\n",
+                encoding="utf-8",
+            )
+            new = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--fail-on-semantic",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(new.returncode, 4, new.stdout + new.stderr)
+            new_report = json.loads(new.stdout)
+            messages = [finding["message"] for finding in new_report["semantic"]["findings"]]
+            self.assertTrue(any("brandnew" in message for message in messages))
+            self.assertFalse(any("missing` script" in message for message in messages))
+            self.assertEqual(len(new_report["baselined"]), 1)
+
+    def test_write_baseline_creates_explicit_parent_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo_with_semantic_debt(td)
+            baseline = repo / ".ai-harness-doctor" / "scan-baseline.json"
+            self.assertFalse(baseline.parent.exists())
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--write-baseline", str(baseline)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertTrue(baseline.is_file())
+
+    def test_conflict_gate_uses_exit_7_and_baseline_reopens_changed_values(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text("Use `npm install`.\n", encoding="utf-8")
+            (repo / "CLAUDE.md").write_text("Use `pnpm install`.\n", encoding="utf-8")
+            baseline = Path(td) / "baseline.json"
+            subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--write-baseline", str(baseline)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            suppressed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--fail-on-conflicts",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(suppressed.returncode, 0, suppressed.stdout + suppressed.stderr)
+            self.assertEqual(json.loads(suppressed.stdout)["conflicts"], [])
+            (repo / "GEMINI.md").write_text("Use `yarn install`.\n", encoding="utf-8")
+            reopened = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--fail-on-conflicts",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(reopened.returncode, 7, reopened.stdout + reopened.stderr)
+            self.assertEqual(len(json.loads(reopened.stdout)["conflicts"]), 1)
+
+    def test_existing_gate_precedence_remains_above_conflicts(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            # No AGENTS.md => G1 ERROR, while two tool configs still create a
+            # live conflict. The existing gap exit code must win.
+            (repo / "CLAUDE.md").write_text("Use `npm install`.\n", encoding="utf-8")
+            (repo / "GEMINI.md").write_text("Use `pnpm install`.\n", encoding="utf-8")
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--fail-on-gaps",
+                    "--fail-on-semantic",
+                    "--fail-on-conflicts",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+
+    def test_missing_or_malformed_baseline_suppresses_nothing(self):
+        with tempfile.TemporaryDirectory() as td:
+            missing = Path(td) / "missing.json"
+            for baseline in (missing, Path(td) / "malformed.json"):
+                if baseline.name == "malformed.json":
+                    baseline.write_text("{not json", encoding="utf-8")
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCAN),
+                        str(FIXTURE),
+                        "--baseline",
+                        str(baseline),
+                        "--fail-on-gaps",
+                        "--json",
+                    ],
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+                self.assertEqual(json.loads(proc.stdout)["baselined"], [])
+
+    def test_no_baseline_flag_keeps_legacy_report_shape(self):
+        proc = subprocess.run([sys.executable, str(SCAN), str(FIXTURE), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertNotIn("baseline", report)
+        self.assertNotIn("baselined", report)
+        self.assertNotIn("## Scan baseline", scan.render_markdown(report))
+
+    def test_markdown_names_baseline_count_and_security_invariant(self):
+        report = self._report(semantic=[self._semantic_finding()])
+        payload = scan.scan_baseline_payload(report)
+        scan.apply_scan_baseline(report, scan.baseline_fingerprints(payload), ".ai-harness-doctor/scan-baseline.json")
+        markdown = scan.render_markdown(report)
+        self.assertIn("## Scan baseline", markdown)
+        self.assertIn("1 pre-existing non-security finding(s)", markdown)
+        self.assertIn("`.ai-harness-doctor/scan-baseline.json`", markdown)
+        self.assertIn("semantic=1", markdown)
+        self.assertIn("HIGH security findings are never baseline-eligible", markdown)
+
+    def test_repos_file_rejects_baseline_composition(self):
+        with tempfile.TemporaryDirectory() as td:
+            repos_file = Path(td) / "repos.txt"
+            repos_file.write_text(str(FIXTURE) + "\n", encoding="utf-8")
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    "--repos-file",
+                    str(repos_file),
+                    "--baseline",
+                    str(Path(td) / "baseline.json"),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("--repos-file cannot be combined with --baseline or --write-baseline", proc.stderr)
+
+    def test_security_high_cannot_be_suppressed_by_crafted_baseline(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            (repo / "AGENTS.md").write_text(f"Use token {token} here.\n", encoding="utf-8")
+            baseline = Path(td) / "baseline.json"
+            baseline.write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "findings": [
+                            {
+                                "family": "security",
+                                "rule": "secret",
+                                "package": "",
+                                "path": "AGENTS.md",
+                                "message": "crafted",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--fail-on-security",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            report = json.loads(proc.stdout)
+            self.assertTrue(any(finding["level"] == "HIGH" for finding in report["security"]))
+            self.assertEqual(report["baselined"], [])
+
+    def test_write_baseline_never_serializes_secret_value(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            (repo / "AGENTS.md").write_text(f"Use token {token} here.\n", encoding="utf-8")
+            baseline = Path(td) / "baseline.json"
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--write-baseline", str(baseline)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            text = baseline.read_text(encoding="utf-8")
+            self.assertNotIn(token, text)
+            payload = json.loads(text)
+            self.assertFalse(any(entry.get("family") == "security" for entry in payload["findings"]))
+
+
 sys.path.insert(0, str(ROOT / "scripts"))
 
 
@@ -1011,6 +1408,19 @@ class ReposFileTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(proc.returncode, 3, proc.stdout)
+
+    def test_fail_on_conflicts_considers_every_repo(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo_a, _repo_b = self._build_two_repos(td)
+            _write(repo_a / "CLAUDE.md", "Use `npm install`.\n")
+            _write(repo_a / "GEMINI.md", "Use `pnpm install`.\n")
+            repos_file = self._write_repos_file(td, [str(repo_a)])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--fail-on-conflicts"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 7, proc.stdout)
 
     def test_no_report_file_flag_is_honored_in_batch_mode(self):
         with tempfile.TemporaryDirectory() as td:

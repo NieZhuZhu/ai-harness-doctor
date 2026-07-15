@@ -39,7 +39,7 @@ verification gate, and update its status here.
 | 004 | Refuse repository mutations through symlinks or escaping paths | P0 | M | — | DONE |
 | 005 | Make installed guard workflows use only the public packaged CLI | P1 | M | 004 | DONE |
 | 006 | Pin and modernize GitHub Actions while removing duplicate PR CI | P1 | M | — | DONE |
-| 007 | Baseline non-security scan debt so CI gates only new findings | P2 | M | 004 | TODO |
+| 007 | Baseline non-security scan debt so CI gates only new findings | P2 | M | 004 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
