@@ -41,6 +41,19 @@ class ActionMetadataTests(unittest.TestCase):
             }
         )
 
+    def _pull_request_trigger_block(self, path):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        try:
+            start = lines.index("  pull_request:")
+        except ValueError:
+            self.fail(f"{path} must define a pull_request trigger")
+        body = []
+        for line in lines[start + 1 :]:
+            if line.startswith("  ") and not line.startswith("    "):
+                break
+            body.append(line)
+        return "\n".join(body)
+
     def test_marketplace_metadata_is_complete_and_product_focused(self):
         text = ACTION.read_text(encoding="utf-8")
         self.assertIn('name: "AI Harness Doctor"', text)
@@ -105,11 +118,20 @@ class ActionMetadataTests(unittest.TestCase):
             "--fail-on-conflicts",
         ):
             self.assertIn(gate, combined)
-        self.assertIn("- .ai-harness-doctor/scan-baseline.json", drift)
         self.assertIn("if: ${{ always() }}\n        run: node bin/cli.js drift . --strict", drift)
         self.assertIn("steps.scan.outputs.status", checkup)
         self.assertIn("🩺 Harness checkup: issues detected", checkup)
         self.assertNotIn("--write-baseline", combined)
+
+    def test_github_guard_runs_on_every_pull_request(self):
+        # D2/D7 can depend on any repo-relative path named by AGENTS.md, so no
+        # finite path allow-list can cover every drift/security input. Both the
+        # shipped guard and this repo's adapted self-guard must run on every PR.
+        for path in (HARNESS_DRIFT_TEMPLATE, HARNESS_DRIFT):
+            with self.subTest(path=path):
+                trigger = self._pull_request_trigger_block(path)
+                self.assertNotIn("paths:", trigger)
+                self.assertNotIn("paths-ignore:", trigger)
 
     def test_external_actions_are_immutable_current_major_pins(self):
         external_pattern = re.compile(

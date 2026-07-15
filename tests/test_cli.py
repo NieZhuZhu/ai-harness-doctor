@@ -513,7 +513,7 @@ class CliInstallerTests(unittest.TestCase):
             )
             self.assertIn(scan_gate, workflow_text)
             self.assertIn("SCAN_BASELINE: .ai-harness-doctor/scan-baseline.json", workflow_text)
-            self.assertIn("- .ai-harness-doctor/scan-baseline.json", workflow_text)
+            self.assertIn('scan_args+=(--baseline "$SCAN_BASELINE")', workflow_text)
             self.assertIn(scan_gate, checkup_text)
             self.assertIn("steps.scan.outputs.status", checkup_text)
             self.assertNotIn('npx -y ai-harness-doctor@latest scan . --write-baseline', workflow_text + checkup_text)

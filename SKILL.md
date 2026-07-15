@@ -214,6 +214,8 @@ Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cle
 
 #### PR review comments and CI eval gate
 
+The GitHub PR guard intentionally has no `paths` or `paths-ignore` filter and runs on every pull request. Security and semantic checks consume MCP/settings files, nested rule surfaces, ecosystem manifests, and dynamic D2/D7 dependencies: any repository-relative file named by `AGENTS.md` can become drift evidence when moved or deleted. A finite path allow-list would therefore create a silent bypass. The weekly checkup remains defense in depth for drift that appears between pull requests.
+
 On a pull request, the GitHub guard template (`.github/workflows/harness-drift.yml`) additionally surfaces drift findings as **inline PR review comments** and gates CI on the eval **health score**:
 
 ```bash

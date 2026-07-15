@@ -6,25 +6,9 @@
 name: harness-drift
 
 on:
+  # Intentionally no paths/paths-ignore filter: D2/D7 may depend on any
+  # repository-relative path named by AGENTS.md, so every PR must run the gate.
   pull_request:
-    paths:
-      - package.json
-      - package-lock.json
-      - pnpm-lock.yaml
-      - Makefile
-      - pyproject.toml
-      - AGENTS.md
-      - CLAUDE.md
-      - .cursorrules
-      - .windsurfrules
-      - .github/copilot-instructions.md
-      - GEMINI.md
-      - .clinerules
-      - .cursor/rules/**
-      - .ai-harness-doctor/scan-baseline.json
-      - scripts/**
-      - bin/**
-      - .github/workflows/**
   workflow_dispatch:
 
 # The PR-review step needs write access to post inline review comments.
