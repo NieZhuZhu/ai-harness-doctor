@@ -108,6 +108,15 @@ The walk is `os.walk` with `SKIP_DIRS` pruning and only runs on an otherwise-mis
 
 **Net effect:** codex semantic 11 → 6 findings (5 FPs removed, real drift preserved); opencode 2 → 0.
 
+**2026-07-15 Phase-2 follow-up (Plan 014):** the original rounds 14–15
+verification proved the Phase-0 semantic fix, but it did not add the equivalent
+subtree-resolution call to D2. A minimal local reproduction (`src/config`
+present only under `packages/app/`) therefore passed `scan --json` and still
+failed `drift --json`. The follow-up reuses
+`facts.path_resolves_in_subtree()` in D2 and adds a cross-engine parity test;
+this is a correction to the evidence boundary, not a claim that the external
+repositories were freshly re-scanned.
+
 
 ## Round 16 detail — google-gemini/gemini-cli + block/goose + cline/cline (two conflict-detection false positives)
 

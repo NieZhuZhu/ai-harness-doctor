@@ -74,6 +74,28 @@ class DriftTests(unittest.TestCase):
         self.assertIn("not a directory", payload["error"])
         self.assertNotIn("score", payload)
 
+    def test_subtree_scoped_path_does_not_trigger_d2(self):
+        # Root AGENTS.md sections commonly scope instructions to one workspace,
+        # then name paths relative to that workspace. Phase 0 already resolves
+        # these suffix paths; Phase 2 must apply the same existence policy.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "packages" / "app" / "src" / "config").mkdir(parents=True)
+            text = "In the packages/app workspace, edit `src/config`."
+            self.assertEqual(check_drift.d2_path_drift(root, text), [])
+
+    def test_fully_missing_path_still_triggers_d2_with_subtrees_present(self):
+        # Subtree leniency must not mask genuine drift merely because the repo
+        # has nested packages; only an exact trailing-path match is accepted.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "packages" / "app" / "src" / "config").mkdir(parents=True)
+            text = "Use `src/missing-config` for runtime settings."
+            findings = check_drift.d2_path_drift(root, text)
+            self.assertEqual(len(findings), 1)
+            self.assertEqual(findings[0]["check"], "D2")
+            self.assertIn("src/missing-config", findings[0]["message"])
+
     def test_unknown_script_d1(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
