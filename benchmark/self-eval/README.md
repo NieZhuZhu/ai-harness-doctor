@@ -11,7 +11,7 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 27 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 30 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
   evidence freshness, repository operations, public lockfile sources, nested
   instruction scopes, and where the core scripts live).
@@ -43,7 +43,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 27/27 |
+| current evidence-bound maintenance pack | 30/30 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -78,4 +78,7 @@ abstention. Required lint CI is also pinned to `npm ci --ignore-scripts` over
 the committed public npm lock, so the dependency graph under test is reviewed.
 Generated-task evidence is executable provenance: files are byte-hashed,
 directories bind existence/type only, and strict score re-derives those sources
-from `tasks.json` before trusting health.
+from `tasks.json` before trusting health. The current pack also checks that task
+schema validation happens before all eval side effects, weekly checkup issues
+close on recovery without touching unrelated issues, and multi-repo scans report
+all reachable repositories but exit 8 when any listed entry was not scanned.

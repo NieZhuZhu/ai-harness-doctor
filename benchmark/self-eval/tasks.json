@@ -160,5 +160,23 @@
     "prompt": "How must required lint CI install Node development dependencies? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)npm ci.*ignore.?scripts.*committed.*package-lock|committed.*package-lock.*npm ci.*ignore.?scripts"}
+  },
+  {
+    "id": "eval-task-preflight",
+    "prompt": "When must an eval task pack be validated relative to runners, judges, evidence hashing, and writes? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)complete.*task.*before.*runner.*judge.*hash.*write|before.*runner.*judge.*hash.*write.*complete.*task"}
+  },
+  {
+    "id": "checkup-issue-lifecycle",
+    "prompt": "How must the weekly GitHub checkup manage its incident issue across failure and recovery? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)failure.*open.*update.*exact.*recover.*comment.*close.*unrelated|exact.*issue.*failure.*update.*recovery.*close.*unrelated"}
+  },
+  {
+    "id": "batch-scan-coverage",
+    "prompt": "How must multi-repo batch scans behave when a listed repository cannot be scanned? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)(?=.*report.*reachable)(?=.*unscanned)(?=.*exit.?8)(?=.*2.*3.*4.*7)"}
   }
 ]

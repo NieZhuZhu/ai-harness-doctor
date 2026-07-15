@@ -29,6 +29,9 @@
     {"id": "release-rerun-identity", "stdout": "A rerun may skip npm only when the published gitHead and packed tarball shasum match the exact release tag."},
     {"id": "targeted-eval-generation", "stdout": "Use local scripts/dependencies, the nearest unambiguous manager/runtime, inherited canonical conventions, compatible root IDs, and repository-relative evidence."},
     {"id": "fact-generator-containment", "stdout": "External symlinks supply no fact, contained symlinks keep lexical evidence, and ambiguous package-manager/runtime facts cause abstention in root/scoped eval and Treat draft."},
-    {"id": "locked-lint-install", "stdout": "Required lint CI must use npm ci --ignore-scripts against the committed public package-lock.json, with no unlocked fallback."}
+    {"id": "locked-lint-install", "stdout": "Required lint CI must use npm ci --ignore-scripts against the committed public package-lock.json, with no unlocked fallback."},
+    {"id": "eval-task-preflight", "stdout": "Validate the complete task pack before any runner, judge, evidence hash, or write."},
+    {"id": "checkup-issue-lifecycle", "stdout": "Failure opens or updates one exact-title issue; recovery comments and closes it, and unrelated issues stay untouched."},
+    {"id": "batch-scan-coverage", "stdout": "Report every reachable repository, but any unscanned entry fails with exit 8 after finding exits 2, 3, 4, and 7 take precedence."}
   ]
 }
