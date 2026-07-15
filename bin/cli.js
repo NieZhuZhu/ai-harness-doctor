@@ -721,6 +721,12 @@ function removeOwnedOutput(record, output) {
   if (!root) return 'modified-preserved';
   if (output.kind === 'link') {
     assertSafeMutationPath(root, path.dirname(output.path));
+    try {
+      fs.lstatSync(output.path);
+    } catch (error) {
+      if (error.code === 'ENOENT') return 'already-absent';
+      throw error;
+    }
     if (readSymlinkTarget(output.path) === output.target) {
       fs.unlinkSync(output.path);
       return 'removed';
@@ -728,6 +734,12 @@ function removeOwnedOutput(record, output) {
     return 'modified-preserved';
   }
   assertSafeMutationPath(root, output.path);
+  try {
+    fs.lstatSync(output.path);
+  } catch (error) {
+    if (error.code === 'ENOENT') return 'already-absent';
+    throw error;
+  }
   if (output.kind === 'file' && fileDigest(output.path) === output.digest) {
     fs.unlinkSync(output.path);
     return 'removed';
@@ -783,7 +795,13 @@ function syncOwnedLink(dest, target, previousOutputs, mutationRoot) {
   const prior = previous.get(dest);
   const currentTarget = readSymlinkTarget(dest);
   if (currentTarget === target) {
-    return { rows: [{ path: dest, status: 'unchanged' }], outputs: [{ path: dest, kind: 'link', target }] };
+    if (prior && prior.kind === 'link' && prior.target === target) {
+      return { rows: [{ path: dest, status: 'unchanged' }], outputs: [{ path: dest, kind: 'link', target }] };
+    }
+    return {
+      rows: [{ path: dest, status: prior ? 'modified-preserved' : 'manual-merge' }],
+      outputs: prior ? [prior] : [],
+    };
   }
   if (currentTarget && (!prior || currentTarget !== prior.target)) {
     return {
@@ -854,7 +872,7 @@ function printSummary(action, rows) {
 
 function install(argv) {
   const parsed = parseInstallArgs(argv);
-  let { agents } = parsed;
+  const { agents } = parsed;
   const { project, link } = parsed;
   if (link) ensureLinkAllowed();
   const manifest = readManifest();
@@ -862,31 +880,39 @@ function install(argv) {
   const cursorTargetRoot = agents.includes('cursor')
     ? fs.realpathSync(project || process.cwd())
     : null;
-  const matchesRequest = (record, agent) => {
+  const matchesRequest = (record, agent, targetRoot) => {
     if (record.agent !== agent || (record.project || null) !== (project || null)) return false;
     if (agent !== 'cursor') return true;
-    return effectiveCursorRoot(record) === cursorTargetRoot;
+    return effectiveCursorRoot(record) === targetRoot;
   };
-  if (agents.some((agent) => agent !== 'claude')) {
-    const sharedAgents = previousRecords
-      .filter(
-        (record) =>
-          record.agent !== 'claude' &&
-          (record.project || null) === (project || null) &&
-          (record.agent !== 'cursor' || effectiveCursorRoot(record) === cursorTargetRoot) &&
-          Boolean(record.link) !== Boolean(link)
-      )
-      .map((record) => record.agent);
-    agents = [...new Set([...agents, ...sharedAgents])];
+  const installRequests = [];
+  const touchedRecords = new Set();
+  for (const agent of agents) {
+    const targetRoot = agent === 'cursor' ? cursorTargetRoot : null;
+    const previous = previousRecords.find((record) => matchesRequest(record, agent, targetRoot));
+    installRequests.push({ agent, previous, targetRoot });
+    if (previous) touchedRecords.add(previous);
   }
-  const untouchedRecords = previousRecords.filter(
-    (record) => !agents.some((agent) => matchesRequest(record, agent))
-  );
-  const previousByAgent = new Map(
-    previousRecords
-      .filter((record) => agents.some((agent) => matchesRequest(record, agent)))
-      .map((record) => [record.agent, record])
-  );
+  // Non-Claude agents share one payload per project/global scope. Refresh every
+  // record in that scope together so mode changes and ownership digests cannot
+  // leave another Cursor cwd (or adapter flavor) pointing at stale content.
+  if (agents.some((agent) => agent !== 'claude')) {
+    for (const record of previousRecords) {
+      if (
+        record.agent === 'claude' ||
+        record.orphaned ||
+        (record.project || null) !== (project || null) ||
+        touchedRecords.has(record)
+      ) continue;
+      installRequests.push({
+        agent: record.agent,
+        previous: record,
+        targetRoot: record.agent === 'cursor' ? effectiveCursorRoot(record) : null,
+      });
+      touchedRecords.add(record);
+    }
+  }
+  const untouchedRecords = previousRecords.filter((record) => !touchedRecords.has(record));
   let neutralPayload = null;
   let payloadResult = { rows: [], outputs: [] };
   if (agents.some((agent) => agent !== 'claude')) {
@@ -909,9 +935,8 @@ function install(argv) {
   }
   const rows = [];
   const newRecords = [];
-  for (const agent of agents) {
-    const previous = previousByAgent.get(agent);
-    const targetRoot = agent === 'cursor' ? cursorTargetRoot : null;
+  for (const request of installRequests) {
+    const { agent, previous, targetRoot } = request;
     const installed = installOne(
       agent,
       project,
