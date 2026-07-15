@@ -30,34 +30,44 @@ jobs:
       # Dogfood the local scan implementation and the committed, reviewable
       # debt register. Security remains unsuppressible.
       - name: Check new scan debt (self)
+        shell: bash
         run: |
-          node bin/cli.js scan . \
+          set +e
+          node bin/cli.js scan . --json \
             --baseline .ai-harness-doctor/scan-baseline.json \
             --fail-on-security \
             --fail-on-gaps \
             --fail-on-semantic \
-            --fail-on-conflicts
+            --fail-on-conflicts \
+            > scan-report.json
+          scan_status=$?
+          set -e
+          cat scan-report.json
+          exit "$scan_status"
       # Dogfood: run this repo's local drift guard against itself (strict mode
       # promotes NOTICE findings to blocking so the repo holds itself to grade A).
       - name: Check AI harness drift (self)
         if: ${{ always() }}
-        run: node bin/cli.js drift . --strict
-      # Surface drift findings as inline PR review comments. check_drift.py --json
-      # emits a machine-readable report; pr_review.py turns located findings into
-      # inline comments. It runs even when the gate above failed so reviewers see
-      # the annotations. Located findings (D1/D2/D6/D7) are line-based against
-      # AGENTS.md, so --default-path attaches them there. The whole step is made
-      # tolerant of a missing/limited token (e.g. fork PRs) so it can never fail
-      # the job solely because the review API is unavailable. Anchor comments to
-      # the PR head commit, not github.sha (which can be a synthetic merge ref).
-      - name: Post drift findings as PR review comments
+        shell: bash
+        run: |
+          set +e
+          node bin/cli.js drift . --strict --json > drift-report.json
+          drift_status=$?
+          set -e
+          cat drift-report.json
+          exit "$drift_status"
+      # Combine active scan + drift findings into one complete review. The whole
+      # posting step tolerates a missing/limited token (e.g. fork PRs) so the API
+      # alone cannot fail the job. Anchor comments to the PR head commit, not
+      # github.sha (which can be a synthetic merge ref).
+      - name: Post scan and drift findings as one PR review
         if: ${{ always() && github.event_name == 'pull_request' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          python3 scripts/check_drift.py . --json > drift-report.json || true
           python3 scripts/pr_review.py \
+            --report scan-report.json \
             --report drift-report.json \
             --default-path AGENTS.md \
             --post \
