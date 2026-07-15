@@ -1,9 +1,10 @@
 # Implementation Plans
 
-Generated and reconciled across two sets of three deep `improve` audits:
+Generated and reconciled across three sets of three deep `improve` audits:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
+- 2026-07-15 at commit `b3dd9e3` (plans 008–010).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -29,6 +30,19 @@ verification gate, and update its status here.
    rulesync adjacency, external-validation friction, adoption baselines,
    monorepo scoping, MCP parity, and maintainable product differentiation.
 
+### 2026-07-15 post-v1.1.0 rounds
+
+1. **Core correctness and safety** — repeated all mutation/read boundaries after
+   scan baselines became repository state; audited installers, adapters,
+   manifests, plugins, explicit outputs, subprocesses, and symlink behavior.
+2. **CI, release, and consumer reliability** — audited the actual GitHub
+   protection/settings, Action/release runs, immutable dependencies, package
+   reproducibility, guard event filters, Marketplace state, and community
+   health independently from the core pass.
+3. **Architecture, tests, and product completeness** — audited report-shape
+   traversal, PR feedback, SARIF/MCP/CLI surface symmetry, external-validation
+   evidence, benchmark honesty, high-complexity modules, and roadmap options.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -40,6 +54,9 @@ verification gate, and update its status here.
 | 005 | Make installed guard workflows use only the public packaged CLI | P1 | M | 004 | DONE |
 | 006 | Pin and modernize GitHub Actions while removing duplicate PR CI | P1 | M | — | DONE |
 | 007 | Baseline non-security scan debt so CI gates only new findings | P2 | M | 004 | DONE |
+| 008 | Make every installer mutation ownership-aware and preserve repository state | P0 | M | — | TODO |
+| 009 | Make PR guard triggers cover every security and semantic scan input | P0 | M | — | TODO |
+| 010 | Deliver every active scan finding as attributed PR feedback | P1 | M | 009 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -55,6 +72,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Keep one themed change per PR. Plans 005 and 007 add public CLI/report
   surfaces, so the combined release after this batch is at least a minor
   version under the repository's release policy.
+- Plans 008 and 009 are independent P0 fixes and may land in either order, but
+  keep them as separate PRs. Execute 010 only after 009 so the workflow that
+  posts complete scan feedback is guaranteed to run for every scanned input.
+- Plan 008 is a bugfix unless its manifest migration changes public behavior in
+  a breaking way (a STOP condition). Plans 009–010 improve guard behavior and
+  together make the next combined release at least minor.
 
 ## Findings considered and rejected or deferred
 
@@ -92,3 +115,25 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   per-file indentation). A config language may eventually be justified, but
   plan 007's auditable baseline is the safer initial adoption mechanism; do not
   add opaque regex ignores before measuring baseline usage.
+- **Public lockfile contains `bnpm.byted.org` resolved URLs** — portability is
+  undesirable, but an isolated `npm ci` from only `package.json` +
+  `package-lock.json` succeeded during this audit and runtime has zero npm
+  dependencies. Defer lockfile normalization until the existing npm CI
+  resolver failure is reproduced and fixed; do not mix it into safety PRs.
+- **Remote GitHub security/community posture** — community profile remains 57%;
+  required status checks, admin enforcement, secret scanning, push protection,
+  and Dependabot security updates are disabled. These are worthwhile repository
+  administration tasks, but they are remote settings/community files rather
+  than product behavior; keep separate from plans 008–010.
+- **MCP surface/documentation symmetry** — README correctly lists six tools,
+  while two `SKILL.md` passages still list only four. This is real docs drift
+  but lower impact than lost repository state or missing PR findings; correct
+  it opportunistically with a future MCP-focused PR rather than widening the
+  selected fixes.
+- **Action `args` shell word splitting** — still a real structured-argument
+  limitation. No current documented Action flag needs a single whitespace-
+  bearing value, so the earlier defer remains valid.
+- **General large-module refactors** — `scan.py`, `eval_run.py`, and their tests
+  are large, but the third audit found concrete seams and substantial coverage;
+  line count alone still does not justify a risky refactor. Extract only behind
+  an implemented behavior such as plan 010's report traversal.
