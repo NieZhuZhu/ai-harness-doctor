@@ -169,6 +169,8 @@ Checks:
 - D7: Markdown-link drift, checking whether repo-relative Markdown link targets (`[text](path)`) in `AGENTS.md` still exist. Complements D2 (which only probes backtick-quoted tokens); URLs, anchors, and out-of-repo targets are ignored, so it never probes outside the repo.
 - D8: competing lockfiles, flagging when lockfiles for more than one package manager are committed together (e.g. both `package-lock.json` and `pnpm-lock.yaml`) so the intended manager is ambiguous. Reported for manual attention — the tool never guesses which lockfile to delete.
 
+**Nested drift scopes.** D5 itself remains non-blocking inventory, but every contained nested `AGENTS.md` it discovers is also guarded by D1/D2/D6/D7. Local facts/paths win; repository-root facts/paths are a conservative fallback for instructions that explicitly say to run from or reference the root. Those findings carry the nested canonical-file path into strict health, baselines, `--fix` manual attention, SARIF, and PR review. D3/D4/D8 and custom plugins still run once at repository scope. Historical root findings keep their implicit `AGENTS.md` path, so scope-less v1 baseline entries remain compatible.
+
 All findings (D1..D8) roll up into a 0-100 **health score** with a letter grade (A/B/C/D/F), rendered as a `## Health score` section and exposed via the `score`/`grade` keys in `--json`. Use `--min-score N` to fail CI when the score drops below `N`; this gate is independent of `--strict` and both can apply together.
 
 #### Semi-automatic repair: `--fix`

@@ -5,11 +5,11 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
 # Project structure
 
 - `SKILL.md` — the skill contract and the four-phase workflow (Checkup → Treat → Follow-up → Efficacy).
-- `scripts/` — the deterministic Python engines, one per phase:
+- `scripts/` — deterministic Python engines, one per phase:
   - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo. Monorepo-aware (`--monorepo` / auto-detects npm/yarn/pnpm workspaces) with per-package results, a top-level aggregate, and `--baseline`/`--write-baseline` adoption for existing non-security debt.
   - `semantic.py` — Phase 0 helper: compares AGENTS.md declarations (commands/paths/package manager/language version) against code facts across Node, Python, Go, Rust, Java, and Ruby ecosystems.
   - `canonicalize.py` — Phase 1 Treat: merge-plan skeleton with fact-aware conflict-default suggestions, `--draft` AGENTS.md auto-drafting, tool-stub downgrades, and validation.
-  - `check_drift.py` — Phase 2 Follow-up: drift guard (D1–D8), health score, `--fix`, and `--baseline`/`--write-baseline` (fail only on new drift).
+  - `check_drift.py` — Phase 2 Follow-up: root/nested drift guard (D1–D8), health score, `--fix`, and baselines.
   - `plugins.py` — user-extensible rule engine: loads DETERMINISTIC user rule modules from `.ai-harness-doctor/rules/*.py` (and `--rules DIR`), each exposing `check(root, context) -> list[dict]`, and merges their findings into scan/drift under a `custom` section. Each plugin is isolated in try/except so a broken plugin is reported as an `ERROR` finding instead of crashing the core engines.
   - `eval_run.py` — Phase 3 Efficacy: before/after + matrix eval runner and LLM-as-judge grading.
   - `pr_review.py` — Phase 2/3 CI helper: combines active scan+drift JSON (root/package/batch) into one attributed GitHub review; `--dry-run` prints it, `--post` uses the stdlib REST client.
@@ -37,7 +37,7 @@ node bin/cli.js help
 - `bin/cli.js` must use Node >=16 standard library only; do not add npm runtime dependencies.
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
-- Keep nested instruction scope deterministic and lexical: same-scope differences are conflicts; ancestor→descendant differences are visible non-blocking overrides. Preserve this split across Markdown, Treat, baselines, SARIF, and PR review; never infer prose/glob scopes.
+- Keep instruction scope deterministic and lexical: same-scope differences are conflicts; ancestor→descendant differences are non-blocking overrides. Phase 2 attributes each nested `AGENTS.md`, checks local facts/paths first with root fallback, and keeps D3/D4/D8/plugins repository-wide. Preserve root baselines; never infer prose/glob scopes.
 - Baselines are visible debt registers: HIGH security is ineligible; identities are deterministic, root/package-aware, and line-independent. Shrink repaired debt. Every finding family needs PR-review/SARIF traversal; preserve package paths, keep batch findings summary-only, and never post baselined debt as active.
 - Eval gates over committed results must verify current task/evidence fingerprints before health; any `AGENTS.md` or evidence-bound task change refreshes the manual/real result honestly in the same PR.
 - MCP tools stay read-only. Sync negotiated-version wire shapes, closed input/output schemas, exit policies, stdio tests, and README/SKILL entries; findings are not operational failures, and legacy clients must not receive modern-only fields.

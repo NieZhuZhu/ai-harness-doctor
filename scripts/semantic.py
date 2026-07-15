@@ -162,8 +162,8 @@ _looks_like_prose = facts.looks_like_prose
 
 # Node script invocations: ``npm/pnpm/bun run X`` (``run`` optional) or ``yarn X``.
 _NODE_CMD_RE = re.compile(
-    r"\b(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_-]+)\b"
-    r"|\byarn\s+([A-Za-z0-9:_-]+)\b"
+    r"\b(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_][A-Za-z0-9:_-]*)\b"
+    r"|\byarn\s+([A-Za-z0-9:_][A-Za-z0-9:_-]*)\b"
 )
 # Makefile target invocations: ``make X``.
 _MAKE_CMD_RE = re.compile(r"\bmake\s+([A-Za-z0-9_.-]+)\b")
@@ -693,6 +693,7 @@ def compare_commands(root, text):
     # walk. `None` means "not computed yet", distinct from `all_package_scripts`
     # itself returning `None` for "no package.json anywhere".
     all_scripts = "not computed"
+    all_dependencies = "not computed"
     targets = make_targets(root)
     py_scripts = python_scripts(root)
     cargo_bins = cargo_bin_targets(root)
@@ -703,8 +704,13 @@ def compare_commands(root, text):
             name = decl["name"]
             if name in PACKAGE_MANAGER_BUILTINS:
                 continue
-            if facts.is_yarn_bin_passthrough(root, decl["tool"], name):
+            if facts.is_node_bin_passthrough(root, decl["tool"], name):
                 continue
+            if decl["tool"] in {"yarn", "pnpm"}:
+                if all_dependencies == "not computed":
+                    all_dependencies = facts.all_package_dependency_names(root)
+                if name in all_dependencies:
+                    continue
             if scripts is not None and name not in scripts:
                 if all_scripts == "not computed":
                     all_scripts = facts.all_package_scripts(root) or set()
@@ -803,6 +809,8 @@ def compare_paths(root, text):
             if package_names == "not computed":
                 package_names = facts.all_package_names(root)
             if token.split("/", 1)[0] in package_names:
+                continue
+            if facts.is_eslint_rule_identifier(root, token):
                 continue
             # A root AGENTS.md section scoped to a subdirectory (codex-rs's
             # Rust section, opencode's packages/opencode section) documents

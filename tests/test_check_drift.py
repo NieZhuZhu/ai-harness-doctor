@@ -58,6 +58,215 @@ class DriftTests(unittest.TestCase):
         shutil.copytree(FIXTURE, repo)
         return td, repo
 
+    def test_nested_agents_content_checks_use_package_scope_and_attribution(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"test": "echo root"}}),
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+
+            api = repo / "packages" / "api"
+            (api / "src").mkdir(parents=True)
+            (api / "docs").mkdir()
+            (api / "src" / "handler.py").write_text("pass\n", encoding="utf-8")
+            (api / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+            (api / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {"test:api": "echo api"},
+                        "engines": {"node": ">=20"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (api / ".nvmrc").write_text("20\n", encoding="utf-8")
+            (api / "AGENTS.md").write_text(
+                "# API package\n\n"
+                "Use Node 18 in this package.\n"
+                "Run `npm run test:api` and `npm run removed-script`.\n"
+                "The handler lives at `src/handler.py`.\n"
+                "The missing migration should be at `src/missing-handler.py`.\n"
+                "See the [guide](docs/guide.md) and [missing guide](docs/missing.md).\n",
+                encoding="utf-8",
+            )
+
+            web = repo / "packages" / "web"
+            web.mkdir(parents=True)
+            (web / "package.json").write_text(
+                json.dumps({"scripts": {"test:web": "echo web"}}),
+                encoding="utf-8",
+            )
+            (web / "AGENTS.md").write_text(
+                "# Web package\n\nRun `npm run test:web`.\n",
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [sys.executable, str(DRIFT), str(repo), "--strict", "--json"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            report = json.loads(proc.stdout)
+            nested = [
+                finding
+                for finding in report["findings"]
+                if finding.get("path") == "packages/api/AGENTS.md"
+            ]
+            self.assertEqual({finding["check"] for finding in nested}, {"D1", "D2", "D6", "D7"})
+            self.assertTrue(all(finding.get("line", 0) > 0 for finding in nested))
+            messages = " ".join(finding["message"] for finding in nested)
+            self.assertIn("removed-script", messages)
+            self.assertIn("src/missing-handler.py", messages)
+            self.assertIn("Node 18", messages)
+            self.assertIn("docs/missing.md", messages)
+            self.assertNotIn("test:api`", messages)
+            self.assertNotIn("src/handler.py`", messages)
+            self.assertNotIn("docs/guide.md", messages)
+            self.assertFalse(
+                [
+                    finding
+                    for finding in report["findings"]
+                    if finding.get("path") == "packages/web/AGENTS.md"
+                ]
+            )
+            self.assertLess(report["score"], 100)
+            self.assertNotEqual(report["grade"], "A")
+
+            markdown = subprocess.run(
+                [sys.executable, str(DRIFT), str(repo), "--strict"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(markdown.returncode, 1)
+            self.assertIn("`packages/api/AGENTS.md:4`", markdown.stdout)
+            self.assertIn("`packages/api/AGENTS.md:6`", markdown.stdout)
+
+            fix = subprocess.run(
+                [sys.executable, str(DRIFT), str(repo), "--fix"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(fix.returncode, 1)
+            self.assertIn("needs manual attention", fix.stdout)
+            self.assertIn("`packages/api/AGENTS.md:4`", fix.stdout)
+
+    def test_nested_scope_accepts_explicit_root_commands_and_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"build:cli": "echo root"}}),
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            root_test = repo / "packages" / "core" / "src" / "server.test.ts"
+            root_test.parent.mkdir(parents=True)
+            root_test.write_text("test\n", encoding="utf-8")
+            package = repo / "examples" / "app"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text(
+                json.dumps({"scripts": {"dev": "echo local"}}),
+                encoding="utf-8",
+            )
+            (package / "AGENTS.md").write_text(
+                "Run `pnpm build:cli` from the repo root and edit "
+                "`packages/core/src/server.test.ts`.\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, check_drift.DEFAULT_MAX_BYTES)
+
+            self.assertTrue(report["ok"], report["findings"])
+            self.assertEqual(report["findings"], [])
+
+    def test_nested_scope_without_local_manifest_still_checks_root_scripts(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"test": "echo root"}}),
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            nested = repo / "docs"
+            nested.mkdir()
+            (nested / "AGENTS.md").write_text(
+                "Run `npm run removed-script`.\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, check_drift.DEFAULT_MAX_BYTES)
+
+            self.assertFalse(report["ok"])
+            self.assertEqual(len(report["findings"]), 1)
+            self.assertEqual(report["findings"][0]["check"], "D1")
+            self.assertEqual(report["findings"][0]["path"], "docs/AGENTS.md")
+
+    def test_nested_scope_without_local_facts_falls_back_for_d6(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps({"engines": {"node": ">=20"}}),
+                encoding="utf-8",
+            )
+            (repo / ".nvmrc").write_text("20\n", encoding="utf-8")
+            (repo / "package-lock.json").write_text(
+                '{"lockfileVersion": 3}\n',
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            nested = repo / "docs"
+            nested.mkdir()
+            (nested / "AGENTS.md").write_text(
+                "Use Node 18 and run `pnpm install` in this scope.\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, check_drift.DEFAULT_MAX_BYTES)
+
+            d6 = [finding for finding in report["findings"] if finding["check"] == "D6"]
+            self.assertGreaterEqual(len(d6), 2)
+            self.assertTrue(all(finding["path"] == "docs/AGENTS.md" for finding in d6))
+            messages = " ".join(finding["message"] for finding in d6)
+            self.assertIn("Node 18", messages)
+            self.assertIn("package-lock.json", messages)
+
+    def test_nested_paths_and_links_may_reach_parent_but_not_escape_repo(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            scope = repo / "packages" / "api"
+            scope.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            (repo / "packages" / "shared.py").write_text("shared\n", encoding="utf-8")
+            (repo / "packages" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+            outside = base / "outside.md"
+            outside.write_text("outside\n", encoding="utf-8")
+            (scope / "AGENTS.md").write_text(
+                "Use `../shared.py` and [the guide](../guide.md).\n"
+                "Missing `../missing.py` and [missing guide](../missing.md).\n"
+                "Ignore external `../../../outside.md` and "
+                "[external](../../../outside.md).\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, check_drift.DEFAULT_MAX_BYTES)
+
+            nested = [
+                finding
+                for finding in report["findings"]
+                if finding.get("path") == "packages/api/AGENTS.md"
+            ]
+            self.assertEqual({finding["check"] for finding in nested}, {"D2", "D7"})
+            messages = " ".join(finding["message"] for finding in nested)
+            self.assertIn("../missing.py", messages)
+            self.assertIn("../missing.md", messages)
+            self.assertNotIn("../shared.py", messages)
+            self.assertNotIn("../guide.md", messages)
+            self.assertNotIn("outside.md", messages)
+
     def test_nonexistent_target_errors_instead_of_reporting_healthy(self):
         # A typo'd target path must fail loudly, not silently report a passing
         # health score for nothing scanned (found: `drift /typo-path` previously
@@ -248,6 +457,56 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         report = json.loads(proc.stdout)
         self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
+
+    def test_pnpm_bin_passthrough_and_option_are_not_scripts(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "package.json").write_text(
+            json.dumps(
+                {
+                    "scripts": {"test": "node src/index.js"},
+                    "devDependencies": {"mastra": "1.0.0"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS
+            + "Run `pnpm mastra dev` locally and `pnpm --filter ./packages/app test` from root.\n",
+            encoding="utf-8",
+        )
+        self._stub_pointers(repo)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--json"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
+
+    def test_pnpm_descendant_dependency_binary_not_flagged_from_parent_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text('{"scripts": {}}\n', encoding="utf-8")
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            examples = repo / "examples"
+            examples.mkdir()
+            (examples / "AGENTS.md").write_text(
+                "Run `pnpm mastra dev` from an example directory.\n",
+                encoding="utf-8",
+            )
+            app = examples / "app"
+            app.mkdir()
+            (app / "package.json").write_text(
+                '{"devDependencies": {"mastra": "1.0.0"}}\n',
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, check_drift.DEFAULT_MAX_BYTES)
+
+            self.assertTrue(report["ok"], report["findings"])
+            self.assertEqual(report["findings"], [])
 
     def test_npm_bin_style_reference_still_triggers_d1(self):
         # The yarn bin-passthrough exemption must not leak to npm, which has no
@@ -912,6 +1171,24 @@ class NestedAgentsWalkTests(unittest.TestCase):
             found = check_drift.nested_agents(repo)  # must terminate, not loop forever
             self.assertIn("sub/AGENTS.md", found)
 
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_nested_agents_symlink_is_not_a_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            nested = repo / "packages" / "api"
+            nested.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text("root\n", encoding="utf-8")
+            outside = base / "outside.md"
+            outside.write_text("Run `npm run outside-only`.\n", encoding="utf-8")
+            (nested / "AGENTS.md").symlink_to(outside)
+
+            self.assertEqual(check_drift.nested_agents(repo), [])
+            self.assertEqual(
+                check_drift.drift_scopes(repo),
+                [{"root": repo.resolve(), "path": "AGENTS.md", "is_root": True}],
+            )
+
 
 class BaselineTests(unittest.TestCase):
     """--baseline / --write-baseline: adopt the drift gate on a repo that already
@@ -1049,6 +1326,33 @@ class BaselineTests(unittest.TestCase):
             [(e["check"], e["message"]) for e in payload["findings"]],
             [("D1", "a"), ("D2", "b")],  # sorted, de-duplicated, INFO dropped
         )
+
+    def test_nested_baseline_identity_is_path_scoped_and_root_compatible(self):
+        root = {
+            "check": "D1",
+            "level": "ERROR",
+            "message": "Unknown package.json script `nope`",
+            "line": 2,
+        }
+        api = {**root, "path": "packages/api/AGENTS.md"}
+        web = {**root, "path": "packages/web/AGENTS.md"}
+        payload = check_drift.baseline_payload([root, api, web])
+
+        self.assertEqual(
+            [(entry["path"], entry["message"]) for entry in payload["findings"]],
+            [
+                (None, root["message"]),
+                ("packages/api/AGENTS.md", root["message"]),
+                ("packages/web/AGENTS.md", root["message"]),
+            ],
+        )
+        baseline = {
+            (entry["check"], entry["message"], entry.get("path") or "")
+            for entry in payload["findings"][:2]
+        }
+        self.assertIn(check_drift.finding_fingerprint(root), baseline)
+        self.assertIn(check_drift.finding_fingerprint(api), baseline)
+        self.assertNotIn(check_drift.finding_fingerprint(web), baseline)
 
 
 if __name__ == "__main__":

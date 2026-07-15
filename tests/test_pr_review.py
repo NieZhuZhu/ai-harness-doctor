@@ -147,6 +147,25 @@ class BuildReviewTests(unittest.TestCase):
         self.assertEqual(withpath["comments"][0]["path"], "AGENTS.md")
         self.assertEqual(withpath["comments"][0]["line"], 7)
 
+    def test_nested_drift_finding_uses_its_own_path_over_default(self):
+        report = {
+            "findings": [
+                {
+                    "check": "D1",
+                    "level": "ERROR",
+                    "path": "packages/api/AGENTS.md",
+                    "line": 4,
+                    "message": "Unknown script `removed-script`",
+                    "suggestion": "Update the package instructions.",
+                },
+            ]
+        }
+        payload = pr_review.build_review(report, default_path="AGENTS.md")
+        self.assertEqual(payload["inline_count"], 1)
+        self.assertEqual(payload["comments"][0]["path"], "packages/api/AGENTS.md")
+        self.assertEqual(payload["comments"][0]["line"], 4)
+        self.assertIn("`packages/api/AGENTS.md:4`", payload["comments"][0]["body"])
+
     def test_empty_findings_case(self):
         payload = pr_review.build_review({"score": 100, "grade": "A"})
         self.assertEqual(payload["comments"], [])

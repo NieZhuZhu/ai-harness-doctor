@@ -514,6 +514,8 @@ Example finding lines:
 - D7: `Markdown link target references/runbook.md does not exist` (Markdown-link drift)
 - D8: `Competing package-manager lockfiles committed (package-lock.json, pnpm-lock.yaml)`
 
+**Nested drift scopes.** D5 remains informational inventory, but every contained nested `AGENTS.md` it lists is also checked by D1/D2/D6/D7 with local facts/paths first and repository-root facts/paths as a conservative fallback for explicitly root-scoped guidance. Nested findings carry their canonical-file path through strict health, baselines, `--fix` manual guidance, SARIF, and PR review. D3/D4/D8 and custom plugins remain once-per-repository checks, and existing root findings keep their scope-less baseline identity.
+
 **D6 fact drift** cross-validates the *facts* declared in `AGENTS.md` against repo ground truth: the Node version (vs `.nvmrc` and `package.json` `engines.node`) and the package manager (vs the actual lockfile — `package-lock.json`→npm, `pnpm-lock.yaml`→pnpm, `yarn.lock`→yarn). It only flags clear contradictions and stays silent when `AGENTS.md` is silent, so silence never produces a false positive.
 
 **D7 Markdown-link drift** probes repo-relative Markdown link targets (`[text](path)`) in `AGENTS.md` and flags those pointing at a file or directory that no longer exists. It complements D2 (which only checks backtick-quoted tokens); URLs, in-page anchors, and out-of-repo targets are ignored, so it never probes outside the repo.

@@ -512,6 +512,8 @@ Example finding lines:
 - D7: `Markdown link target references/runbook.md does not exist` (Markdown-link drift)
 - D8: `Competing package-manager lockfiles committed (package-lock.json, pnpm-lock.yaml)`
 
+**嵌套 drift scope。** D5 仍然只是信息性 inventory，但它列出的每个 contained nested `AGENTS.md` 也会执行 D1/D2/D6/D7：优先使用局部 fact/path，并把仓库根 fact/path 作为对明确 root-scoped 指引的保守 fallback。嵌套 finding 会携带其 canonical-file path，贯穿 strict health、baseline、`--fix` 手工修复指引、SARIF 与 PR review。D3/D4/D8 和 custom plugin 仍然每个仓库只运行一次，已有 root finding 继续保留无 scope 的 baseline identity。
+
 **D6 fact drift** 会把 `AGENTS.md` 中声明的*事实*与 repo 实际情况交叉验证：Node 版本（对比 `.nvmrc` 和 `package.json` 的 `engines.node`）以及包管理器（对比实际的 lockfile——`package-lock.json`→npm、`pnpm-lock.yaml`→pnpm、`yarn.lock`→yarn）。它只标记明确的矛盾，当 `AGENTS.md` 未声明时保持沉默，因此沉默永远不会产生误报。
 
 **D7 Markdown-link drift** 会探测 `AGENTS.md` 中 repo 相对的 Markdown 链接目标（`[text](path)`），并标记那些指向已不存在的文件或目录的链接。它补充了 D2（D2 只检查反引号包裹的 token）；URL、页内锚点以及 repo 之外的目标都会被忽略，因此它永远不会探测 repo 之外的路径。
