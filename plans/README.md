@@ -165,7 +165,7 @@ verification gate, and update its status here.
 | 023 | Explain the effective instruction chain for any repository path | P1 | L | 020 (done) | DONE |
 | 024 | Scan every byte for security and identity without unbounded semantic reads | P0 | M | — | DONE |
 | 025 | Bind idempotent release reruns to the published npm artifact | P0 | S | — | DONE |
-| 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | IN PROGRESS |
+| 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -234,6 +234,25 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   STOP conditions do not force breaking schemas. Plan 026 adds public CLI/MCP
   behavior, so the combined release is minor unless a STOP condition exposes a
   breaking change.
+
+## Post-v1.6.0 completion evidence
+
+- Plan 024 landed in PR [#163](https://github.com/NieZhuZhu/ai-harness-doctor/pull/163)
+  (`5cc8c56`): complete-file identity/security with bounded semantic evidence,
+  Action/SARIF/PR feedback coverage, and real 41 KB `agency-swarm` validation.
+- Plan 025 landed in PR [#164](https://github.com/NieZhuZhu/ai-harness-doctor/pull/164)
+  (`79f3dbb`): fail-closed npm lookup plus exact `gitHead` and reproducible pack
+  shasum checks; the new step passed on a detached real `v1.6.0` checkout.
+- Plan 026 landed in PR [#165](https://github.com/NieZhuZhu/ai-harness-doctor/pull/165)
+  (`ade174a`): explicit target-aware CLI/MCP task generation with compatible
+  root IDs, scoped evidence, containment, and Mastra root/memory/core validation.
+- Every implementation PR passed all nine required contexts: drift, lint,
+  Node 16/20/22, self-test, and Python 3.9/3.10/3.12. Local final validation on
+  current main is 613 Python tests, 26 Node tests, strict drift 100/A, and
+  evidence-bound eval 25/25.
+- Release classification: Plans 024–025 are backward-compatible bug/security
+  fixes; Plan 026 adds a public CLI/MCP feature. Publish the batch as the next
+  minor version after this completion record merges.
 
 ## Findings considered and rejected or deferred
 
