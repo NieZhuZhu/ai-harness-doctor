@@ -45,4 +45,6 @@ class ResilientTemporaryDirectory(tempfile.TemporaryDirectory):
     """A ``TemporaryDirectory`` whose cleanup tolerates the ENOTEMPTY race."""
 
     def cleanup(self):
+        # Detach the base finalizer so GC won't re-run cleanup and warn.
+        self._finalizer.detach()
         robust_rmtree(self.name)
