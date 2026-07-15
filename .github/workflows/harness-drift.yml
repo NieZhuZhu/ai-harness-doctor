@@ -74,17 +74,17 @@ jobs:
             --pr "${{ github.event.number }}" \
             --commit "${{ github.event.pull_request.head.sha }}" \
             || echo "pr_review: posting skipped (token/API unavailable)"
-      # Eval health-score gate: fail CI when committed eval results drop below the
-      # threshold. Kept soft (guarded by the file existing) so this repo is not
-      # blocked before an eval baseline is committed. Point RESULTS at a results
-      # JSON produced by eval_run.py once you commit one.
-      - name: Eval health-score gate
+      # This repo owns a committed self-eval result, so enforce BOTH freshness
+      # (tasks + AGENTS.md byte identity) and health. Unlike the generic shipped
+      # template, this self-bootstrap gate must never silently skip its evidence.
+      - name: Eval evidence and health gate
         if: ${{ always() }}
         run: |
           RESULTS="benchmark/self-eval/results-after-graded.json"
-          if [ -f "$RESULTS" ]; then
-            python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
-          else
-            echo "No committed eval results at $RESULTS; skipping eval gate."
-            echo "Commit an eval results JSON and set --fail-under to enable it."
-          fi
+          python3 scripts/eval_run.py \
+            --score "$RESULTS" \
+            --tasks benchmark/self-eval/tasks.json \
+            --workdir . \
+            --evidence AGENTS.md \
+            --require-current-evidence \
+            --fail-under 80

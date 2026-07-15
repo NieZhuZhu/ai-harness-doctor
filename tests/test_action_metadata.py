@@ -126,6 +126,17 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("🩺 Harness checkup: issues detected", checkup)
         self.assertNotIn("--write-baseline", combined)
 
+    def test_repository_eval_gate_requires_current_committed_evidence(self):
+        drift = HARNESS_DRIFT.read_text(encoding="utf-8")
+        self.assertIn("Eval evidence and health gate", drift)
+        self.assertIn("--score \"$RESULTS\"", drift)
+        self.assertIn("--tasks benchmark/self-eval/tasks.json", drift)
+        self.assertIn("--evidence AGENTS.md", drift)
+        self.assertIn("--require-current-evidence", drift)
+        self.assertIn("--fail-under 80", drift)
+        self.assertNotIn("No committed eval results", drift)
+        self.assertNotIn('if [ -f "$RESULTS" ]', drift)
+
     def test_github_guard_posts_one_combined_scan_and_drift_review(self):
         for path in (HARNESS_DRIFT_TEMPLATE, HARNESS_DRIFT):
             with self.subTest(path=path):

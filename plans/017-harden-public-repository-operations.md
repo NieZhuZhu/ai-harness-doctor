@@ -124,6 +124,8 @@ evidence and rollback instructions.
 - synchronized public docs only where contribution/security behavior changes
 - `CONTRIBUTING.md`, `RELEASING.md`
 - final compact maintenance/operations contract in `AGENTS.md`
+- `benchmark/self-eval/` evidence refresh required by Plan 015 whenever the
+  final `AGENTS.md` contract changes
 - remote GitHub repository security settings and branch-protection status checks
 - `plans/README.md`
 
@@ -285,6 +287,11 @@ Condense a root invariant covering:
 
 Keep `AGENTS.md` below the strict D4 threshold and Grade A; shorten older prose
 without dropping its semantics if needed.
+
+Because Plan 015 makes the self-eval evidence byte-bound, refresh and offline
+regrade `benchmark/self-eval/results-after.json` in the same PR, then stamp the
+new `AGENTS.md` digest and pass `--require-current-evidence`. Do not claim a
+fresh model run.
 
 ### Step 9: Final verification
 

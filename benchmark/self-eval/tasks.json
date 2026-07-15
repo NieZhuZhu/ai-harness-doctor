@@ -70,5 +70,35 @@
     "prompt": "What is the directory layout / where do the CLI entry point and the deterministic Python scripts live in this repo? Answer briefly with the relevant directories.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)\\bbin/\\b|scripts/"}
+  },
+  {
+    "id": "installer-state",
+    "prompt": "How must installer manifest state be parsed and written? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)fail.?closed.*atomic|atomic.*fail.?closed"}
+  },
+  {
+    "id": "security-baseline",
+    "prompt": "May HIGH security findings be suppressed by a scan baseline? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)\\bno\\b|ineligible|unsuppress"}
+  },
+  {
+    "id": "mcp-policy",
+    "prompt": "What are the MCP tool mutation and finding/error rules? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)read.?only.*not.*operational|not.*operational.*read.?only"}
+  },
+  {
+    "id": "release-classification",
+    "prompt": "Which semantic version bumps are used for a feature and for a bugfix-only release? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)feature.*minor.*bugfix.*patch|bugfix.*patch.*feature.*minor"}
+  },
+  {
+    "id": "installer-test-home",
+    "prompt": "Which HOME may installer smoke tests write to? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)isolated.*HOME|HOME.*isolated"}
   }
 ]

@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Answers produced by an agent given the UPDATED AGENTS.md (with Project structure section), no repo browsing.",
+  "note": "Manual-protocol answers refreshed 2026-07-15 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
   "tasks": [
     {"id": "test-suite", "stdout": "python3 -m unittest discover -s tests -v"},
     {"id": "python-version", "stdout": "3.9+"},
@@ -14,6 +14,11 @@
     {"id": "drift-script", "stdout": "scripts/check_drift.py"},
     {"id": "scan-script", "stdout": "scripts/scan.py"},
     {"id": "eval-script", "stdout": "scripts/eval_run.py"},
-    {"id": "commit-convention", "stdout": "The CLI entry point is bin/cli.js and the deterministic engines live in scripts/ (scan.py, canonicalize.py, check_drift.py, eval_run.py)."}
+    {"id": "commit-convention", "stdout": "The CLI entry point is bin/cli.js and the deterministic engines live in scripts/ (scan.py, canonicalize.py, check_drift.py, eval_run.py)."},
+    {"id": "installer-state", "stdout": "Parse installer manifests fail-closed, reject symlinked state, and replace valid state atomically."},
+    {"id": "security-baseline", "stdout": "No. HIGH security findings are ineligible for baselines and remain active."},
+    {"id": "mcp-policy", "stdout": "MCP tools stay read-only, and findings are not operational failures."},
+    {"id": "release-classification", "stdout": "A feature uses a minor version bump; a bugfix-only release uses a patch bump."},
+    {"id": "installer-test-home", "stdout": "Installer smoke tests may write only to an isolated HOME, never the real user HOME."}
   ]
 }
