@@ -438,24 +438,37 @@ jobs:
         run: |
           set -euo pipefail
           visibility_dir="$RUNNER_TEMP/npm-visibility"
-          rm -rf "$visibility_dir"
-          mkdir -p "$visibility_dir"
+          install_log="$RUNNER_TEMP/npm-visibility-install.log"
           for attempt in {1..12}; do
-            if npm pack \
-              "ai-harness-doctor@$PACKAGE_VERSION" \
-              --pack-destination "$visibility_dir" \
+            rm -rf "$visibility_dir"
+            mkdir -p "$visibility_dir"
+            if npm install \
+              --prefix "$visibility_dir" \
+              --no-audit \
+              --no-fund \
               --ignore-scripts \
-              >/dev/null 2>&1; then
-              echo "Verified ai-harness-doctor@$PACKAGE_VERSION is downloadable from npm."
-              rm -rf "$visibility_dir"
-              exit 0
+              "ai-harness-doctor@$PACKAGE_VERSION" \
+              >"$install_log" 2>&1; then
+              export VISIBILITY_PACKAGE="$visibility_dir/node_modules/ai-harness-doctor/package.json"
+              installed_version="$(
+                node -p 'require(process.env.VISIBILITY_PACKAGE).version'
+              )"
+              if [ "$installed_version" = "$PACKAGE_VERSION" ]; then
+                echo "Verified ai-harness-doctor@$PACKAGE_VERSION is installable from npm."
+                rm -rf "$visibility_dir"
+                exit 0
+              fi
+              echo "Installed ai-harness-doctor@$installed_version, expected $PACKAGE_VERSION." \
+                >"$install_log"
             fi
             if [ "$attempt" -lt 12 ]; then
               echo "Waiting for ai-harness-doctor@$PACKAGE_VERSION on npm (attempt $attempt/12)."
               sleep 10
             fi
           done
-          echo "ai-harness-doctor@$PACKAGE_VERSION was not downloadable after 12 attempts." >&2
+          cat "$install_log" >&2
+          rm -rf "$visibility_dir"
+          echo "ai-harness-doctor@$PACKAGE_VERSION was not installable after 12 attempts." >&2
           exit 1
 
       # Now that npm publish is complete, use the floating Action wrapper to
