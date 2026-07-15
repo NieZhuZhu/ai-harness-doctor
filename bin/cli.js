@@ -6,6 +6,7 @@ const path = require('path');
 const os = require('os');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 const childProcess = require('child_process');
 const runtime = require('./runtime.js');
 
@@ -90,7 +91,13 @@ function fail(message, code = 1) {
 }
 
 function homePath(...parts) {
-  return path.join(os.homedir(), ...parts);
+  let home = os.homedir();
+  try {
+    home = fs.realpathSync(home);
+  } catch (_) {
+    home = path.resolve(home);
+  }
+  return path.join(home, ...parts);
 }
 
 function targetPath(project, ...parts) {
@@ -105,37 +112,163 @@ function removePath(target) {
   fs.rmSync(target, { recursive: true, force: true });
 }
 
-function removeLinkOrPath(target) {
+function contentDigest(content) {
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+function fileDigest(file) {
   try {
-    const stat = fs.lstatSync(target);
-    if (stat.isSymbolicLink()) fs.unlinkSync(target);
-    else removePath(target);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile()) return null;
+    return contentDigest(fs.readFileSync(file));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function outputMap(outputs) {
+  return new Map((outputs || []).filter((item) => item && typeof item.path === 'string').map((item) => [item.path, item]));
+}
+
+function managedFileContent(src, playbook) {
+  const raw = fs.readFileSync(src);
+  if (playbook === undefined) return raw;
+  return Buffer.from(replacePlaybook(raw.toString('utf8'), playbook), 'utf8');
+}
+
+function writeOwnedFile(src, dest, previous, playbook, mutationRoot) {
+  assertSafeMutationPath(mutationRoot || os.homedir(), dest);
+  const content = managedFileContent(src, playbook);
+  const desiredDigest = contentDigest(content);
+  const prior = previous.get(dest);
+  let currentDigest = null;
+  try {
+    const stat = fs.lstatSync(dest);
+    if (!stat.isFile()) {
+      return { path: dest, status: prior ? 'modified-preserved' : 'manual-merge', managed: prior || null };
+    }
+    currentDigest = fileDigest(dest);
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-}
-
-function copyFile(src, dest) {
+  if (currentDigest !== null && !prior) {
+    return { path: dest, status: 'manual-merge', managed: null };
+  }
+  if (currentDigest !== null && currentDigest !== desiredDigest && (!prior || currentDigest !== prior.digest)) {
+    return { path: dest, status: prior ? 'modified-preserved' : 'manual-merge', managed: prior || null };
+  }
   ensureDir(path.dirname(dest));
-  fs.copyFileSync(src, dest);
+  if (currentDigest !== desiredDigest) fs.writeFileSync(dest, content);
+  return {
+    path: dest,
+    status: currentDigest === desiredDigest ? 'unchanged' : (currentDigest === null ? 'created' : 'updated'),
+    managed: { path: dest, kind: 'file', digest: desiredDigest },
+  };
 }
 
-function copyDir(src, dest) {
-  removePath(dest);
-  ensureDir(dest);
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const from = path.join(src, entry.name);
-    const to = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(from, to);
-    else if (entry.isFile()) copyFile(from, to);
+function payloadSources() {
+  const files = [];
+  function walk(src, rel) {
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      if (entry.name === '__pycache__' || entry.name.endsWith('.pyc')) continue;
+      const from = path.join(src, entry.name);
+      const childRel = path.join(rel, entry.name);
+      if (entry.isDirectory()) walk(from, childRel);
+      else if (entry.isFile()) files.push([from, childRel]);
+    }
+  }
+  files.push([path.join(PACKAGE_ROOT, 'SKILL.md'), 'SKILL.md']);
+  for (const name of ['scripts', 'references', 'assets']) walk(path.join(PACKAGE_ROOT, name), name);
+  return files;
+}
+
+function removeEmptyParents(start, stop) {
+  let current = path.dirname(start);
+  const boundary = path.resolve(stop);
+  while (current.startsWith(`${boundary}${path.sep}`) || current === boundary) {
+    if (current === boundary) break;
+    try {
+      fs.rmdirSync(current);
+    } catch (_) {
+      break;
+    }
+    current = path.dirname(current);
   }
 }
 
-function copyPayload(dest) {
-  removePath(dest);
-  ensureDir(dest);
-  for (const name of ['SKILL.md']) copyFile(path.join(PACKAGE_ROOT, name), path.join(dest, name));
-  for (const name of ['scripts', 'references', 'assets']) copyDir(path.join(PACKAGE_ROOT, name), path.join(dest, name));
+function syncPayload(dest, previousOutputs, mutationRoot) {
+  const root = mutationRoot || os.homedir();
+  assertSafeMutationPath(root, path.dirname(dest));
+  const previous = outputMap(previousOutputs);
+  const rows = [];
+  const outputs = [];
+  const desired = new Set();
+  try {
+    const stat = fs.lstatSync(dest);
+    if (stat.isSymbolicLink()) {
+      const prior = previous.get(dest);
+      const currentTarget = readSymlinkTarget(dest);
+      if (!prior || prior.kind !== 'link' || prior.target !== currentTarget) {
+        fail(`Refusing to replace unowned payload link: ${dest}`);
+      }
+      fs.unlinkSync(dest);
+      rows.push({ path: dest, status: 'link-retired' });
+    } else if (!stat.isDirectory()) {
+      fail(`Refusing to replace non-directory payload path: ${dest}`);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  assertSafeMutationPath(root, dest);
+  for (const [src, rel] of payloadSources()) {
+    const target = path.join(dest, rel);
+    desired.add(target);
+    const result = writeOwnedFile(src, target, previous, undefined, mutationRoot);
+    rows.push({ path: target, status: result.status });
+    if (result.managed) outputs.push(result.managed);
+  }
+  for (const prior of previous.values()) {
+    if (prior.kind !== 'file' || desired.has(prior.path) || !prior.path.startsWith(`${dest}${path.sep}`)) continue;
+    if (fileDigest(prior.path) === prior.digest) {
+      fs.unlinkSync(prior.path);
+      removeEmptyParents(prior.path, dest);
+      rows.push({ path: prior.path, status: 'removed-stale' });
+    } else {
+      outputs.push(prior);
+      rows.push({ path: prior.path, status: 'modified-preserved' });
+    }
+  }
+  return { rows, outputs };
+}
+
+function directoryMatchesOwnedFiles(directory, previousOutputs) {
+  const expected = new Map(
+    (previousOutputs || [])
+      .filter((output) => output.kind === 'file' && output.path.startsWith(`${directory}${path.sep}`))
+      .map((output) => [output.path, output.digest])
+  );
+  if (!expected.size) return false;
+  const actual = [];
+  function walk(current) {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const child = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!walk(child)) return false;
+      } else if (entry.isFile()) {
+        actual.push(child);
+      } else {
+        return false;
+      }
+    }
+    return true;
+  }
+  try {
+    if (!fs.lstatSync(directory).isDirectory() || !walk(directory)) return false;
+  } catch (_) {
+    return false;
+  }
+  return actual.length === expected.size && actual.every((file) => expected.get(file) === fileDigest(file));
 }
 
 function readManifest() {
@@ -143,59 +276,38 @@ function readManifest() {
     const parsed = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
     if (!parsed || typeof parsed !== 'object') throw new Error('bad manifest');
     if (!Array.isArray(parsed.installs)) parsed.installs = [];
+    if (typeof parsed.schemaVersion !== 'number') parsed.schemaVersion = 1;
     if (typeof parsed.lastUpdateCheck !== 'number') parsed.lastUpdateCheck = 0;
     if (typeof parsed.version !== 'string') parsed.version = PACKAGE_VERSION;
     return parsed;
   } catch (_) {
-    return { version: PACKAGE_VERSION, lastUpdateCheck: 0, installs: [] };
+    return { schemaVersion: 2, version: PACKAGE_VERSION, lastUpdateCheck: 0, installs: [] };
   }
 }
 
 function writeManifest(manifest) {
   ensureDir(MANIFEST_DIR);
+  manifest.schemaVersion = 2;
   fs.writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 }
 
 function sameInstall(a, b) {
-  return a.agent === b.agent && (a.project || null) === (b.project || null);
+  return (
+    a.agent === b.agent &&
+    (a.project || null) === (b.project || null) &&
+    (a.agent !== 'cursor' || (a.targetRoot || null) === (b.targetRoot || null))
+  );
 }
 
-function recordInstalls(agents, project, link, manifest) {
+function recordInstalls(records, manifest) {
   manifest = manifest || readManifest();
-  const now = new Date().toISOString();
-  for (const agent of agents) {
-    const record = { agent, project: project || null, link: Boolean(link), installedAt: now };
+  for (const record of records) {
     const idx = manifest.installs.findIndex((item) => sameInstall(item, record));
     if (idx >= 0) manifest.installs[idx] = record;
     else manifest.installs.push(record);
   }
   manifest.version = PACKAGE_VERSION;
   writeManifest(manifest);
-}
-
-function removeInstallRecords(agents, project) {
-  const manifest = readManifest();
-  manifest.installs = manifest.installs.filter((item) => !agents.includes(item.agent) || (item.project || null) !== (project || null));
-  manifest.version = PACKAGE_VERSION;
-  writeManifest(manifest);
-}
-
-function skillFrontmatterNamesThisPackage(skillPath) {
-  try {
-    const content = fs.readFileSync(skillPath, 'utf8');
-    return /^---\s*[\s\S]*?^name:\s*ai-harness-doctor\s*$/m.test(content);
-  } catch (_) {
-    return false;
-  }
-}
-
-function isOurPayloadDirectory(target) {
-  try {
-    const stat = fs.statSync(target);
-    return stat.isDirectory() && skillFrontmatterNamesThisPackage(path.join(target, 'SKILL.md'));
-  } catch (_) {
-    return false;
-  }
 }
 
 function ensureLinkAllowed() {
@@ -209,23 +321,6 @@ function ensureLinkAllowed() {
 function symlinkDirectory(src, dest) {
   ensureDir(path.dirname(dest));
   fs.symlinkSync(src, dest, process.platform === 'win32' ? 'junction' : 'dir');
-}
-
-function linkPayload(dest) {
-  ensureLinkAllowed();
-  try {
-    const stat = fs.lstatSync(dest);
-    if (stat.isSymbolicLink()) {
-      fs.unlinkSync(dest);
-    } else if (stat.isDirectory() && isOurPayloadDirectory(dest)) {
-      removePath(dest);
-    } else {
-      fail(`Refusing to replace non-ai-harness-doctor path: ${dest}`);
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-  symlinkDirectory(PACKAGE_ROOT, dest);
 }
 
 function compareIdentifiers(a, b) {
@@ -373,28 +468,37 @@ function replacePlaybook(content, playbook) {
   return content.replace(new RegExp(token, 'g'), playbook);
 }
 
-function installAdapterDir(srcDir, destDir, playbook) {
+function installAdapterDir(srcDir, destDir, playbook, previousOutputs, mutationRoot) {
+  assertSafeMutationPath(mutationRoot || os.homedir(), destDir);
   ensureDir(destDir);
-  const installed = [];
+  const previous = outputMap(previousOutputs);
+  const rows = [];
+  const outputs = [];
   for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const src = path.join(srcDir, entry.name);
     const dest = path.join(destDir, entry.name);
-    const content = replacePlaybook(fs.readFileSync(src, 'utf8'), playbook);
-    fs.writeFileSync(dest, content, 'utf8');
-    installed.push(dest);
+    const result = writeOwnedFile(src, dest, previous, playbook, mutationRoot);
+    rows.push({ path: dest, status: result.status });
+    if (result.managed) outputs.push(result.managed);
   }
-  return installed;
+  return { rows, outputs };
 }
 
-function installGemini(playbook, project) {
+function installGemini(playbook, project, previousOutputs) {
   void project;
   const dest = homePath('.gemini', 'commands', 'harness');
-  return installAdapterDir(path.join(PACKAGE_ROOT, 'adapters', 'gemini', 'harness'), dest, playbook);
+  return installAdapterDir(
+    path.join(PACKAGE_ROOT, 'adapters', 'gemini', 'harness'),
+    dest,
+    playbook,
+    previousOutputs,
+    os.homedir()
+  );
 }
 
 function neutralPayloadPath(project) {
-  return project ? path.join(project, '.ai-harness-doctor') : homePath('.ai-harness-doctor');
+  return project ? path.join(project, '.ai-harness-doctor', 'payload') : homePath('.ai-harness-doctor', 'payload');
 }
 
 function neutralLinkPath(project) {
@@ -409,24 +513,45 @@ function claudeCommandDir(project) {
   return project ? path.join(project, '.claude', 'commands') : homePath('.claude', 'commands');
 }
 
-function installClaude(project, link) {
+function installClaude(project, link, previousOutputs) {
   const skillDir = claudeSkillPath(project);
-  if (link) linkPayload(skillDir);
-  else copyPayload(skillDir);
-  return [skillDir, ...installClaudeCommands(project)];
+  if (link) {
+    const linked = syncOwnedLink(skillDir, PACKAGE_ROOT, previousOutputs, project || os.homedir());
+    const commands = installClaudeCommands(project, previousOutputs);
+    return {
+      rows: [...linked.rows, ...commands.rows],
+      outputs: [...linked.outputs, ...commands.outputs],
+    };
+  }
+  const mutationRoot = project || os.homedir();
+  const payload = syncPayload(skillDir, previousOutputs, mutationRoot);
+  const commands = installClaudeCommands(project, previousOutputs);
+  return {
+    rows: [...payload.rows, ...commands.rows],
+    outputs: [...payload.outputs, ...commands.outputs],
+  };
 }
 
-function installClaudeCommands(project) {
+function installClaudeCommands(project, previousOutputs) {
   const commandDir = claudeCommandDir(project);
-  ensureDir(commandDir);
-  const installed = [];
+  const mutationRoot = project || os.homedir();
+  const previous = outputMap(previousOutputs);
+  const rows = [];
+  const outputs = [];
   for (const name of COMMAND_NAMES) {
     const file = `${name}.md`;
     const dest = path.join(commandDir, file);
-    copyFile(path.join(PACKAGE_ROOT, 'commands', file), dest);
-    installed.push(dest);
+    const result = writeOwnedFile(
+      path.join(PACKAGE_ROOT, 'commands', file),
+      dest,
+      previous,
+      undefined,
+      mutationRoot
+    );
+    rows.push({ path: dest, status: result.status });
+    if (result.managed) outputs.push(result.managed);
   }
-  return installed;
+  return { rows, outputs };
 }
 
 function readSymlinkTarget(target) {
@@ -440,19 +565,278 @@ function readSymlinkTarget(target) {
   }
 }
 
-function installOne(agent, project, neutralPayload, link) {
-  if (agent === 'claude') return installClaude(project, link);
+function expectedFileOutput(src, dest, playbook) {
+  return { path: dest, kind: 'file', digest: contentDigest(managedFileContent(src, playbook)) };
+}
+
+function legacyPayloadOutputs(project) {
+  const legacyRoot = project ? path.join(project, '.ai-harness-doctor') : MANIFEST_DIR;
+  const outputs = [];
+  for (const [src, rel] of payloadSources()) {
+    const expected = expectedFileOutput(src, path.join(legacyRoot, rel));
+    if (fileDigest(expected.path) === expected.digest) outputs.push(expected);
+  }
+  return outputs;
+}
+
+function legacyOutputsForRecord(record) {
+  if (Array.isArray(record.outputs)) return record.outputs;
+  const project = record.project || null;
+  const outputs = [];
+  if (record.agent === 'claude') {
+    const skillDir = claudeSkillPath(project);
+    if (record.link) {
+      const target = readSymlinkTarget(skillDir);
+      if (target) outputs.push({ path: skillDir, kind: 'link', target });
+    } else {
+      for (const [src, rel] of payloadSources()) {
+        const expected = expectedFileOutput(src, path.join(skillDir, rel));
+        if (fileDigest(expected.path) === expected.digest) outputs.push(expected);
+      }
+    }
+    for (const name of COMMAND_NAMES) {
+      const file = `${name}.md`;
+      const expected = expectedFileOutput(
+        path.join(PACKAGE_ROOT, 'commands', file),
+        path.join(claudeCommandDir(project), file)
+      );
+      if (fileDigest(expected.path) === expected.digest) outputs.push(expected);
+    }
+    return outputs;
+  }
+  const oldPayload = project ? path.join(project, '.ai-harness-doctor') : MANIFEST_DIR;
+  outputs.push(...legacyPayloadOutputs(project));
+  let srcDir;
+  let destDir;
+  if (record.agent === 'cursor') {
+    srcDir = path.join(PACKAGE_ROOT, 'adapters', 'cursor');
+    destDir = targetPath(project, '.cursor', 'commands');
+  } else if (record.agent === 'codex') {
+    srcDir = path.join(PACKAGE_ROOT, 'adapters', 'codex');
+    destDir = homePath('.codex', 'prompts');
+  } else if (record.agent === 'gemini') {
+    srcDir = path.join(PACKAGE_ROOT, 'adapters', 'gemini', 'harness');
+    destDir = homePath('.gemini', 'commands', 'harness');
+  }
+  if (srcDir) {
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const expected = expectedFileOutput(
+        path.join(srcDir, entry.name),
+        path.join(destDir, entry.name),
+        oldPayload
+      );
+      if (fileDigest(expected.path) === expected.digest) outputs.push(expected);
+    }
+  }
+  return outputs;
+}
+
+function pathIsWithin(candidate, root) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function cursorRootFromOutput(outputPath) {
+  const marker = `${path.sep}.cursor${path.sep}commands${path.sep}`;
+  const index = path.resolve(outputPath).lastIndexOf(marker);
+  return index === -1 ? null : path.resolve(outputPath).slice(0, index);
+}
+
+function effectiveCursorRoot(record) {
+  if (record.targetRoot) return path.resolve(record.targetRoot);
+  if (record.project) return path.resolve(record.project);
+  const cursorOutput = (record.outputs || []).find(
+    (output) => output.kind === 'file' && cursorRootFromOutput(output.path)
+  );
+  return cursorOutput ? cursorRootFromOutput(cursorOutput.path) : null;
+}
+
+function adapterOutputPaths(agent, project, targetRoot) {
+  if (agent === 'cursor') {
+    const root = targetRoot || project || process.cwd();
+    return new Set(COMMAND_NAMES.map((name) => targetPath(root, '.cursor', 'commands', `${name}.md`)));
+  }
   if (agent === 'codex') {
-    return [neutralPayload, ...installAdapterDir(path.join(PACKAGE_ROOT, 'adapters', 'codex'), homePath('.codex', 'prompts'), neutralPayload)];
+    return new Set(COMMAND_NAMES.map((name) => homePath('.codex', 'prompts', `${name}.md`)));
   }
   if (agent === 'gemini') {
-    return [neutralPayload, ...installGemini(neutralPayload, project)];
+    return new Set(['doctor', 'scan', 'treat', 'drift', 'eval'].map(
+      (name) => homePath('.gemini', 'commands', 'harness', `${name}.toml`)
+    ));
+  }
+  return new Set();
+}
+
+function outputAllowedForRecord(record, output) {
+  if (!output || typeof output.path !== 'string' || !['file', 'link'].includes(output.kind)) return false;
+  const project = record.project || null;
+  const outputPath = path.resolve(output.path);
+  if (record.agent === 'claude') {
+    const skillDir = claudeSkillPath(project);
+    if (output.kind === 'link') return outputPath === path.resolve(skillDir);
+    if (pathIsWithin(outputPath, skillDir)) return true;
+    return COMMAND_NAMES.some(
+      (name) => outputPath === path.resolve(claudeCommandDir(project), `${name}.md`)
+    );
+  }
+  const payload = neutralPayloadPath(project);
+  if (output.kind === 'link' && outputPath === path.resolve(payload)) return true;
+  if (output.kind === 'file' && pathIsWithin(outputPath, payload)) return true;
+  const legacyRoot = project ? path.join(project, '.ai-harness-doctor') : MANIFEST_DIR;
+  if (output.kind === 'file') {
+    if (outputPath === path.resolve(legacyRoot, 'SKILL.md')) return true;
+    for (const name of ['scripts', 'references', 'assets']) {
+      if (pathIsWithin(outputPath, path.join(legacyRoot, name))) return true;
+    }
+  }
+  return output.kind === 'file' && adapterOutputPaths(
+    record.agent,
+    project,
+    record.agent === 'cursor' ? effectiveCursorRoot(record) : null
+  ).has(outputPath);
+}
+
+function recordWithOutputs(record) {
+  return {
+    ...record,
+    outputs: legacyOutputsForRecord(record).filter((output) => outputAllowedForRecord(record, output)),
+  };
+}
+
+function outputKey(output) {
+  return `${output.kind}:${output.path}`;
+}
+
+function mutationRootForRecord(record, output) {
+  const home = homePath();
+  if (pathIsWithin(output.path, home)) return home;
+  if (record.project) return record.project;
+  if (record.agent === 'cursor') return effectiveCursorRoot(record);
+  return home;
+}
+
+function removeOwnedOutput(record, output) {
+  const root = mutationRootForRecord(record, output);
+  if (!root) return 'modified-preserved';
+  if (output.kind === 'link') {
+    assertSafeMutationPath(root, path.dirname(output.path));
+    if (readSymlinkTarget(output.path) === output.target) {
+      fs.unlinkSync(output.path);
+      return 'removed';
+    }
+    return 'modified-preserved';
+  }
+  assertSafeMutationPath(root, output.path);
+  if (output.kind === 'file' && fileDigest(output.path) === output.digest) {
+    fs.unlinkSync(output.path);
+    return 'removed';
+  }
+  return 'modified-preserved';
+}
+
+function cleanupBoundary(record, output) {
+  const project = record.project || null;
+  const payload = record.agent === 'claude' ? claudeSkillPath(project) : neutralPayloadPath(project);
+  if (pathIsWithin(output.path, payload)) {
+    return record.agent === 'claude'
+      ? path.dirname(payload)
+      : (project ? path.join(project, '.ai-harness-doctor') : MANIFEST_DIR);
+  }
+  if (record.agent !== 'claude') {
+    const legacyRoot = project ? path.join(project, '.ai-harness-doctor') : MANIFEST_DIR;
+    for (const name of ['scripts', 'references', 'assets']) {
+      if (pathIsWithin(output.path, path.join(legacyRoot, name))) return legacyRoot;
+    }
+  }
+  return path.dirname(output.path);
+}
+
+function cleanupUnreferencedOutputs(previousRecords, nextRecords) {
+  const keep = new Set(nextRecords.flatMap((record) => record.outputs || []).map(outputKey));
+  const keptLinks = nextRecords
+    .flatMap((record) => record.outputs || [])
+    .filter((output) => output.kind === 'link')
+    .map((output) => output.path);
+  const seen = new Set();
+  const rows = [];
+  for (const record of previousRecords) {
+    for (const output of record.outputs || []) {
+      const key = outputKey(output);
+      if (keep.has(key) || seen.has(key)) continue;
+      if (keptLinks.some((link) => output.path.startsWith(`${link}${path.sep}`))) continue;
+      seen.add(key);
+      const status = removeOwnedOutput(record, output);
+      rows.push({ path: output.path, status });
+      if (status === 'removed') {
+        removeEmptyParents(output.path, cleanupBoundary(record, output));
+      }
+    }
+  }
+  return rows;
+}
+
+function syncOwnedLink(dest, target, previousOutputs, mutationRoot) {
+  const root = mutationRoot || os.homedir();
+  assertSafeMutationPath(root, path.dirname(dest));
+  const previous = outputMap(previousOutputs);
+  const prior = previous.get(dest);
+  const currentTarget = readSymlinkTarget(dest);
+  if (currentTarget === target) {
+    return { rows: [{ path: dest, status: 'unchanged' }], outputs: [{ path: dest, kind: 'link', target }] };
+  }
+  if (currentTarget && (!prior || currentTarget !== prior.target)) {
+    return {
+      rows: [{ path: dest, status: prior ? 'modified-preserved' : 'manual-merge' }],
+      outputs: prior ? [prior] : [],
+    };
+  }
+  if (fs.existsSync(dest) && !currentTarget) {
+    if (directoryMatchesOwnedFiles(dest, previousOutputs)) {
+      removePath(dest);
+    } else {
+      return {
+        rows: [{
+          path: dest,
+          status: (previousOutputs || []).length ? 'modified-preserved' : 'manual-merge',
+        }],
+        outputs: (previousOutputs || []).filter(
+          (output) => output.path === dest || output.path.startsWith(`${dest}${path.sep}`)
+        ),
+      };
+    }
+  }
+  if (currentTarget) fs.unlinkSync(dest);
+  assertSafeMutationPath(root, dest);
+  symlinkDirectory(target, dest);
+  return { rows: [{ path: dest, status: 'linked' }], outputs: [{ path: dest, kind: 'link', target }] };
+}
+
+function installOne(agent, project, neutralPayload, link, previousOutputs, targetRoot) {
+  if (agent === 'claude') return installClaude(project, link, previousOutputs);
+  if (agent === 'codex') {
+    return installAdapterDir(
+      path.join(PACKAGE_ROOT, 'adapters', 'codex'),
+      homePath('.codex', 'prompts'),
+      neutralPayload,
+      previousOutputs,
+      os.homedir()
+    );
+  }
+  if (agent === 'gemini') {
+    return installGemini(neutralPayload, project, previousOutputs);
   }
   if (agent === 'cursor') {
     if (!fs.existsSync(targetPath(project, '.git')) && !fs.existsSync(targetPath(project, 'package.json'))) {
       console.error('Note: Cursor commands are project-level; run this from the target project directory if needed.');
     }
-    return [neutralPayload, ...installAdapterDir(path.join(PACKAGE_ROOT, 'adapters', 'cursor'), targetPath(project, '.cursor', 'commands'), neutralPayload)];
+    return installAdapterDir(
+      path.join(PACKAGE_ROOT, 'adapters', 'cursor'),
+      targetPath(targetRoot || project, '.cursor', 'commands'),
+      neutralPayload,
+      previousOutputs,
+      targetRoot || project || process.cwd()
+    );
   }
   fail(`Unsupported agent: ${agent}`);
 }
@@ -469,77 +853,140 @@ function printSummary(action, rows) {
 }
 
 function install(argv) {
-  const { agents, project, link } = parseInstallArgs(argv);
+  const parsed = parseInstallArgs(argv);
+  let { agents } = parsed;
+  const { project, link } = parsed;
   if (link) ensureLinkAllowed();
   const manifest = readManifest();
+  const previousRecords = manifest.installs.map(recordWithOutputs);
+  const cursorTargetRoot = agents.includes('cursor')
+    ? fs.realpathSync(project || process.cwd())
+    : null;
+  const matchesRequest = (record, agent) => {
+    if (record.agent !== agent || (record.project || null) !== (project || null)) return false;
+    if (agent !== 'cursor') return true;
+    return effectiveCursorRoot(record) === cursorTargetRoot;
+  };
+  if (agents.some((agent) => agent !== 'claude')) {
+    const sharedAgents = previousRecords
+      .filter(
+        (record) =>
+          record.agent !== 'claude' &&
+          (record.project || null) === (project || null) &&
+          (record.agent !== 'cursor' || effectiveCursorRoot(record) === cursorTargetRoot) &&
+          Boolean(record.link) !== Boolean(link)
+      )
+      .map((record) => record.agent);
+    agents = [...new Set([...agents, ...sharedAgents])];
+  }
+  const untouchedRecords = previousRecords.filter(
+    (record) => !agents.some((agent) => matchesRequest(record, agent))
+  );
+  const previousByAgent = new Map(
+    previousRecords
+      .filter((record) => agents.some((agent) => matchesRequest(record, agent)))
+      .map((record) => [record.agent, record])
+  );
   let neutralPayload = null;
+  let payloadResult = { rows: [], outputs: [] };
   if (agents.some((agent) => agent !== 'claude')) {
     if (link) {
       const payloadLink = neutralLinkPath(project);
-      linkPayload(payloadLink);
+      const priorOutputs = previousRecords
+        .filter((record) => record.agent !== 'claude' && (record.project || null) === (project || null))
+        .flatMap((record) => record.outputs || []);
+      payloadResult = syncOwnedLink(payloadLink, PACKAGE_ROOT, priorOutputs, project || os.homedir());
       // Non-Claude adapters point directly at the package root so a global npm update
       // changes the playbook immediately; the payload symlink is left for discovery.
       neutralPayload = PACKAGE_ROOT;
     } else {
       neutralPayload = neutralPayloadPath(project);
-      copyPayload(neutralPayload);
+      const priorOutputs = previousRecords
+        .filter((record) => record.agent !== 'claude' && (record.project || null) === (project || null))
+        .flatMap((record) => record.outputs || []);
+      payloadResult = syncPayload(neutralPayload, priorOutputs, project || os.homedir());
     }
   }
   const rows = [];
+  const newRecords = [];
   for (const agent of agents) {
-    for (const target of installOne(agent, project, neutralPayload, link)) rows.push({ agent, path: target });
+    const previous = previousByAgent.get(agent);
+    const targetRoot = agent === 'cursor' ? cursorTargetRoot : null;
+    const installed = installOne(
+      agent,
+      project,
+      neutralPayload,
+      link,
+      previous ? previous.outputs : [],
+      targetRoot
+    );
+    for (const row of installed.rows) rows.push({ agent, ...row });
+    const outputs = [
+      ...(agent === 'claude' ? [] : payloadResult.outputs),
+      ...installed.outputs,
+    ];
+    newRecords.push({
+      agent,
+      project: project || null,
+      ...(targetRoot ? { targetRoot } : {}),
+      link: Boolean(link),
+      installedAt: new Date().toISOString(),
+      outputs,
+    });
   }
-  recordInstalls(agents, project, link, manifest);
+  for (const row of payloadResult.rows) rows.unshift({ agent: 'payload', ...row });
+  const nextRecords = [...untouchedRecords, ...newRecords];
+  for (const row of cleanupUnreferencedOutputs(previousRecords, nextRecords)) {
+    rows.push({ agent: 'cleanup', ...row });
+  }
+  manifest.installs = nextRecords;
+  recordInstalls([], manifest);
   printSummary('Install', rows);
   if (link) console.log('\nLinked install: run `npm update -g ai-harness-doctor` to update the payload everywhere.');
 }
 
 function uninstall(argv) {
   const { agents, project } = parseInstallArgs(argv);
+  const manifest = readManifest();
+  const previousRecords = manifest.installs.map(recordWithOutputs);
+  const cursorTargetRoot = agents.includes('cursor')
+    ? fs.realpathSync(project || process.cwd())
+    : null;
+  const matchesRequest = (record, agent) => {
+    if (record.agent !== agent || (record.project || null) !== (project || null)) return false;
+    if (agent !== 'cursor') return true;
+    return effectiveCursorRoot(record) === cursorTargetRoot;
+  };
+  const removedRecords = previousRecords.filter(
+    (record) => agents.some((agent) => matchesRequest(record, agent))
+  );
+  const remainingRecords = previousRecords.filter(
+    (record) => !agents.some((agent) => matchesRequest(record, agent))
+  );
   const rows = [];
-  if (agents.includes('claude')) {
-    const skillDir = claudeSkillPath(project);
-    removeLinkOrPath(skillDir);
-    rows.push({ agent: 'claude', path: skillDir });
-    for (const name of COMMAND_NAMES) {
-      const target = path.join(claudeCommandDir(project), `${name}.md`);
-      removeLinkOrPath(target);
-      rows.push({ agent: 'claude', path: target });
+  const keep = new Set(remainingRecords.flatMap((record) => record.outputs || []).map(outputKey));
+  const seen = new Set();
+  const preservedRecords = [];
+  for (const record of removedRecords) {
+    const preservedOutputs = [];
+    for (const output of record.outputs || []) {
+      const key = outputKey(output);
+      if (keep.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      const status = removeOwnedOutput(record, output);
+      rows.push({ agent: record.agent, path: output.path, status });
+      if (status === 'modified-preserved') preservedOutputs.push(output);
+      if (status === 'removed') {
+        removeEmptyParents(output.path, cleanupBoundary(record, output));
+      }
+    }
+    if (preservedOutputs.length) {
+      preservedRecords.push({ ...record, orphaned: true, outputs: preservedOutputs });
     }
   }
-  if (agents.some((agent) => agent !== 'claude')) {
-    const neutral = neutralPayloadPath(project);
-    const link = neutralLinkPath(project);
-    removeLinkOrPath(link);
-    if (neutral !== MANIFEST_DIR || project) removeLinkOrPath(neutral);
-    else {
-      for (const name of ['SKILL.md', 'scripts', 'references', 'assets']) removeLinkOrPath(path.join(neutral, name));
-    }
-    rows.push({ agent: 'payload', path: neutral });
-  }
-  if (agents.includes('codex')) {
-    for (const name of COMMAND_NAMES) {
-      const target = homePath('.codex', 'prompts', `${name}.md`);
-      removeLinkOrPath(target);
-      rows.push({ agent: 'codex', path: target });
-    }
-  }
-  if (agents.includes('cursor')) {
-    for (const name of COMMAND_NAMES) {
-      const target = targetPath(project, '.cursor', 'commands', `${name}.md`);
-      removeLinkOrPath(target);
-      rows.push({ agent: 'cursor', path: target });
-    }
-  }
-  if (agents.includes('gemini')) {
-    const dir = homePath('.gemini', 'commands', 'harness');
-    for (const name of ['doctor', 'scan', 'treat', 'drift', 'eval']) {
-      const target = path.join(dir, `${name}.toml`);
-      removeLinkOrPath(target);
-      rows.push({ agent: 'gemini', path: target });
-    }
-  }
-  removeInstallRecords(agents, project);
+  manifest.installs = [...remainingRecords, ...preservedRecords];
+  manifest.version = PACKAGE_VERSION;
+  writeManifest(manifest);
   printSummary('Uninstall', rows);
 }
 
@@ -550,30 +997,87 @@ function updateInstalled() {
     return;
   }
   console.log(`Deploying ai-harness-doctor ${PACKAGE_VERSION}`);
+  const previousRecords = manifest.installs.map(recordWithOutputs);
   const rows = [];
-  for (const record of manifest.installs) {
+  const nextRecords = [];
+  const payloadCache = new Map();
+  for (const record of previousRecords) {
+    if (record.orphaned) {
+      nextRecords.push(record);
+      rows.push({ agent: record.agent, status: 'orphaned-preserved', path: record.outputs[0]?.path || '(none)' });
+      continue;
+    }
     const project = record.project || null;
     let neutralPayload = null;
+    let payloadResult = { rows: [], outputs: [] };
     if (record.link) {
       const status = 'refreshed pointers (payload follows npm update -g)';
       if (record.agent === 'claude') {
-        for (const target of installClaudeCommands(project)) rows.push({ agent: record.agent, status, path: target });
+        const installed = installClaude(project, true, record.outputs);
+        rows.push(...installed.rows.map((row) => ({ agent: record.agent, status: row.status || status, path: row.path })));
+        nextRecords.push({ ...record, installedAt: new Date().toISOString(), outputs: installed.outputs });
       } else {
         const payloadLink = neutralLinkPath(project);
-        neutralPayload = readSymlinkTarget(payloadLink) || PACKAGE_ROOT;
-        for (const target of installOne(record.agent, project, neutralPayload, false)) rows.push({ agent: record.agent, status, path: target });
+        const cacheKey = `link:${payloadLink}`;
+        if (!payloadCache.has(cacheKey)) {
+          const shared = previousRecords
+            .filter((item) => item.link && item.agent !== 'claude' && (item.project || null) === (project || null))
+            .flatMap((item) => item.outputs || []);
+          payloadCache.set(
+            cacheKey,
+            syncOwnedLink(payloadLink, PACKAGE_ROOT, shared, project || os.homedir())
+          );
+        }
+        payloadResult = payloadCache.get(cacheKey);
+        neutralPayload = PACKAGE_ROOT;
+        const installed = installOne(
+          record.agent,
+          project,
+          neutralPayload,
+          true,
+          record.outputs,
+          record.targetRoot || null
+        );
+        rows.push(...installed.rows.map((row) => ({ agent: record.agent, status: row.status || status, path: row.path })));
+        nextRecords.push({
+          ...record,
+          installedAt: new Date().toISOString(),
+          outputs: [...payloadResult.outputs, ...installed.outputs],
+        });
       }
       continue;
     }
     if (record.agent !== 'claude') {
       neutralPayload = neutralPayloadPath(project);
-      copyPayload(neutralPayload);
+      const cacheKey = `copy:${neutralPayload}`;
+      if (!payloadCache.has(cacheKey)) {
+        const shared = previousRecords
+          .filter((item) => !item.link && item.agent !== 'claude' && (item.project || null) === (project || null))
+          .flatMap((item) => item.outputs || []);
+        payloadCache.set(cacheKey, syncPayload(neutralPayload, shared, project || os.homedir()));
+      }
+      payloadResult = payloadCache.get(cacheKey);
     }
-    const status = `deployed ${PACKAGE_VERSION}`;
-    for (const target of installOne(record.agent, project, neutralPayload, false)) {
-      rows.push({ agent: record.agent, status, path: target });
-    }
+    const installed = installOne(
+      record.agent,
+      project,
+      neutralPayload,
+      false,
+      record.outputs,
+      record.targetRoot || null
+    );
+    rows.push(...installed.rows.map((row) => ({ agent: record.agent, status: row.status, path: row.path })));
+    nextRecords.push({
+      ...record,
+      installedAt: new Date().toISOString(),
+      outputs: [...(record.agent === 'claude' ? [] : payloadResult.outputs), ...installed.outputs],
+    });
   }
+  for (const result of payloadCache.values()) {
+    rows.unshift(...result.rows.map((row) => ({ agent: 'payload', ...row })));
+  }
+  rows.push(...cleanupUnreferencedOutputs(previousRecords, nextRecords).map((row) => ({ agent: 'cleanup', ...row })));
+  manifest.installs = nextRecords;
   manifest.version = PACKAGE_VERSION;
   writeManifest(manifest);
   printSummary('Update', rows);
