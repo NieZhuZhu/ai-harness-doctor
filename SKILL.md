@@ -390,10 +390,10 @@ Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line 
 
 - `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
 - `notifications/initialized` → notification, no response.
-- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, each with an input schema `{ repo: string (default "."), ... }`.
-- `tools/call` → dispatches to the matching Python script and returns `{ content: [{ type: "text", text }] }`.
+- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, and `harness_eval_generate`, each with a closed input schema `{ repo: string (default "."), ... }`.
+- `tools/call` → dispatches to the matching Python script, keeps its output in `content[0]`, and returns machine-readable `{ exitCode, ok, status, report? }` metadata as JSON in `content[1]`.
 
-Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`. Unknown methods and tools return a JSON-RPC error object.
+Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, and `harness_eval_generate`. All six are read-only. Explicitly requested valid JSON finding reports return `status: "findings"` without becoming MCP execution errors; invalid targets, runtime failures, timeouts, malformed reports, and ambiguous non-zero text reports set `isError: true`. Unknown methods/tools and invalid arguments return a JSON-RPC error object. The metadata is a second text item because the server advertises MCP `2024-11-05`, predating `structuredContent`.
 
 ## Runtime & self-test
 
@@ -478,4 +478,4 @@ Correction: proceed strictly through Checkup, Treat, Follow-up, and Efficacy, wi
 - `commands/`: Claude Code slash commands routed to this skill by phase.
 - `adapters/`: thin pointer templates for Codex, Cursor, Gemini, and universal agents. The per-command adapters are generated from a single source by `scripts/gen_adapters.py`; run `python3 scripts/gen_adapters.py` to regenerate and `python3 scripts/gen_adapters.py --check` (or `npm run lint:adapters`) to verify they match in CI.
 - `bin/cli.js`: npm CLI, installer, and forwarding entry point for Python scripts.
-- `bin/mcp-server.js`: MCP stdio server exposing `harness_scan`, `harness_drift`, `harness_validate`, and `harness_plan`.
+- `bin/mcp-server.js`: MCP stdio server exposing `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, and `harness_eval_generate`.

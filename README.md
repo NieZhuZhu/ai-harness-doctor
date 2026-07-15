@@ -612,9 +612,9 @@ Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line 
 - `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
 - `notifications/initialized` → notification, no response.
 - `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, `harness_eval_generate`, each with an input schema `{ repo: string (default "."), ... }`.
-- `tools/call` → dispatches to the matching Python script and returns `{ content: [{ type: "text", text }] }`.
+- `tools/call` → dispatches to the matching Python script and keeps the human/tool output in `content[0]`; `content[1]` is a compact JSON metadata text block with `{ kind, exitCode, ok, status, report? }`.
 
-Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, `harness_eval_generate`. `harness_stubs` (Phase 1 stub downgrade preview) and `harness_eval_generate` (Phase 3 task-set bootstrap) are always read-only over MCP: neither ever receives `--apply`/`-o`, so they can only preview a diff or print generated JSON, never write to the repository. Unknown methods and tools return a JSON-RPC error object.
+Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, `harness_eval_generate`. All six tools are read-only; `harness_stubs` never receives `--apply`, and `harness_eval_generate` never receives `-o` or runs an agent/LLM. Each advertised input schema rejects unknown properties and wrong types before Python starts. Metadata `status` is `ok`, `findings`, or `error`: explicitly requested valid JSON finding reports remain available with `isError: false`, while invalid targets, runtime failures, timeouts, malformed reports, and conservatively ambiguous non-zero text reports set `isError: true`. Because the server still advertises MCP `2024-11-05`, metadata uses a second text content item rather than the newer `structuredContent` field. Unknown methods/tools and invalid arguments return JSON-RPC error objects.
 
 </details>
 
