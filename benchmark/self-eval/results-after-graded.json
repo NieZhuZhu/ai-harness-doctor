@@ -184,13 +184,20 @@
       "answer": "External symlinks supply no fact, contained symlinks keep lexical evidence, and ambiguous package-manager/runtime facts cause abstention in root/scoped eval and Treat draft.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "locked-lint-install",
+      "stdout": "Required lint CI must use npm ci --ignore-scripts against the committed public package-lock.json, with no unlocked fallback.",
+      "answer": "Required lint CI must use npm ci --ignore-scripts against the committed public package-lock.json, with no unlocked fallback.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 26,
-    "total": 26,
+    "passed": 27,
+    "total": 27,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -198,12 +205,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "95ca30ecb05c952518fcf50ccf0aee1d69ff382596f05aa37b891a37980b0753"
+      "sha256": "ee9c7120fbce6b00624d6cb59ba496bf54eb3e8b7434ef5828d78ca0d7383763"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "07c6455c4e469284fd496d2be37a23b32e0564760538badfde19fc5ffb75511c"
+        "sha256": "397ebc47072082f60a30893525beb5c4e42aab7238de007f0ac32c0044a145a6"
       }
     ]
   }

@@ -219,6 +219,30 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("pull_request:", text)
         self.assertNotIn("on:\n  push:\n  pull_request:", text)
 
+    def test_lint_ci_installs_the_reviewed_npm_lock_exactly(self):
+        block = self._named_step_block(TEST_WORKFLOW, "Install Node dev dependencies")
+        expected = "npm ci --ignore-scripts --no-audit --no-fund"
+        match = re.search(r"(?m)^        run:\s+(.+)$", block)
+        self.assertIsNotNone(match, "dependency install step must have one inline run command")
+        script = match.group(1).strip()
+        self.assertEqual(script, expected)
+        self.assertNotIn("yarn", block.lower())
+        self.assertNotIn("pnpm", block.lower())
+        self.assertNotIn("npm install", script)
+
+        package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        lockfile = json.loads(PACKAGE_LOCK.read_text(encoding="utf-8"))
+        root_record = lockfile["packages"][""]
+        self.assertEqual(root_record.get("devDependencies"), package.get("devDependencies"))
+        for name in sorted(package.get("devDependencies", {})):
+            record = lockfile["packages"].get(f"node_modules/{name}")
+            self.assertIsInstance(record, dict, name)
+            self.assertRegex(str(record.get("version", "")), r"^\d+\.\d+\.\d+")
+            self.assertTrue(record.get("integrity"), name)
+            parsed = urlsplit(record.get("resolved", ""))
+            self.assertEqual(parsed.scheme, "https", name)
+            self.assertEqual(parsed.hostname, "registry.npmjs.org", name)
+
     def test_dependabot_updates_github_action_pins_weekly(self):
         text = DEPENDABOT.read_text(encoding="utf-8")
         self.assertIn('package-ecosystem: "github-actions"', text)

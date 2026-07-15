@@ -28,6 +28,7 @@
     {"id": "oversize-scan-coverage", "stdout": "--max-bytes limits semantic text only; full-file SHA, line count, and security checks still cover the complete file with bounded memory."},
     {"id": "release-rerun-identity", "stdout": "A rerun may skip npm only when the published gitHead and packed tarball shasum match the exact release tag."},
     {"id": "targeted-eval-generation", "stdout": "Use local scripts/dependencies, the nearest unambiguous manager/runtime, inherited canonical conventions, compatible root IDs, and repository-relative evidence."},
-    {"id": "fact-generator-containment", "stdout": "External symlinks supply no fact, contained symlinks keep lexical evidence, and ambiguous package-manager/runtime facts cause abstention in root/scoped eval and Treat draft."}
+    {"id": "fact-generator-containment", "stdout": "External symlinks supply no fact, contained symlinks keep lexical evidence, and ambiguous package-manager/runtime facts cause abstention in root/scoped eval and Treat draft."},
+    {"id": "locked-lint-install", "stdout": "Required lint CI must use npm ci --ignore-scripts against the committed public package-lock.json, with no unlocked fallback."}
   ]
 }

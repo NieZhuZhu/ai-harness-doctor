@@ -38,6 +38,9 @@ with `id-token: write`.
 The public project's `package-lock.json` must resolve public npm packages from
 `registry.npmjs.org`, not a private mirror that GitHub-hosted Dependabot cannot
 reach. Treat both npm and Action dependency updates as full-matrix code changes.
+The required lint job installs that exact graph with
+`npm ci --ignore-scripts --no-audit --no-fund`; do not replace it with an
+unlocked package-manager install or a fallback that ignores the reviewed lock.
 After changing Dependabot or lockfile source policy, run a real npm update check
 and verify that it succeeds even when no upgrade PR is needed.
 

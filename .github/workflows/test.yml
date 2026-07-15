@@ -17,11 +17,10 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # actions/setup-python@v6
         with:
           python-version: "3.12"
-      # `npm install`/`npm ci` deterministically aborts with "Exit handler never
-      # called" on this runner while resolving the eslint 10 tree. Yarn classic
-      # produces the same flat node_modules layout and is immune to that bug.
+      # Install the exact reviewed public npm dependency graph. Keep lifecycle
+      # scripts disabled because lint tooling needs no package install hooks.
       - name: Install Node dev dependencies
-        run: yarn install --non-interactive --ignore-engines
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install ruff
         run: pip install "ruff==0.15.20"
       - name: Lint (eslint + ruff + docs + adapters)
