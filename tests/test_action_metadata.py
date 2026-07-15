@@ -108,8 +108,28 @@ class ActionMetadataTests(unittest.TestCase):
 
     def test_repository_dogfoods_the_composite_action(self):
         text = SELF_TEST.read_text(encoding="utf-8")
-        self.assertGreaterEqual(text.count("uses: ./"), 3)
-        self.assertIn("Validate SARIF output", text)
+        self.assertGreaterEqual(text.count("uses: ./"), 5)
+        self.assertIn("Run bundled scan against this checkout", text)
+        self.assertIn("Run bundled drift against a clean fixture", text)
+        self.assertIn("Run exact published npm override", text)
+        self.assertIn("Validate Action success matrix", text)
+        self.assertIn("checkout_version=", text)
+        self.assertIn("published_version=", text)
+        self.assertIn("npm view ai-harness-doctor@latest version", text)
+        self.assertIn("version: ${{ steps.fixture.outputs.published_version }}", text)
+        self.assertNotIn("version: latest", text)
+        self.assertIn("driver.version !== expected", text)
+        self.assertIn('path.relative(temp, install).startsWith("..")', text)
+        self.assertIn('"node_modules",', text)
+        for name in (
+            "Run bundled scan against this checkout",
+            "Run bundled drift against a clean fixture",
+            "Run exact published npm override",
+        ):
+            self.assertNotIn(
+                "continue-on-error",
+                self._named_step_block(SELF_TEST, name),
+            )
         self.assertIn("Reject a tail credential through the repository Action", text)
         self.assertIn("--max-bytes 100 --fail-on-security", text)
         self.assertIn('item.ruleId === "security/secret"', text)
@@ -670,22 +690,70 @@ class ActionMetadataTests(unittest.TestCase):
 
     def test_release_self_tests_before_publish_and_after_floating_tag(self):
         text = RELEASE.read_text(encoding="utf-8")
-        preflight = text.index("Pre-publish Action self-test")
+        preflight_scan = text.index("Pre-publish bundled scan self-test")
+        preflight_drift = text.index("Pre-publish bundled drift self-test")
         publish = text.index("Publish to npm")
         floating = text.index("Update floating Action tag")
-        public_test = text.index("Verify published floating Action")
+        public_bundled = text.index("Verify published floating bundled scan")
+        npm_visibility = text.index("Wait for exact npm package visibility")
+        public_npm = text.index("Verify published exact npm drift override")
+        public_matrix = text.index("Validate published Action success matrix")
         reminder = text.index("Create Marketplace confirmation reminder")
-        self.assertLess(preflight, publish)
+        self.assertLess(preflight_scan, publish)
+        self.assertLess(preflight_drift, publish)
         self.assertLess(publish, floating)
-        self.assertLess(floating, public_test)
-        self.assertLess(public_test, reminder)
-        self.assertIn("uses: ./", text)
+        self.assertLess(floating, public_bundled)
+        self.assertLess(public_bundled, npm_visibility)
+        self.assertLess(npm_visibility, public_npm)
+        self.assertLess(public_npm, public_matrix)
+        self.assertLess(public_matrix, reminder)
+        self.assertGreaterEqual(text.count("uses: ./"), 5)
+        self.assertIn("command: scan", self._named_step_block(RELEASE, "Pre-publish bundled scan self-test"))
+        self.assertIn("command: drift", self._named_step_block(RELEASE, "Pre-publish bundled drift self-test"))
+        self.assertNotIn(
+            "version:",
+            self._named_step_block(RELEASE, "Pre-publish bundled scan self-test"),
+        )
+        self.assertNotIn(
+            "version:",
+            self._named_step_block(RELEASE, "Pre-publish bundled drift self-test"),
+        )
         self.assertIn("Reject invalid tagged Action command", text)
         self.assertIn("Validate tagged Action failure propagation", text)
         self.assertIn("ref: ${{ needs.publish.outputs.floating_tag }}", text)
         self.assertIn("path: published-action", text)
         self.assertIn("uses: ./published-action", text)
         self.assertIn("Verify floating tag target", text)
+        self.assertIn(
+            "package_version: ${{ steps.release_meta.outputs.package_version }}",
+            text,
+        )
+        self.assertIn(
+            'echo "package_version=$package_version" >> "$GITHUB_OUTPUT"',
+            text,
+        )
+        visibility = self._run_script(
+            RELEASE,
+            "Wait for exact npm package visibility",
+        )
+        self.assertIn('"ai-harness-doctor@$PACKAGE_VERSION"', visibility)
+        self.assertIn("--pack-destination", visibility)
+        self.assertIn("for attempt in {1..12}", visibility)
+        self.assertNotIn("@latest", visibility)
+        self.assertNotIn("|| true", visibility)
+        npm_override = self._named_step_block(
+            RELEASE,
+            "Verify published exact npm drift override",
+        )
+        self.assertIn("command: drift", npm_override)
+        self.assertIn(
+            "version: ${{ needs.publish.outputs.package_version }}",
+            npm_override,
+        )
+        self.assertNotIn("continue-on-error", npm_override)
+        self.assertIn("driver.version !== expected", text)
+        self.assertIn('path.relative(temp, install).startsWith("..")', text)
+        self.assertIn("needs: [publish, verify-action]", text)
 
     def test_release_updates_dynamic_major_tag_without_recursively_triggering_publish(self):
         text = RELEASE.read_text(encoding="utf-8")

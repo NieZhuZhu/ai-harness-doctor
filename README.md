@@ -368,7 +368,7 @@ The example keeps major tags readable. In production workflows, pin external
 Actions to a reviewed full commit SHA and keep the `owner/action@vN` major as an
 adjacent update hint; Dependabot can then refresh the pin safely.
 
-By default, the Action runs the implementation bundled with the selected Action ref, so the `uses:` version is the code that actually executes. Set the optional `version` input only when you intentionally want to run a different npm version or tag. Installation and CLI failures propagate to the workflow instead of leaving an empty SARIF file behind in a green job.
+By default, the Action runs the implementation bundled with the selected Action ref, so the `uses:` version is the code that actually executes. Set the optional `version` input only when you intentionally want to run a different npm version or tag. Installation and CLI failures propagate to the workflow instead of leaving an empty SARIF file behind in a green job. This repository's required self-test runs current bundled `scan` and `drift`, then checks the npm-install override against an exact stable version resolved from the public registry; that published-package call is compatibility evidence, while the bundled calls are the evidence for PR source. Stable releases repeat both bundled commands before publish and, afterward, run the floating Action with its bundled scan plus an exact newly published npm drift override. Every success path validates SARIF driver version and confines npm installation to `RUNNER_TEMP`.
 
 | Flag | Purpose |
 |---|---|

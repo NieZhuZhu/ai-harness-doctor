@@ -366,7 +366,7 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
 
 该示例为了可读性保留主版本标签。生产 workflow 应将外部 Action 固定到经过审查的完整 commit SHA，并在旁边保留 `owner/action@vN` 主版本作为更新提示；这样 Dependabot 就能安全刷新固定引用。
 
-Action 默认运行所选 Action ref 内自带的实现，因此 `uses:` 指向的版本就是实际执行的代码。只有在明确想覆盖为其他 npm 版本或标签时，才需要设置可选的 `version` 输入。安装或 CLI 失败会真实传递给 workflow，不会在绿色任务中留下空 SARIF 文件。
+Action 默认运行所选 Action ref 内自带的实现，因此 `uses:` 指向的版本就是实际执行的代码。只有在明确想覆盖为其他 npm 版本或标签时，才需要设置可选的 `version` 输入。安装或 CLI 失败会真实传递给 workflow，不会在绿色任务中留下空 SARIF 文件。本仓库的 required self-test 会运行当前 bundled `scan` 与 `drift`，再用从公共 registry 解析出的精确稳定版本验证 npm 安装覆盖路径；已发布包调用只证明兼容性，bundled 调用才是 PR 源码的证据。稳定版发布会在 publish 前重复两个 bundled 命令，发布后再通过浮动 Action 运行 bundled scan 和刚发布的精确 npm drift override。每条成功路径都会校验 SARIF driver version，并把 npm 安装限制在 `RUNNER_TEMP`。
 
 | Flag | 用途 |
 |---|---|
