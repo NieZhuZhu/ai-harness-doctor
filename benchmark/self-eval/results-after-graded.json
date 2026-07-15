@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-15 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-16 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
   "tasks": [
     {
       "id": "test-suite",
@@ -124,8 +124,8 @@
     },
     {
       "id": "eval-evidence-gate",
-      "stdout": "CI must verify current task and evidence fingerprints before trusting health.",
-      "answer": "CI must verify current task and evidence fingerprints before trusting health.",
+      "stdout": "Task-declared evidence binds automatically, explicit evidence composes with it, files are byte-hashed, directories bind type only, and freshness is verified before health.",
+      "answer": "Task-declared evidence binds automatically, explicit evidence composes with it, files are byte-hashed, directories bind type only, and freshness is verified before health.",
       "passed": true,
       "regraded": true
     },
@@ -205,12 +205,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "ee9c7120fbce6b00624d6cb59ba496bf54eb3e8b7434ef5828d78ca0d7383763"
+      "sha256": "e2a9a62661c24ed2d6f0f9f94ddb108ea444c5eb97a993e0c3704430811e49b8"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "397ebc47072082f60a30893525beb5c4e42aab7238de007f0ac32c0044a145a6"
+        "sha256": "d09a75542c1a041d2f69f81bc127e3ba12c0681078609e9185e4f0cc14afeda9"
       }
     ]
   }
