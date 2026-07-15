@@ -154,5 +154,11 @@
     "prompt": "What containment and ambiguity rules apply to root/scoped eval generation and Treat draft inference? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)external.*symlink.*no fact.*contained.*symlink.*lexical.*ambig.*abst|ambig.*abst.*external.*symlink"}
+  },
+  {
+    "id": "locked-lint-install",
+    "prompt": "How must required lint CI install Node development dependencies? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)npm ci.*ignore.?scripts.*committed.*package-lock|committed.*package-lock.*npm ci.*ignore.?scripts"}
   }
 ]

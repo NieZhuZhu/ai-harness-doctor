@@ -188,7 +188,7 @@ verification gate, and update its status here.
 | 025 | Bind idempotent release reruns to the published npm artifact | P0 | S | — | DONE |
 | 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | DONE |
 | 027 | Confine every fact-derived generator to repository truth | P0 | M | — | IN PROGRESS |
-| 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | TODO |
+| 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | IN PROGRESS |
 | 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED

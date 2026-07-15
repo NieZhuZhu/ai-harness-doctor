@@ -103,5 +103,7 @@ Dependency updates for npm development tooling and immutable GitHub Action pins
 are opened weekly by Dependabot. Treat them as code changes and require the
 same matrix before merge. Because this is a public package and Dependabot runs
 on GitHub-hosted infrastructure, keep committed npm tarball sources on
-`registry.npmjs.org`; a successful real update check, not merely a valid
+`registry.npmjs.org`. Required lint CI uses `npm ci --ignore-scripts` so the
+reviewed `package-lock.json`, including integrity metadata, is the dependency
+graph under test. A successful real update check, not merely a valid
 `.github/dependabot.yml`, is the operational health signal.
