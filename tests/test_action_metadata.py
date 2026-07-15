@@ -161,6 +161,97 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("🩺 Harness checkup: issues detected", checkup)
         self.assertNotIn("--write-baseline", combined)
 
+    def test_checkup_issue_lifecycle_is_symmetric_and_exact_title_owned(self):
+        for path in (GUARD_ASSETS / "harness-checkup.yml", HARNESS_CHECKUP):
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                block = self._named_step_block(path, "Reconcile harness issue")
+                self.assertIn("if: always()", block)
+                self.assertIn("CHECKUP_STATUS: ${{ steps.drift.outputs.status }}", block)
+                self.assertIn("RUN_URL:", block)
+                self.assertIn("COMMIT_SHA:", block)
+                self.assertIn('--search "$TITLE in:title"', block)
+                self.assertIn("select(.title == env.TITLE)", block)
+                self.assertIn("][0] // empty", block)
+                self.assertNotIn("head -n 1", block)
+                self.assertIn('if [ "$CHECKUP_STATUS" != "0" ]', block)
+                self.assertIn("gh issue comment", block)
+                self.assertIn("gh issue create", block)
+                self.assertIn("gh issue close", block)
+                self.assertIn("Harness checkup recovered", block)
+                self.assertIn("no open incident issue", block)
+                self.assertNotIn("|| true", block)
+                self.assertIn("if: always()", self._named_step_block(path, "Upload harness checkup report"))
+                self.assertIn("🩺 Harness checkup: issues detected", text)
+
+        shipped = (GUARD_ASSETS / "harness-checkup.yml").read_text(encoding="utf-8")
+        self.assertIn("Fail when harness issues remain", shipped)
+        self.assertIn('exit "$CHECKUP_STATUS"', shipped)
+        self.assertNotIn("Fail when harness issues remain", HARNESS_CHECKUP.read_text(encoding="utf-8"))
+
+    def test_checkup_issue_shell_handles_create_update_recovery_and_noop(self):
+        script = self._run_script(GUARD_ASSETS / "harness-checkup.yml", "Reconcile harness issue")
+        title = "🩺 Harness checkup: issues detected"
+        scenarios = [
+            ("create", "3", "", ["create"], []),
+            ("update", "3", "17", ["comment"], []),
+            ("recover", "0", "17", ["close"], []),
+            ("healthy", "0", "", [], ["create", "comment", "close"]),
+            (
+                "unrelated",
+                "0",
+                "",
+                [],
+                ["create", "comment", "close"],
+            ),
+        ]
+        for name, status, issue_number, required, forbidden in scenarios:
+            with self.subTest(name=name), ResilientTemporaryDirectory() as td:
+                root = Path(td)
+                fake_gh = root / "gh"
+                log = root / "gh.log"
+                fake_gh.write_text(
+                    "#!/bin/sh\n"
+                    "set -eu\n"
+                    "printf '%s\\n' \"$*\" >> \"$GH_TEST_LOG\"\n"
+                    "if [ \"${1:-}\" = issue ] && [ \"${2:-}\" = list ]; then\n"
+                    "  printf '%s\\n' \"$GH_TEST_ISSUE_NUMBER\"\n"
+                    "fi\n",
+                    encoding="utf-8",
+                )
+                fake_gh.chmod(0o755)
+                (root / "harness-checkup-report.md").write_text("# report\n", encoding="utf-8")
+                env = os.environ.copy()
+                env.update(
+                    {
+                        "PATH": f"{root}{os.pathsep}{env.get('PATH', '')}",
+                        "GH_TEST_LOG": str(log),
+                        "GH_TEST_ISSUE_NUMBER": issue_number,
+                        "CHECKUP_STATUS": status,
+                        "TITLE": title,
+                        "RUN_URL": "https://example.invalid/run/1",
+                        "COMMIT_SHA": "a" * 40,
+                    }
+                )
+
+                proc = subprocess.run(
+                    ["bash", "-c", script],
+                    cwd=root,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                )
+
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                calls = log.read_text(encoding="utf-8") if log.exists() else ""
+                for operation in required:
+                    self.assertIn(f"issue {operation}", calls)
+                for operation in forbidden:
+                    self.assertNotIn(f"issue {operation}", calls)
+                if name == "recover":
+                    self.assertIn("Harness checkup recovered", calls)
+                    self.assertIn("example.invalid/run/1", calls)
+
     def test_repository_eval_gate_requires_current_committed_evidence(self):
         drift = HARNESS_DRIFT.read_text(encoding="utf-8")
         self.assertIn("Eval evidence and health gate", drift)

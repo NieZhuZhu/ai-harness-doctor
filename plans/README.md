@@ -213,7 +213,7 @@ verification gate, and update its status here.
 | 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | DONE |
 | 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | DONE |
 | 030 | Validate every eval task before any runner or judge executes | P0 | M | — | IN PROGRESS |
-| 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | TODO |
+| 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | IN PROGRESS |
 | 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED

@@ -219,6 +219,15 @@ The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (
 - `codebase` → portable `.harness-ci/harness-guard.sh` + wiring `README.md` for internal Codebase / Bits / any runner
 Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cleans up all providers' CI files); Claude hooks are not integrated.
 
+The GitHub weekly checkup owns exactly one incident title:
+`🩺 Harness checkup: issues detected`. An unhealthy run creates it or appends
+the current combined report; the first healthy run adds commit/run recovery
+evidence and closes it; later healthy runs do nothing. Exact-title filtering is
+the ownership boundary, so unrelated issues are never closed. The shipped
+consumer workflow still fails when scan/drift fails. This repository's adapted
+self-checkup intentionally remains non-failing and uses the incident issue as
+its scheduled signal.
+
 > **Self-bootstrap:** this repository dogfoods its own guard. `.github/workflows/harness-drift.yml` and `harness-checkup.yml` are adapted from the templates to run the repo's **local** scan/drift implementations instead of the published package, so a change to `scripts/` is gated by the code being changed. The committed scan baseline records known benchmark/test-fixture conflicts; new scan debt or drift fails the PR gate. Generic shipped guards keep eval optional, but this repository unconditionally gates its committed self-eval on current task/`AGENTS.md` evidence and health. Only PR-review posting tolerates a missing/limited token.
 
 #### PR review comments and CI eval gate

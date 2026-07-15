@@ -180,7 +180,7 @@ Defense in depth, strongest to weakest:
 
 1. **Pre-commit hard block** — defends against local edits that make `AGENTS.md` stale before they leave the machine. `AI_HARNESS_DOCTOR_SKIP=1` is an explicit, auditable bypass, not a silent pass.
 2. **Every-PR gate** — defends against hook bypass without a `paths` / `paths-ignore` filter. Security and semantic inputs include MCP/settings files, nested agent rules, ecosystem manifests, and any repository-relative path referenced by `AGENTS.md`; no finite allow-list can cover that dynamic D2/D7 surface safely.
-3. **Weekly checkup + deduped issue** — defends against slow rot between pull requests: environmental changes, dependency behavior shifts, or conventions that become stale without a repository edit.
+3. **Weekly checkup + lifecycle-managed issue** — defends against slow rot between pull requests: environmental changes, dependency behavior shifts, or conventions that become stale without a repository edit. Repeated failures append evidence to one exact-title incident; the first healthy run comments with recovery evidence and closes it, while unrelated issues are untouched.
 4. **Maintenance contract in `AGENTS.md`** — defends at the source of agent behavior. Refactors are often done by agents, and every agent reads `AGENTS.md`; the doc instructs its own maintenance.
 
 | Refactor/change | Check that should catch it |
@@ -283,7 +283,7 @@ It manages a provider-agnostic core plus a **provider-aware CI gate**:
 
 | Provider | CI files installed | Wiring note |
 |---|---|---|
-| `github` | `.github/workflows/harness-drift.yml` every-PR gate + `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with a deduped issue. | Runs automatically on GitHub Actions. |
+| `github` | `.github/workflows/harness-drift.yml` every-PR gate + `.github/workflows/harness-checkup.yml` weekly scan/drift checkup with one lifecycle-managed issue. | Runs automatically on GitHub Actions; failures open/update the exact incident, recovery closes it. |
 | `gitlab` | An includable `.gitlab/harness-ci.yml` (`harness-drift` on MRs, `harness-checkup` on schedules with an artifact). | Add `include: { local: .gitlab/harness-ci.yml }` to `.gitlab-ci.yml`. |
 | `codebase` | A portable `.harness-ci/harness-guard.sh` (`drift`/`checkup` modes) + a wiring `README.md`. | Register the script as an MR check and a scheduled pipeline step. |
 
