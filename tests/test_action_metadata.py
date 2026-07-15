@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,16 @@ RELEASING = ROOT / "RELEASING.md"
 HARNESS_DRIFT = ROOT / ".github" / "workflows" / "harness-drift.yml"
 HARNESS_DRIFT_TEMPLATE = ROOT / "assets" / "guard" / "harness-drift.yml"
 GUARD_ASSETS = ROOT / "assets" / "guard"
+TEST_WORKFLOW = ROOT / ".github" / "workflows" / "test.yml"
+DEPENDABOT = ROOT / ".github" / "dependabot.yml"
+
+ACTION_PINS = {
+    "actions/checkout": ("9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", "v7"),
+    "actions/setup-node": ("820762786026740c76f36085b0efc47a31fe5020", "v7"),
+    "actions/setup-python": ("ece7cb06caefa5fff74198d8649806c4678c61a1", "v6"),
+    "actions/upload-artifact": ("043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "v7"),
+}
+LOCAL_ACTIONS = {"./", "./published-action"}
 
 MARKETPLACE_DESCRIPTION = (
     "Audit and drift-guard AGENTS.md and AI agent configs for stale commands/paths, "
@@ -17,6 +28,17 @@ MARKETPLACE_DESCRIPTION = (
 
 
 class ActionMetadataTests(unittest.TestCase):
+    def _workflow_paths(self):
+        roots = (ROOT / ".github" / "workflows", GUARD_ASSETS)
+        return sorted(
+            {
+                path
+                for root in roots
+                for pattern in ("*.yml", "*.yaml")
+                for path in root.rglob(pattern)
+            }
+        )
+
     def test_marketplace_metadata_is_complete_and_product_focused(self):
         text = ACTION.read_text(encoding="utf-8")
         self.assertIn('name: "AI Harness Doctor"', text)
@@ -66,6 +88,38 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertNotIn("scripts/pr_review.py", combined)
         self.assertIn("ai-harness-doctor@latest review", combined)
         self.assertIn("ai-harness-doctor@latest eval --score", combined)
+
+    def test_external_actions_are_immutable_current_major_pins(self):
+        external_pattern = re.compile(
+            r"uses:\s+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([0-9a-f]{40})"
+            r"\s+#\s+\1@(v\d+)\s*$"
+        )
+        local_pattern = re.compile(r"uses:\s+(\./[^\s#]*)\s*$")
+        for path in self._workflow_paths():
+            with self.subTest(path=path):
+                for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    if "uses:" not in line:
+                        continue
+                    local_match = local_pattern.search(line)
+                    if local_match:
+                        self.assertIn(local_match.group(1), LOCAL_ACTIONS, f"{path}:{lineno}: unvetted local Action")
+                        continue
+                    match = external_pattern.search(line)
+                    self.assertIsNotNone(match, f"{path}:{lineno}: mutable or undocumented Action ref")
+                    action, sha, major = match.groups()
+                    self.assertIn(action, ACTION_PINS, f"{path}:{lineno}: unvetted Action {action}")
+                    self.assertEqual((sha, major), ACTION_PINS[action], f"{path}:{lineno}")
+
+    def test_test_workflow_runs_push_matrix_only_on_main(self):
+        text = TEST_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("push:\n    branches: [main]", text)
+        self.assertIn("pull_request:", text)
+        self.assertNotIn("on:\n  push:\n  pull_request:", text)
+
+    def test_dependabot_updates_github_action_pins_weekly(self):
+        text = DEPENDABOT.read_text(encoding="utf-8")
+        self.assertIn('package-ecosystem: "github-actions"', text)
+        self.assertIn('interval: "weekly"', text)
 
     def test_release_only_triggers_for_full_semver_tags(self):
         text = RELEASE.read_text(encoding="utf-8")
