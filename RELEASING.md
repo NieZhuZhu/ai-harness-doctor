@@ -17,6 +17,8 @@ Releases are tag-driven and published by GitHub Actions.
    - self-tests the exact tagged checkout through `uses: ./`;
    - verifies the tag version matches `package.json`;
    - verifies the exact tag commit is reachable from `origin/main`;
+   - if the version already exists on npm, verifies its `gitHead` and packed
+     tarball shasum match the exact tag before treating the run as idempotent;
    - publishes to npm with provenance and an explicit release-channel dist-tag;
    - creates the GitHub Release when it does not already exist;
    - for a stable version, force-updates the matching floating major Action tag
@@ -58,6 +60,15 @@ remain usable by consumers who opt in explicitly.
 
 The publish job extracts the version from the pushed tag (`v1.2.3` -> `1.2.3`) and compares it to `package.json`. It also peels the exact tag to a commit and requires that commit to be reachable from `origin/main`. A matching version on an unreviewed side branch is not sufficient. Any mismatch, missing ref, Git verification failure, or off-main tag stops before npm receives a network or publish command.
 
+An idempotent rerun is stricter than version existence. If the exact npm
+version is already present, the workflow requires registry `gitHead` to equal
+the peeled exact-tag commit and `dist.shasum` to equal a clean
+`npm pack --dry-run --json` result before it skips publish. A real npm 404 is
+the only lookup outcome treated as unpublished; malformed metadata, DNS/auth/
+registry failures, moved tags, or mismatched tarballs stop before GitHub
+Release creation and floating-tag mutation. Do not try to “repair” a mismatch
+by republishing an immutable npm version—investigate the tag/artifact history.
+
 ## Deprecate a version
 
 Use the manual `deprecate` workflow in GitHub Actions. Provide:
@@ -90,6 +101,11 @@ Do not print token values in logs or release notes.
 ## Tags
 
 Every published npm version must have a corresponding Git tag. Existing published versions may be retroactively tagged only after verifying the npm tarball shasum matches the candidate commit's packed tarball.
+
+Protect exact `vMAJOR.MINOR.PATCH` tags with a server-side ruleset or immutable
+release control when the repository's GitHub plan exposes one. This workflow's
+npm identity check is the portable fail-closed control; it does not claim that
+GitHub Release immutability is enabled or available through the current API.
 
 Exact release tags use full semantic versions such as `v1.0.0`. The workflow
 derives and maintains a floating major tag for Action consumers (`0.x` -> `v0`,

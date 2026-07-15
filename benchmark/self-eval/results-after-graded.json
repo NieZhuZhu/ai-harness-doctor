@@ -163,13 +163,20 @@
       "answer": "--max-bytes limits semantic text only; full-file SHA, line count, and security checks still cover the complete file with bounded memory.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "release-rerun-identity",
+      "stdout": "A rerun may skip npm only when the published gitHead and packed tarball shasum match the exact release tag.",
+      "answer": "A rerun may skip npm only when the published gitHead and packed tarball shasum match the exact release tag.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 23,
-    "total": 23,
+    "passed": 24,
+    "total": 24,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -177,12 +184,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "6c48928042255e07f33b197b84f25a4fefc5b1ded99dd83b040bbd839e6b4e17"
+      "sha256": "e227820cf2034f28c6ab5e56290ae69983a2426ac3fa57da178d78aba19c0071"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "63748cb1f866d487d5d9df6d69eb04fd07efd54029e0473531183de54964f2e9"
+        "sha256": "c3326050c67002d2cfe490e5cd267422ab7a719972f7757194fdc6a427db51ee"
       }
     ]
   }
