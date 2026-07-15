@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -26,6 +27,113 @@ import semantic  # noqa: E402
 
 EVIDENCE_SCHEMA_VERSION = 1
 EVIDENCE_STALE_EXIT = 7
+
+
+class TaskFileError(ValueError):
+    """A safe, caller-facing task-file validation failure."""
+
+
+def _task_field_error(index, task, field, message):
+    del task  # Never echo untrusted task content in validation diagnostics.
+    raise TaskFileError(f"task {index} field `{field}` {message}")
+
+
+def _validate_string_or_string_list(index, task, check, field):
+    value = check.get(field)
+    if value is None:
+        return
+    if isinstance(value, str):
+        return
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return
+    _task_field_error(index, task, f"check.{field}", "must be a string or an array of strings")
+
+
+def validate_tasks(tasks):
+    """Validate a complete eval task pack before any execution side effect."""
+    if not isinstance(tasks, list):
+        raise TaskFileError("tasks file must contain a JSON array")
+    seen_ids = set()
+    for index, task in enumerate(tasks):
+        if not isinstance(task, dict):
+            raise TaskFileError(f"task {index} must be an object")
+        task_id = task.get("id")
+        if not isinstance(task_id, str) or not task_id.strip():
+            _task_field_error(index, task, "id", "must be a non-empty string")
+        if task_id in seen_ids:
+            _task_field_error(index, task, "id", "must be unique")
+        seen_ids.add(task_id)
+
+        prompt = task.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            _task_field_error(index, task, "prompt", "must be a non-empty string")
+
+        timeout = task.get("timeout_s")
+        if timeout is not None and (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            _task_field_error(index, task, "timeout_s", "must be a finite positive number")
+
+        check = task.get("check")
+        if not isinstance(check, dict):
+            _task_field_error(index, task, "check", "must be an object")
+        check_type = check.get("type")
+        if check_type not in {"regex", "command", "judge"}:
+            _task_field_error(
+                index,
+                task,
+                "check.type",
+                "must be one of: regex, command, judge",
+            )
+        if check_type in {"regex", "command"} and not isinstance(check.get("value"), str):
+            _task_field_error(index, task, "check.value", "must be a string")
+        if check_type == "judge":
+            for field in ("rubric", "criteria", "model"):
+                if field in check and not isinstance(check[field], str):
+                    _task_field_error(index, task, f"check.{field}", "must be a string")
+            for field in ("expect", "reject"):
+                _validate_string_or_string_list(index, task, check, field)
+            if "min_score" in check:
+                score = check["min_score"]
+                if (
+                    isinstance(score, bool)
+                    or not isinstance(score, (int, float))
+                    or not math.isfinite(score)
+                    or not 0 <= score <= 1
+                ):
+                    _task_field_error(
+                        index,
+                        task,
+                        "check.min_score",
+                        "must be a finite number from 0 to 1",
+                    )
+
+        declared = task.get("evidence")
+        if declared is not None:
+            if not isinstance(declared, list):
+                _task_field_error(index, task, "evidence", "must be an array")
+            for item in declared:
+                if not isinstance(item, str) or not item.strip():
+                    _task_field_error(
+                        index,
+                        task,
+                        "evidence",
+                        "entries must be non-empty strings",
+                    )
+    return tasks
+
+
+def load_tasks_file(tasks_path):
+    """Decode and validate a task file with path/content-safe diagnostics."""
+    path = Path(tasks_path)
+    try:
+        tasks = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise TaskFileError(f"could not read valid JSON from {path.name}") from exc
+    return validate_tasks(tasks)
 
 
 def runner_binary(template):
@@ -128,32 +236,19 @@ def _logical_path(path, workdir, allow_external=False):
 
 
 def _task_evidence_paths(tasks):
-    """Return validated repository evidence from already-parsed tasks."""
-    if not isinstance(tasks, list):
-        raise ValueError("tasks file must contain a JSON array")
+    """Return repository evidence from an already-validated task pack."""
     evidence = []
-    for index, task in enumerate(tasks):
-        if not isinstance(task, dict):
-            raise ValueError(f"task {index} must be an object")
+    for task in tasks:
         declared = task.get("evidence")
         if declared is None:
             continue
-        if not isinstance(declared, list):
-            raise ValueError(f"task {index} evidence must be an array")
-        for item in declared:
-            if not isinstance(item, str) or not item.strip():
-                raise ValueError(f"task {index} evidence entries must be non-empty strings")
-            evidence.append(item)
+        evidence.extend(declared)
     return evidence
 
 
 def task_evidence_paths(tasks_path):
-    """Return validated repository evidence declared by a task file."""
-    try:
-        tasks = json.loads(Path(tasks_path).read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise ValueError(f"tasks file is not valid JSON: {Path(tasks_path).name}") from exc
-    return _task_evidence_paths(tasks)
+    """Return repository evidence declared by a validated task file."""
+    return _task_evidence_paths(load_tasks_file(tasks_path))
 
 
 def _evidence_input_label(raw):
@@ -217,12 +312,12 @@ def _build_evidence_manifest(
     return manifest
 
 
-def build_evidence_manifest(tasks_path, evidence_paths, workdir):
+def build_evidence_manifest(tasks_path, evidence_paths, workdir, tasks=None):
     """Fingerprint task definitions and their effective repository evidence."""
     tasks_path = Path(tasks_path)
     if not tasks_path.is_file():
         raise ValueError(f"tasks file does not exist: {tasks_path}")
-    declared = task_evidence_paths(tasks_path)
+    declared = _task_evidence_paths(tasks) if tasks is not None else task_evidence_paths(tasks_path)
     effective = list(evidence_paths or []) + declared
     return _build_evidence_manifest(
         tasks_path,
@@ -253,7 +348,7 @@ def prepare_evidence_manifest(args, tasks_path, workdir, tasks=None):
         raise SystemExit(f"evidence error: {exc}") from None
 
 
-def verify_current_evidence(result, args):
+def verify_current_evidence(result, args, tasks=None):
     """Return mismatch messages for a strict score-time evidence check."""
     stored = result.get("evidence") if isinstance(result, dict) else None
     if not isinstance(stored, dict):
@@ -266,7 +361,7 @@ def verify_current_evidence(result, args):
     task_binding = stored.get("taskEvidence")
     try:
         if task_binding is True:
-            current = build_evidence_manifest(args.tasks, args.evidence, args.workdir)
+            current = build_evidence_manifest(args.tasks, args.evidence, args.workdir, tasks=tasks)
         elif "taskEvidence" not in stored:
             # Compatibility path for pre-feature schema-v1 manifests: verify
             # the exact explicit set they originally stamped. Newly produced
@@ -278,7 +373,7 @@ def verify_current_evidence(result, args):
             )
         else:
             mismatches.append("malformed task evidence binding marker")
-            current = build_evidence_manifest(args.tasks, args.evidence, args.workdir)
+            current = build_evidence_manifest(args.tasks, args.evidence, args.workdir, tasks=tasks)
     except ValueError as exc:
         return mismatches + [str(exc)]
     stored_tasks_value = stored.get("tasks")
@@ -1377,7 +1472,7 @@ def _run_round(tasks, args, workdir):
 
 def run_tasks(args):
     tasks_path = Path(args.tasks)
-    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks = load_tasks_file(tasks_path)
     workdir = Path(args.workdir).resolve()
     evidence_manifest = prepare_evidence_manifest(
         args,
@@ -1467,7 +1562,7 @@ def render_stats_summary(stats, overall_health=None):
 
 def regrade(args):
     tasks_path = Path(args.tasks)
-    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks = load_tasks_file(tasks_path)
     declared_evidence = _task_evidence_paths(tasks)
     evidence_manifest = None
     if args.evidence or declared_evidence:
@@ -1647,7 +1742,7 @@ def render_matrix(tasks, agent_records, runners):
 
 def run_matrix(args, runners):
     tasks_path = Path(args.tasks)
-    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks = load_tasks_file(tasks_path)
     workdir = Path(args.workdir).resolve()
     evidence_manifest = prepare_evidence_manifest(
         args,
@@ -1710,11 +1805,11 @@ def run_matrix(args, runners):
     return rc
 
 
-def score_report(args):
+def score_report(args, tasks=None):
     """One-click health score from an existing results / matrix JSON file."""
     data = json.loads(Path(args.score).read_text(encoding="utf-8"))
     if args.require_current_evidence:
-        mismatches = verify_current_evidence(data, args)
+        mismatches = verify_current_evidence(data, args, tasks=tasks)
         if mismatches:
             for mismatch in mismatches:
                 print(f"stale eval evidence: {mismatch}", file=sys.stderr)
@@ -2074,31 +2169,36 @@ def main(argv=None):
         # field; expose it via env so llm_judge picks it up for both providers.
         os.environ.setdefault("OPENAI_MODEL", args.judge_model)
         os.environ.setdefault("ANTHROPIC_MODEL", args.judge_model)
-    if args.generate:
-        return generate_report(args)
-    if args.trend:
-        return trend_report(args)
-    if args.score:
-        return score_report(args)
-    if args.stats:
-        return stats_report(args)
-    if args.compare:
-        return compare(args)
-    if args.regrade:
-        if not args.tasks:
-            parser.error("--tasks is required with --regrade")
-        return regrade(args)
-    if args.matrix or args.runner_cmd:
-        if not (args.tasks and args.workdir):
-            parser.error("--tasks and --workdir are required for a matrix run")
-        runners = load_matrix(args)
-        if not runners:
-            parser.error("no runners defined; provide --matrix FILE and/or --runner-cmd NAME=CMD")
-        return run_matrix(args, runners)
-    required = [args.tasks, args.label, args.workdir]
-    if not all(required):
-        parser.error("--tasks, --label and --workdir are required unless --compare is used")
-    return run_tasks(args)
+    try:
+        if args.generate:
+            return generate_report(args)
+        if args.trend:
+            return trend_report(args)
+        if args.score:
+            tasks = load_tasks_file(args.tasks) if args.require_current_evidence else None
+            return score_report(args, tasks=tasks)
+        if args.stats:
+            return stats_report(args)
+        if args.compare:
+            return compare(args)
+        if args.regrade:
+            if not args.tasks:
+                parser.error("--tasks is required with --regrade")
+            return regrade(args)
+        if args.matrix or args.runner_cmd:
+            if not (args.tasks and args.workdir):
+                parser.error("--tasks and --workdir are required for a matrix run")
+            runners = load_matrix(args)
+            if not runners:
+                parser.error("no runners defined; provide --matrix FILE and/or --runner-cmd NAME=CMD")
+            return run_matrix(args, runners)
+        required = [args.tasks, args.label, args.workdir]
+        if not all(required):
+            parser.error("--tasks, --label and --workdir are required unless --compare is used")
+        return run_tasks(args)
+    except TaskFileError as exc:
+        print(f"task error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

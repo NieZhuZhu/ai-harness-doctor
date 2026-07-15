@@ -266,6 +266,16 @@ review rather than followed or silently adjudicated.
 
 ### Actions
 
+Before any runner, matrix agent, LLM/judge, evidence hash, result write, or
+baseline update, validate the complete task array. Every task needs a unique,
+non-empty string `id`, a non-empty string `prompt`, a supported `check` object
+(`regex`/`command`/`judge`), and an optional finite positive `timeout_s`;
+evidence and judge fields are type-checked too. Invalid packs exit 2 with a
+concise `task error` that names only the task index/field and never echoes the
+prompt or task contents. Regrade and strict score use the same preflight;
+non-strict historical score/compare/stats/trend remain independent of a task
+file.
+
 Run tasks:
 
 ```bash

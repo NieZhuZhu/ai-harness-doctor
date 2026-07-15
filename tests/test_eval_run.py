@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import unittest
+from argparse import Namespace
 from pathlib import Path
 from shlex import quote as shlex_quote
 
@@ -14,6 +15,262 @@ EVAL = ROOT / "scripts" / "eval_run.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 import eval_run  # noqa: E402
 import explain  # noqa: E402
+
+
+class TaskSchemaPreflightTests(unittest.TestCase):
+    def _valid_task(self):
+        return {
+            "id": "task",
+            "prompt": "answer",
+            "check": {"type": "regex", "value": "^ok$"},
+            "timeout_s": 10,
+        }
+
+    def test_valid_task_preserves_additive_metadata(self):
+        task = self._valid_task()
+        task.update({"scope": "packages/api", "target": "packages/api/x.py", "future": {"x": 1}})
+        tasks = [task]
+
+        self.assertIs(eval_run.validate_tasks(tasks), tasks)
+        self.assertEqual(tasks[0]["future"], {"x": 1})
+
+    def test_invalid_task_fields_fail_with_safe_indexed_diagnostics(self):
+        cases = [
+            ("root", {}, "tasks file must contain a JSON array"),
+            ("object", [42], "task 0 must be an object"),
+            ("id-missing", [{**self._valid_task(), "id": None}], "field `id`"),
+            ("id-empty", [{**self._valid_task(), "id": "  "}], "field `id`"),
+            (
+                "id-duplicate",
+                [self._valid_task(), {**self._valid_task(), "prompt": "second"}],
+                "task 1 field `id` must be unique",
+            ),
+            ("prompt-missing", [{**self._valid_task(), "prompt": None}], "field `prompt`"),
+            ("prompt-empty", [{**self._valid_task(), "prompt": ""}], "field `prompt`"),
+            ("check-object", [{**self._valid_task(), "check": "regex"}], "field `check`"),
+            (
+                "check-type",
+                [{**self._valid_task(), "check": {"type": "unknown"}}],
+                "field `check.type`",
+            ),
+            (
+                "regex-value",
+                [{**self._valid_task(), "check": {"type": "regex", "value": 42}}],
+                "field `check.value`",
+            ),
+            (
+                "command-value",
+                [{**self._valid_task(), "check": {"type": "command"}}],
+                "field `check.value`",
+            ),
+            ("timeout-bool", [{**self._valid_task(), "timeout_s": True}], "field `timeout_s`"),
+            ("timeout-zero", [{**self._valid_task(), "timeout_s": 0}], "field `timeout_s`"),
+            ("timeout-nan", [{**self._valid_task(), "timeout_s": float("nan")}], "field `timeout_s`"),
+            (
+                "judge-rubric",
+                [{**self._valid_task(), "check": {"type": "judge", "rubric": []}}],
+                "field `check.rubric`",
+            ),
+            (
+                "judge-expect",
+                [{**self._valid_task(), "check": {"type": "judge", "expect": ["ok", 1]}}],
+                "field `check.expect`",
+            ),
+            (
+                "judge-min-score",
+                [{**self._valid_task(), "check": {"type": "judge", "min_score": 2}}],
+                "field `check.min_score`",
+            ),
+            (
+                "evidence-array",
+                [{**self._valid_task(), "evidence": "package.json"}],
+                "field `evidence` must be an array",
+            ),
+            (
+                "evidence-entry",
+                [{**self._valid_task(), "evidence": [""]}],
+                "field `evidence` entries must be non-empty strings",
+            ),
+        ]
+        for name, tasks, expected in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(eval_run.TaskFileError) as caught:
+                    eval_run.validate_tasks(tasks)
+                self.assertIn(expected, str(caught.exception))
+                self.assertNotIn("answer", str(caught.exception))
+
+    def test_valid_judge_field_shapes(self):
+        for value in ("one", ["one", "two"]):
+            with self.subTest(value=value):
+                task = self._valid_task()
+                task["check"] = {
+                    "type": "judge",
+                    "rubric": "be correct",
+                    "criteria": "name ok",
+                    "expect": value,
+                    "reject": value,
+                    "min_score": 0.5,
+                    "model": "model-name",
+                }
+                self.assertEqual(eval_run.validate_tasks([task]), [task])
+
+    def test_task_file_errors_hide_path_and_content(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "secret-task-name.json"
+            path.write_text("{not-json", encoding="utf-8")
+
+            with self.assertRaises(eval_run.TaskFileError) as caught:
+                eval_run.load_tasks_file(path)
+
+            message = str(caught.exception)
+            self.assertIn(path.name, message)
+            self.assertNotIn(str(Path(td).resolve()), message)
+            self.assertNotIn("not-json", message)
+
+    def test_malformed_later_task_has_zero_side_effects_in_all_run_modes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            workdir = root / "repo"
+            workdir.mkdir()
+            marker = root / "runner-called"
+            tasks = root / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        self._valid_task(),
+                        {
+                            "id": "broken",
+                            "check": {"type": "regex", "value": "ok"},
+                            "timeout_s": 10,
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            runner = (
+                f"{sys.executable} -c "
+                f"\"from pathlib import Path; Path({str(marker)!r}).write_text('ran')\""
+            )
+            cases = [
+                (
+                    "single",
+                    [
+                        "--tasks", str(tasks), "--label", "x", "--workdir", str(workdir),
+                        "--runner", runner, "-o", str(root / "single.json"),
+                    ],
+                    [root / "single.json"],
+                ),
+                (
+                    "multi",
+                    [
+                        "--tasks", str(tasks), "--label", "x", "--workdir", str(workdir),
+                        "--runner", runner, "--rounds", "2", "-o", str(root / "multi.json"),
+                    ],
+                    [root / "multi.json"],
+                ),
+                (
+                    "matrix",
+                    [
+                        "--tasks", str(tasks), "--workdir", str(workdir),
+                        "--runner-cmd", f"one={runner}",
+                        "--matrix-json", str(root / "matrix.json"),
+                        "--matrix-report", str(root / "matrix.md"),
+                    ],
+                    [root / "matrix.json", root / "matrix.md"],
+                ),
+            ]
+            for name, argv, outputs in cases:
+                with self.subTest(name=name):
+                    marker.unlink(missing_ok=True)
+                    for output in outputs:
+                        output.unlink(missing_ok=True)
+                    proc = subprocess.run(
+                        [sys.executable, str(EVAL), *argv],
+                        text=True,
+                        capture_output=True,
+                    )
+                    self.assertEqual(proc.returncode, 2)
+                    self.assertIn("task error: task 1 field `prompt`", proc.stderr)
+                    self.assertNotIn("Traceback", proc.stderr)
+                    self.assertFalse(marker.exists())
+                    self.assertTrue(all(not output.exists() for output in outputs))
+
+    def test_regrade_rejects_malformed_tasks_before_output_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tasks = root / "tasks.json"
+            tasks.write_text(
+                json.dumps([{"id": "broken", "prompt": "x", "check": None}]),
+                encoding="utf-8",
+            )
+            result = root / "result.json"
+            original = '{"tasks":[]}\n'
+            result.write_text(original, encoding="utf-8")
+
+            proc = subprocess.run(
+                [
+                    sys.executable, str(EVAL), "--regrade", str(result),
+                    "--tasks", str(tasks),
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("task error: task 0 field `check`", proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertEqual(result.read_text(encoding="utf-8"), original)
+
+    def test_strict_score_validates_current_task_schema(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            workdir = root / "repo"
+            workdir.mkdir()
+            tasks = root / "tasks.json"
+            tasks.write_text(
+                json.dumps([{"id": "broken", "prompt": "x", "check": {"type": "nope"}}]),
+                encoding="utf-8",
+            )
+            result = root / "result.json"
+            result.write_text(json.dumps({"tasks": [{"passed": True}]}), encoding="utf-8")
+
+            strict = subprocess.run(
+                [
+                    sys.executable, str(EVAL), "--score", str(result),
+                    "--tasks", str(tasks), "--workdir", str(workdir),
+                    "--require-current-evidence",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            legacy = subprocess.run(
+                [sys.executable, str(EVAL), "--score", str(result)],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(strict.returncode, 2)
+            self.assertIn("task error: task 0 field `check.type`", strict.stderr)
+            self.assertNotIn("Traceback", strict.stderr)
+            self.assertEqual(legacy.returncode, 0, legacy.stderr)
+
+    def test_prepare_evidence_uses_already_validated_tasks(self):
+        task = self._valid_task()
+        task["evidence"] = []
+        args = Namespace(evidence=[])
+        with tempfile.TemporaryDirectory() as td:
+            tasks_path = Path(td) / "tasks.json"
+            tasks_path.write_text(json.dumps([task]), encoding="utf-8")
+            validated = eval_run.load_tasks_file(tasks_path)
+
+            self.assertIsNone(
+                eval_run.prepare_evidence_manifest(
+                    args,
+                    tasks_path,
+                    Path(td),
+                    tasks=validated,
+                )
+            )
 
 
 class EvalRunTests(unittest.TestCase):
@@ -87,7 +344,12 @@ class EvalRunTests(unittest.TestCase):
             tasks.write_text(
                 json.dumps(
                     [
-                        {"id": "hang", "prompt": "sleep", "timeout_s": 1},
+                        {
+                            "id": "hang",
+                            "prompt": "sleep",
+                            "check": {"type": "regex", "value": "never"},
+                            "timeout_s": 1,
+                        },
                     ]
                 ),
                 encoding="utf-8",
