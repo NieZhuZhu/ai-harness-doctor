@@ -275,18 +275,43 @@ error and do not claim completion.
 
 ## Done criteria
 
-- [ ] `package-lock.json` contains zero `bnpm.byted.org` URLs and no unexpected
+- [x] `package-lock.json` contains zero `bnpm.byted.org` URLs and no unexpected
   registry host.
-- [ ] Package keys, versions, integrity hashes, and dependency graph are
+- [x] Package keys, versions, integrity hashes, and dependency graph are
   unchanged except for `resolved` URLs.
-- [ ] Isolated public-registry `npm ci` succeeds.
-- [ ] `npm audit` has no high/critical vulnerability.
-- [ ] All self-bootstrap docs describe the hard evidence + health gate
+- [x] Isolated public-registry `npm ci` succeeds.
+- [x] `npm audit` has no high/critical vulnerability.
+- [x] All self-bootstrap docs describe the hard evidence + health gate
   accurately.
-- [ ] A post-merge npm Dependabot update job succeeds without private-source
+- [x] A post-merge npm Dependabot update job succeeds without private-source
   errors, and its run URL is recorded.
-- [ ] `npm run check`, evidence freshness, and strict drift pass.
-- [ ] Only in-scope files are modified.
+- [x] `npm run check`, evidence freshness, and strict drift pass.
+- [x] Only in-scope files are modified.
+
+## Completion evidence (2026-07-15)
+
+- Fix PR [#148](https://github.com/NieZhuZhu/ai-harness-doctor/pull/148)
+  passed all nine required contexts and was squash-merged as `fc585b8`.
+- The lockfile repair changed exactly 71 `resolved` URLs. A normalized JSON
+  comparison with every `resolved` field removed proved all package keys,
+  versions, integrity hashes, dependency edges, engines, and root metadata
+  remained identical.
+- An isolated `HOME` plus isolated copies of `package.json` /
+  `package-lock.json` completed public-registry `npm ci` with 71 packages and
+  no private-source access. Public npm audit reported zero vulnerabilities.
+- The evidence-bound self-eval was honestly regraded from the manual protocol:
+  21/21, Grade A, with current task and `AGENTS.md` SHA-256 evidence.
+- GitHub's Dependency graph “Check for updates” produced Dependabot update job
+  `1461813115` and Actions run
+  [29413064827](https://github.com/NieZhuZhu/ai-harness-doctor/actions/runs/29413064827)
+  at main SHA `fc585b8`. It completed successfully in 46 seconds. Its log
+  contains successful `registry.npmjs.org` responses and no
+  `bnpm.byted.org`, `private_source`, or timeout error.
+- The successful update job created
+  [PR #149](https://github.com/NieZhuZhu/ai-harness-doctor/pull/149) for
+  eslint `10.6.0` → `10.7.0` and Prettier `3.9.4` → `3.9.5`. It changed only
+  their lockfile records, passed all nine required contexts, and was
+  squash-merged as `5bd7ff8`.
 
 ## STOP conditions
 
