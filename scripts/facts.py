@@ -141,12 +141,70 @@ def within_root(root, token):
     AGENTS.md infer the existence of arbitrary filesystem paths. Reject anything
     that does not stay under the repo root before calling ``.exists()``.
     """
+    return resolves_within_root(root / token, root, strict=False)
+
+
+def resolve_within_root(path, root, strict=True):
+    """Resolve ``path`` only when it remains inside ``root``.
+
+    Repository manifests are untrusted scan inputs too: a lexical
+    ``repo/package.json`` may be a symlink to a file outside the audited tree.
+    Every fact reader uses this helper before probing or reading a path so
+    external symlinks cannot influence semantic/drift output. In-repo symlinks
+    remain supported. Returns the resolved path, or ``None`` on escape,
+    non-existence (when ``strict``), or resolution errors.
+    """
     try:
-        candidate = (root / token).resolve()
-        candidate.relative_to(root.resolve())  # raises ValueError if outside root
-        return True
-    except (ValueError, OSError):
-        return False
+        resolved_root = Path(root).resolve()
+        candidate = Path(path).resolve(strict=strict)
+        candidate.relative_to(resolved_root)
+        return candidate
+    except (OSError, ValueError):
+        return None
+
+
+def resolves_within_root(path, root, strict=True):
+    """Return whether ``path`` resolves inside ``root``."""
+    return resolve_within_root(path, root, strict=strict) is not None
+
+
+def is_file_within_root(root, path):
+    """Return True only for a regular file contained by ``root``."""
+    candidate = resolve_within_root(path, root)
+    return candidate is not None and candidate.is_file()
+
+
+def is_dir_within_root(root, path):
+    """Return True only for a directory contained by ``root``."""
+    candidate = resolve_within_root(path, root)
+    return candidate is not None and candidate.is_dir()
+
+
+def exists_within_root(root, path):
+    """Return True only for an existing path contained by ``root``."""
+    return resolve_within_root(path, root) is not None
+
+
+def read_text_within_root(root, path, errors="strict"):
+    """Read a contained file, returning ``None`` when it is unsafe/unreadable."""
+    candidate = resolve_within_root(path, root)
+    if candidate is None or not candidate.is_file():
+        return None
+    try:
+        return candidate.read_text(encoding="utf-8", errors=errors)
+    except OSError:
+        return None
+
+
+def read_bytes_within_root(root, path):
+    """Read bytes from a contained file, returning ``None`` when unsafe/unreadable."""
+    candidate = resolve_within_root(path, root)
+    if candidate is None or not candidate.is_file():
+        return None
+    try:
+        return candidate.read_bytes()
+    except OSError:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -165,10 +223,11 @@ def package_scripts(root):
     (CORR-01).
     """
     path = root / "package.json"
-    if not path.is_file():
+    text = read_text_within_root(root, path)
+    if text is None:
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(text)
     except Exception:
         return None
     scripts = data.get("scripts")
@@ -187,8 +246,11 @@ def _walk_package_jsons(root):
         dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
         if "package.json" not in filenames:
             continue
+        text = read_text_within_root(root, Path(dirpath) / "package.json")
+        if text is None:
+            continue
         try:
-            yield json.loads((Path(dirpath) / "package.json").read_text(encoding="utf-8"))
+            yield json.loads(text)
         except Exception:
             continue
 
@@ -283,7 +345,7 @@ def path_resolves_in_subtree(root, token):
         if current == rootp:
             # The repo root was already checked by the caller.
             continue
-        if (current / token).exists():
+        if exists_within_root(root, current / token):
             return True
     return False
 
@@ -298,10 +360,11 @@ def package_dependency_names(root):
     (CORR-01).
     """
     path = root / "package.json"
-    if not path.is_file():
+    text = read_text_within_root(root, path)
+    if text is None:
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(text)
     except Exception:
         return None
     names = set()
@@ -315,10 +378,11 @@ def package_dependency_names(root):
 def node_modules_bin_names(root):
     """Return binary names present in ``node_modules/.bin``, or ``None`` if absent."""
     bin_dir = root / "node_modules" / ".bin"
-    if not bin_dir.is_dir():
+    resolved_bin_dir = resolve_within_root(bin_dir, root)
+    if resolved_bin_dir is None or not resolved_bin_dir.is_dir():
         return None
     try:
-        return {p.name for p in bin_dir.iterdir()}
+        return {p.name for p in resolved_bin_dir.iterdir()}
     except OSError:
         return None
 
@@ -360,10 +424,11 @@ _MAKE_TARGET_LINE_RE = re.compile(r"^([A-Za-z0-9_.-]+(?:[ \t]+[A-Za-z0-9_.-]+)*)
 
 def make_targets(root):
     path = root / "Makefile"
-    if not path.is_file():
+    text = read_text_within_root(root, path, errors="replace")
+    if text is None:
         return None
     targets = set()
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in text.splitlines():
         if line.startswith("\t"):
             continue
         m = _MAKE_TARGET_LINE_RE.match(line)
@@ -384,18 +449,20 @@ def make_targets(root):
 
 def nvmrc_node_version(root):
     path = root / ".nvmrc"
-    if not path.is_file():
+    text = read_text_within_root(root, path, errors="replace")
+    if text is None:
         return None
-    m = re.search(r"v?(\d+)", path.read_text(encoding="utf-8", errors="replace").strip())
+    m = re.search(r"v?(\d+)", text.strip())
     return int(m.group(1)) if m else None
 
 
 def engines_node_version(root):
     path = root / "package.json"
-    if not path.is_file():
+    text = read_text_within_root(root, path)
+    if text is None:
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(text)
     except Exception:
         return None
     engines = data.get("engines")
@@ -412,7 +479,11 @@ def lockfile_managers(root):
     Uses the shared ``registry.LOCKFILE_MANAGERS`` map (single source of truth,
     incl. bun) so the semantic engine and the drift gate see the same managers.
     """
-    return {mgr for name, mgr in registry.LOCKFILE_MANAGERS.items() if (root / name).is_file()}
+    return {
+        mgr
+        for name, mgr in registry.LOCKFILE_MANAGERS.items()
+        if is_file_within_root(root, root / name)
+    }
 
 
 # ---------------------------------------------------------------------------

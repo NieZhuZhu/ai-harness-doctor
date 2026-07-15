@@ -51,6 +51,7 @@ node bin/cli.js help
 
 - The installer must never write into the real `~/.claude`, `~/.codex`, or other user config directories; always target an isolated `HOME` during tests.
 - Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
+- Every repository-derived file/directory read or existence probe in scan, semantic, fact, and default-plugin discovery code must resolve through the shared containment helpers in `scripts/facts.py`; external symlinks must not affect output. Explicit external inputs such as `--rules DIR` are allowed only as documented opt-ins.
 - Never commit secrets, tokens, or credentials.
 - The eval / LLM-as-judge harness makes external model calls — be mindful of cost and token usage when running or expanding it.
 

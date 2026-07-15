@@ -290,6 +290,51 @@ class PluginLoaderUnitTests(unittest.TestCase):
             findings = plugins.run_plugins(repo, {"phase": "scan", "agents_text": ""}, allow_plugins=True)
             self.assertEqual(findings, [])
 
+    def test_default_rules_symlink_outside_repo_is_not_imported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            repo = _make_repo(tmp)
+            outside = base / "outside-rules"
+            outside.mkdir()
+            sentinel = base / "OUTSIDE-SENTINEL"
+            (outside / "evil.py").write_text(
+                f"from pathlib import Path\nPath({str(sentinel)!r}).write_text('executed')\n"
+                "def check(root, context):\n    return []\n",
+                encoding="utf-8",
+            )
+            rules = repo / ".ai-harness-doctor" / "rules"
+            rules.rmdir()
+            try:
+                rules.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks unsupported on this platform")
+
+            findings = plugins.run_plugins(
+                repo,
+                {"phase": "scan", "agents_text": ""},
+                allow_plugins=True,
+            )
+
+            self.assertEqual(findings, [])
+            self.assertFalse(sentinel.exists())
+
+    def test_explicit_external_rules_directory_remains_supported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            repo = _make_repo(tmp)
+            external_rules = base / "trusted-rules"
+            external_rules.mkdir()
+            (external_rules / "trusted.py").write_text(GOOD_PLUGIN, encoding="utf-8")
+
+            findings = plugins.run_plugins(
+                repo,
+                {"phase": "scan", "agents_text": ""},
+                extra_dirs=[external_rules],
+                allow_plugins=True,
+            )
+
+            self.assertTrue(any(f["rule"] == "demo/hello" for f in findings))
+
     def test_discovery_is_ordered_and_deduped(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = _make_repo(tmp)

@@ -15,6 +15,7 @@ from pathlib import Path
 # The shared agent-config registry is the single source of truth for which config
 # files exist and how to detect them; see assets/agent-tools.json and registry.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import facts  # noqa: E402  # contained repository fact reads
 import plugins  # noqa: E402  # user-extensible deterministic rule plugins
 import registry  # noqa: E402
 import semantic  # noqa: E402  # declaration-vs-fact consistency engine
@@ -310,7 +311,7 @@ def snapshot_existing_files(root, ctx=None):
     guard_hook = None
     for rel_path in PRECOMMIT_HOOK_PATHS:
         path = root / rel_path
-        if path.is_file():
+        if facts.is_file_within_root(root, path):
             text = ctx.read_text(path)
             if text is not None and GUARD_MARKER in text:
                 guard_hook = rel_path
@@ -376,11 +377,7 @@ def is_skipped(path, root):
 
 def _resolves_within_root(path, resolved_root):
     """Return True only when an existing path resolves inside a normalized root."""
-    try:
-        Path(path).resolve(strict=True).relative_to(Path(resolved_root))
-        return True
-    except (OSError, ValueError):
-        return False
+    return facts.resolves_within_root(path, resolved_root)
 
 
 def build_file_index(root):
@@ -486,13 +483,7 @@ class ScanContext:
     def read_bytes(self, path):
         key = str(path)
         if key not in self._bytes:
-            if not _resolves_within_root(path, self.root):
-                self._bytes[key] = None
-            else:
-                try:
-                    self._bytes[key] = Path(path).read_bytes()
-                except OSError:
-                    self._bytes[key] = None
+            self._bytes[key] = facts.read_bytes_within_root(self.root, path)
         return self._bytes[key]
 
     def read_text(self, path, errors="replace"):
@@ -545,10 +536,13 @@ def iter_matches(root, ctx=None):
 def file_info(root, tool, path, max_bytes):
     rp = rel(path, root)
     warnings = []
+    safe_path = facts.resolve_within_root(path, root)
+    if safe_path is None:
+        raise OSError(f"refusing to read path outside repository: {rp}")
     # Stat the file first so an oversize (accidentally matched) file is not
     # fully read into memory before the size check. We still read the body for
     # normally-sized files; oversize files are read only up to max_bytes.
-    size = path.stat().st_size
+    size = safe_path.stat().st_size
     if size > max_bytes:
         warnings.append(
             {
@@ -558,7 +552,7 @@ def file_info(root, tool, path, max_bytes):
                 f"project_doc_max_bytes defaults to 32KB and may silently truncate context.",
             }
         )
-        with path.open("rb") as fh:
+        with safe_path.open("rb") as fh:
             data = fh.read(max_bytes)
     else:
         if size > 12 * 1024:
@@ -569,7 +563,7 @@ def file_info(root, tool, path, max_bytes):
                     "message": f"{rp} is {size} bytes; this may cause context bloat.",
                 }
             )
-        data = path.read_bytes()
+        data = safe_path.read_bytes()
     text = data.decode("utf-8", errors="replace")
     return {
         "path": rp,
@@ -654,7 +648,7 @@ def find_wholesale_dumping(root, agents_text, ctx=None):
         return []
     ctx = ctx or ScanContext(root)
     readme = root / "README.md"
-    if not readme.is_file():
+    if not facts.is_file_within_root(root, readme):
         return []
     readme_text = ctx.read_text(readme) or ""
     overlap = _line_overlap(agents_text, readme_text)
@@ -919,7 +913,7 @@ def scan_mcp(root, ctx=None):
     servers = []
     for rel_path in MCP_CONFIG_FILES:
         path = root / rel_path
-        if not path.is_file():
+        if not facts.is_file_within_root(root, path):
             continue
         data = ctx.load_json(path)
         if not isinstance(data, dict):
@@ -977,7 +971,7 @@ def scan_hooks(root, ctx=None):
     hooks = []
     for rel_path in SETTINGS_FILES:
         path = root / rel_path
-        if not path.is_file():
+        if not facts.is_file_within_root(root, path):
             continue
         data = ctx.load_json(path)
         if not isinstance(data, dict):
@@ -988,9 +982,10 @@ def scan_hooks(root, ctx=None):
                 for cmd in iter_hook_commands(entries):
                     hooks.append({"config": rel(path, root), "event": event, "command": cmd})
     githooks = root / ".githooks"
-    if githooks.is_dir():
+    safe_githooks = facts.resolve_within_root(githooks, root)
+    if safe_githooks is not None and safe_githooks.is_dir():
         for p in sorted(githooks.iterdir()):
-            if p.is_file() and not p.name.endswith(".sample"):
+            if facts.is_file_within_root(root, p) and not p.name.endswith(".sample"):
                 hooks.append({"config": rel(p, root), "event": "git", "command": p.name})
     return hooks
 
@@ -1000,7 +995,7 @@ def scan_permissions(root, ctx=None):
     perms = []
     for rel_path in SETTINGS_FILES:
         path = root / rel_path
-        if not path.is_file():
+        if not facts.is_file_within_root(root, path):
             continue
         data = ctx.load_json(path)
         if not isinstance(data, dict):
@@ -1061,7 +1056,7 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
     # Raw MCP/settings config files are not in `files`; scan them directly.
     for rel_path in sorted(set(MCP_CONFIG_FILES) | set(SETTINGS_FILES)):
         path = root / rel_path
-        if not path.is_file():
+        if not facts.is_file_within_root(root, path):
             continue
         text = ctx.read_text(path)
         if text is None:
@@ -1082,7 +1077,7 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
     seen_env_secrets = set()
     for rel_path in MCP_CONFIG_FILES:
         path = root / rel_path
-        if not path.is_file():
+        if not facts.is_file_within_root(root, path):
             continue
         data = ctx.load_json(path)
         if not isinstance(data, dict):
@@ -1240,7 +1235,8 @@ def find_gaps(root, surface, conflicts=None, ctx=None):
     agents = root / "AGENTS.md"
 
     # 1) Canonical root AGENTS.md must exist — the single source of truth.
-    if not agents.is_file():
+    has_agents = facts.is_file_within_root(root, agents)
+    if not has_agents:
         gaps.append(
             gap(
                 "G1",
@@ -1255,7 +1251,7 @@ def find_gaps(root, surface, conflicts=None, ctx=None):
         agents_text = ctx.read_text(agents) or ""
 
     # 2) Required sections present in AGENTS.md.
-    if agents.is_file():
+    if has_agents:
         present = [h.lower() for h in markdown_headings(agents_text)]
         for section in required_sections():
             needle = section.lower()
@@ -1271,10 +1267,10 @@ def find_gaps(root, surface, conflicts=None, ctx=None):
                 )
 
     # 3) Tool stubs should be minimal pointers to AGENTS.md, not full duplicates.
-    if agents.is_file():
+    if has_agents:
         for rel_path in GAP_STUB_FILES:
             path = root / rel_path
-            if not path.is_file():
+            if not facts.is_file_within_root(root, path):
                 continue
             data = ctx.read_bytes(path)
             if data is None:
@@ -1295,7 +1291,7 @@ def find_gaps(root, surface, conflicts=None, ctx=None):
 
     # 4) Drift guard / checkup CI workflows.
     for rel_path, level, item in GUARD_CI_WORKFLOWS:
-        if not (root / rel_path).is_file():
+        if not facts.is_file_within_root(root, root / rel_path):
             gaps.append(
                 gap(
                     "G4",
@@ -1349,7 +1345,11 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
         "permissions": permissions,
     }
     agents_path = root / "AGENTS.md"
-    agents_text = (ctx.read_text(agents_path) or "") if agents_path.is_file() else ""
+    agents_text = (
+        (ctx.read_text(agents_path) or "")
+        if facts.is_file_within_root(root, agents_path)
+        else ""
+    )
     conflicts = find_conflicts(files)
     report = {
         "files": result_files,
@@ -1389,7 +1389,11 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
 def _read_root_workspaces(root):
     """npm/yarn workspace globs declared in the root package.json, if any."""
     path = root / "package.json"
-    data = load_json(path) if path.is_file() else None
+    text = facts.read_text_within_root(root, path)
+    try:
+        data = json.loads(text) if text is not None else None
+    except Exception:
+        data = None
     if not isinstance(data, dict):
         return []
     ws = data.get("workspaces")
@@ -1403,13 +1407,14 @@ def _read_root_workspaces(root):
 def _read_pnpm_workspaces(root):
     """pnpm workspace globs from pnpm-workspace.yaml (minimal stdlib parser)."""
     path = root / "pnpm-workspace.yaml"
-    if not path.is_file():
+    if not facts.is_file_within_root(root, path):
         path = root / "pnpm-workspace.yml"
-    if not path.is_file():
+    text = facts.read_text_within_root(root, path, errors="replace")
+    if text is None:
         return []
     globs = []
     in_packages = False
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for raw in text.splitlines():
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -1445,9 +1450,11 @@ def _expand_workspace_globs(root, globs):
         if not glob or glob.startswith("!"):
             continue
         for path in sorted(root.glob(glob)):
-            if not path.is_dir() or is_skipped(path, root):
+            if not facts.is_dir_within_root(root, path) or is_skipped(path, root):
                 continue
-            if (path / "package.json").is_file() or (path / "AGENTS.md").is_file():
+            if facts.is_file_within_root(
+                root, path / "package.json"
+            ) or facts.is_file_within_root(root, path / "AGENTS.md"):
                 dirs[rel(path, root)] = path
     return dict(sorted(dirs.items()))
 
@@ -1506,7 +1513,11 @@ def detect_packages(root, mode="auto", ctx=None):
 
 
 def _package_name(path):
-    data = load_json(path / "package.json") if (path / "package.json").is_file() else None
+    text = facts.read_text_within_root(path, path / "package.json")
+    try:
+        data = json.loads(text) if text is not None else None
+    except Exception:
+        data = None
     if isinstance(data, dict) and isinstance(data.get("name"), str):
         return data["name"]
     return None
@@ -1553,7 +1564,7 @@ def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_
             {
                 "path": relpath,
                 "name": _package_name(pdir),
-                "has_agents_md": (pdir / "AGENTS.md").is_file(),
+                "has_agents_md": facts.is_file_within_root(pdir, pdir / "AGENTS.md"),
                 "summary": _package_summary(sub),
                 "report": sub,
             }
@@ -1609,7 +1620,7 @@ def scan_repos_file(paths, max_bytes, rules_dirs=None, allow_plugins=False):
                 "path": raw_path,
                 "resolved": str(root),
                 "name": _package_name(root),
-                "has_agents_md": (root / "AGENTS.md").is_file(),
+                "has_agents_md": facts.is_file_within_root(root, root / "AGENTS.md"),
                 "summary": _package_summary(report),
                 "report": report,
             }

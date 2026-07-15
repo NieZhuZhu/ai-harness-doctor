@@ -55,6 +55,8 @@ import hashlib
 import importlib.util
 from pathlib import Path
 
+import facts
+
 # Conventional per-repo plugin directory, relative to the scanned repo root.
 DEFAULT_RULES_DIRNAME = ".ai-harness-doctor/rules"
 
@@ -70,19 +72,25 @@ def discover_rule_files(root, extra_dirs=None):
     skipped. A directory that does not exist or cannot be read is ignored.
     """
     root = Path(root)
-    search_dirs = [root / DEFAULT_RULES_DIRNAME]
+    search_dirs = [(root / DEFAULT_RULES_DIRNAME, True)]
     for extra in extra_dirs or []:
-        search_dirs.append(Path(extra))
+        search_dirs.append((Path(extra), False))
     seen = {}
-    for directory in search_dirs:
+    for directory, confine_to_root in search_dirs:
         try:
+            if confine_to_root and not facts.is_dir_within_root(root, directory):
+                continue
             if not directory.is_dir():
                 continue
             candidates = sorted(directory.glob("*.py"))
         except OSError:
             continue
         for path in candidates:
-            if path.name.startswith("_") or not path.is_file():
+            if path.name.startswith("_"):
+                continue
+            if confine_to_root and not facts.is_file_within_root(root, path):
+                continue
+            if not path.is_file():
                 continue
             try:
                 key = path.resolve()
