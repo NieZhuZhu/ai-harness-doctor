@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across eleven deep `improve` audit batches:
+Generated and reconciled across twelve deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -13,6 +13,7 @@ Generated and reconciled across eleven deep `improve` audit batches:
 - 2026-07-16 at commit `150d1c9` (plans 027–029).
 - 2026-07-16 at commit `704806e` (plans 030–032).
 - 2026-07-16 at commit `777f962` (plans 033–035).
+- 2026-07-16 at commit `43366d9` (plan 036).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -201,6 +202,17 @@ verification gate, and update its status here.
    applicability, not prose inference, general YAML, or broader rule
    distribution.
 
+### 2026-07-16 post-v1.9.0 improve round 1
+
+1. **Correctness, security, and PR feedback lifecycle** — independently
+   re-audited untrusted repository reads/plugins, report traversal, GitHub
+   posting, 422 recovery, ownership, pagination, and repeated workflow runs.
+   Repo rule plugins remain safely opt-in and their malicious sentinel tests
+   pass, but the stable PR-review marker is never read: PR #189 accumulated two
+   byte-identical `github-actions[bot]` clean summaries after two head commits.
+   The selected repair makes one owned marker comment the durable current
+   summary while preserving inline findings and visible API failures.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -240,6 +252,7 @@ verification gate, and update its status here.
 | 033 | Derive eval health only from validated stored result records | P0 | M | — | DONE |
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | DONE |
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
+| 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -411,6 +424,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   conditions do not expose a behavior bug. Plan 035 adds public structured-rule
   applicability and explain/report metadata, so the combined release is at
   least minor unless a STOP condition requires a breaking schema.
+- Plan 036 is independent and must remain one bugfix PR. Its marker is public
+  text, not authorization: update only a comment proven to be owned by the
+  authenticated poster. Keep the complete summary as one durable issue comment,
+  preserve inline annotations, and never turn 422 fallback into a second
+  summary. If the ownership proof needs broader workflow permissions, stop
+  rather than weakening the boundary.
 
 ## Post-v1.8.1 completion evidence
 
@@ -697,3 +716,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   — rejected as a dangerous coupling of read coverage to write authority.
   Plan 035 adds an explicit no-delete regression; any broader consolidation
   needs a separate ownership/rollback plan.
+- **Treat default custom rule plugins as untrusted-code execution** — rechecked
+  and rejected as already fixed. `run_plugins()` returns before discovery unless
+  `allow_plugins=True`; scan/drift expose an explicit warning and malicious
+  sentinel tests prove default runs do not import repository code.
+- **Delete or minimize historical duplicate PR summaries** — rejected for Plan
+  036. The current-state contract needs a safe owned upsert, while destructive
+  cleanup has a different permission/rollback risk. Update only the newest
+  owned marker and leave legacy history untouched.
+- **Refactor `scan.py` / `eval_run.py` because they remain large** — rejected
+  again in round 1. The audit found no new behavior or testability failure that
+  justifies a broad rewrite; Plan 036 has direct production evidence and a
+  narrow verification seam.
