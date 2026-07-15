@@ -405,3 +405,9 @@ Stop and report back (do not improvise) if:
 - Scope-aware eval generation is intentionally deferred. This plan guards
   nested instructions but does not claim Phase 3 generates package-local
   efficacy tasks.
+## Completion evidence (2026-07-15)
+
+- Fix PR [#156](https://github.com/NieZhuZhu/ai-harness-doctor/pull/156) passed all nine required contexts and was squash-merged as `6556f40`.
+- The synthetic nested package now reports attributed D1/D2/D6/D7 findings through strict health, baselines, fix/manual output, SARIF, and PR review while old root baseline fingerprints remain compatible.
+- Real Mastra validation at `bd2f1d27` triggered this plan's ambiguity STOP condition: a parent-only fact root produced seven false positives. The final contract is local-first with conservative repository-root fallback, plus shared parser corrections for pnpm binary/options, generated output, and configured ESLint rule identifiers. Final JSON/SARIF checked 20 nested files at 100/grade A with zero findings and an unchanged target status hash.
+- Final CI evidence: `drift`, `lint`, Node 16/20/22, `self-test`, and Python 3.9/3.10/3.12 all succeeded.
