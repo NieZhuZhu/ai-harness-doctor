@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across ten deep `improve` audit batches:
+Generated and reconciled across eleven deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -12,6 +12,7 @@ Generated and reconciled across ten deep `improve` audit batches:
 - 2026-07-15 at commit `935eeb6` (plans 024–026).
 - 2026-07-16 at commit `150d1c9` (plans 027–029).
 - 2026-07-16 at commit `704806e` (plans 030–032).
+- 2026-07-16 at commit `777f962` (plans 033–035).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -179,6 +180,27 @@ verification gate, and update its status here.
    exited 0 with all four fail-on flags, proving the advertised org-wide CI gate
    can pass without scanning one repository.
 
+### 2026-07-16 post-v1.8.1 premium-project rounds
+
+1. **Stored efficacy-result integrity** — independently traced existing result
+   JSON through score, stats, compare, regrade, evidence freshness, thresholds,
+   and baseline snapshots. A failed task plus a forged `100/A` health block
+   passed `--fail-under 80`; malformed string tasks also passed when health was
+   present and raised a traceback when it was absent. Plan 030's task-definition
+   preflight had explicitly left this stored-result boundary for later work.
+2. **GitHub Action success-contract coverage** — independently audited the
+   public `command`/`version` matrix, static tests, required self-test logs, and
+   tag-driven release logs. Every successful composite invocation through
+   `v1.8.1` used bundled `scan`; successful bundled `drift` and exact npm
+   override paths were neither required on PRs nor verified after publish.
+3. **Structured rule applicability and ecosystem direction** — independently
+   researched current Cursor and VS Code/Copilot rule contracts, reproduced
+   false conflicts across disjoint `globs`/`applyTo` domains, and validated the
+   prevalence of the format against current `github/docs` and
+   `microsoft/vscode`. The selected scope is bounded deterministic
+   applicability, not prose inference, general YAML, or broader rule
+   distribution.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -215,6 +237,9 @@ verification gate, and update its status here.
 | 030 | Validate every eval task before any runner or judge executes | P0 | M | — | DONE |
 | 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | DONE |
 | 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | DONE |
+| 033 | Derive eval health only from validated stored result records | P0 | M | — | TODO |
+| 034 | Self-test every public GitHub Action success path | P1 | S | — | TODO |
+| 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -371,6 +396,21 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Release classification: Plans 030–032 are backward-compatible bug fixes.
   Publish the batch as the next patch version after this completion record
   merges.
+- Plans 033–035 are independent and must land as separate PRs: stored eval
+  trust, Action/release coverage, and structured product applicability have
+  distinct review and rollback boundaries. Execute 033 first because it guards
+  this repository's efficacy evidence; 034 may run before or after it; execute
+  035 last because it has the largest public report surface.
+- Plan 033 must preserve every producer-compatible single/multi/matrix result
+  while refusing contradictory stored health. Plan 034 must distinguish current
+  bundled-code evidence from already-published/npm artifact evidence and retain
+  prerelease policy. Plan 035 must suppress only provably disjoint automatic
+  domains, keep security independent, and never turn recursive discovery into
+  recursive deletion.
+- Plans 033–034 are backward-compatible correctness/test hardening if their STOP
+  conditions do not expose a behavior bug. Plan 035 adds public structured-rule
+  applicability and explain/report metadata, so the combined release is at
+  least minor unless a STOP condition requires a breaking schema.
 
 ## Findings considered and rejected or deferred
 
@@ -595,9 +635,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   mode is advertised as an org-wide CI gate. Continuing to scan good entries is
   valuable; returning 0 is not.
 - **Add a generic result-JSON schema validator while fixing task preflight** —
-  deferred. Task packs are execution inputs with a demonstrated paid
-  side-effect before failure. Stored result/matrix/baseline validation has no
-  equivalent reproduction in this audit and should not broaden Plan 030.
+  promoted to Plan 033 after the new independent audit forged a `100/A` health
+  block over a failed record and passed the strict threshold. The plan remains
+  separate from task-definition preflight and excludes trend-history schema.
 - **Clone AgentLint/Ruler/rulesync feature breadth** — rejected again.
   Adjacent tools reinforce the project's differentiation on contained
   diagnostic truth, freshness, CI feedback, and efficacy evidence rather than
@@ -615,3 +655,20 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   that invariant. Changing org/repo Action policy has a larger operational
   blast radius than the selected concrete failures and no current bypass
   reproduction.
+- **Expand the registry with Kiro/Augment/Amazon Q/other rule formats now** —
+  rejected for this batch. More filenames improve breadth but not diagnostic
+  truth. Plan 035 first models the deterministic applicability languages of two
+  already-recognized, high-adoption formats with official contracts and real
+  repositories.
+- **Use a generic YAML dependency for rule frontmatter** — rejected. Runtime
+  remains Python 3.9 stdlib-only, and accepting arbitrary YAML would enlarge the
+  parser/security surface. Plan 035 specifies only documented scalar control
+  fields and fails closed on unsupported constructs.
+- **Symbolically solve arbitrary glob intersections** — rejected. It is complex
+  and easy to make unsound. Plan 035 uses current contained repository paths for
+  scan conflict evidence and direct matching for `explain TARGET`, while
+  explicitly making no claim about unmatched future intersections.
+- **Make recursive Cursor/Copilot discovery authorize recursive Treat deletion**
+  — rejected as a dangerous coupling of read coverage to write authority.
+  Plan 035 adds an explicit no-delete regression; any broader consolidation
+  needs a separate ownership/rollback plan.
