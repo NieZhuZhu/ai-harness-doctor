@@ -3,6 +3,11 @@
 Thanks for your interest in `ai-harness-doctor`. This guide explains how changes
 flow from idea to a released version.
 
+Before participating, read [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). For usage
+questions and public report types see [`SUPPORT.md`](SUPPORT.md). Report
+vulnerabilities privately according to [`SECURITY.md`](SECURITY.md), never in a
+public issue.
+
 ## TL;DR
 
 - **Pull requests are required** for every change to `main`; direct pushes are
@@ -62,6 +67,10 @@ is enough.
    Python (3.9/3.10/3.12) and Node (16/20/22) matrix; all checks must pass
    before merge.
 
+Use the pull request template. In particular, classify the release impact,
+confirm safety/compatibility boundaries, and refresh evidence-bound self-eval
+results whenever `AGENTS.md` or its task pack changes.
+
 ## Test coverage
 
 Coverage is optional and **not** part of the required gate, but it helps spot
@@ -87,3 +96,7 @@ the full flow. In short, a maintainer bumps the version on `main`
 matches `package.json`, publishes to npm with provenance, and creates a GitHub
 Release with auto-generated notes. There is no `CHANGELOG.md`; the GitHub
 Release notes are the canonical change history.
+
+Dependency updates for npm development tooling and immutable GitHub Action pins
+are opened weekly by Dependabot. Treat them as code changes and require the
+same matrix before merge.

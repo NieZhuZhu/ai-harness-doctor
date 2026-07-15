@@ -121,13 +121,34 @@
       "answer": "Installer smoke tests may write only to an isolated HOME, never the real user HOME.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "eval-evidence-gate",
+      "stdout": "CI must verify current task and evidence fingerprints before trusting health.",
+      "answer": "CI must verify current task and evidence fingerprints before trusting health.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "mcp-version-wire",
+      "stdout": "Synchronize negotiated-version wire shapes, and never send modern-only fields to legacy MCP clients.",
+      "answer": "Synchronize negotiated-version wire shapes, and never send modern-only fields to legacy MCP clients.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "repository-operations",
+      "stdout": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI.",
+      "answer": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 17,
-    "total": 17,
+    "passed": 20,
+    "total": 20,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -135,12 +156,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "a144ac5c252bba3fa7b8ac771fdda3147eaf7e0f5bf50a13aab597a1a5a8f78d"
+      "sha256": "79953555e438c162d4eb8a1e35b1c7cd9f70563b4ed6dc608ab9ff5d93b0d110"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "6a07601ce768a705dd697ab751130f11e06594714c5e0d085f4411b461efbb8f"
+        "sha256": "326458078884d6b80e3856d0ad1b82b1256770d513a2100eea6fa9df2464183b"
       }
     ]
   }

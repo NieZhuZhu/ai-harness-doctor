@@ -11,9 +11,9 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 17 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 20 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
-  and where the core scripts live).
+  evidence freshness, repository operations, and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
 - `results-after.json` — manual-protocol answers refreshed on 2026-07-15 from the
   current `AGENTS.md`, with no repository browsing or external model call.
@@ -41,7 +41,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 17/17 |
+| current evidence-bound maintenance pack | 20/20 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -56,6 +56,7 @@ keeping `AGENTS.md` small (progressive disclosure preserved). The drift guard st
 
 The 2026-07-15 refresh adds objective checks for installer manifest safety,
 unsuppressible HIGH security findings, MCP read-only/error semantics, semantic
-release classification, and isolated-HOME installer tests. Any change to
+release classification, isolated-HOME installer tests, eval evidence freshness,
+MCP versioned wire contracts, and the public-repository operations baseline. Any change to
 `AGENTS.md` or `tasks.json` now makes the self-bootstrap PR gate fail stale
 evidence (exit 7) until the manual protocol is rerun and reviewed in the same PR.

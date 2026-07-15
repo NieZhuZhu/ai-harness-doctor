@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a focused doctor capability or integration.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: user
+    attributes:
+      label: User and problem
+      description: Who needs this and what concrete harness problem remains unsolved?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired doctor outcome
+      description: Describe observable input/output and where the workflow should stop for human judgment.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and examples
+      description: Public links, sanitized examples, or repeated manual workflow that grounds the request.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing CLI/plugin/baseline workflow and why it is insufficient.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Project boundaries
+      options:
+        - label: This preserves human adjudication and does not ask deterministic scripts to perform semantic merging.
+          required: true
+        - label: This is not simply broader rule generation/distribution already served by adjacent tools.
+          required: true

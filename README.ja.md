@@ -725,7 +725,7 @@ RELEASING.md                     # Tag-driven release checklist
 
 ## Contributing
 
-Bug reports と focused PRs を歓迎します。scripts は deterministic、stdlib-only を保ち、次で cover してください。
+Bug reports と focused PRs を歓迎します。repository の issue forms を使い、[`SUPPORT.md`](SUPPORT.md) で report route を選び、[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) に従い、vulnerability は [`SECURITY.md`](SECURITY.md) の private route で報告してください。public issue に secrets、private repository content、exploit details を貼らないでください。scripts は deterministic、stdlib-only を保ち、次で cover してください。
 
 ```bash
 python3 -m unittest discover -s tests -v

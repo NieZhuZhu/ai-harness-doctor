@@ -244,6 +244,7 @@ From the merged, up-to-date main:
 
 1. capture current `security_and_analysis` JSON;
 2. enable, when the public-repository API/account supports them:
+   - private vulnerability reporting;
    - secret scanning;
    - push protection;
    - validity checks;

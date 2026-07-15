@@ -1,0 +1,61 @@
+name: False positive or false negative
+description: Report an incorrect or missing scan/drift/security/semantic finding.
+title: "finding: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provide the smallest synthetic instruction/config example that preserves the classification problem. Never paste a live secret or private repository content.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "1.3.1, v1, or commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Engine / phase
+      options:
+        - scan security
+        - scan gaps
+        - scan semantic consistency
+        - scan conflicts / warnings
+        - drift D1-D8
+        - SARIF / PR review attribution
+        - custom rule plugin
+    validations:
+      required: true
+  - type: textarea
+    id: synthetic_input
+    attributes:
+      label: Minimal synthetic input
+      description: A tiny AGENTS.md/config excerpt and only the filesystem facts needed to classify it.
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: Sanitized finding or missing finding
+      description: Include rule/check, severity, path/line if safe, and why the classification is wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and flags
+      placeholder: "ai-harness-doctor scan . --json"
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: The example is synthetic or fully sanitized and contains no credential value.
+          required: true
+        - label: This report does not disclose a vulnerability; security details will use the private advisory flow.
+          required: true

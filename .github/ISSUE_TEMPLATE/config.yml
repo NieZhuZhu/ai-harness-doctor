@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/NieZhuZhu/ai-harness-doctor/security/advisories/new
+    about: Report vulnerabilities, exploit details, or credential exposure privately.
+  - name: Support and reporting guide
+    url: https://github.com/NieZhuZhu/ai-harness-doctor/blob/main/SUPPORT.md
+    about: Choose the correct public or private support path.

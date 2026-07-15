@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible crash, incorrect result, or integration failure.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Remove secrets, private repository content, and personal data. Security vulnerabilities belong in the private advisory flow linked below.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: npm version, exact Action tag, or commit SHA.
+      placeholder: "1.3.1 or v1"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - CLI
+        - GitHub Action
+        - MCP server
+        - Claude skill / adapters
+        - Guard templates
+        - Release / installer
+    validations:
+      required: true
+  - type: textarea
+    id: repository_shape
+    attributes:
+      label: Minimal repository shape
+      description: List only synthetic/relevant files, ecosystems, and monorepo layout.
+      placeholder: "Root AGENTS.md, packages/app/package.json, pnpm workspace..."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Exact command/input and minimal deterministic steps.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized output
+      description: Redact credentials, private paths/URLs, and proprietary content.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed secrets, private repository content, and personal data.
+          required: true
+        - label: This is not a vulnerability report; I will use private vulnerability reporting for security issues.
+          required: true

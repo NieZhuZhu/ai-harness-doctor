@@ -14,6 +14,11 @@ SCAN_BASELINE = ROOT / ".ai-harness-doctor" / "scan-baseline.json"
 GUARD_ASSETS = ROOT / "assets" / "guard"
 TEST_WORKFLOW = ROOT / ".github" / "workflows" / "test.yml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
+SECURITY = ROOT / "SECURITY.md"
+CODE_OF_CONDUCT = ROOT / "CODE_OF_CONDUCT.md"
+SUPPORT = ROOT / "SUPPORT.md"
+ISSUE_TEMPLATES = ROOT / ".github" / "ISSUE_TEMPLATE"
+PULL_REQUEST_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
 
 ACTION_PINS = {
     "actions/checkout": ("9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", "v7"),
@@ -187,7 +192,66 @@ class ActionMetadataTests(unittest.TestCase):
     def test_dependabot_updates_github_action_pins_weekly(self):
         text = DEPENDABOT.read_text(encoding="utf-8")
         self.assertIn('package-ecosystem: "github-actions"', text)
+        self.assertIn('package-ecosystem: "npm"', text)
+        self.assertEqual(text.count('interval: "weekly"'), 2)
+        self.assertIn('dependency-type: "development"', text)
         self.assertIn('interval: "weekly"', text)
+
+    def test_public_repository_community_health_files_are_safe_and_actionable(self):
+        for path in (SECURITY, CODE_OF_CONDUCT, SUPPORT, PULL_REQUEST_TEMPLATE):
+            with self.subTest(path=path):
+                self.assertTrue(path.is_file(), path)
+                self.assertGreater(len(path.read_text(encoding="utf-8").strip()), 100)
+
+        security = SECURITY.read_text(encoding="utf-8")
+        self.assertIn("/security/advisories/new", security)
+        self.assertIn("Do **not** open a public issue", security)
+        self.assertIn("Never include a live secret", security)
+
+        conduct = CODE_OF_CONDUCT.read_text(encoding="utf-8")
+        self.assertIn("Contributor Covenant", conduct)
+        self.assertNotIn("INSERT CONTACT", conduct)
+        self.assertIn("report-abuse", conduct)
+
+        support = SUPPORT.read_text(encoding="utf-8")
+        self.assertIn("SECURITY.md", support)
+        self.assertIn("CODE_OF_CONDUCT.md", support)
+        self.assertIn("does not currently operate a discussion forum", support)
+
+        pull_request = PULL_REQUEST_TEMPLATE.read_text(encoding="utf-8")
+        for required in (
+            "Release classification",
+            "npm run check",
+            "strict drift",
+            "isolated `HOME`",
+            "Eval evidence",
+        ):
+            self.assertIn(required, pull_request)
+
+    def test_issue_forms_cover_bugs_findings_features_and_private_security(self):
+        expected = {
+            "bug.yml": ("Bug report", "Minimal repository shape", "Safety confirmation"),
+            "false-positive.yml": (
+                "False positive or false negative",
+                "Minimal synthetic input",
+                "no credential value",
+            ),
+            "feature.yml": ("Feature request", "Desired doctor outcome", "Project boundaries"),
+        }
+        for filename, needles in expected.items():
+            path = ISSUE_TEMPLATES / filename
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertTrue(text.startswith("name:"))
+                self.assertIn("body:", text)
+                self.assertIn("validations:", text)
+                for needle in needles:
+                    self.assertIn(needle, text)
+
+        config = (ISSUE_TEMPLATES / "config.yml").read_text(encoding="utf-8")
+        self.assertIn("blank_issues_enabled: false", config)
+        self.assertIn("/security/advisories/new", config)
+        self.assertIn("SUPPORT.md", config)
 
     def test_release_only_triggers_for_full_semver_tags(self):
         text = RELEASE.read_text(encoding="utf-8")
@@ -264,6 +328,19 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertNotIn("primary category", text)
         self.assertNotIn("secondary category", text)
         self.assertIn("marketplace=true", text)
+
+    def test_release_supersedes_only_exact_older_marketplace_reminders(self):
+        text = RELEASE.read_text(encoding="utf-8")
+        self.assertIn('^Marketplace release confirmation: v[0-9]+', text)
+        self.assertIn('--state open', text)
+        self.assertIn('if [ "$issue_title" = "$title" ]', text)
+        self.assertIn('Superseded by Marketplace confirmation for $TAG.', text)
+        self.assertIn('done < "$RUNNER_TEMP/marketplace-open.tsv"', text)
+        cleanup = text.index("marketplace-open.tsv")
+        dedupe = text.index('existing="$(')
+        create = text.index("gh issue create")
+        self.assertLess(cleanup, dedupe)
+        self.assertLess(dedupe, create)
 
     def test_release_docs_use_the_maintained_v1_action_tag(self):
         release_docs = RELEASING.read_text(encoding="utf-8")

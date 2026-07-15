@@ -100,3 +100,22 @@ links and this checklist:
   choose their display order);
 - confirm the Marketplace page shows the new tag as Latest;
 - close the reminder issue.
+
+When a newer stable release succeeds, the workflow closes older open issues
+whose title exactly matches the generated Marketplace reminder pattern. It
+never closes the current tag's reminder or unrelated issues.
+
+## Repository operations baseline
+
+After workflow/job renames, dependency-policy changes, or maintainer changes,
+verify the repository settings as production configuration:
+
+- secret scanning, push protection, validity checks, and Dependabot security
+  updates are enabled when supported;
+- `main` requires the current PR check contexts and conversation resolution;
+- force pushes/deletions remain disabled;
+- admin enforcement remains disabled only because a sole maintainer cannot
+  approve their own PR. Admin bypass must never be used to merge red CI.
+
+Use `gh api` read-back after every settings mutation; a successful write without
+verification is not evidence. Never print secret-scanning alert values.

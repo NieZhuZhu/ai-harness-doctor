@@ -270,10 +270,32 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           title="Marketplace release confirmation: $TAG"
+          # Keep only the newest stable release reminder actionable. Match the
+          # exact generated title shape and never touch unrelated/current issues.
+          gh issue list \
+            --repo "$GH_REPO" \
+            --state open \
+            --limit 100 \
+            --search "Marketplace release confirmation: in:title" \
+            --json number,title \
+            --jq '.[] | select(.title | test("^Marketplace release confirmation: v[0-9]+\\.[0-9]+\\.[0-9]+$")) | [.number, .title] | @tsv' \
+            > "$RUNNER_TEMP/marketplace-open.tsv"
+          while IFS=$'\t' read -r issue_number issue_title; do
+            [ -n "$issue_number" ] || continue
+            if [ "$issue_title" = "$title" ]; then
+              continue
+            fi
+            gh issue close \
+              --repo "$GH_REPO" \
+              "$issue_number" \
+              --comment "Superseded by Marketplace confirmation for $TAG."
+          done < "$RUNNER_TEMP/marketplace-open.tsv"
+
           existing="$(
             gh issue list \
               --repo "$GH_REPO" \
               --state all \
+              --limit 100 \
               --search "$title in:title" \
               --json number,title \
               --jq ".[] | select(.title == \"$title\") | .number" \

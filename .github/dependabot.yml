@@ -9,3 +9,16 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  # Runtime remains dependency-free; these weekly PRs keep only the repository's
+  # lint/format development toolchain current and still run the full Node 16+
+  # product compatibility matrix before merge.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      node-dev-tooling:
+        dependency-type: "development"
+        patterns:
+          - "*"
