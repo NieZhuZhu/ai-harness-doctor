@@ -189,7 +189,7 @@ verification gate, and update its status here.
 | 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | DONE |
 | 027 | Confine every fact-derived generator to repository truth | P0 | M | — | DONE |
 | 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | DONE |
-| 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | IN PROGRESS |
+| 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -287,6 +287,30 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   compatibility STOP conditions do not trigger. Plan 029 adds public eval
   provenance behavior, so the combined batch is minor unless a STOP condition
   exposes a breaking schema requirement.
+
+## Post-v1.7.0 completion evidence
+
+- Plan 027 landed in PR [#170](https://github.com/NieZhuZhu/ai-harness-doctor/pull/170)
+  (`dcd6dcc`): root/scoped eval and Treat draft now share contained fact reads,
+  preserve safe lexical symlink evidence, and abstain on competing managers.
+- Plan 028 landed in PR [#171](https://github.com/NieZhuZhu/ai-harness-doctor/pull/171)
+  (`569db1e`): required lint CI now installs the exact committed public npm
+  graph with `npm ci --ignore-scripts --no-audit --no-fund`; job `87433510938`
+  installed 71 packages without Yarn or a generated lockfile.
+- Plan 029 landed in PR [#172](https://github.com/NieZhuZhu/ai-harness-doctor/pull/172)
+  (`d75b859`): generated task evidence now binds automatically across run,
+  matrix, regrade, and strict score; file/directory semantics remain schema-v1
+  compatible, and real Mastra round 22 proved package-fact staleness exits 7.
+- Every implementation PR passed all nine required contexts: drift, lint,
+  Node 16/20/22, self-test, and Python 3.9/3.10/3.12. Final local validation on
+  current main is 634 Python tests, 26 Node tests, strict drift 100/A, and
+  evidence-bound self-eval 27/27.
+- `AGENTS.md` now records all three durable invariants: contained/ambiguity-safe
+  fact generation, lockfile-exact lint installs, and automatic effective-
+  evidence freshness with file hashing and directory type binding.
+- Release classification: Plans 027–028 are backward-compatible fixes; Plan
+  029 adds public eval provenance behavior. Publish the batch as the next minor
+  version after this completion record merges.
 
 ## Findings considered and rejected or deferred
 
