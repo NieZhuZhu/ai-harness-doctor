@@ -187,7 +187,7 @@ verification gate, and update its status here.
 | 024 | Scan every byte for security and identity without unbounded semantic reads | P0 | M | — | DONE |
 | 025 | Bind idempotent release reruns to the published npm artifact | P0 | S | — | DONE |
 | 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | DONE |
-| 027 | Confine every fact-derived generator to repository truth | P0 | M | — | TODO |
+| 027 | Confine every fact-derived generator to repository truth | P0 | M | — | IN PROGRESS |
 | 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | TODO |
 | 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | TODO |
 

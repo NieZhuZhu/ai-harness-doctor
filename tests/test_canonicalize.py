@@ -471,6 +471,28 @@ class DraftTests(unittest.TestCase):
             # And the draft's build commands use pnpm accordingly.
             self.assertIn("pnpm install", out)
 
+    def test_draft_abstains_from_commands_when_lockfile_managers_compete(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                '{"scripts":{"test":"vitest run"}}\n',
+                encoding="utf-8",
+            )
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            (repo / "package-lock.json").write_text("{}\n", encoding="utf-8")
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), str(repo), "--draft"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn("pnpm install", proc.stdout)
+            self.assertNotIn("npm install", proc.stdout)
+            self.assertNotIn("pnpm run test", proc.stdout)
+            self.assertNotIn("npm run test", proc.stdout)
+
     def test_draft_o_writes_file_and_refuses_to_overwrite(self):
         with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
@@ -553,6 +575,95 @@ class DraftTests(unittest.TestCase):
             self.assertIn("poetry run pytest -q", out)
             self.assertIn("poetry run ruff check", out)
             self.assertIn("documented in CLAUDE.md", out)
+
+    def test_draft_ignores_external_fact_symlinks(self):
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            outside = base / "outside"
+            repo.mkdir()
+            outside.mkdir()
+            sentinel = "external-only-command"
+            (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+            (repo / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+            (outside / "CLAUDE.md").write_text(
+                f"```bash\nuv run pytest {sentinel}\n```\n",
+                encoding="utf-8",
+            )
+            try:
+                (repo / "CLAUDE.md").symlink_to(outside / "CLAUDE.md")
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported")
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), str(repo), "--draft"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn(sentinel, proc.stdout + proc.stderr)
+
+    def test_draft_ignores_external_node_python_and_tool_facts(self):
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            outside = base / "outside"
+            repo.mkdir()
+            outside.mkdir()
+            sentinel = "outside-test-script"
+            sources = {
+                "package.json": json.dumps({"scripts": {"test": sentinel}}),
+                "pnpm-lock.yaml": "lockfileVersion: 9\n",
+                "pyproject.toml": "[tool.uv]\n[tool.pytest.ini_options]\n[tool.ruff]\n",
+                "ruff.toml": "line-length = 99\n",
+                "Makefile": "outside-target:\n\t@true\n",
+            }
+            for name, content in sources.items():
+                (outside / name).write_text(content, encoding="utf-8")
+                try:
+                    (repo / name).symlink_to(outside / name)
+                except (OSError, NotImplementedError):
+                    self.skipTest("file symlinks unsupported")
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), str(repo), "--draft"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn(sentinel, proc.stdout + proc.stderr)
+            self.assertNotIn("pnpm install", proc.stdout)
+            self.assertNotIn("uv sync", proc.stdout)
+            self.assertNotIn("uv run pytest", proc.stdout)
+            self.assertNotIn("uv run ruff", proc.stdout)
+            self.assertNotIn("make outside-target", proc.stdout)
+
+    def test_draft_supports_contained_claude_symlink(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td)
+            shared = repo / "shared"
+            shared.mkdir()
+            (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+            (repo / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+            (shared / "CLAUDE.md").write_text(
+                "```bash\nuv run pytest contained-only\n```\n",
+                encoding="utf-8",
+            )
+            try:
+                (repo / "CLAUDE.md").symlink_to(shared / "CLAUDE.md")
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported")
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), str(repo), "--draft"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("uv run pytest contained-only", proc.stdout)
 
 
 class ConflictDefaultTests(unittest.TestCase):

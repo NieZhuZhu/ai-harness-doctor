@@ -1349,6 +1349,133 @@ class GenerateTasksTests(unittest.TestCase):
             (repo / "yarn.lock").write_text("", encoding="utf-8")
             self.assertEqual(eval_run.detect_package_manager(repo), "yarn")
 
+    def test_root_generation_ignores_external_fact_symlinks_without_leaking(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            outside = base / "outside"
+            repo.mkdir()
+            outside.mkdir()
+            sentinel = "outside-only-command"
+            (outside / "package.json").write_text(
+                json.dumps(
+                    {
+                        "packageManager": "yarn@4.0.0",
+                        "scripts": {"test": sentinel},
+                        "devDependencies": {"jest": "1"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (outside / ".nvmrc").write_text("99\n", encoding="utf-8")
+            (outside / "AGENTS.md").write_text("Use Conventional Commits.\n", encoding="utf-8")
+            for name in ("package.json", ".nvmrc", "AGENTS.md"):
+                try:
+                    (repo / name).symlink_to(outside / name)
+                except (OSError, NotImplementedError):
+                    self.skipTest("file symlinks unsupported")
+
+            tasks = eval_run.generate_tasks(repo)
+            serialized = json.dumps(tasks)
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--generate", str(repo)],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(tasks, [])
+            self.assertNotIn(sentinel, serialized)
+            self.assertNotIn(str(base.resolve()), serialized)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(json.loads(proc.stdout), [])
+            self.assertNotIn(sentinel, proc.stdout + proc.stderr)
+            self.assertNotIn(str(base.resolve()), proc.stdout + proc.stderr)
+
+    def test_root_generation_supports_contained_fact_symlinks(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            shared = repo / "shared"
+            shared.mkdir()
+            (shared / "package.json").write_text(
+                json.dumps(
+                    {
+                        "packageManager": "pnpm@9.0.0",
+                        "scripts": {"test": "vitest run"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (shared / ".nvmrc").write_text("20\n", encoding="utf-8")
+            (shared / "AGENTS.md").write_text("Use Conventional Commits.\n", encoding="utf-8")
+            for name in ("package.json", ".nvmrc", "AGENTS.md"):
+                try:
+                    (repo / name).symlink_to(shared / name)
+                except (OSError, NotImplementedError):
+                    self.skipTest("file symlinks unsupported")
+
+            ids = {task["id"] for task in eval_run.generate_tasks(repo)}
+
+            self.assertTrue({"package-manager", "install", "test", "node-version", "commit-convention"} <= ids)
+
+    def test_scoped_generation_preserves_contained_symlink_evidence_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve()
+            package = repo / "packages" / "api"
+            shared = repo / "shared"
+            package.mkdir(parents=True)
+            shared.mkdir()
+            (repo / "AGENTS.md").write_text("Use pnpm.\n", encoding="utf-8")
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            (package / "AGENTS.md").write_text("Use local commands.\n", encoding="utf-8")
+            (shared / "package.json").write_text(
+                json.dumps({"scripts": {"test": "vitest"}}),
+                encoding="utf-8",
+            )
+            try:
+                (package / "package.json").symlink_to(shared / "package.json")
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported")
+
+            tasks = eval_run.generate_tasks(repo, target="packages/api/src/x.py")
+            test_task = next(task for task in tasks if task["id"].endswith(":test"))
+
+            self.assertEqual(test_task["evidence"], ["packages/api/package.json"])
+
+    def test_root_generation_abstains_from_command_tasks_on_competing_lockfiles(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {"test": "vitest run"},
+                        "devDependencies": {"vitest": "1"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            (repo / "package-lock.json").write_text("{}\n", encoding="utf-8")
+
+            ids = {task["id"] for task in eval_run.generate_tasks(repo)}
+
+            self.assertNotIn("package-manager", ids)
+            self.assertNotIn("install", ids)
+            self.assertNotIn("test", ids)
+            self.assertIn("test-framework", ids)
+
+    def test_root_generation_uses_contained_package_manager_field_without_lockfile(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps({"packageManager": "yarn@4.0.0", "scripts": {"test": "jest"}}),
+                encoding="utf-8",
+            )
+
+            by_id = {task["id"]: task for task in eval_run.generate_tasks(repo)}
+
+            self.assertTrue(eval_run.regex_passes(by_id["package-manager"]["check"]["value"], "yarn"))
+            self.assertTrue(eval_run.regex_passes(by_id["test"]["check"]["value"], "yarn test"))
+
     def test_python_version_task_uses_unified_ground_truth(self):
         # When every pinned source agrees, emit the golden-answer task using the
         # same sources the scan/drift fact engine reads (semantic.python_ground_versions).
@@ -1496,7 +1623,7 @@ class GenerateTasksTests(unittest.TestCase):
             self.assertTrue(all(task["id"].startswith("scope:packages%2Fweb:") for task in web))
             self.assertFalse({task["id"] for task in api} & {task["id"] for task in web})
 
-    def test_target_package_manager_prefers_local_override_and_abstains_on_local_ambiguity(self):
+    def test_target_package_manager_prefers_local_lock_then_local_field(self):
         with tempfile.TemporaryDirectory() as td:
             repo = self._make_scoped_repo(td)
             package = repo / "packages" / "api"
@@ -1522,6 +1649,24 @@ class GenerateTasksTests(unittest.TestCase):
             )
 
             (package / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            locked = {
+                task["id"]: task
+                for task in eval_run.generate_tasks(repo, target=target)
+            }
+            self.assertTrue(
+                eval_run.regex_passes(
+                    locked[prefix + "package-manager"]["check"]["value"],
+                    "pnpm",
+                )
+            )
+            self.assertEqual(
+                locked[prefix + "package-manager"]["evidence"],
+                ["packages/api/pnpm-lock.yaml"],
+            )
+            self.assertIn(prefix + "install", locked)
+            self.assertIn(prefix + "test:api", locked)
+
+            (package / "package-lock.json").write_text("{}\n", encoding="utf-8")
             ambiguous_ids = {
                 task["id"]
                 for task in eval_run.generate_tasks(repo, target=target)

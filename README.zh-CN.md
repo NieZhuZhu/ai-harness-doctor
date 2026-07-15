@@ -550,7 +550,7 @@ npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stu
 
 运行或对比 before/after agent tasks。
 
-**零配置任务。** 你不必手写 `tasks.json` —— `--generate REPO` 会从仓库事实（`package.json` 的 scripts/engines/deps、锁文件、`.nvmrc`、`go.mod`、`pyproject.toml`，以及 `AGENTS.md` 约定）推导出一套确定性任务，每条 check 用 regex 编码真实事实，因此更高的分数直接反映 `AGENTS.md` 是否起到了作用。添加 `--target PATH` 可评估一个显式的最近文件指令作用域：scripts/dependencies 只来自该作用域，package manager/runtime 可以使用最近且无歧义的祖先事实，canonical 约定按 root → nearest 继承。作用域任务 ID 会做百分号编码，每条任务都携带仓库相对的 `scope`、`target` 与 `evidence`。根生成保持兼容；系统刻意不会自动展开所有作用域。
+**零配置任务。** 你不必手写 `tasks.json` —— `--generate REPO` 会从仓库内受 containment 约束的事实（`package.json` 的 scripts/engines/deps、锁文件、`.nvmrc`、`go.mod`、`pyproject.toml`，以及 `AGENTS.md` 约定）推导出一套确定性任务，每条 check 用 regex 编码真实事实，因此更高的分数直接反映 `AGENTS.md` 是否起到了作用。外部 symlink 目标不能提供事实，安全的仓库内 symlink 则保留其词法 evidence 路径；package manager/runtime 来源有歧义时会 abstain，而不是猜测答案。添加 `--target PATH` 可评估一个显式的最近文件指令作用域：scripts/dependencies 只来自该作用域，package manager/runtime 可以使用最近且无歧义的祖先事实，canonical 约定按 root → nearest 继承。作用域任务 ID 会做百分号编码，每条任务都携带仓库相对的 `scope`、`target` 与 `evidence`。根生成保持兼容；系统刻意不会自动展开所有作用域。
 
 ```bash
 npx ai-harness-doctor eval --generate . -o tasks.json   # auto-generate tasks from repo facts

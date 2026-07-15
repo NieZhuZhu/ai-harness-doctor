@@ -550,7 +550,7 @@ npx ai-harness-doctor drift . --fix --apply  # actually rewrites the regrown stu
 
 before/after agent tasks を実行または比較します。
 
-**ゼロコンフィグのタスク。** `tasks.json` を手書きする必要はありません。`--generate REPO` はリポジトリの事実（`package.json` の scripts/engines/deps、ロックファイル、`.nvmrc`、`go.mod`、`pyproject.toml`、および `AGENTS.md` の規約）から決定的なタスクセットを導出し、各 check は真の事実を regex でエンコードします。したがってスコアが高いほど `AGENTS.md` が効いたかどうかを直接反映します。`--target PATH` を追加すると、明示した nearest-file instruction scope を評価します。scripts/dependencies はその scope のみから取得し、package manager/runtime は nearest unambiguous ancestor を利用でき、canonical conventions は root → nearest で継承します。scoped ID は percent-encoded で、各 task は repository-relative な `scope`、`target`、`evidence` を持ちます。root generation は互換性を保ち、all-scope expansion は自動化しません。
+**ゼロコンフィグのタスク。** `tasks.json` を手書きする必要はありません。`--generate REPO` は containment 内のリポジトリ事実（`package.json` の scripts/engines/deps、ロックファイル、`.nvmrc`、`go.mod`、`pyproject.toml`、および `AGENTS.md` の規約）から決定的なタスクセットを導出し、各 check は真の事実を regex でエンコードします。外部 symlink target は fact を供給できず、安全な in-repo symlink は lexical evidence path を維持します。package manager/runtime source が曖昧なら答えを推測せず abstain します。`--target PATH` を追加すると、明示した nearest-file instruction scope を評価します。scripts/dependencies はその scope のみから取得し、package manager/runtime は nearest unambiguous ancestor を利用でき、canonical conventions は root → nearest で継承します。scoped ID は percent-encoded で、各 task は repository-relative な `scope`、`target`、`evidence` を持ちます。root generation は互換性を保ち、all-scope expansion は自動化しません。
 
 ```bash
 npx ai-harness-doctor eval --generate . -o tasks.json   # auto-generate tasks from repo facts

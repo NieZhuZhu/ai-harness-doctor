@@ -11,7 +11,7 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 25 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 26 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
   evidence freshness, repository operations, public lockfile sources, nested
   instruction scopes, and where the core scripts live).
@@ -42,7 +42,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 25/25 |
+| current evidence-bound maintenance pack | 26/26 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -70,4 +70,7 @@ count, and high-confidence security coverage remain bounded-memory and explicit.
 Release reruns are also checked: an existing npm version is skipped only after
 its `gitHead` and packed tarball shasum match the exact release tag. Targeted
 eval generation must preserve root IDs, isolate local scripts/dependencies, use
-only nearest unambiguous inherited facts, and attach relative evidence.
+only nearest unambiguous inherited facts, and attach relative evidence. Root and
+scoped eval plus Treat draft share one containment rule: external symlinks
+supply no facts, contained symlinks keep lexical evidence, and ambiguity causes
+abstention.

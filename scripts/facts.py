@@ -207,6 +207,18 @@ def read_bytes_within_root(root, path):
         return None
 
 
+def load_json_within_root(root, path):
+    """Parse a contained JSON object, returning ``None`` when unsafe/invalid."""
+    text = read_text_within_root(root, path)
+    if text is None:
+        return None
+    try:
+        data = json.loads(text)
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def safe_mutation_path(root, path):
     """Return a lexical in-root path only when no existing component is a symlink.
 
@@ -255,12 +267,8 @@ def package_scripts(root):
     (CORR-01).
     """
     path = root / "package.json"
-    text = read_text_within_root(root, path)
-    if text is None:
-        return None
-    try:
-        data = json.loads(text)
-    except Exception:
+    data = load_json_within_root(root, path)
+    if data is None:
         return None
     scripts = data.get("scripts")
     return set(scripts.keys()) if isinstance(scripts, dict) else set()
@@ -477,12 +485,8 @@ def package_dependency_names(root):
     Mirrors ``package_scripts``'s None-vs-empty-set contract (CORR-01).
     """
     path = root / "package.json"
-    text = read_text_within_root(root, path)
-    if text is None:
-        return None
-    try:
-        data = json.loads(text)
-    except Exception:
+    data = load_json_within_root(root, path)
+    if data is None:
         return None
     names = set()
     for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
@@ -607,12 +611,8 @@ def nvmrc_node_version(root):
 
 def engines_node_version(root):
     path = root / "package.json"
-    text = read_text_within_root(root, path)
-    if text is None:
-        return None
-    try:
-        data = json.loads(text)
-    except Exception:
+    data = load_json_within_root(root, path)
+    if data is None:
         return None
     engines = data.get("engines")
     node = engines.get("node") if isinstance(engines, dict) else None
@@ -633,6 +633,16 @@ def lockfile_managers(root):
         for name, mgr in registry.LOCKFILE_MANAGERS.items()
         if is_file_within_root(root, root / name)
     }
+
+
+def package_manager_field(root):
+    """Return one contained packageManager name, or ``None`` if absent/invalid."""
+    data = load_json_within_root(root, root / "package.json")
+    field = data.get("packageManager") if isinstance(data, dict) else None
+    if not isinstance(field, str):
+        return None
+    match = re.match(r"([A-Za-z]+)@", field)
+    return match.group(1).lower() if match else None
 
 
 # ---------------------------------------------------------------------------

@@ -343,38 +343,25 @@ FORMATTER_DEPS = [
 _PROMPT_SUFFIX = " Answer with ONLY the exact command/value, no explanation."
 
 
-def _load_json_file(path):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except Exception:
-        return None
-
-
 def _load_contained_json(path, root):
     """Load one JSON fact only when its resolved file stays inside root."""
-    if not facts.is_file_within_root(root, path):
-        return None
-    return _load_json_file(path)
+    return facts.load_json_within_root(root, path)
 
 
 def detect_package_manager(root):
-    """Best-effort package-manager detection from lockfiles / packageManager."""
-    for fname, pm in PKG_MANAGER_LOCKFILES:
-        if (root / fname).is_file():
-            return pm
-    pkg = _load_json_file(root / "package.json")
-    if isinstance(pkg, dict):
-        field = pkg.get("packageManager")
-        if isinstance(field, str):
-            m = re.match(r"([A-Za-z]+)@", field)
-            if m:
-                return m.group(1).lower()
-    return None
+    """Ambiguity-safe package-manager detection from contained repository facts."""
+    managers = facts.lockfile_managers(root)
+    if len(managers) == 1:
+        return next(iter(managers))
+    if managers:
+        return None
+    return facts.package_manager_field(root)
 
 
 def _logical_source(path, root):
     """Return a repository-relative source path without leaking host paths."""
-    return Path(path).resolve().relative_to(root).as_posix()
+    lexical = Path(os.path.abspath(str(path)))
+    return lexical.relative_to(Path(root).resolve()).as_posix()
 
 
 def _ancestor_dirs(fact_root, repo_root):
@@ -394,25 +381,29 @@ def _ancestor_dirs(fact_root, repo_root):
 def _scoped_package_manager(fact_root, repo_root):
     """Return the nearest unambiguous package manager plus evidence paths."""
     for directory in _ancestor_dirs(fact_root, repo_root):
-        candidates = {}
+        lock_candidates = {}
         for filename, manager in PKG_MANAGER_LOCKFILES:
             path = directory / filename
             if facts.is_file_within_root(repo_root, path):
-                candidates.setdefault(manager, []).append(_logical_source(path, repo_root))
+                lock_candidates.setdefault(manager, []).append(_logical_source(path, repo_root))
+        if len(lock_candidates) > 1:
+            return None, []
         package_path = directory / "package.json"
         package = _load_contained_json(package_path, repo_root)
+        field_manager = None
         if isinstance(package, dict):
             field = package.get("packageManager")
             match = re.match(r"([A-Za-z]+)@", field) if isinstance(field, str) else None
             if match:
-                candidates.setdefault(match.group(1).lower(), []).append(
-                    _logical_source(package_path, repo_root)
-                )
-        if len(candidates) > 1:
-            return None, []
-        if len(candidates) == 1:
-            manager = next(iter(candidates))
-            return manager, sorted(set(candidates[manager]))
+                field_manager = match.group(1).lower()
+        if len(lock_candidates) == 1:
+            manager = next(iter(lock_candidates))
+            evidence = list(lock_candidates[manager])
+            if field_manager == manager:
+                evidence.append(_logical_source(package_path, repo_root))
+            return manager, sorted(set(evidence))
+        if field_manager is not None:
+            return field_manager, [_logical_source(package_path, repo_root)]
     return None, []
 
 
@@ -519,9 +510,12 @@ def generate_tasks(repo_root, target=None):
     )
     if scoped:
         pm, pm_evidence = _scoped_package_manager(fact_root, root)
+        manager_ambiguous = pm is None
     else:
+        root_managers = facts.lockfile_managers(root)
         pm = detect_package_manager(root)
         pm_evidence = []
+        manager_ambiguous = len(root_managers) > 1
 
     if pm:
         add(
@@ -545,7 +539,7 @@ def generate_tasks(repo_root, target=None):
         # deterministic command runner. Abstain rather than silently defaulting
         # package-local scripts to npm. Root generation keeps its historical
         # npm fallback byte-for-byte.
-        if not scoped or pm:
+        if pm or not manager_ambiguous:
             for name, phrase in SCRIPT_PROMPTS:
                 names = [name] if name in scripts else []
                 if scoped:
@@ -591,20 +585,12 @@ def generate_tasks(repo_root, target=None):
     if scoped:
         node_major, node_evidence = _scoped_node_version(fact_root, root)
     else:
-        node_major = None
+        node_major = facts.nvmrc_node_version(root)
         node_evidence = []
-        nvmrc = root / ".nvmrc"
-        if nvmrc.is_file():
-            m = re.search(r"(\d+)", nvmrc.read_text(encoding="utf-8", errors="replace"))
-            if m:
-                node_major = m.group(1)
-        if node_major is None and isinstance(pkg, dict):
-            engines = pkg.get("engines")
-            if isinstance(engines, dict) and isinstance(engines.get("node"), str):
-                m = re.search(r"(\d+)", engines["node"])
-                if m:
-                    node_major = m.group(1)
+        if node_major is None:
+            node_major = facts.engines_node_version(root)
     if node_major:
+        node_major = str(node_major)
         add(
             "node-version",
             "Which Node.js major version does this repo target?",
@@ -670,7 +656,7 @@ def generate_tasks(repo_root, target=None):
         )
     else:
         agents = root / "AGENTS.md"
-        agents_text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
+        agents_text = facts.read_text_within_root(root, agents, errors="replace") or ""
     if agents_text and re.search(r"(?i)conventional commit", agents_text):
         add(
             "commit-convention",
