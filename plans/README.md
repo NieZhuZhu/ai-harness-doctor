@@ -252,7 +252,7 @@ verification gate, and update its status here.
 | 033 | Derive eval health only from validated stored result records | P0 | M | — | DONE |
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | DONE |
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
-| 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | TODO |
+| 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | IN PROGRESS |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

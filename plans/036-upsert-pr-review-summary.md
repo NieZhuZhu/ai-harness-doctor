@@ -21,6 +21,7 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `43366d9`, 2026-07-16
+- **Implementation**: in progress on `fix/036-pr-review-summary-upsert`
 
 ## Why this matters
 
