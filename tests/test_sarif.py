@@ -272,6 +272,58 @@ class CliSmokeTests(unittest.TestCase):
         finally:
             td.cleanup()
 
+    def test_scan_baseline_excludes_known_debt_from_sarif_but_never_security(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            (repo / "package.json").write_text('{"scripts": {"build": "tsc"}}\n', encoding="utf-8")
+            (repo / "AGENTS.md").write_text(
+                f"# Project overview\n\nRun `npm run missing`.\n\nUse token {token} here.\n",
+                encoding="utf-8",
+            )
+            baseline = Path(td) / "scan-baseline.json"
+            write = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--write-baseline", str(baseline)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(write.returncode, 0, write.stdout + write.stderr)
+            payload = json.loads(baseline.read_text(encoding="utf-8"))
+            self.assertFalse(any(entry.get("family") == "security" for entry in payload["findings"]))
+
+            # Even if a user crafts a security-shaped entry, scan never consults
+            # baselines for security findings.
+            payload["findings"].append(
+                {
+                    "family": "security",
+                    "rule": "secret",
+                    "package": "",
+                    "path": "AGENTS.md",
+                    "message": "crafted",
+                }
+            )
+            baseline.write_text(json.dumps(payload), encoding="utf-8")
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--fail-on-security",
+                    "--fail-on-semantic",
+                    "--sarif",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            results = json.loads(proc.stdout)["runs"][0]["results"]
+            rule_ids = [result["ruleId"] for result in results]
+            self.assertIn("security/secret", rule_ids)
+            self.assertNotIn("semantic/command", rule_ids)
+
 
 if __name__ == "__main__":
     unittest.main()

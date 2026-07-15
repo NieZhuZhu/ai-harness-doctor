@@ -115,18 +115,29 @@ class CliInstallerTests(unittest.TestCase):
             agents = repo / "AGENTS.md"
             self.assertIn("# ai-harness-doctor:guard", hook.read_text(encoding="utf-8"))
             workflow_text = drift_workflow.read_text(encoding="utf-8")
+            checkup_text = checkup_workflow.read_text(encoding="utf-8")
             self.assertEqual(
                 workflow_text,
                 (ROOT / "assets" / "guard" / "harness-drift.yml").read_text(encoding="utf-8"),
             )
             self.assertEqual(
-                checkup_workflow.read_text(encoding="utf-8"),
+                checkup_text,
                 (ROOT / "assets" / "guard" / "harness-checkup.yml").read_text(encoding="utf-8"),
             )
             self.assertIn("npx -y ai-harness-doctor@latest drift . --strict", workflow_text)
             self.assertIn("npx -y ai-harness-doctor@latest review", workflow_text)
+            scan_gate = (
+                "scan . --fail-on-security --fail-on-gaps "
+                "--fail-on-semantic --fail-on-conflicts"
+            )
+            self.assertIn(scan_gate, workflow_text)
+            self.assertIn("SCAN_BASELINE: .ai-harness-doctor/scan-baseline.json", workflow_text)
+            self.assertIn("- .ai-harness-doctor/scan-baseline.json", workflow_text)
+            self.assertIn(scan_gate, checkup_text)
+            self.assertIn("steps.scan.outputs.status", checkup_text)
+            self.assertNotIn('npx -y ai-harness-doctor@latest scan . --write-baseline', workflow_text + checkup_text)
             self.assertNotIn("python3 scripts/", workflow_text)
-            self.assertIn("🩺 Harness checkup: drift detected", checkup_workflow.read_text(encoding="utf-8"))
+            self.assertIn("🩺 Harness checkup: issues detected", checkup_text)
             self.assertEqual(
                 agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1
             )
@@ -357,11 +368,17 @@ class CliInstallerTests(unittest.TestCase):
             repo = self.make_git_repo(Path(parent_dir))
             proc = self.run_cli(["guard", str(repo), "--apply", "--provider", "gitlab"], home, repo)
             self.assertIn("CI provider: gitlab", proc.stdout)
-            self.assertTrue((repo / ".gitlab" / "harness-ci.yml").exists())
+            pipeline = repo / ".gitlab" / "harness-ci.yml"
+            self.assertTrue(pipeline.exists())
+            pipeline_text = pipeline.read_text(encoding="utf-8")
+            self.assertIn("--fail-on-security", pipeline_text)
+            self.assertIn("--fail-on-conflicts", pipeline_text)
+            self.assertIn(".ai-harness-doctor/scan-baseline.json", pipeline_text)
+            self.assertNotIn("scan . --write-baseline", pipeline_text)
             self.assertFalse((repo / ".github" / "workflows" / "harness-drift.yml").exists())
             # remove cleans up the gitlab file too.
             self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
-            self.assertFalse((repo / ".gitlab" / "harness-ci.yml").exists())
+            self.assertFalse(pipeline.exists())
 
     def test_guard_provider_codebase_installs_portable_script(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
@@ -380,7 +397,13 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("cron:", pipeline_text)
             self.assertIn("harness-guard.sh", pipeline_text)
             # The portable script honours the AI_HARNESS_DOCTOR_SKIP escape hatch.
-            self.assertIn("AI_HARNESS_DOCTOR_SKIP", script.read_text(encoding="utf-8"))
+            script_text = script.read_text(encoding="utf-8")
+            self.assertIn("AI_HARNESS_DOCTOR_SKIP", script_text)
+            self.assertIn("run_scan_gate", script_text)
+            self.assertIn("--fail-on-conflicts", script_text)
+            self.assertIn("--fail-on-security", script_text)
+            self.assertIn(".ai-harness-doctor/scan-baseline.json", script_text)
+            self.assertNotIn("run scan . --write-baseline", script_text)
             # remove cleans up the codebase files too.
             self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
             self.assertFalse(script.exists())

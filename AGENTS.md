@@ -6,7 +6,7 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
 
 - `SKILL.md` — the skill contract and the four-phase workflow (Checkup → Treat → Follow-up → Efficacy).
 - `scripts/` — the deterministic Python engines, one per phase:
-  - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo. Monorepo-aware (`--monorepo` / auto-detects npm/yarn/pnpm workspaces) with per-package results and a top-level aggregate.
+  - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo. Monorepo-aware (`--monorepo` / auto-detects npm/yarn/pnpm workspaces) with per-package results, a top-level aggregate, and `--baseline`/`--write-baseline` adoption for existing non-security debt.
   - `semantic.py` — Phase 0 helper: compares AGENTS.md declarations (commands/paths/package manager/language version) against code facts across Node, Python, Go, Rust, Java, and Ruby ecosystems.
   - `canonicalize.py` — Phase 1 Treat: merge-plan skeleton with fact-aware conflict-default suggestions, `--draft` AGENTS.md auto-drafting, tool-stub downgrades, and validation.
   - `check_drift.py` — Phase 2 Follow-up: drift guard (D1–D8), health score, `--fix`, and `--baseline`/`--write-baseline` (fail only on new drift).
@@ -37,9 +37,11 @@ node bin/cli.js help
 - `bin/cli.js` must use Node >=16 standard library only; do not add npm runtime dependencies.
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
+- Scan baselines are transparent debt registers, never ignore files. HIGH security is ineligible. Each eligible family needs a deterministic root/package-aware fingerprint; line numbers are evidence, never identity. Keep suppressed debt visible and shrink baselines as it is repaired.
 - Public documentation is kept in synchronized English, Simplified Chinese, and Japanese READMEs; code comments are English; `assets/AGENTS.template.md` is English. Beyond the shared heading skeleton, the three READMEs must also keep byte-identical fenced code blocks (commands, JSON, and their inline `#` comments included) and the same number of table rows and links. Prose is translated; code blocks, table structure, and link targets are not. `scripts/check_readme_sync.py` (run via `npm run lint:docs`) enforces all of this, so any change to one README must be mirrored in the other two.
 - Guard suite templates live under `assets/guard/`; keep the pre-commit, PR gate, weekly checkup, and maintenance contract templates synchronized with `bin/cli.js` behavior. This repo self-bootstraps its own guard: `.github/workflows/harness-drift.yml` and `harness-checkup.yml` are adapted copies that run the local CLI (`node bin/cli.js drift . --strict`) against this repo; keep them in step with the templates.
 - Shipped guard templates must call only public packaged `ai-harness-doctor` CLI commands that work in a fresh consumer repository; never reference this source repo's `scripts/*.py`. Any guard-template behavior change requires an end-to-end consumer fixture with no local `scripts/` tree. Self-bootstrap workflows may deliberately use local scripts to test unmerged code and must be labeled as adapted copies.
+- Guard templates may consume the reviewed, committed default scan-baseline file; installers/CI never create or refresh it. Keep `--fail-on-security` active with baselines.
 - Every external GitHub Action in repository workflows and shipped guard templates must be pinned to a vetted full commit SHA with an adjacent `# owner/action@vN` update hint. Dependabot's weekly `github-actions` updates are the only routine pin-refresh path; review those PRs like code, and move self-hosted/template copies together. Keep `.github/workflows/test.yml` on pull requests plus pushes to `main` only so PR branches do not run the full matrix twice.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
 

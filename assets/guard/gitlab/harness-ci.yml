@@ -21,6 +21,14 @@ harness-drift:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
   script:
+    - |
+      set -- scan . --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts
+      # Optional adoption path: commit this reviewed debt register. The guard
+      # never creates it, and HIGH security findings are never suppressible.
+      if [ -f .ai-harness-doctor/scan-baseline.json ]; then
+        set -- "$@" --baseline .ai-harness-doctor/scan-baseline.json
+      fi
+      npx -y ai-harness-doctor@latest "$@"
     - npx -y ai-harness-doctor@latest drift . --strict
     - |
       RESULTS="benchmark/self-eval/results-after-graded.json"
@@ -36,9 +44,21 @@ harness-checkup:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
   script:
-    - npx -y ai-harness-doctor@latest scan . > harness-scan-report.md
-    - set +e; npx -y ai-harness-doctor@latest drift . --strict > harness-drift-report.md 2>&1; echo "drift exit=$?"
-    - cat harness-scan-report.md harness-drift-report.md
+    - |
+      set +e
+      set -- scan . --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts
+      if [ -f .ai-harness-doctor/scan-baseline.json ]; then
+        set -- "$@" --baseline .ai-harness-doctor/scan-baseline.json
+      fi
+      npx -y ai-harness-doctor@latest "$@" > harness-scan-report.md 2>&1
+      scan_status=$?
+      npx -y ai-harness-doctor@latest drift . --strict > harness-drift-report.md 2>&1
+      drift_status=$?
+      cat harness-scan-report.md harness-drift-report.md
+      if [ "$scan_status" -ne 0 ]; then
+        exit "$scan_status"
+      fi
+      exit "$drift_status"
   artifacts:
     when: always
     paths:
