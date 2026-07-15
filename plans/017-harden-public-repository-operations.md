@@ -319,16 +319,48 @@ Mark Plan 017 DONE.
 
 ## Done criteria
 
-- [ ] Community profile recognizes security/contribution templates.
-- [ ] Vulnerability reports have a private supported route.
-- [ ] npm and GitHub Actions receive Dependabot updates.
-- [ ] New stable releases supersede old Marketplace reminders safely.
-- [ ] Supported secret scanning/push protection/Dependabot settings are enabled
+- [x] Community profile recognizes security/contribution templates (GitHub
+  read-back: 100% community health).
+- [x] Vulnerability reports have a private supported route (Private
+  Vulnerability Reporting read-back: enabled).
+- [x] npm and GitHub Actions receive weekly Dependabot updates.
+- [x] New stable releases supersede old Marketplace reminders safely; existing
+  #98, #99, #104, and #111 were closed as superseded.
+- [x] Supported secret scanning/push protection/Dependabot settings are enabled
   and read back as enabled.
-- [ ] Main requires every proven PR CI context plus conversation resolution.
-- [ ] Admin bypass remains documented solely for self-approval deadlock.
-- [ ] Fresh public-registry `npm ci` passes.
-- [ ] `npm run check` passes and strict self-drift remains Grade A.
+- [x] Main requires every proven PR CI context plus conversation resolution.
+- [x] Admin bypass remains documented solely for self-approval deadlock.
+- [x] Fresh public-registry `npm ci` passes.
+- [x] `npm run check` passes and strict self-drift remains Grade A.
+
+## Completion evidence (2026-07-15)
+
+- File PR #143 passed all nine CI contexts and merged before any remote setting
+  changed.
+- Remote read-back after the merged PR:
+  - community profile: 100%;
+  - Private Vulnerability Reporting: enabled;
+  - secret scanning: enabled;
+  - push protection: enabled;
+  - Dependabot security updates: enabled;
+  - secret-scanning validity checks: unavailable/disabled for this
+    repository/account even after an accepted repository PATCH, so they are
+    explicitly not claimed as enabled;
+  - required status checks: strict `drift`, `lint`, Node 16/20/22,
+    `self-test`, Python 3.9/3.10/3.12;
+  - conversation resolution: enabled;
+  - one approving review retained; force pushes/deletions disabled; admin
+    enforcement remains disabled for sole-maintainer self-approval deadlock.
+- Branch-protection API diagnostics:
+  - the first complete request failed because an organization-only
+    `dismissal_restrictions` object was included;
+  - the second failed because GitHub still requires top-level
+    `restrictions` for a personal repository;
+  - the successful payload omitted dismissal restrictions but preserved
+    `"restrictions": null`, then read back every protected setting.
+- This documentation-only completion PR is the live required-context proof. It
+  must pass all nine checks before the admin squash merge; admin bypass is not
+  used to skip any failing/pending context.
 
 ## STOP conditions
 
