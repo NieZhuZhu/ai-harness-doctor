@@ -94,7 +94,8 @@ Releases are tag-driven and published by GitHub Actions. See `RELEASING.md` for
 the full flow. In short, a maintainer bumps the version on `main`
 (`npm version <patch|minor|major>`) and pushes the tag; CI verifies the tag
 matches `package.json` and its exact commit is reachable from `origin/main`,
-publishes to npm with provenance, and creates a GitHub Release with
+verifies an already-published npm version has matching source/tarball identity,
+publishes new versions with provenance, and creates a GitHub Release with
 auto-generated notes. There is no `CHANGELOG.md`; the GitHub Release notes are
 the canonical change history.
 

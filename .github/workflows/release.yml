@@ -153,16 +153,105 @@ jobs:
             echo "Stable release $GITHUB_REF_NAME will publish to npm tag $npm_tag and update Action tag $floating_tag."
           fi
 
-      - name: Check whether this version is already on npm
+      - name: Verify published npm identity or mark version unpublished
         id: npm_version
         run: |
+          set -euo pipefail
           version="$(node -p "require('./package.json').version")"
-          if npm view "ai-harness-doctor@$version" version >/dev/null 2>&1; then
-            echo "ai-harness-doctor@$version is already published; skipping npm publish."
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-          else
+          release_commit="$(git rev-parse --verify "$GITHUB_REF_NAME^{commit}")"
+          registry_metadata="$RUNNER_TEMP/npm-view-$version.json"
+          registry_stderr="$RUNNER_TEMP/npm-view-$version.stderr"
+
+          set +e
+          npm view "ai-harness-doctor@$version" version gitHead dist.shasum --json \
+            > "$registry_metadata" 2> "$registry_stderr"
+          lookup_status=$?
+          set -e
+
+          export REGISTRY_METADATA_FILE="$registry_metadata"
+          export LOOKUP_STATUS="$lookup_status"
+          lookup_state="$(
+            node <<'NODE'
+          const fs = require("node:fs");
+          const status = Number(process.env.LOOKUP_STATUS);
+          let payload;
+          try {
+            payload = JSON.parse(fs.readFileSync(process.env.REGISTRY_METADATA_FILE, "utf8"));
+          } catch (_) {
+            console.error(`npm registry lookup returned invalid JSON (status ${status})`);
+            process.exit(1);
+          }
+          if (status === 0 && payload && typeof payload === "object" && !payload.error) {
+            process.stdout.write("present");
+          } else if (status !== 0 && payload && payload.error && payload.error.code === "E404") {
+            process.stdout.write("missing");
+          } else {
+            console.error(`npm registry lookup failed (status ${status})`);
+            process.exit(1);
+          }
+          NODE
+          )"
+
+          if [ "$lookup_state" = "missing" ]; then
+            echo "ai-harness-doctor@$version is not published yet."
             echo "already_published=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          pack_metadata="$RUNNER_TEMP/npm-pack-$version.json"
+          npm pack --dry-run --json > "$pack_metadata"
+
+          export PACK_METADATA_FILE="$pack_metadata"
+          export EXPECTED_COMMIT="$release_commit"
+          export EXPECTED_VERSION="$version"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const registry = JSON.parse(
+            fs.readFileSync(process.env.REGISTRY_METADATA_FILE, "utf8"),
+          );
+          const packedValue = JSON.parse(
+            fs.readFileSync(process.env.PACK_METADATA_FILE, "utf8"),
+          );
+          const packed = Array.isArray(packedValue) && packedValue.length === 1
+            ? packedValue[0]
+            : null;
+          const fail = (message) => {
+            console.error(`Refusing release rerun: ${message}`);
+            process.exit(1);
+          };
+          if (!registry || registry.version !== process.env.EXPECTED_VERSION) {
+            fail("registry version does not match package.json");
+          }
+          if (
+            typeof registry.gitHead !== "string"
+            || !/^[0-9a-f]{40}$/.test(registry.gitHead)
+          ) {
+            fail("registry gitHead is missing or malformed");
+          }
+          if (registry.gitHead !== process.env.EXPECTED_COMMIT) {
+            fail("registry gitHead does not match the exact release tag commit");
+          }
+          const registryShasum = registry["dist.shasum"];
+          if (
+            typeof registryShasum !== "string"
+            || !/^[0-9a-f]{40}$/.test(registryShasum)
+          ) {
+            fail("registry dist.shasum is missing or malformed");
+          }
+          if (
+            !packed
+            || typeof packed.shasum !== "string"
+            || !/^[0-9a-f]{40}$/.test(packed.shasum)
+          ) {
+            fail("npm pack metadata is missing or malformed");
+          }
+          if (packed.shasum !== registryShasum) {
+            fail("npm pack shasum does not match the published artifact");
+          }
+          NODE
+
+          echo "Verified ai-harness-doctor@$version matches $release_commit and the packed artifact; skipping npm publish."
+          echo "already_published=true" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm
         if: steps.npm_version.outputs.already_published != 'true'

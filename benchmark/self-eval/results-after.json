@@ -25,6 +25,7 @@
     {"id": "repository-operations", "stdout": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI."},
     {"id": "public-dependency-source", "stdout": "registry.npmjs.org"},
     {"id": "nested-instruction-scope", "stdout": "Same-scope differences are conflicts; ancestor-to-descendant differences are visible non-blocking overrides."},
-    {"id": "oversize-scan-coverage", "stdout": "--max-bytes limits semantic text only; full-file SHA, line count, and security checks still cover the complete file with bounded memory."}
+    {"id": "oversize-scan-coverage", "stdout": "--max-bytes limits semantic text only; full-file SHA, line count, and security checks still cover the complete file with bounded memory."},
+    {"id": "release-rerun-identity", "stdout": "A rerun may skip npm only when the published gitHead and packed tarball shasum match the exact release tag."}
   ]
 }

@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import textwrap
 import unittest
 from pathlib import Path
@@ -365,7 +366,7 @@ class ActionMetadataTests(unittest.TestCase):
         step_name = "Verify release tag is reachable from main"
         script = self._run_script(RELEASE, step_name)
         ancestry = text.index(step_name)
-        npm_lookup = text.index("Check whether this version is already on npm")
+        npm_lookup = text.index("Verify published npm identity or mark version unpublished")
         publish = text.index("Publish to npm")
         self.assertLess(ancestry, npm_lookup)
         self.assertLess(ancestry, publish)
@@ -414,6 +415,143 @@ class ActionMetadataTests(unittest.TestCase):
             )
             self.assertEqual(rejected.returncode, 1)
             self.assertIn("not reachable from origin/main", rejected.stderr)
+
+    def _run_release_identity(
+        self,
+        mode,
+        git_head=None,
+        registry_shasum=None,
+        pack_shasum=None,
+        registry_version="1.2.3",
+        annotated=False,
+    ):
+        script = self._run_script(RELEASE, "Verify published npm identity or mark version unpublished")
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            runner_temp = base / "runner"
+            bin_dir = base / "bin"
+            repo.mkdir()
+            runner_temp.mkdir()
+            bin_dir.mkdir()
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+            (repo / "package.json").write_text(
+                '{"name":"ai-harness-doctor","version":"1.2.3"}\n',
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "package.json"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "release"], cwd=repo, check=True, capture_output=True)
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+            tag_args = ["git", "tag"]
+            if annotated:
+                tag_args.extend(["-a", "-m", "release"])
+            tag_args.append("v1.2.3")
+            subprocess.run(tag_args, cwd=repo, check=True)
+
+            npm = bin_dir / "npm"
+            npm.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, sys\n"
+                "command = sys.argv[1] if len(sys.argv) > 1 else ''\n"
+                "if command == 'view':\n"
+                "    mode = os.environ['MOCK_NPM_MODE']\n"
+                "    if mode == 'missing':\n"
+                "        print(json.dumps({'error': {'code': 'E404'}}))\n"
+                "        raise SystemExit(1)\n"
+                "    if mode == 'network':\n"
+                "        print(json.dumps({'error': {'code': 'ECONNRESET'}}))\n"
+                "        raise SystemExit(1)\n"
+                "    if mode == 'malformed-json':\n"
+                "        print('not-json')\n"
+                "        raise SystemExit(1)\n"
+                "    print(json.dumps({\n"
+                "        'version': os.environ.get('MOCK_VERSION', '1.2.3'),\n"
+                "        'gitHead': os.environ.get('MOCK_GIT_HEAD'),\n"
+                "        'dist.shasum': os.environ.get('MOCK_REGISTRY_SHASUM'),\n"
+                "    }))\n"
+                "elif command == 'pack':\n"
+                "    if os.environ['MOCK_NPM_MODE'] == 'pack-malformed':\n"
+                "        print(json.dumps([]))\n"
+                "    else:\n"
+                "        print(json.dumps([{'shasum': os.environ.get('MOCK_PACK_SHASUM')}]))\n"
+                "else:\n"
+                "    raise SystemExit('unexpected npm command: ' + command)\n",
+                encoding="utf-8",
+            )
+            npm.chmod(0o755)
+            output = base / "github-output"
+            env = {
+                **os.environ,
+                "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                "GITHUB_REF_NAME": "v1.2.3",
+                "GITHUB_OUTPUT": str(output),
+                "RUNNER_TEMP": str(runner_temp),
+                "MOCK_NPM_MODE": mode,
+                "MOCK_GIT_HEAD": git_head if git_head is not None else commit,
+                "MOCK_VERSION": registry_version,
+                "MOCK_REGISTRY_SHASUM": registry_shasum if registry_shasum is not None else "a" * 40,
+                "MOCK_PACK_SHASUM": pack_shasum if pack_shasum is not None else "a" * 40,
+            }
+            proc = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", script],
+                cwd=repo,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            return proc, output.read_text(encoding="utf-8") if output.exists() else "", commit
+
+    def test_release_existing_version_requires_matching_source_and_artifact_identity(self):
+        for annotated in (False, True):
+            with self.subTest(annotated=annotated):
+                proc, output, _commit = self._run_release_identity("present", annotated=annotated)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertIn("already_published=true", output)
+
+        mismatches = [
+            {"git_head": "b" * 40, "expected": "gitHead does not match"},
+            {"git_head": "not-a-commit", "expected": "gitHead is missing or malformed"},
+            {"registry_version": "1.2.4", "expected": "version does not match"},
+            {"registry_shasum": "not-a-sha", "expected": "dist.shasum is missing or malformed"},
+            {"pack_shasum": "b" * 40, "expected": "pack shasum does not match"},
+            {"mode": "pack-malformed", "expected": "pack metadata is missing or malformed"},
+        ]
+        for case in mismatches:
+            with self.subTest(case=case):
+                params = dict(case)
+                expected = params.pop("expected")
+                mode = params.pop("mode", "present")
+                proc, output, _commit = self._run_release_identity(mode, **params)
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertNotIn("already_published=true", output)
+                self.assertIn(expected, proc.stderr)
+
+    def test_release_distinguishes_npm_not_found_from_lookup_failure(self):
+        missing, output, _commit = self._run_release_identity("missing")
+        self.assertEqual(missing.returncode, 0, missing.stdout + missing.stderr)
+        self.assertIn("already_published=false", output)
+
+        for mode in ("network", "malformed-json"):
+            with self.subTest(mode=mode):
+                failed, output, _commit = self._run_release_identity(mode)
+                self.assertNotEqual(failed.returncode, 0)
+                self.assertNotIn("already_published=false", output)
+                self.assertNotIn("already_published=true", output)
+
+    def test_release_identity_guard_precedes_every_release_write(self):
+        text = RELEASE.read_text(encoding="utf-8")
+        guard = text.index("Verify published npm identity or mark version unpublished")
+        self.assertLess(guard, text.index("Publish to npm"))
+        self.assertLess(guard, text.index("Create GitHub Release if missing"))
+        self.assertLess(guard, text.index("Update floating Action tag"))
+        script = self._run_script(RELEASE, "Verify published npm identity or mark version unpublished")
+        self.assertIn('git rev-parse --verify "$GITHUB_REF_NAME^{commit}"', script)
+        self.assertIn("gitHead", script)
+        self.assertIn("dist.shasum", script)
+        self.assertIn("npm pack --dry-run --json", script)
+        self.assertNotIn("|| true", script)
 
     def test_release_self_tests_before_publish_and_after_floating_tag(self):
         text = RELEASE.read_text(encoding="utf-8")
