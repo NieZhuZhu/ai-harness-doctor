@@ -507,14 +507,23 @@ class CliInstallerTests(unittest.TestCase):
             )
             self.assertIn("npx -y ai-harness-doctor@latest drift . --strict", workflow_text)
             self.assertIn("npx -y ai-harness-doctor@latest review", workflow_text)
-            scan_gate = (
-                "scan . --fail-on-security --fail-on-gaps "
-                "--fail-on-semantic --fail-on-conflicts"
-            )
-            self.assertIn(scan_gate, workflow_text)
+            for gate in (
+                "--fail-on-security",
+                "--fail-on-gaps",
+                "--fail-on-semantic",
+                "--fail-on-conflicts",
+            ):
+                self.assertIn(gate, workflow_text)
             self.assertIn("SCAN_BASELINE: .ai-harness-doctor/scan-baseline.json", workflow_text)
             self.assertIn('scan_args+=(--baseline "$SCAN_BASELINE")', workflow_text)
-            self.assertIn(scan_gate, checkup_text)
+            self.assertIn("--report scan-report.json", workflow_text)
+            self.assertIn("--report drift-report.json", workflow_text)
+            self.assertEqual(workflow_text.count("--post"), 1)
+            self.assertIn(
+                "scan . --fail-on-security --fail-on-gaps "
+                "--fail-on-semantic --fail-on-conflicts",
+                checkup_text,
+            )
             self.assertIn("steps.scan.outputs.status", checkup_text)
             self.assertNotIn('npx -y ai-harness-doctor@latest scan . --write-baseline', workflow_text + checkup_text)
             self.assertNotIn("python3 scripts/", workflow_text)
@@ -569,6 +578,80 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("body", payload)
             self.assertIn("comments", payload)
             self.assertIn("ai-harness-doctor:pr-review", payload["body"])
+
+    def test_guard_consumer_combines_scan_and_drift_findings_in_one_review(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+            self.assertFalse((repo / "scripts").exists())
+
+            agents = repo / "AGENTS.md"
+            agents.write_text(
+                agents.read_text(encoding="utf-8")
+                + "\nBroken reference: [missing guide](docs/missing.md).\n",
+                encoding="utf-8",
+            )
+            settings = repo / ".claude" / "settings.json"
+            settings.parent.mkdir()
+            settings.write_text(
+                json.dumps({"permissions": {"allow": ["Bash(*)"]}}) + "\n",
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+
+            reports = []
+            for name, args in (
+                ("scan-report.json", ["scan", str(repo), "--json"]),
+                ("drift-report.json", ["drift", str(repo), "--strict", "--json"]),
+            ):
+                proc = subprocess.run(
+                    ["node", str(CLI), *args],
+                    cwd=str(repo),
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertTrue(proc.stdout.strip(), proc.stderr)
+                json.loads(proc.stdout)
+                report = repo / name
+                report.write_text(proc.stdout, encoding="utf-8")
+                reports.append(report)
+
+            review = subprocess.run(
+                [
+                    "node",
+                    str(CLI),
+                    "review",
+                    "--report",
+                    str(reports[0]),
+                    "--report",
+                    str(reports[1]),
+                    "--default-path",
+                    "AGENTS.md",
+                ],
+                cwd=str(repo),
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(review.returncode, 0, review.stderr)
+            payload = json.loads(review.stdout)
+            body = payload["body"]
+            self.assertEqual(body.count("Broad agent permission"), 2)
+            self.assertEqual(body.count("Markdown-link drift"), 2)
+            self.assertIn("Bash(*)", body)
+            self.assertIn("docs/missing.md", body)
+            d7_comments = [
+                comment
+                for comment in payload["comments"]
+                if "D7 · Markdown-link drift" in comment["body"]
+            ]
+            self.assertEqual(len(d7_comments), 1)
+            self.assertEqual(d7_comments[0]["path"], "AGENTS.md")
 
     def test_guard_without_agents_exits_1(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:

@@ -181,6 +181,13 @@ class BuildReviewTests(unittest.TestCase):
     def test_collects_from_scan_and_drift_shapes(self):
         report = {
             "findings": [{"check": "D3", "path": "CLAUDE.md", "message": "regrew"}],
+            "warnings": [
+                {
+                    "level": "WARN",
+                    "path": "AGENTS.md",
+                    "message": "AGENTS.md is oversized",
+                }
+            ],
             "gaps": [{"check": "G1", "level": "ERROR", "message": "no AGENTS.md"}],
             "semantic": {
                 "findings": [
@@ -195,7 +202,272 @@ class BuildReviewTests(unittest.TestCase):
             },
         }
         findings = pr_review.collect_findings(report)
-        self.assertEqual(len(findings), 3)
+        self.assertEqual(len(findings), 4)
+        self.assertEqual(findings[1]["category"], "size")
+        self.assertIn("Instruction size warning", pr_review.build_review(report)["body"])
+
+    def test_collects_conflicts_and_excludes_baselined_debt(self):
+        report = {
+            "conflicts": [
+                {
+                    "signal": "package_manager",
+                    "values": {
+                        "pnpm": [{"path": "AGENTS.md", "line": 4}],
+                        "npm": [{"path": "CLAUDE.md", "line": 2}],
+                    },
+                }
+            ],
+            "baselined": [
+                {
+                    "family": "conflict",
+                    "rule": "formatter",
+                    "message": "old accepted debt",
+                    "values": ["eslint", "prettier"],
+                }
+            ],
+        }
+
+        findings = pr_review.collect_findings(report)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["category"], "conflict/package_manager")
+        self.assertEqual(findings[0]["level"], "WARN")
+        self.assertEqual(findings[0]["values"], ["npm", "pnpm"])
+        self.assertEqual(
+            findings[0]["message"],
+            "Conflicting package_manager declarations: npm, pnpm",
+        )
+        self.assertEqual(
+            findings[0]["evidence"],
+            ["npm: CLAUDE.md:2", "pnpm: AGENTS.md:4"],
+        )
+        self.assertNotIn("old accepted debt", json.dumps(findings))
+
+    def test_monorepo_findings_are_prefixed_and_attributed(self):
+        report = {
+            "packages": [
+                {
+                    "path": "packages/app",
+                    "name": "app",
+                    "report": {
+                        "security": [
+                            {
+                                "category": "secret",
+                                "level": "HIGH",
+                                "path": ".claude/settings.json",
+                                "line": 6,
+                                "message": "secret-shaped value",
+                            }
+                        ],
+                        "semantic": {
+                            "findings": [
+                                {
+                                    "category": "command",
+                                    "level": "MISMATCH",
+                                    "line": 8,
+                                    "message": "command mismatch",
+                                }
+                            ]
+                        },
+                        "gaps": [
+                            {
+                                "check": "G2",
+                                "level": "WARN",
+                                "message": "missing Safety section",
+                            }
+                        ],
+                        "conflicts": [
+                            {
+                                "signal": "quote_style",
+                                "values": {"single": [], "double": []},
+                            }
+                        ],
+                    },
+                }
+            ]
+        }
+
+        payload = pr_review.build_review(report, default_path="AGENTS.md")
+
+        self.assertEqual(payload["inline_count"], 2)
+        self.assertEqual(
+            [(comment["path"], comment["line"]) for comment in payload["comments"]],
+            [
+                ("packages/app/.claude/settings.json", 6),
+                ("packages/app/AGENTS.md", 8),
+            ],
+        )
+        self.assertEqual(payload["summary_count"], 2)
+        self.assertIn("packages/app/AGENTS.md", payload["body"])
+        self.assertIn("conflict/quote_style", payload["body"])
+        self.assertIn("- **Package:** packages/app", payload["body"])
+
+    def test_package_conflict_evidence_uses_prefixed_paths(self):
+        report = {
+            "packages": [
+                {
+                    "path": "packages/app",
+                    "report": {
+                        "conflicts": [
+                            {
+                                "signal": "package_manager",
+                                "values": {
+                                    "npm": [{"path": "CLAUDE.md", "line": 2}],
+                                    "pnpm": [{"path": "AGENTS.md", "line": 4}],
+                                },
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+
+        findings = pr_review.collect_findings(report)
+
+        self.assertEqual(
+            findings[0]["evidence"],
+            [
+                "npm: packages/app/CLAUDE.md:2",
+                "pnpm: packages/app/AGENTS.md:4",
+            ],
+        )
+
+    def test_batch_repo_findings_are_summary_only_without_resolved_path_leak(self):
+        report = {
+            "repos": [
+                {
+                    "path": "/private/tmp/work/repo-a",
+                    "resolved": "/private/tmp/work/repo-a",
+                    "name": "repo-a-package",
+                    "report": {
+                        "semantic": {
+                            "findings": [
+                                {
+                                    "category": "path",
+                                    "level": "MISMATCH",
+                                    "path": "AGENTS.md",
+                                    "line": 9,
+                                    "message": "path mismatch",
+                                }
+                            ]
+                        }
+                    },
+                },
+                {
+                    "path": "/private/tmp/work/missing",
+                    "resolved": "/private/tmp/work/missing",
+                    "error": "not a directory",
+                },
+            ]
+        }
+
+        payload = pr_review.build_review(report, default_path="AGENTS.md")
+
+        self.assertEqual(payload["comments"], [])
+        self.assertEqual(payload["summary_count"], 1)
+        self.assertIn("- **Repository:** repo-a-package (repo-a)", payload["body"])
+        self.assertIn("AGENTS.md:9", payload["body"])
+        self.assertNotIn("/private/tmp", payload["body"])
+        self.assertNotIn("not a directory", payload["body"])
+
+    def test_batch_absolute_finding_path_is_not_rendered(self):
+        report = {
+            "repos": [
+                {
+                    "path": "/private/tmp/work/repo-a",
+                    "name": "repo-a",
+                    "report": {
+                        "custom": [
+                            {
+                                "rule": "custom",
+                                "level": "WARN",
+                                "path": "/private/tmp/work/repo-a/secret.txt",
+                                "message": "custom finding",
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+
+        payload = pr_review.build_review(report)
+
+        self.assertEqual(payload["summary_count"], 1)
+        self.assertIn("- **Repository:** repo-a", payload["body"])
+        self.assertNotIn("/private/tmp", payload["body"])
+        self.assertNotIn("secret.txt", payload["body"])
+
+    def test_duplicate_report_entries_are_emitted_once_in_input_order(self):
+        first = {"check": "D4", "level": "ERROR", "message": "first"}
+        second = {"check": "D8", "level": "ERROR", "message": "second"}
+        report = {"reports": [{"findings": [first, second]}, {"findings": [first]}]}
+
+        findings = pr_review.collect_findings(report)
+
+        self.assertEqual([finding["message"] for finding in findings], ["first", "second"])
+
+    def test_root_and_package_duplicate_is_emitted_once(self):
+        duplicate = {
+            "category": "secret",
+            "level": "HIGH",
+            "path": "packages/app/.claude/settings.json",
+            "message": "same root-indexed finding",
+        }
+        report = {
+            "security": [duplicate],
+            "packages": [
+                {
+                    "path": "packages/app",
+                    "report": {
+                        "security": [
+                            {
+                                **duplicate,
+                                "path": ".claude/settings.json",
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+
+        findings = pr_review.collect_findings(report)
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["path"], "packages/app/.claude/settings.json")
+
+    def test_same_unlocated_conflict_in_two_packages_keeps_both_attributions(self):
+        conflict = {
+            "signal": "package_manager",
+            "values": {"npm": [], "pnpm": []},
+        }
+        report = {
+            "packages": [
+                {"path": "packages/a", "report": {"conflicts": [conflict]}},
+                {"path": "packages/b", "report": {"conflicts": [conflict]}},
+            ]
+        }
+
+        findings = pr_review.collect_findings(report)
+
+        self.assertEqual(len(findings), 2)
+        self.assertEqual(
+            [finding["_review_package"] for finding in findings],
+            ["packages/a", "packages/b"],
+        )
+
+    def test_non_positive_or_unsafe_locations_never_become_inline(self):
+        report = {
+            "findings": [
+                {"check": "D2", "level": "ERROR", "path": "AGENTS.md", "line": 0, "message": "zero"},
+                {"check": "D2", "level": "ERROR", "path": "../outside", "line": 2, "message": "escape"},
+                {"check": "D2", "level": "ERROR", "path": "/tmp/absolute", "line": 3, "message": "absolute"},
+            ]
+        }
+
+        payload = pr_review.build_review(report)
+
+        self.assertEqual(payload["comments"], [])
+        self.assertEqual(payload["summary_count"], 3)
 
     def test_body_is_deterministic(self):
         report = {"findings": [{"check": "D4", "level": "ERROR", "message": "m"}]}
@@ -268,6 +540,40 @@ class CliTests(unittest.TestCase):
             Path(path).unlink()
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn(pr_review.MARKER, json.loads(proc.stdout)["body"])
+
+    def test_dry_run_combines_repeated_report_files_into_one_review(self):
+        import tempfile
+
+        paths = []
+        try:
+            for report in (
+                {"security": [{"category": "secret", "level": "HIGH", "message": "scan-only"}]},
+                {"findings": [{"check": "D4", "level": "ERROR", "message": "drift-only"}]},
+            ):
+                with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+                    json.dump(report, fh)
+                    paths.append(fh.name)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(PR_REVIEW),
+                    "--report",
+                    paths[0],
+                    "--report",
+                    paths[1],
+                ],
+                text=True,
+                capture_output=True,
+            )
+        finally:
+            for path in paths:
+                Path(path).unlink()
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["summary_count"], 2)
+        self.assertIn("scan-only", payload["body"])
+        self.assertIn("drift-only", payload["body"])
 
     def test_dry_run_default_never_posts(self):
         # Ensure the default main() path prints JSON and does not invoke the

@@ -56,7 +56,7 @@ verification gate, and update its status here.
 | 007 | Baseline non-security scan debt so CI gates only new findings | P2 | M | 004 | DONE |
 | 008 | Make every installer mutation ownership-aware and preserve repository state | P0 | M | — | DONE |
 | 009 | Make PR guard triggers cover every security and semantic scan input | P0 | M | — | DONE |
-| 010 | Deliver every active scan finding as attributed PR feedback | P1 | M | 009 | TODO |
+| 010 | Deliver every active scan finding as attributed PR feedback | P1 | M | 009 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

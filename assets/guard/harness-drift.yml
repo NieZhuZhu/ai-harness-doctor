@@ -28,7 +28,7 @@ jobs:
         env:
           SCAN_BASELINE: .ai-harness-doctor/scan-baseline.json
         run: |
-          scan_args=(scan . --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts)
+          scan_args=(scan . --json --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts)
           # Optional adoption path: commit this explicit debt register after
           # reviewing `scan . --write-baseline "$SCAN_BASELINE"`.
           # The guard never creates or refreshes it automatically, and HIGH
@@ -36,25 +36,35 @@ jobs:
           if [ -f "$SCAN_BASELINE" ]; then
             scan_args+=(--baseline "$SCAN_BASELINE")
           fi
-          npx -y ai-harness-doctor@latest "${scan_args[@]}"
+          set +e
+          npx -y ai-harness-doctor@latest "${scan_args[@]}" > scan-report.json
+          scan_status=$?
+          set -e
+          cat scan-report.json
+          exit "$scan_status"
       - name: Check AI harness drift
         if: ${{ always() }}
-        run: npx -y ai-harness-doctor@latest drift . --strict
-      # On a pull request, surface drift findings as inline PR review comments.
-      # check_drift.py --json emits a machine-readable report; pr_review.py turns
-      # located findings into inline comments and posts a single review. It runs
-      # even when the gate above failed so reviewers see the annotations. Drift
-      # findings (D1/D2/D6) are line-based against AGENTS.md, so --default-path
-      # attaches them to that file. Anchor comments to the PR head commit, not
-      # github.sha (which can be a synthetic merge ref).
-      - name: Post drift findings as PR review comments
+        shell: bash
+        run: |
+          set +e
+          npx -y ai-harness-doctor@latest drift . --strict --json > drift-report.json
+          drift_status=$?
+          set -e
+          cat drift-report.json
+          exit "$drift_status"
+      # On a pull request, combine active scan + drift findings into one review.
+      # Baselined scan debt is not active and is therefore not posted. Located
+      # findings become inline comments; the complete summary preserves
+      # unlocated/conflict findings and the HTTP-422 fallback. Anchor comments
+      # to the PR head commit, not github.sha (a synthetic merge ref).
+      - name: Post scan and drift findings as one PR review
         if: ${{ always() && github.event_name == 'pull_request' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          npx -y ai-harness-doctor@latest drift . --json > drift-report.json || true
           npx -y ai-harness-doctor@latest review \
+            --report scan-report.json \
             --report drift-report.json \
             --default-path AGENTS.md \
             --post \

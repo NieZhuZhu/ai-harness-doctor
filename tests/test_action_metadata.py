@@ -118,10 +118,23 @@ class ActionMetadataTests(unittest.TestCase):
             "--fail-on-conflicts",
         ):
             self.assertIn(gate, combined)
-        self.assertIn("if: ${{ always() }}\n        run: node bin/cli.js drift . --strict", drift)
+        self.assertIn("node bin/cli.js scan . --json", drift)
+        self.assertIn("node bin/cli.js drift . --strict --json > drift-report.json", drift)
+        self.assertIn('exit "$scan_status"', drift)
+        self.assertIn('exit "$drift_status"', drift)
         self.assertIn("steps.scan.outputs.status", checkup)
         self.assertIn("🩺 Harness checkup: issues detected", checkup)
         self.assertNotIn("--write-baseline", combined)
+
+    def test_github_guard_posts_one_combined_scan_and_drift_review(self):
+        for path in (HARNESS_DRIFT_TEMPLATE, HARNESS_DRIFT):
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertEqual(text.count("> scan-report.json"), 1)
+                self.assertEqual(text.count("> drift-report.json"), 1)
+                self.assertEqual(text.count("--report scan-report.json"), 1)
+                self.assertEqual(text.count("--report drift-report.json"), 1)
+                self.assertEqual(text.count("--post"), 1)
 
     def test_github_guard_runs_on_every_pull_request(self):
         # D2/D7 can depend on any repo-relative path named by AGENTS.md, so no
