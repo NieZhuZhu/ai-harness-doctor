@@ -99,4 +99,7 @@ Release notes are the canonical change history.
 
 Dependency updates for npm development tooling and immutable GitHub Action pins
 are opened weekly by Dependabot. Treat them as code changes and require the
-same matrix before merge.
+same matrix before merge. Because this is a public package and Dependabot runs
+on GitHub-hosted infrastructure, keep committed npm tarball sources on
+`registry.npmjs.org`; a successful real update check, not merely a valid
+`.github/dependabot.yml`, is the operational health signal.

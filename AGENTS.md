@@ -44,7 +44,7 @@ node bin/cli.js help
 - Keep `assets/guard/` and adapted self-bootstrap workflows synchronized. GitHub drift guards run every PR without path filters because D2/D7 can depend on any path named by `AGENTS.md`; preserve trigger tests and the reviewed baseline.
 - Shipped guards/pre-commit hooks call only packaged public CLI commands usable without a local `scripts/` tree; behavior changes need an end-to-end consumer fixture. Self-bootstrap copies may use local code only when labeled.
 - Guard templates may consume the reviewed, committed default scan-baseline file; installers/CI never create or refresh it. Keep `--fail-on-security` active with baselines.
-- External Actions stay on vetted full SHAs with `# owner/action@vN` hints. Weekly Dependabot updates npm dev tooling and Action pins; review as code and move self/template copies together. Keep test pushes main-only plus PRs.
+- External Actions stay on vetted full SHAs with `# owner/action@vN` hints. Weekly Dependabot updates npm dev tooling and Action pins; keep public lockfile sources on `registry.npmjs.org`, review updates as code, and move self/template copies together. Keep test pushes main-only plus PRs.
 - Keep security/contribution templates truthful and sanitized. Remote secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution are part of the operational baseline. Admin bypass exists only to avoid sole-maintainer self-approval deadlock—never to merge red CI.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
 

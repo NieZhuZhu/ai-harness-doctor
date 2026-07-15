@@ -1,6 +1,8 @@
+import json
 import re
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = ROOT / "action.yml"
@@ -14,6 +16,7 @@ SCAN_BASELINE = ROOT / ".ai-harness-doctor" / "scan-baseline.json"
 GUARD_ASSETS = ROOT / "assets" / "guard"
 TEST_WORKFLOW = ROOT / ".github" / "workflows" / "test.yml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
+PACKAGE_LOCK = ROOT / "package-lock.json"
 SECURITY = ROOT / "SECURITY.md"
 CODE_OF_CONDUCT = ROOT / "CODE_OF_CONDUCT.md"
 SUPPORT = ROOT / "SUPPORT.md"
@@ -196,6 +199,32 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertEqual(text.count('interval: "weekly"'), 2)
         self.assertIn('dependency-type: "development"', text)
         self.assertIn('interval: "weekly"', text)
+
+    def test_public_lockfile_uses_only_the_public_npm_registry(self):
+        lockfile = json.loads(PACKAGE_LOCK.read_text(encoding="utf-8"))
+        checked = 0
+        invalid = []
+        for package, metadata in lockfile.get("packages", {}).items():
+            if not isinstance(metadata, dict) or not metadata.get("resolved"):
+                continue
+            checked += 1
+            parsed = urlsplit(metadata["resolved"])
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname != "registry.npmjs.org"
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+            ):
+                # Report only the package and parsed host/scheme. Never echo a
+                # credential-bearing or query-bearing source URL into CI logs.
+                invalid.append(
+                    f"{package}: scheme={parsed.scheme or '<missing>'}, "
+                    f"host={parsed.hostname or '<missing>'}"
+                )
+        self.assertGreater(checked, 0, "package-lock.json must contain resolved dependency sources")
+        self.assertEqual(invalid, [], "non-public npm lockfile source(s): " + "; ".join(invalid))
 
     def test_public_repository_community_health_files_are_safe_and_actionable(self):
         for path in (SECURITY, CODE_OF_CONDUCT, SUPPORT, PULL_REQUEST_TEMPLATE):

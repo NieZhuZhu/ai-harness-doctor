@@ -32,6 +32,12 @@ deprecation warnings. Dependabot is the supported path for refreshing these
 pins; review its Action updates before merging, especially for the publish job
 with `id-token: write`.
 
+The public project's `package-lock.json` must resolve public npm packages from
+`registry.npmjs.org`, not a private mirror that GitHub-hosted Dependabot cannot
+reach. Treat both npm and Action dependency updates as full-matrix code changes.
+After changing Dependabot or lockfile source policy, run a real npm update check
+and verify that it succeeds even when no upgrade PR is needed.
+
 ## Stable and prerelease channels
 
 The version in `package.json` determines the release channel:
