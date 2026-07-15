@@ -15,6 +15,7 @@ FIXTURE = ROOT / "tests" / "fixtures" / "messy-repo"
 MONOREPO_FIXTURE = ROOT / "tests" / "fixtures" / "monorepo"
 SCAN = ROOT / "scripts" / "scan.py"
 sys.path.insert(0, str(ROOT / "scripts"))
+import applicability  # noqa: E402
 import scan  # noqa: E402
 
 
@@ -413,6 +414,319 @@ class ScopedConflictTests(unittest.TestCase):
             )
             self.assertEqual(blocked.returncode, 7, blocked.stdout + blocked.stderr)
             self.assertEqual(json.loads(blocked.stdout)["conflicts"][0]["scope"], "packages/api")
+
+
+class StructuredApplicabilityTests(unittest.TestCase):
+    def _repo(self, root):
+        _write(root / "src/frontend/app.js", "console.log('ok')\n")
+        _write(root / "scripts/check.py", "print('ok')\n")
+        return root
+
+    def _scan(self, root):
+        return scan.scan_repo(root, 32768)
+
+    def test_disjoint_copilot_rules_do_not_conflict_but_overlap_does(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(Path(td))
+            _write(
+                root / ".github/instructions/js.instructions.md",
+                '---\napplyTo: "src/**/*.js"\n---\nUse `npm test`.\n',
+            )
+            _write(
+                root / ".github/instructions/python.instructions.md",
+                '---\napplyTo: "scripts/**/*.py"\n---\nUse `uv run pytest`.\n',
+            )
+
+            disjoint = self._scan(root)
+            self.assertEqual(disjoint["conflicts"], [])
+
+            _write(
+                root / ".github/instructions/python.instructions.md",
+                '---\napplyTo: "**/*.js"\n---\nUse `uv run pytest`.\n',
+            )
+            overlapping = self._scan(root)
+            self.assertEqual(
+                {item["signal"] for item in overlapping["conflicts"]},
+                {"package_manager", "test_command"},
+            )
+
+    def test_root_structured_rule_covers_nested_canonical_subtree(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _write(root / "AGENTS.md", "Root guidance.\n")
+            _write(root / "packages/api/AGENTS.md", "API guidance.\n")
+            _write(root / "packages/api/src/app.js", "x\n")
+            _write(root / "packages/web/AGENTS.md", "Web guidance.\n")
+            _write(root / "packages/web/src/app.js", "x\n")
+            _write(
+                root / ".github/instructions/api-a.instructions.md",
+                '---\napplyTo: "packages/api/**/*.js"\n---\nUse `npm test`.\n',
+            )
+            _write(
+                root / ".github/instructions/api-b.instructions.md",
+                '---\napplyTo: "packages/api/**/*.js"\n---\nUse `pnpm test`.\n',
+            )
+
+            report = self._scan(root)
+            by_path = {item["path"]: item for item in report["applicability"]}
+
+            self.assertEqual(
+                by_path[
+                    ".github/instructions/api-a.instructions.md"
+                ]["match_count"],
+                1,
+            )
+            self.assertEqual(len(report["conflicts"]), 2)
+            self.assertTrue(
+                all("scope" not in item for item in report["conflicts"])
+            )
+
+    def test_cursor_modes_and_ignored_markdown_are_classified(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(Path(td))
+            _write(
+                root / ".cursor/rules/always.mdc",
+                "---\nalwaysApply: true\n---\nUse `npm test`.\n",
+            )
+            _write(
+                root / ".cursor/rules/nested/python.mdc",
+                "---\nglobs: scripts/**/*.py\nalwaysApply: false\n---\nUse `uv run pytest`.\n",
+            )
+            _write(
+                root / ".cursor/rules/conditional.mdc",
+                "---\ndescription: Backend conventions\nalwaysApply: false\n---\nUse pnpm.\n",
+            )
+            _write(
+                root / ".cursor/rules/manual.mdc",
+                "---\nalwaysApply: false\n---\nUse yarn.\n",
+            )
+            _write(root / ".cursor/rules/ignored.md", "Use bun.\n")
+
+            report = self._scan(root)
+            by_path = {item["path"]: item for item in report["applicability"]}
+            self.assertEqual(by_path[".cursor/rules/always.mdc"]["mode"], "always")
+            self.assertEqual(
+                by_path[".cursor/rules/nested/python.mdc"]["mode"],
+                "path",
+            )
+            self.assertEqual(
+                by_path[".cursor/rules/conditional.mdc"]["mode"],
+                "conditional",
+            )
+            self.assertEqual(by_path[".cursor/rules/manual.mdc"]["mode"], "manual")
+            self.assertEqual(by_path[".cursor/rules/ignored.md"]["mode"], "ignored")
+            self.assertTrue(
+                any(
+                    finding["path"] == ".cursor/rules/ignored.md"
+                    and finding["category"] == "ignored"
+                    for finding in report["applicability_warnings"]
+                )
+            )
+            conflict_values = {
+                value
+                for conflict in report["conflicts"]
+                if conflict["signal"] == "package_manager"
+                for value in conflict["values"]
+            }
+            self.assertEqual(conflict_values, {"npm", "uv"})
+            self.assertNotIn("bun", conflict_values)
+            self.assertNotIn("pnpm", conflict_values)
+            self.assertNotIn("yarn", conflict_values)
+
+    def test_invalid_and_no_current_match_are_non_blocking_diagnostics(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(Path(td))
+            _write(
+                root / ".github/instructions/invalid.instructions.md",
+                "---\napplyTo:\n  - src/**/*.js\n---\nUse npm.\n",
+            )
+            _write(
+                root / ".github/instructions/future.instructions.md",
+                '---\napplyTo: "future/**/*.go"\n---\nUse `go test`.\n',
+            )
+
+            report = self._scan(root)
+            modes = {item["path"]: item["mode"] for item in report["applicability"]}
+            self.assertEqual(
+                modes[".github/instructions/invalid.instructions.md"],
+                "invalid",
+            )
+            self.assertEqual(
+                modes[".github/instructions/future.instructions.md"],
+                "path",
+            )
+            categories = {
+                item["category"] for item in report["applicability_warnings"]
+            }
+            self.assertEqual(categories, {"invalid", "no-current-match"})
+            self.assertEqual(report["conflicts"], [])
+            markdown = scan.render_markdown(report)
+            self.assertIn("Structured rule applicability", markdown)
+            self.assertIn("future paths are not claimed effective", markdown)
+
+    def test_frontmatter_body_preserves_original_signal_line(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(Path(td))
+            _write(
+                root / ".github/instructions/a.instructions.md",
+                '---\napplyTo: "src/**/*.js"\n---\nUse npm.\n',
+            )
+            _write(
+                root / ".github/instructions/b.instructions.md",
+                '---\napplyTo: "src/**/*.js"\n---\nUse pnpm.\n',
+            )
+
+            report = self._scan(root)
+            evidence = [
+                entry
+                for conflict in report["conflicts"]
+                for entries in conflict["values"].values()
+                for entry in entries
+            ]
+            self.assertEqual({entry["line"] for entry in evidence}, {4})
+
+    def test_partially_overlapping_domains_form_separate_conflict_components(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for path in ("a/x.js", "b/x.js", "c/x.js", "d/x.js"):
+                _write(root / path, "x\n")
+            rules = [
+                ("a", "a/**, b/**", "`npm test`"),
+                ("b", "b/**, c/**", "`pnpm test`"),
+                ("c", "c/**", "`yarn test`"),
+                ("d", "d/**", "`bun test`"),
+                ("e", "d/**", "`uv run pytest`"),
+            ]
+            for name, globs, command in rules:
+                _write(
+                    root / f".github/instructions/{name}.instructions.md",
+                    f'---\napplyTo: "{globs}"\n---\nUse {command}.\n',
+                )
+
+            report = self._scan(root)
+            pm_conflicts = [
+                item
+                for item in report["conflicts"]
+                if item["signal"] == "package_manager"
+            ]
+
+            self.assertEqual(
+                {frozenset(item["values"]) for item in pm_conflicts},
+                {
+                    frozenset({"npm", "pnpm", "yarn"}),
+                    frozenset({"bun", "uv"}),
+                },
+            )
+
+    def test_ignored_or_truncated_rules_still_receive_complete_security_scan(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + "A" * 24
+            _write(
+                root / ".cursor/rules/ignored.md",
+                f"token={token}\n",
+            )
+            _write(
+                root / ".github/instructions/truncated.instructions.md",
+                "---\n"
+                'applyTo: "**/*.py"\n'
+                + ("description: x\n" * 20)
+                + f"token={token}\n",
+            )
+
+            report = scan.scan_repo(root, 32)
+
+            self.assertEqual(
+                {
+                    item["path"]: item["mode"]
+                    for item in report["applicability"]
+                },
+                {
+                    ".cursor/rules/ignored.md": "ignored",
+                    ".github/instructions/truncated.instructions.md": "invalid",
+                },
+            )
+            security_paths = {
+                item["path"]
+                for item in report["security"]
+                if item["category"] == "secret"
+            }
+            self.assertEqual(
+                security_paths,
+                {
+                    ".cursor/rules/ignored.md",
+                    ".github/instructions/truncated.instructions.md",
+                },
+            )
+            self.assertNotIn(token, json.dumps(report))
+
+
+class ApplicabilityParserTests(unittest.TestCase):
+    def test_scalar_frontmatter_and_globs(self):
+        result = applicability.classify(
+            '---\nglobs: "src/**/*.{ts,tsx}, docs/**/*.md"\nalwaysApply: false\n---\nUse npm.\n',
+            "cursor-mdc",
+            ".cursor/rules/x.mdc",
+        )
+        self.assertEqual(result["mode"], "path")
+        self.assertEqual(
+            result["patterns"],
+            ["src/**/*.ts", "src/**/*.tsx", "docs/**/*.md"],
+        )
+        self.assertTrue(applicability.matches(result["patterns"], "src/a/b.ts"))
+        self.assertTrue(applicability.matches(result["patterns"], "src/a/b.tsx"))
+        self.assertTrue(applicability.matches(result["patterns"], "docs/x.md"))
+        self.assertFalse(applicability.matches(result["patterns"], "scripts/x.py"))
+        self.assertEqual(result["signal_text"].splitlines()[4], "Use npm.")
+
+    def test_nested_brace_expansion_is_bounded_and_deterministic(self):
+        result = applicability.classify(
+            "---\n"
+            "applyTo: 'build/{oss/**,{win32,linux}/steps/*.yml}'\n"
+            "---\n"
+            "Use npm.\n",
+            "copilot-instructions",
+            ".github/instructions/build.instructions.md",
+        )
+        self.assertEqual(result["mode"], "path")
+        self.assertEqual(
+            result["patterns"],
+            [
+                "build/oss/**",
+                "build/win32/steps/*.yml",
+                "build/linux/steps/*.yml",
+            ],
+        )
+
+    def test_malformed_truncated_and_unsafe_patterns_fail_closed(self):
+        cases = [
+            ("duplicate", "---\napplyTo: a/**\napplyTo: b/**\n---\nx\n"),
+            ("list", "---\napplyTo:\n  - a/**\n---\nx\n"),
+            ("unknown", "---\ncustom: value\n---\nx\n"),
+            ("escape", "---\napplyTo: ../outside/**\n---\nx\n"),
+            ("absolute", "---\napplyTo: /tmp/**\n---\nx\n"),
+            ("class", "---\napplyTo: src/[ab].js\n---\nx\n"),
+            ("bad-brace", "---\napplyTo: src/{a}.js\n---\nx\n"),
+            ("unterminated", "---\napplyTo: src/**\nx\n"),
+        ]
+        for name, text in cases:
+            with self.subTest(name=name):
+                result = applicability.classify(
+                    text,
+                    "copilot-instructions",
+                    ".github/instructions/x.instructions.md",
+                    truncated=name == "unterminated",
+                )
+                self.assertEqual(result["mode"], "invalid")
+                self.assertEqual(result["signal_text"], "")
+
+        unsupported = applicability.classify(
+            "---\napplyTo: '**'\n---\nUse npm.\n",
+            "future-unknown-format",
+            "rules/x.md",
+        )
+        self.assertEqual(unsupported["mode"], "invalid")
+        self.assertIn("unsupported applicability format", unsupported["reason"])
 
 
 class ScanTests(unittest.TestCase):
@@ -1927,8 +2241,8 @@ class ScannerPerformanceTests(unittest.TestCase):
         root = FIXTURE
         index = scan.build_file_index(root)
         patterns = set()
-        for _tool, pats in scan.CONFIG_PATTERNS:
-            patterns.update(pats)
+        for spec in scan.CONFIG_PATTERNS:
+            patterns.update(spec["patterns"])
         patterns.update(scan.SUBAGENT_PATTERNS)
         patterns.update(scan.COMMAND_PATTERNS)
         for _lang, marks in scan.TECH_STACK_MARKERS:

@@ -17,7 +17,11 @@
     {
       "id": "cursor",
       "label": "Cursor",
-      "scan_patterns": [".cursorrules", ".cursor/rules/*.mdc", ".cursor/rules/*.md"],
+      "scan_patterns": [".cursorrules", ".cursor/rules/**/*.mdc", ".cursor/rules/**/*.md"],
+      "applicability": {
+        ".cursor/rules/**/*.mdc": "cursor-mdc",
+        ".cursor/rules/**/*.md": "cursor-ignored-md"
+      },
       "stub_paths": [".cursorrules"],
       "stub_kind": "pointer",
       "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
@@ -35,7 +39,10 @@
     {
       "id": "copilot",
       "label": "GitHub Copilot",
-      "scan_patterns": [".github/copilot-instructions.md", ".github/instructions/*.instructions.md"],
+      "scan_patterns": [".github/copilot-instructions.md", ".github/instructions/**/*.instructions.md"],
+      "applicability": {
+        ".github/instructions/**/*.instructions.md": "copilot-instructions"
+      },
       "stub_paths": [".github/copilot-instructions.md"],
       "stub_kind": "pointer",
       "stub_content": "# GitHub Copilot instructions\n\nCanonical agent instructions live in `AGENTS.md`. Keep this stub minimal; do not duplicate rules here.\n",

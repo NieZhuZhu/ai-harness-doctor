@@ -239,7 +239,7 @@ verification gate, and update its status here.
 | 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | DONE |
 | 033 | Derive eval health only from validated stored result records | P0 | M | — | IN PROGRESS |
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | IN PROGRESS |
-| 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | TODO |
+| 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | IN PROGRESS |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

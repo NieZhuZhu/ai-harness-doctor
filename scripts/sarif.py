@@ -22,6 +22,7 @@ SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 # for dynamically-generated rule ids.
 FAMILY_DESCRIPTIONS = {
     "warning": "Instruction size / truncation warning",
+    "applicability": "Structured rule applicability diagnostic",
     "custom": "Custom rule plugin finding",
     "security": "Security checkup finding",
     "gap": "Missing harness infrastructure / gap analysis finding",
@@ -165,6 +166,19 @@ def _scan_results_for_report(report, prefix):
         results.append(
             _result(
                 "warning/size",
+                sarif_level(finding.get("level")),
+                _message_text(finding),
+                uri=make_uri(finding.get("path")),
+                start_line=finding.get("line"),
+            )
+        )
+    for finding in report.get("applicability_warnings", []):
+        results.append(
+            _result(
+                "applicability/" + _rule_component(
+                    finding.get("category"),
+                    "metadata",
+                ),
                 sarif_level(finding.get("level")),
                 _message_text(finding),
                 uri=make_uri(finding.get("path")),

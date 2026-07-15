@@ -252,6 +252,33 @@ class BuildReviewTests(unittest.TestCase):
         self.assertEqual(findings[1]["category"], "size")
         self.assertIn("Instruction size warning", pr_review.build_review(report)["body"])
 
+    def test_applicability_warning_is_attributed_inline(self):
+        report = {
+            "applicability_warnings": [
+                {
+                    "category": "ignored",
+                    "level": "WARN",
+                    "path": ".cursor/rules/legacy.md",
+                    "line": 1,
+                    "message": "Structured rule is ignored.",
+                    "suggestion": "Rename it to .mdc.",
+                }
+            ]
+        }
+
+        payload = pr_review.build_review(report)
+
+        self.assertEqual(payload["inline_count"], 1)
+        self.assertEqual(
+            pr_review.finding_label(pr_review.collect_findings(report)[0]),
+            "applicability/ignored",
+        )
+        self.assertEqual(
+            payload["comments"][0]["path"],
+            ".cursor/rules/legacy.md",
+        )
+        self.assertIn("Rename it to .mdc.", payload["comments"][0]["body"])
+
     def test_collects_conflicts_and_excludes_baselined_debt(self):
         report = {
             "conflicts": [

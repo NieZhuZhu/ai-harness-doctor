@@ -178,6 +178,38 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertFalse((repo / ".cursor" / "rules" / "extra.mdc").exists())
             self.assertTrue((repo / ".cursor" / "rules" / "agents-md.mdc").is_file())
 
+    def test_recursive_scan_discovery_does_not_authorize_nested_rule_deletion(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            shutil.copytree(FIXTURE, repo)
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            rules = repo / ".cursor" / "rules"
+            nested = rules / "team" / "python.mdc"
+            nested.parent.mkdir(parents=True)
+            nested.write_text(
+                '---\nglobs: "**/*.py"\nalwaysApply: false\n---\nUse uv.\n',
+                encoding="utf-8",
+            )
+            top = rules / "legacy.mdc"
+            top.write_text("top-level legacy rule\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+            nested_before = nested.read_bytes()
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo), "--apply"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(nested.read_bytes(), nested_before)
+            self.assertFalse(top.exists())
+            self.assertTrue((rules / "agents-md.mdc").is_file())
+
     @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
     def test_write_stubs_apply_refuses_external_file_symlink(self):
         with ResilientTemporaryDirectory() as td:

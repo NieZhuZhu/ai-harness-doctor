@@ -16,6 +16,7 @@ from pathlib import Path
 # The shared agent-config registry is the single source of truth for which config
 # files exist and how to detect them; see assets/agent-tools.json and registry.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import applicability  # noqa: E402  # bounded Cursor/Copilot rule applicability
 import facts  # noqa: E402  # contained repository fact reads
 import plugins  # noqa: E402  # user-extensible deterministic rule plugins
 import registry  # noqa: E402
@@ -57,7 +58,7 @@ def _without_line_evidence(text):
 
 
 def _build_config_patterns():
-    """Derive (label, glob-patterns) pairs from the shared registry.
+    """Derive config match specs from the shared registry.
 
     Canonical files (AGENTS.md / AGENT.md) come first and use the conventional
     ``[name, "**/name"]`` pair; tool entries follow in registry order with their
@@ -66,9 +67,23 @@ def _build_config_patterns():
     reg = registry.load_registry()
     patterns = []
     for name in reg.get("canonical", []):
-        patterns.append((name, [name, f"**/{name}"]))
+        patterns.append(
+            {
+                "id": name,
+                "label": name,
+                "patterns": [name, f"**/{name}"],
+                "applicability": {},
+            }
+        )
     for tool in reg.get("tools", []):
-        patterns.append((tool["label"], list(tool["scan_patterns"])))
+        patterns.append(
+            {
+                "id": tool["id"],
+                "label": tool["label"],
+                "patterns": list(tool["scan_patterns"]),
+                "applicability": dict(tool.get("applicability") or {}),
+            }
+        )
     return patterns
 
 
@@ -558,17 +573,32 @@ class ScanContext:
 def iter_matches(root, ctx=None):
     ctx = ctx or ScanContext(root)
     seen = {}
-    for tool, patterns in CONFIG_PATTERNS:
-        for pattern in patterns:
+    for spec in CONFIG_PATTERNS:
+        for pattern in spec["patterns"]:
             for path in ctx.glob(pattern):
                 if is_skipped(path, root) or not path.is_file():
                     continue
                 rp = rel(path, root)
-                seen.setdefault(rp, (tool, path))
-    return [(tool, path) for _, (tool, path) in sorted(seen.items())]
+                seen.setdefault(
+                    rp,
+                    {
+                        "id": spec["id"],
+                        "tool": spec["label"],
+                        "path": path,
+                        "applicability_format": spec["applicability"].get(pattern),
+                    },
+                )
+    return [entry for _, entry in sorted(seen.items())]
 
 
-def file_info(root, tool, path, max_bytes):
+def file_info(
+    root,
+    tool,
+    path,
+    max_bytes,
+    tool_id=None,
+    applicability_format=None,
+):
     rp = rel(path, root)
     warnings = []
     safe_path = facts.resolve_within_root(path, root)
@@ -646,9 +676,10 @@ def file_info(root, tool, path, max_bytes):
         risk_labels = [
             label for label, pattern in RISKY_COMMAND_RES if pattern.search(text)
         ]
-    return {
+    result = {
         "path": rp,
         "tool": tool,
+        "_tool_id": tool_id,
         "bytes": size,
         "lines": 0 if size == 0 else total_newlines + (0 if ends_with_newline else 1),
         "sha256": digest.hexdigest()[:12],
@@ -660,6 +691,14 @@ def file_info(root, tool, path, max_bytes):
         "_risk_labels": risk_labels,
         "warnings": warnings,
     }
+    if applicability_format:
+        result["applicability"] = applicability.classify(
+            text,
+            applicability_format,
+            rp,
+            truncated=truncated,
+        )
+    return result
 
 
 def normalized_lines(text):
@@ -943,6 +982,78 @@ def _conflict_key(signal, value):
     return value
 
 
+def _automatic_domain(file_entry):
+    """Current repository paths where a source is automatically applicable.
+
+    ``None`` is the legacy/canonical lexical subtree, while a set is an
+    explicitly modeled current path domain. Empty sets are conditional/manual/
+    ignored/invalid/no-current-match sources and cannot create blocking scan
+    conflicts.
+    """
+    app = file_entry.get("applicability")
+    if not app or app.get("mode") == "always":
+        return None
+    if app.get("mode") == "path":
+        return set(app.get("matched_paths", []))
+    return set()
+
+
+def _domains_overlap(left, right, scope):
+    if left == set() or right == set():
+        return False
+    if left is None and right is None:
+        return True
+    explicit = right if left is None else left
+    if left is not None and right is not None:
+        return bool(left & right)
+    return any(
+        effective_instruction_scope(path, {".", scope}) == scope
+        for path in explicit
+    )
+
+
+def _conflicting_group_components(groups, scope):
+    keys = list(groups)
+    adjacent = {key: set() for key in keys}
+    for index, left_key in enumerate(keys):
+        for right_key in keys[index + 1 :]:
+            overlaps = False
+            for left in groups[left_key]:
+                for right in groups[right_key]:
+                    if _domains_overlap(
+                        left.get("_domain"),
+                        right.get("_domain"),
+                        scope,
+                    ):
+                        overlaps = True
+                        break
+                if overlaps:
+                    break
+            if overlaps:
+                adjacent[left_key].add(right_key)
+                adjacent[right_key].add(left_key)
+
+    components = []
+    unseen = set(keys)
+    while unseen:
+        first = min(unseen, key=str)
+        stack = [first]
+        component = set()
+        while stack:
+            current = stack.pop()
+            if current in component:
+                continue
+            component.add(current)
+            stack.extend(adjacent[current] - component)
+        unseen -= component
+        if len(component) > 1:
+            components.append(component)
+    return sorted(
+        components,
+        key=lambda component: min(str(key) for key in component),
+    )
+
+
 def _path_parts(path):
     """Repository-relative POSIX path components (component-safe ancestry)."""
     return tuple(part for part in str(path).replace("\\", "/").split("/") if part not in ("", "."))
@@ -1035,7 +1146,15 @@ def analyze_scoped_conflicts(files):
         # compatible references in one file — e.g. "node 18" and "node 18.17.0"
         # — collapse to one entry instead of manufacturing a conflict.
         seen = {}
-        for sig in extract_signals(f):
+        signal_source = dict(f)
+        app = f.get("applicability")
+        if app:
+            signal_source["text"] = app.get("signal_text", "")
+        domain = _automatic_domain(f)
+        if domain == set():
+            continue
+        for sig in extract_signals(signal_source):
+            sig["_domain"] = domain
             seen[(sig["signal"], _conflict_key(sig["signal"], sig["value"]))] = sig
         scope = file_scopes.get(f["path"], ".")
         for (signal, key), sig in seen.items():
@@ -1047,19 +1166,38 @@ def analyze_scoped_conflicts(files):
             # A conflict needs at least two DISTINCT normalized values (keys).
             if len(groups) <= 1:
                 continue
-            # ESLint + Prettier are complementary, not competing formatters.
-            if signal == "formatter":
-                distinct = {entries[0]["value"].lower() for entries in groups.values()}
-                if distinct <= {"prettier", "eslint"}:
-                    continue
-            conflict = {
-                "signal": signal,
-                "values": {entries[0]["value"]: entries[:3] for entries in groups.values()},
-            }
-            # Preserve the historical root conflict shape byte-for-byte.
-            if scope != ".":
-                conflict["scope"] = scope
-            conflicts.append(conflict)
+            for component in _conflicting_group_components(groups, scope):
+                component_groups = {
+                    key: entries
+                    for key, entries in groups.items()
+                    if key in component
+                }
+                # ESLint + Prettier are complementary, not competing formatters.
+                if signal == "formatter":
+                    distinct = {
+                        entries[0]["value"].lower()
+                        for entries in component_groups.values()
+                    }
+                    if distinct <= {"prettier", "eslint"}:
+                        continue
+                conflict = {
+                    "signal": signal,
+                    "values": {
+                        entries[0]["value"]: [
+                            {
+                                key: value
+                                for key, value in entry.items()
+                                if key != "_domain"
+                            }
+                            for entry in entries[:3]
+                        ]
+                        for entries in component_groups.values()
+                    },
+                }
+                # Preserve the historical root conflict shape byte-for-byte.
+                if scope != ".":
+                    conflict["scope"] = scope
+                conflicts.append(conflict)
 
     overrides = []
     for scope in sorted(by_scope, key=lambda value: (len(_path_parts(value)), value)):
@@ -1080,7 +1218,14 @@ def analyze_scoped_conflicts(files):
                 continue
             evidence = []
             for entries in groups.values():
-                evidence.extend(entries[:3])
+                evidence.extend(
+                    {
+                        key: value
+                        for key, value in entry.items()
+                        if key != "_domain"
+                    }
+                    for entry in entries[:3]
+                )
             overrides.append(
                 {
                     "signal": signal,
@@ -1559,10 +1704,18 @@ def collect_instruction_files(repo_root, max_bytes=32768, ctx=None):
     ctx = ctx or ScanContext(root)
     files = []
     warnings = []
-    for tool, path in iter_matches(root, ctx):
-        info = file_info(root, tool, path, max_bytes)
+    for match in iter_matches(root, ctx):
+        info = file_info(
+            root,
+            match["tool"],
+            match["path"],
+            max_bytes,
+            tool_id=match["id"],
+            applicability_format=match.get("applicability_format"),
+        )
         warnings.extend(info.pop("warnings"))
         files.append(info)
+    _resolve_applicability(files, ctx)
     public_keys = (
         "path",
         "tool",
@@ -1573,13 +1726,109 @@ def collect_instruction_files(repo_root, max_bytes=32768, ctx=None):
         "truncated",
         "security_scanned_bytes",
     )
-    result_files = [{key: f[key] for key in public_keys} for f in files]
+    result_files = []
+    for entry in files:
+        public = {key: entry[key] for key in public_keys}
+        if entry.get("applicability"):
+            public["applicability"] = _public_applicability(
+                entry["applicability"]
+            )
+        result_files.append(public)
     return files, result_files, warnings, ctx
+
+
+def _resolve_applicability(files, ctx):
+    """Bind structured path rules to the current contained file inventory."""
+    current_paths = [relpath for relpath, _path in ctx.index]
+    _rows, file_scopes, parent_by_scope = instruction_scope_map(files)
+    scope_names = set(parent_by_scope)
+
+    def source_scope_covers(source_scope, target_scope):
+        return (
+            source_scope == "."
+            or source_scope == target_scope
+            or _is_scope_ancestor(source_scope, target_scope)
+        )
+
+    for entry in files:
+        app = entry.get("applicability")
+        if not app:
+            continue
+        if app["mode"] == "path":
+            source_scope = file_scopes.get(entry["path"], ".")
+            app["matched_paths"] = sorted(
+                path
+                for path in current_paths
+                if applicability.matches(app["patterns"], path)
+                and source_scope_covers(
+                    source_scope,
+                    effective_instruction_scope(path, scope_names),
+                )
+            )
+        else:
+            app["matched_paths"] = []
+
+
+def _public_applicability(app):
+    result = {
+        "mode": app["mode"],
+        "format": app["format"],
+        "patterns": list(app.get("patterns", [])),
+        "match_count": len(app.get("matched_paths", [])),
+    }
+    if app.get("reason"):
+        result["reason"] = app["reason"]
+    return result
+
+
+def applicability_warnings(files):
+    """Return actionable, non-blocking structured-rule diagnostics."""
+    findings = []
+    for entry in files:
+        app = entry.get("applicability")
+        if not app:
+            continue
+        mode = app["mode"]
+        if mode in {"ignored", "invalid"}:
+            findings.append(
+                {
+                    "category": mode,
+                    "level": "WARN",
+                    "path": entry["path"],
+                    "line": app.get("line", 1),
+                    "message": (
+                        f"Structured rule is {mode}: "
+                        f"{app.get('reason', 'unsupported applicability metadata')}"
+                    ),
+                    "suggestion": (
+                        "Use the documented rule extension and scalar "
+                        "frontmatter so applicability can be verified."
+                    ),
+                }
+            )
+        elif mode == "path" and not app.get("matched_paths"):
+            findings.append(
+                {
+                    "category": "no-current-match",
+                    "level": "NOTICE",
+                    "path": entry["path"],
+                    "line": app.get("line", 1),
+                    "message": (
+                        "Structured rule matches no current contained repository path."
+                    ),
+                    "suggestion": (
+                        "Review the glob for staleness; it may still target a "
+                        "future file, so this notice is non-blocking."
+                    ),
+                }
+            )
+    return findings
 
 
 def analysis_limits(files):
     """Describe report families whose semantic evidence used a bounded prefix."""
     affected = [
+        "applicability",
         "conflicts",
         "overlaps",
         "scope_overrides",
@@ -1622,6 +1871,16 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
     report = {
         "files": result_files,
         "warnings": warnings,
+        "applicability": [
+            {
+                "path": entry["path"],
+                "tool": entry["tool"],
+                **_public_applicability(entry["applicability"]),
+            }
+            for entry in files
+            if entry.get("applicability")
+        ],
+        "applicability_warnings": applicability_warnings(files),
         "analysis_limits": analysis_limits(files),
         "overlaps": find_overlaps(files),
         "conflicts": conflicts,

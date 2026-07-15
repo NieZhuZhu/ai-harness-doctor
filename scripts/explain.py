@@ -13,8 +13,9 @@ import scan  # noqa: E402
 
 SCHEMA_VERSION = 1
 DIAGNOSTIC_LIMITATION = (
-    "Tool-specific configs are diagnostically associated with lexical scopes; "
-    "their own glob, frontmatter, and prose applicability is not inferred."
+    "Cursor .mdc globs/alwaysApply and Copilot instructions applyTo metadata "
+    "are modeled deterministically. Description-selected, manual, malformed, "
+    "and other tool/prose applicability remains diagnostically associated only."
 )
 
 
@@ -65,18 +66,44 @@ def _scope_for_target(target_path, target_kind, scope_names):
 
 def _diagnostic_sources(files, file_scopes, chain):
     chain_set = set(chain)
+    sources = []
+    for entry in files:
+        if file_scopes.get(entry["path"], ".") not in chain_set:
+            continue
+        source = {
+            "path": entry["path"],
+            "tool": entry["tool"],
+            "scope": file_scopes.get(entry["path"], "."),
+        }
+        if entry.get("applicability"):
+            source["applicability"] = scan._public_applicability(
+                entry["applicability"]
+            )
+        sources.append(source)
     return sorted(
-        (
-            {
-                "path": entry["path"],
-                "tool": entry["tool"],
-                "scope": file_scopes.get(entry["path"], "."),
-            }
-            for entry in files
-            if file_scopes.get(entry["path"], ".") in chain_set
-        ),
+        sources,
         key=lambda item: (chain.index(item["scope"]), item["path"], item["tool"]),
     )
+
+
+def _source_target_status(entry, target_path):
+    app = entry.get("applicability")
+    if not app:
+        name = scan._path_parts(entry.get("path", ""))[-1:]
+        return (
+            "automatic"
+            if name and name[0] in set(scan.registry.load_canonical())
+            else "diagnostic"
+        )
+    if app["mode"] == "always":
+        return "automatic"
+    if app["mode"] == "path":
+        return (
+            "automatic"
+            if scan.applicability.matches(app.get("patterns", []), target_path)
+            else "non-matching"
+        )
+    return app["mode"]
 
 
 def _safe_conflict(conflict):
@@ -167,7 +194,45 @@ def build_explanation(repo_root, target, max_bytes=32768):
     chain = context["chain"]
     chain_set = set(chain)
     limits = scan.analysis_limits(files)
+    target_files = []
+    target_source_status = []
+    for entry in files:
+        if file_scopes.get(entry["path"], ".") not in chain_set:
+            continue
+        status = _source_target_status(entry, target_info["path"])
+        target_source_status.append(
+            {
+                "path": entry["path"],
+                "tool": entry["tool"],
+                "scope": file_scopes.get(entry["path"], "."),
+                "status": status,
+                **(
+                    {
+                        "applicability": scan._public_applicability(
+                            entry["applicability"]
+                        )
+                    }
+                    if entry.get("applicability")
+                    else {}
+                ),
+            }
+        )
+        if status == "automatic":
+            target_entry = entry
+            if entry.get("applicability", {}).get("mode") == "path":
+                target_entry = dict(entry)
+                target_entry["applicability"] = dict(entry["applicability"])
+                # Explain answers one concrete (possibly future) target. Give
+                # the shared conflict engine that exact domain rather than the
+                # scan-time set of currently existing matched files.
+                target_entry["applicability"]["matched_paths"] = [
+                    target_info["path"]
+                ]
+            target_files.append(target_entry)
     _rows, conflicts, overrides = scan.analyze_scoped_conflicts(files)
+    _target_rows, target_conflicts, _target_overrides = (
+        scan.analyze_scoped_conflicts(target_files)
+    )
     canonical_chain = [row for scope in chain for row in scope_rows if row["scope"] == scope]
     relevant_overrides = [
         _safe_override(item)
@@ -176,7 +241,7 @@ def build_explanation(repo_root, target, max_bytes=32768):
     ]
     relevant_conflicts = [
         _safe_conflict(item)
-        for item in conflicts
+        for item in target_conflicts
         if (item.get("scope") or ".") in chain_set
     ]
     return {
@@ -186,6 +251,14 @@ def build_explanation(repo_root, target, max_bytes=32768):
         "effective_scope": effective_scope,
         "canonical_chain": canonical_chain,
         "diagnostic_sources": _diagnostic_sources(public_files, file_scopes, chain),
+        "source_applicability": sorted(
+            target_source_status,
+            key=lambda item: (
+                chain.index(item["scope"]),
+                item["path"],
+                item["tool"],
+            ),
+        ),
         "scope_overrides": relevant_overrides,
         "conflicts": relevant_conflicts,
         "analysis_limits": [
@@ -220,6 +293,20 @@ def render_markdown(report):
     if report["diagnostic_sources"]:
         for item in report["diagnostic_sources"]:
             lines.append(f"- `{item['path']}` — {item['tool']}, lexical scope `{item['scope']}`")
+    else:
+        lines.append("- None.")
+    lines.extend(["", "## Target applicability"])
+    if report.get("source_applicability"):
+        for item in report["source_applicability"]:
+            patterns = item.get("applicability", {}).get("patterns", [])
+            suffix = (
+                " — " + ", ".join(f"`{pattern}`" for pattern in patterns)
+                if patterns
+                else ""
+            )
+            lines.append(
+                f"- `{item['path']}` — `{item['status']}`{suffix}"
+            )
     else:
         lines.append("- None.")
     lines.extend(["", "## Relevant scope overrides"])
