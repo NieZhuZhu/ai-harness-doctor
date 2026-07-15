@@ -305,6 +305,8 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。复制 paylo
 - MCP 卫生问题：不安全的 `http://` 传输以及形似凭据的 env 字面量。
 - 有风险的 hook/命令体：`curl … | bash`、`rm -rf`、`--dangerously-skip-permissions` 等。
 
+对于超限指令文件，`--max-bytes` 只限制为重叠、冲突、覆盖和声明分析保留的语义文本。清单中的 SHA/行数及高置信密钥/权限绕过检查仍会覆盖每个字节，且不会把整个文件保留在内存中。JSON 会公开 `analyzed_bytes`、`truncated`、`security_scanned_bytes` 和顶层 `analysis_limits`；Markdown 会标记仅基于前缀的重叠证据。语义分析受限时，无发现绝不会被表述为未见尾部也没有问题的证明。
+
 默认以 0 退出。加上 `--fail-on-security` 后，只要存在任意 HIGH 级发现就以 `2` 退出，很适合作为 CI 卡点。
 
 它还会运行一次**缺口分析（gap analysis）**，把仓库与一份 harness 完整性清单做 diff，报告仓库*缺失*的基建（而不仅仅是已有的）。这些静态检查只覆盖任何健康 harness 都必须具备、与技术栈无关的部分：canonical 的根 `AGENTS.md`（`G1`）、`AGENTS.md` 必备章节（与 `assets/AGENTS.template.md` 保持同步，`G2`）、应当是指向 `AGENTS.md` 的最小 pointer 的 tool stub（`G3`）、以及 drift-guard / 周度 checkup 的 CI workflow（`G4`）。它还落地执行了 `SKILL.md` 中此前没有代码支撑的两个[命名反模式](SKILL.md#named-anti-patterns)：**Wholesale Dumping**（`G9`）——`AGENTS.md` 与 `README.md` 的标准化行重叠超过一半，说明内容是整段照抄过来的，而不是提炼成 agent 专属、无法从代码推断的规则；以及 **Silent Adjudication**（`G10`）——`AGENTS.md` 在一个仍然存在的信号冲突（例如 `pnpm` 对 `npm`）里默默选了一边，却没有留下任何把另一边交给仓库负责人裁决的痕迹。每条缺口带有 `level`（`ERROR`/`WARN`/`NOTICE`）、`item`、`message` 和可执行的 `suggestion`。加上 `--fail-on-gaps` 后，只要存在任意 ERROR 级缺口（例如缺少根 `AGENTS.md`）就以 `3` 退出。

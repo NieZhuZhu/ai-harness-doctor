@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import mmap
 import os
 import re
 import string
@@ -156,6 +157,24 @@ RISKY_COMMAND_RES = [
     ("shell eval of input", re.compile(r"\beval\s+\"?\$", re.I)),
     ("permission bypass flag", re.compile(r"--dangerously-skip-permissions|--yolo\b", re.I)),
 ]
+
+# Instruction files may be much larger than the semantic context budget. Hash,
+# line counting, and high-confidence security checks still cover the complete
+# file without retaining it in the Python heap: fixed-size slices feed the
+# digest/counters, while the read-only mmap lets the existing regular
+# expressions inspect matches that cross any chunk boundary.
+FILE_SCAN_CHUNK_BYTES = 64 * 1024
+
+
+def _bytes_pattern(pattern):
+    """Compile an ASCII str regex for a bytes-like complete-file buffer."""
+    flags = pattern.flags & ~re.UNICODE
+    return re.compile(pattern.pattern.encode("ascii"), flags)
+
+
+_SECRET_BYTE_PATTERNS = [(label, _bytes_pattern(pattern)) for label, pattern in SECRET_PATTERNS]
+_SECRET_PLACEHOLDER_BYTES_RE = _bytes_pattern(_SECRET_PLACEHOLDER_RE)
+_RISKY_COMMAND_BYTE_RES = [(label, _bytes_pattern(pattern)) for label, pattern in RISKY_COMMAND_RES]
 
 # ---------------------------------------------------------------------------
 # Gap analysis: what a healthy harness *should* have but this repo is missing.
@@ -554,21 +573,60 @@ def file_info(root, tool, path, max_bytes):
     safe_path = facts.resolve_within_root(path, root)
     if safe_path is None:
         raise OSError(f"refusing to read path outside repository: {rp}")
-    # Stat the file first so an oversize (accidentally matched) file is not
-    # fully read into memory before the size check. We still read the body for
-    # normally-sized files; oversize files are read only up to max_bytes.
-    size = safe_path.stat().st_size
-    if size > max_bytes:
+    budget = max(0, int(max_bytes))
+    digest = hashlib.sha256()
+    prefix_chunks = []
+    total_newlines = 0
+    secret_labels = []
+    risk_labels = []
+    size = 0
+    ends_with_newline = False
+
+    # Map the contained file read-only, then retain only fixed-size slices plus
+    # the configured semantic prefix. The regex engine can inspect the mmap
+    # directly, so credentials/flags crossing a chunk boundary are not missed
+    # and the complete body is never copied into the Python heap.
+    with safe_path.open("rb") as fh:
+        size = os.fstat(fh.fileno()).st_size
+        if size:
+            with mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mapped:
+                retained = 0
+                for offset in range(0, size, FILE_SCAN_CHUNK_BYTES):
+                    chunk = mapped[offset : offset + FILE_SCAN_CHUNK_BYTES]
+                    digest.update(chunk)
+                    total_newlines += chunk.count(b"\n")
+                    if retained < budget:
+                        piece = chunk[: budget - retained]
+                        prefix_chunks.append(piece)
+                        retained += len(piece)
+                ends_with_newline = mapped[-1:] == b"\n"
+                for label, pattern in _SECRET_BYTE_PATTERNS:
+                    if any(
+                        not _SECRET_PLACEHOLDER_BYTES_RE.search(
+                            mapped,
+                            match.start(),
+                            match.end(),
+                        )
+                        for match in pattern.finditer(mapped)
+                    ):
+                        secret_labels.append(label)
+                for label, pattern in _RISKY_COMMAND_BYTE_RES:
+                    if pattern.search(mapped):
+                        risk_labels.append(label)
+        else:
+            digest.update(b"")
+
+    data = b"".join(prefix_chunks)
+    truncated = size > len(data)
+    if size > budget:
         warnings.append(
             {
                 "level": "WARN",
                 "path": rp,
-                "message": f"{rp} is {size} bytes, above {max_bytes}; Codex "
+                "message": f"{rp} is {size} bytes, above {budget}; Codex "
                 f"project_doc_max_bytes defaults to 32KB and may silently truncate context.",
             }
         )
-        with safe_path.open("rb") as fh:
-            data = fh.read(max_bytes)
     else:
         if size > 12 * 1024:
             warnings.append(
@@ -578,15 +636,27 @@ def file_info(root, tool, path, max_bytes):
                     "message": f"{rp} is {size} bytes; this may cause context bloat.",
                 }
             )
-        data = safe_path.read_bytes()
     text = data.decode("utf-8", errors="replace")
+    if not truncated:
+        # Preserve the historical Unicode-aware regex semantics when the full
+        # text is already inside the budget. Bytes/mmap matching is the
+        # bounded-memory fallback needed only for an oversize tail.
+        secret_labels = secret_hits(text)
+        risk_labels = [
+            label for label, pattern in RISKY_COMMAND_RES if pattern.search(text)
+        ]
     return {
         "path": rp,
         "tool": tool,
         "bytes": size,
-        "lines": 0 if not text else text.count("\n") + (0 if text.endswith("\n") else 1),
-        "sha256": hashlib.sha256(data).hexdigest()[:12],
+        "lines": 0 if size == 0 else total_newlines + (0 if ends_with_newline else 1),
+        "sha256": digest.hexdigest()[:12],
+        "analyzed_bytes": len(data),
+        "truncated": truncated,
+        "security_scanned_bytes": size,
         "text": text,
+        "_secret_labels": secret_labels,
+        "_risk_labels": risk_labels,
         "warnings": warnings,
     }
 
@@ -629,15 +699,20 @@ def find_overlaps(files):
             continue
         shared, ratio = overlap
         if ratio > 0.30:
-            overlaps.append(
-                {
-                    "a": a["path"],
-                    "b": b["path"],
-                    "shared_lines": shared,
-                    "ratio": round(ratio, 4),
-                    "percent": round(ratio * 100, 1),
+            item = {
+                "a": a["path"],
+                "b": b["path"],
+                "shared_lines": shared,
+                "ratio": round(ratio, 4),
+                "percent": round(ratio * 100, 1),
+            }
+            if a.get("truncated") or b.get("truncated"):
+                item["prefix_only"] = True
+                item["analyzed_bytes"] = {
+                    a["path"]: a.get("analyzed_bytes", len(a.get("text", "").encode("utf-8"))),
+                    b["path"]: b.get("analyzed_bytes", len(b.get("text", "").encode("utf-8"))),
                 }
-            )
+            overlaps.append(item)
     return sorted(overlaps, key=lambda x: x["ratio"], reverse=True)
 
 
@@ -1161,8 +1236,10 @@ def scan_permissions(root, ctx=None):
 def secret_hits(text):
     hits = []
     for label, pattern in SECRET_PATTERNS:
-        match = pattern.search(text)
-        if match and not _SECRET_PLACEHOLDER_RE.search(match.group(0)):
+        if any(
+            not _SECRET_PLACEHOLDER_RE.search(match.group(0))
+            for match in pattern.finditer(text)
+        ):
             hits.append(label)
     return hits
 
@@ -1188,7 +1265,8 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
     findings = []
     # 1) Plaintext secrets in instruction/rule files.
     for f in files:
-        for label in secret_hits(f["text"]):
+        labels = f["_secret_labels"] if "_secret_labels" in f else secret_hits(f["text"])
+        for label in labels:
             findings.append(
                 {
                     "level": "HIGH",
@@ -1316,8 +1394,15 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                 )
     # 5) Risky flags recommended inside instruction files.
     for f in files:
-        for label, pattern in RISKY_COMMAND_RES:
-            if label == "permission bypass flag" and pattern.search(f["text"]):
+        labels = f.get("_risk_labels")
+        if labels is None:
+            labels = [
+                label
+                for label, pattern in RISKY_COMMAND_RES
+                if pattern.search(f.get("text", ""))
+            ]
+        for label in labels:
+            if label == "permission bypass flag":
                 findings.append(
                     {
                         "level": "MEDIUM",
@@ -1371,7 +1456,7 @@ def gap(check, level, item, message, suggestion):
     return {"check": check, "level": level, "item": item, "message": message, "suggestion": suggestion}
 
 
-def find_gaps(root, surface, conflicts=None, ctx=None):
+def find_gaps(root, surface, conflicts=None, ctx=None, agents_text=None):
     """Diff the repo against a harness completeness checklist and report what is
     missing. Read-only: never writes or mutates the target repository."""
     ctx = ctx or ScanContext(root)
@@ -1391,8 +1476,10 @@ def find_gaps(root, surface, conflicts=None, ctx=None):
             )
         )
         agents_text = ""
-    else:
+    elif agents_text is None:
         agents_text = ctx.read_text(agents) or ""
+    else:
+        agents_text = str(agents_text)
 
     # 2) Required sections present in AGENTS.md.
     if has_agents:
@@ -1475,8 +1562,42 @@ def collect_instruction_files(repo_root, max_bytes=32768, ctx=None):
         info = file_info(root, tool, path, max_bytes)
         warnings.extend(info.pop("warnings"))
         files.append(info)
-    result_files = [{k: v for k, v in f.items() if k != "text"} for f in files]
+    public_keys = (
+        "path",
+        "tool",
+        "bytes",
+        "lines",
+        "sha256",
+        "analyzed_bytes",
+        "truncated",
+        "security_scanned_bytes",
+    )
+    result_files = [{key: f[key] for key in public_keys} for f in files]
     return files, result_files, warnings, ctx
+
+
+def analysis_limits(files):
+    """Describe report families whose semantic evidence used a bounded prefix."""
+    affected = [
+        "conflicts",
+        "overlaps",
+        "scope_overrides",
+        "semantic",
+        "gaps",
+        "project_snapshot",
+        "custom",
+    ]
+    return [
+        {
+            "path": entry["path"],
+            "bytes": entry["bytes"],
+            "analyzed_bytes": entry["analyzed_bytes"],
+            "security_scanned_bytes": entry["security_scanned_bytes"],
+            "affected": list(affected),
+        }
+        for entry in files
+        if entry.get("truncated")
+    ]
 
 
 def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=None):
@@ -1495,16 +1616,12 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
         "hooks": hooks,
         "permissions": permissions,
     }
-    agents_path = root / "AGENTS.md"
-    agents_text = (
-        (ctx.read_text(agents_path) or "")
-        if facts.is_file_within_root(root, agents_path)
-        else ""
-    )
+    agents_text = next((entry["text"] for entry in files if entry["path"] == "AGENTS.md"), "")
     instruction_scopes, conflicts, scope_overrides = analyze_scoped_conflicts(files)
     report = {
         "files": result_files,
         "warnings": warnings,
+        "analysis_limits": analysis_limits(files),
         "overlaps": find_overlaps(files),
         "conflicts": conflicts,
         "instruction_scopes": instruction_scopes,
@@ -1514,7 +1631,7 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
         "security": security_findings(root, files, mcp, hooks, permissions, ctx),
         "project_snapshot": build_project_snapshot(root, surface, agents_text, ctx),
         "semantic": semantic.analyze(root, agents_text),
-        "gaps": find_gaps(root, surface, conflicts, ctx),
+        "gaps": find_gaps(root, surface, conflicts, ctx, agents_text=agents_text),
     }
     # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
     # files live inside the scanned repo, so importing them runs arbitrary code

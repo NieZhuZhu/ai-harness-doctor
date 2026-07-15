@@ -130,5 +130,11 @@
     "prompt": "How must nested instruction scopes distinguish conflicts from overrides? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)same.?scope.*conflict.*ancestor.*descendant.*non.?blocking.*override|ancestor.*descendant.*override.*same.?scope.*conflict"}
+  },
+  {
+    "id": "oversize-scan-coverage",
+    "prompt": "What does --max-bytes limit, and which oversize-file checks must still cover the complete file? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)semantic.*full.?file.*sha.*line.*security|full.?file.*sha.*line.*security.*semantic"}
   }
 ]

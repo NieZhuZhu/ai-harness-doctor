@@ -11,7 +11,7 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 22 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 23 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
   evidence freshness, repository operations, public lockfile sources, nested
   instruction scopes, and where the core scripts live).
@@ -42,7 +42,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 22/22 |
+| current evidence-bound maintenance pack | 23/23 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -64,4 +64,6 @@ evidence (exit 7) until the manual protocol is rerun and reviewed in the same
 PR. The current maintenance pack also checks that public npm lockfile sources
 use `registry.npmjs.org`, so GitHub-hosted Dependabot can resolve them, and that
 nested instruction differences are classified as same-scope conflicts or
-non-blocking ancestor-to-descendant overrides.
+non-blocking ancestor-to-descendant overrides. It also checks the oversize-file
+contract: `--max-bytes` bounds semantic text, while full-file identity, line
+count, and high-confidence security coverage remain bounded-memory and explicit.

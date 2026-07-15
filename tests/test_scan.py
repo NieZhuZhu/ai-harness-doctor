@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import shutil
@@ -1107,6 +1108,10 @@ class FileInfoStatBeforeReadTests(unittest.TestCase):
             # WARN emitted, and the body kept in memory is capped at max_bytes.
             self.assertTrue(any(w["level"] == "WARN" for w in info["warnings"]))
             self.assertLessEqual(len(info["text"]), 100)
+            self.assertEqual(info["analyzed_bytes"], 100)
+            self.assertTrue(info["truncated"])
+            self.assertEqual(info["security_scanned_bytes"], 5000)
+            self.assertEqual(info["sha256"], hashlib.sha256(body.encode()).hexdigest()[:12])
 
     def test_normal_file_reads_full_body(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1117,6 +1122,127 @@ class FileInfoStatBeforeReadTests(unittest.TestCase):
             self.assertEqual(info["bytes"], 12)
             self.assertEqual(info["text"], "hello\nworld\n")
             self.assertEqual(info["warnings"], [])
+            self.assertEqual(info["lines"], 2)
+            self.assertEqual(info["analyzed_bytes"], 12)
+            self.assertFalse(info["truncated"])
+            self.assertEqual(info["security_scanned_bytes"], 12)
+
+    def test_oversize_identity_and_line_count_cover_complete_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "AGENTS.md"
+            raw = b"prefix\n" + (b"x" * 100) + b"\ntail-without-newline"
+            path.write_bytes(raw)
+
+            info = scan.file_info(root, "AGENTS.md", path, max_bytes=16)
+
+            self.assertEqual(info["text"].encode(), raw[:16])
+            self.assertEqual(info["bytes"], len(raw))
+            self.assertEqual(info["lines"], 3)
+            self.assertEqual(info["sha256"], hashlib.sha256(raw).hexdigest()[:12])
+
+    def test_complete_security_scan_finds_tail_secret_and_bypass_without_value_leak(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            path = root / "AGENTS.md"
+            path.write_text(
+                ("safe prefix\n" * 100)
+                + f"token={token}\n"
+                + "Run with --dangerously-skip-permissions.\n",
+                encoding="utf-8",
+            )
+
+            report = scan.scan_repo(root, 100)
+            serialized = json.dumps(report)
+
+            self.assertNotIn(token, serialized)
+            self.assertTrue(
+                any(item["level"] == "HIGH" and item["category"] == "secret" for item in report["security"])
+            )
+            self.assertTrue(
+                any(item["category"] == "instruction" for item in report["security"])
+            )
+            self.assertEqual(report["files"][0]["security_scanned_bytes"], path.stat().st_size)
+            self.assertEqual(report["analysis_limits"][0]["path"], "AGENTS.md")
+
+    def test_placeholder_before_real_tail_secret_does_not_hide_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            path = root / "AGENTS.md"
+            path.write_text(
+                "token=placeholder-value\n"
+                + ("safe prefix\n" * 100)
+                + f"token={token}\n",
+                encoding="utf-8",
+            )
+
+            report = scan.scan_repo(root, 100)
+
+            self.assertTrue(
+                any(item["level"] == "HIGH" and item["category"] == "secret" for item in report["security"])
+            )
+            self.assertNotIn(token, json.dumps(report))
+
+    def test_complete_security_scan_matches_secret_across_stream_chunk_boundary(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "AGENTS.md"
+            token = b"ghp_" + (b"A" * 24)
+            start = scan.FILE_SCAN_CHUNK_BYTES - 2
+            raw = (b"x" * (start - 1)) + b"\n" + token + b"\n"
+            path.write_bytes(raw)
+
+            info = scan.file_info(root, "AGENTS.md", path, max_bytes=32)
+
+            self.assertIn("GitHub token", info["_secret_labels"])
+            self.assertEqual(info["_secret_labels"].count("GitHub token"), 1)
+
+    def test_same_prefix_different_tail_has_distinct_full_hash_and_partial_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            prefix = ("shared line\n" * 20).encode()
+            (root / "AGENTS.md").write_bytes(prefix + b"Use pnpm in the tail.\n")
+            (root / "CLAUDE.md").write_bytes(prefix + b"Use yarn in the tail.\n")
+
+            report = scan.scan_repo(root, 64)
+
+            hashes = {entry["sha256"] for entry in report["files"]}
+            self.assertEqual(len(hashes), 2)
+            self.assertEqual(report["conflicts"], [])
+            self.assertTrue(report["overlaps"][0]["prefix_only"])
+            self.assertEqual(set(report["overlaps"][0]["analyzed_bytes"].values()), {64})
+            markdown = scan.render_markdown(report)
+            self.assertIn("analyzed prefix", markdown)
+            self.assertIn("absence of a finding is not evidence about the unseen tail", markdown)
+
+    def test_fail_on_security_blocks_secret_after_semantic_budget(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            (root / "AGENTS.md").write_text(
+                ("safe prefix\n" * 100) + f"token={token}\n",
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(root),
+                    "--max-bytes",
+                    "100",
+                    "--json",
+                    "--fail-on-security",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertNotIn(token, proc.stdout + proc.stderr)
+            self.assertTrue(json.loads(proc.stdout)["security"])
 
 
 def _write(path, text):

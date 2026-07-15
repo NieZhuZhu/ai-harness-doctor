@@ -24,6 +24,7 @@ def render_markdown(report, report_path=None):
         lines.append("|---|---:|---:|---:|---|")
         for f in report["files"]:
             lines.append(f"| `{f['path']}` | {f['tool']} | {f['bytes']} | {f['lines']} | `{f['sha256']}` |")
+    render_analysis_limits(lines, report.get("analysis_limits", []))
     lines.extend(["", "## Size warnings"])
     if report["warnings"]:
         for w in report["warnings"]:
@@ -33,7 +34,11 @@ def render_markdown(report, report_path=None):
     lines.extend(["", "## Overlap candidates"])
     if report["overlaps"]:
         for o in report["overlaps"]:
-            lines.append(f"- `{o['a']}` ↔ `{o['b']}`: shared lines are {o['percent']}% of the smaller file")
+            qualifier = " analyzed prefix" if o.get("prefix_only") else ""
+            lines.append(
+                f"- `{o['a']}` ↔ `{o['b']}`: shared lines are {o['percent']}% "
+                f"of the smaller{qualifier}"
+            )
     else:
         lines.append("No overlap candidates above 30% were found.")
     render_instruction_scopes(
@@ -83,6 +88,24 @@ def render_markdown(report, report_path=None):
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def render_analysis_limits(lines, limits):
+    lines.extend(["", "## Analysis coverage"])
+    if not limits:
+        lines.append("Every recognized instruction file was analyzed in full.")
+        return
+    lines.append(
+        "Complete-file SHA, line counts, and high-confidence security checks cover every byte. "
+        "The following semantic report families use only the configured prefix, so absence of a "
+        "finding is not evidence about the unseen tail:"
+    )
+    for item in limits:
+        affected = ", ".join(f"`{name}`" for name in item.get("affected", []))
+        lines.append(
+            f"- `{item['path']}`: analyzed {item['analyzed_bytes']} / {item['bytes']} bytes "
+            f"for {affected}; security scanned {item['security_scanned_bytes']} bytes."
+        )
 
 
 def render_instruction_scopes(lines, scopes, overrides):

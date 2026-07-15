@@ -128,6 +128,7 @@ def build_explanation(repo_root, target, max_bytes=32768):
     _resolved, target_info = normalize_target(root, target)
     ctx = scan.ScanContext(root)
     files, public_files, _warnings, _ctx = scan.collect_instruction_files(root, max_bytes, ctx)
+    limits = scan.analysis_limits(files)
     scope_rows, file_scopes, parent_by_scope = scan.instruction_scope_map(files)
     _rows, conflicts, overrides = scan.analyze_scoped_conflicts(files)
     scope_names = set(parent_by_scope)
@@ -154,6 +155,9 @@ def build_explanation(repo_root, target, max_bytes=32768):
         "diagnostic_sources": _diagnostic_sources(public_files, file_scopes, chain),
         "scope_overrides": relevant_overrides,
         "conflicts": relevant_conflicts,
+        "analysis_limits": [
+            item for item in limits if scan.effective_instruction_scope(item["path"], scope_names) in chain_set
+        ],
         "limitations": [DIAGNOSTIC_LIMITATION],
     }
 
@@ -203,6 +207,18 @@ def render_markdown(report):
             )
     else:
         lines.append("- None.")
+    lines.extend(["", "## Analysis coverage"])
+    if report.get("analysis_limits"):
+        for item in report["analysis_limits"]:
+            affected = ", ".join(item["affected"])
+            lines.append(
+                f"- `{item['path']}`: semantic evidence for {affected} covers "
+                f"{item['analyzed_bytes']} / {item['bytes']} bytes; complete-file "
+                f"security covers {item['security_scanned_bytes']} bytes."
+            )
+        lines.append("- No finding is claimed for the unseen semantic tail.")
+    else:
+        lines.append("- Every diagnostic source on this chain was analyzed in full.")
     lines.extend(["", "## Limitations"])
     lines.extend(f"- {item}" for item in report["limitations"])
     return "\n".join(lines) + "\n"

@@ -202,6 +202,18 @@ class ExplainTests(unittest.TestCase):
                 json.dumps(second, ensure_ascii=False, sort_keys=True),
             )
 
+    def test_oversize_source_reports_partial_semantic_coverage(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "AGENTS.md", ("Use npm.\n" * 100) + "Use pnpm in the unseen tail.\n")
+
+            report = explain.build_explanation(td, "src/future.js", max_bytes=32)
+
+            self.assertEqual(report["conflicts"], [])
+            self.assertEqual(report["analysis_limits"][0]["path"], "AGENTS.md")
+            self.assertEqual(report["analysis_limits"][0]["analyzed_bytes"], 32)
+            markdown = explain.render_markdown(report)
+            self.assertIn("No finding is claimed for the unseen semantic tail", markdown)
+
     def test_cli_json_and_markdown(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "AGENTS.md", "Use npm.\n")
