@@ -33,6 +33,7 @@ Usage:
   ai-harness-doctor validate [...args]
   ai-harness-doctor stubs [...args]
   ai-harness-doctor drift [...args]
+  ai-harness-doctor review [...args]
   ai-harness-doctor eval [...args]
   ai-harness-doctor mcp
   ai-harness-doctor doctor [--self-test] [--json]
@@ -48,6 +49,7 @@ Examples:
   npx ai-harness-doctor draft . -o AGENTS.md   # fact-derived starter AGENTS.md instead of an empty skeleton
   npx ai-harness-doctor validate .
   npx ai-harness-doctor drift . --strict
+  npx ai-harness-doctor review --report drift-report.json   # dry-run by default; add --post for GitHub
   npx ai-harness-doctor doctor --self-test   # verify the Node + Python runtime is ready
   npx ai-harness-doctor guard . --apply
   npx ai-harness-doctor mcp   # start the MCP stdio server (JSON-RPC over newline-delimited JSON)
@@ -587,6 +589,7 @@ const SCRIPT_COMMANDS = {
   validate: ['canonicalize.py', '--validate'],
   stubs: ['canonicalize.py', '--write-stubs'],
   drift: ['check_drift.py'],
+  review: ['pr_review.py'],
   eval: ['eval_run.py'],
 };
 
@@ -1051,7 +1054,7 @@ function main() {
   if (command === 'guard') return guard(rest);
   if (command === 'mcp') return runMcpServer();
   if (command === 'doctor') return doctor(rest);
-  if (['scan', 'plan', 'draft', 'validate', 'stubs', 'drift', 'eval'].includes(command)) return runScript(command, rest);
+  if (Object.prototype.hasOwnProperty.call(SCRIPT_COMMANDS, command)) return runScript(command, rest);
   fail(`Unknown command: ${command}`);
 }
 

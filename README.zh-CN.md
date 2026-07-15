@@ -88,7 +88,7 @@ npx ai-harness-doctor guard . --apply
 
 - 目标必须是 git repo。
 - `ai-harness-doctor` CLI 需要 Node >=16。
-- 确定性的 scan/plan/validate/stubs/drift/eval 脚本需要 Python >=3.9，且只使用 stdlib。
+- 确定性的 scan/plan/validate/stubs/drift/review/eval 脚本需要 Python >=3.9，且只使用 stdlib。
 - 运行 `ai-harness-doctor doctor --self-test` 可校验 Node + Python 运行时；设置 `AI_HARNESS_DOCTOR_PYTHON` 可指定特定解释器。
 - 在 `stubs` 或 `guard` 写入任何内容之前，`AGENTS.md` 必须已经存在。
 
@@ -114,6 +114,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `stubs` | ✅ | 使用 `--apply` 时 | 除非使用 `--force`，否则要求工作区干净。 |
 | `guard` | ✅ | 使用 `--apply` 时 | 要求目标是 git repo 且已有 `AGENTS.md`。 |
 | `drift` | ✅ | ❌ | 遇到 blocking drift 会失败；`--strict` 会把 notices 提升为错误。 |
+| `review` | ✅ | 仅使用 `--post` 时 | 把 scan/drift JSON 转换成丰富的 GitHub PR 反馈；默认 dry-run 并输出 JSON。 |
 
 ### 卸载与回滚
 
@@ -166,7 +167,7 @@ npx ai-harness-doctor guard . --apply
 
 CI 卡点是 provider 感知的：传入 `--provider github|gitlab|codebase`（默认 `auto`）以安装匹配的 CI 文件。各 provider 的文件布局见 [`guard`](#command-reference) 命令参考。
 
-在 pull request 上，GitHub guard 模板还会多做两件事。其一，把漂移发现项呈现为**可操作的 PR review 反馈**：`scripts/pr_review.py` 读取 `check_drift.py --json`（或 `scan.py --json`）报告并尝试发布一条 review。可定位的发现项会变成内联评论，包含规则、严重度、发现内容、对 AI agent 的影响、已有证据和修复建议。最终总结会展示健康分/等级、严重度分布、内联与汇总数量、完整 findings 索引、每个 finding 的可折叠完整详情，以及按优先级排列的下一步，并带有稳定标记 `<!-- ai-harness-doctor:pr-review -->`。若 GitHub 因内联位置无效而返回 HTTP 422，工具会把这份完整总结改发为普通 PR 评论，确保所有修复指引得以保留；权限、网络、限流和服务端错误仍会明确暴露。若报告干净，则说明已覆盖的检查范围并明确无需操作。它默认 dry-run（打印 JSON 负载，绝不触网），仅在 `--post` 时用 `GITHUB_TOKEN` 发布。其二，运行一个 **eval 健康分卡点**——`python3 scripts/eval_run.py --score <已提交的 results.json> --fail-under <N>`——当 eval 健康分低于阈值时使 CI 失败（退出码 5）。PR review 反馈仅限 GitHub；GitLab/Codebase 模板只获得 eval 卡点。
+在 pull request 上，GitHub guard 模板还会多做两件事。其一，把漂移发现项呈现为**可操作的 PR review 反馈**：公共命令 `ai-harness-doctor review` 读取 `drift --json`（或 `scan --json`）报告并尝试发布一条 review。可定位的发现项会变成内联评论，包含规则、严重度、发现内容、对 AI agent 的影响、已有证据和修复建议。最终总结会展示健康分/等级、严重度分布、内联与汇总数量、完整 findings 索引、每个 finding 的可折叠完整详情，以及按优先级排列的下一步，并带有稳定标记 `<!-- ai-harness-doctor:pr-review -->`。若 GitHub 因内联位置无效而返回 HTTP 422，工具会把这份完整总结改发为普通 PR 评论，确保所有修复指引得以保留；权限、网络、限流和服务端错误仍会明确暴露。若报告干净，则说明已覆盖的检查范围并明确无需操作。它默认 dry-run（打印 JSON 负载，绝不触网），仅在 `--post` 时用 `GITHUB_TOKEN` 发布。其二，通过 `ai-harness-doctor eval --score <已提交的 results.json> --fail-under <N>` 运行 **eval 健康分卡点**，当 eval 健康分低于阈值时使 CI 失败（退出码 5）。所有发布的 guard 命令都通过已打包的 CLI 运行，因此在没有复制 `scripts/` 目录的新消费仓库中也能工作。PR review 反馈仅限 GitHub；GitLab/Codebase 模板只获得 eval 卡点。
 
 纵深防御，从强到弱：
 
@@ -592,7 +593,7 @@ npx ai-harness-doctor doctor --self-test   # human-readable runtime table
 npx ai-harness-doctor doctor --json        # machine-readable runtime report
 ```
 
-Python 按优先级顺序发现：`AI_HARNESS_DOCTOR_PYTHON`、然后 `PYTHON`、然后 `python3`、然后 `python`；仅接受 Python **3** 解释器。当它缺失时，每个 Python 子命令（`scan`、`plan`、`validate`、`stubs`、`drift`、`eval`）都会以同一条清晰、可操作的信息失败——安装 Python 3 或设置 `AI_HARNESS_DOCTOR_PYTHON`——而不是抛出原始堆栈。
+Python 按优先级顺序发现：`AI_HARNESS_DOCTOR_PYTHON`、然后 `PYTHON`、然后 `python3`、然后 `python`；仅接受 Python **3** 解释器。当它缺失时，每个 Python 子命令（`scan`、`plan`、`validate`、`stubs`、`drift`、`review`、`eval`）都会以同一条清晰、可操作的信息失败——安装 Python 3 或设置 `AI_HARNESS_DOCTOR_PYTHON`——而不是抛出原始堆栈。
 
 </details>
 

@@ -114,7 +114,10 @@ class CliInstallerTests(unittest.TestCase):
             checkup_workflow = repo / ".github" / "workflows" / "harness-checkup.yml"
             agents = repo / "AGENTS.md"
             self.assertIn("# ai-harness-doctor:guard", hook.read_text(encoding="utf-8"))
-            self.assertIn("npx -y ai-harness-doctor drift . --strict", drift_workflow.read_text(encoding="utf-8"))
+            workflow_text = drift_workflow.read_text(encoding="utf-8")
+            self.assertIn("npx -y ai-harness-doctor@latest drift . --strict", workflow_text)
+            self.assertIn("npx -y ai-harness-doctor@latest review", workflow_text)
+            self.assertNotIn("python3 scripts/", workflow_text)
             self.assertIn("🩺 Harness checkup: drift detected", checkup_workflow.read_text(encoding="utf-8"))
             self.assertEqual(
                 agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1
@@ -125,6 +128,47 @@ class CliInstallerTests(unittest.TestCase):
             self.assertEqual(
                 agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1
             )
+
+    def test_guard_consumer_repo_can_build_review_through_public_cli(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+            self.assertFalse((repo / "scripts").exists())
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+            drift = subprocess.run(
+                ["node", str(CLI), "drift", str(repo), "--json"],
+                cwd=str(repo),
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            report_path = repo / "drift-report.json"
+            report_path.write_text(drift.stdout, encoding="utf-8")
+
+            review = subprocess.run(
+                [
+                    "node",
+                    str(CLI),
+                    "review",
+                    "--report",
+                    str(report_path),
+                    "--default-path",
+                    "AGENTS.md",
+                ],
+                cwd=str(repo),
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(review.returncode, 0, review.stderr)
+            payload = json.loads(review.stdout)
+            self.assertIn("body", payload)
+            self.assertIn("comments", payload)
+            self.assertIn("ai-harness-doctor:pr-review", payload["body"])
 
     def test_guard_without_agents_exits_1(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:

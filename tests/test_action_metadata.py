@@ -8,6 +8,7 @@ RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 RELEASING = ROOT / "RELEASING.md"
 HARNESS_DRIFT = ROOT / ".github" / "workflows" / "harness-drift.yml"
 HARNESS_DRIFT_TEMPLATE = ROOT / "assets" / "guard" / "harness-drift.yml"
+GUARD_ASSETS = ROOT / "assets" / "guard"
 
 MARKETPLACE_DESCRIPTION = (
     "Audit and drift-guard AGENTS.md and AI agent configs for stale commands/paths, "
@@ -52,6 +53,19 @@ class ActionMetadataTests(unittest.TestCase):
                 self.assertIn(f'--commit "{head_sha}"', text)
                 self.assertNotIn(f"--commit {merge_sha}", text)
                 self.assertNotIn(f'--commit "{merge_sha}"', text)
+
+    def test_shipped_guard_templates_use_only_public_cli_commands(self):
+        shipped = [
+            HARNESS_DRIFT_TEMPLATE,
+            GUARD_ASSETS / "harness-checkup.yml",
+            GUARD_ASSETS / "gitlab" / "harness-ci.yml",
+            GUARD_ASSETS / "codebase" / "harness-guard.sh",
+        ]
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in shipped)
+        self.assertNotIn("python3 scripts/", combined)
+        self.assertNotIn("scripts/pr_review.py", combined)
+        self.assertIn("ai-harness-doctor@latest review", combined)
+        self.assertIn("ai-harness-doctor@latest eval --score", combined)
 
     def test_release_only_triggers_for_full_semver_tags(self):
         text = RELEASE.read_text(encoding="utf-8")
