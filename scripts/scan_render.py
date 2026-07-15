@@ -36,10 +36,16 @@ def render_markdown(report, report_path=None):
             lines.append(f"- `{o['a']}` ↔ `{o['b']}`: shared lines are {o['percent']}% of the smaller file")
     else:
         lines.append("No overlap candidates above 30% were found.")
+    render_instruction_scopes(
+        lines,
+        report.get("instruction_scopes", []),
+        report.get("scope_overrides", []),
+    )
     lines.extend(["", "## Conflict candidates"])
     if report["conflicts"]:
         for c in report["conflicts"]:
-            lines.append(f"- **{c['signal']}**")
+            scope = f" (scope `{c['scope']}`)" if c.get("scope") else ""
+            lines.append(f"- **{c['signal']}**{scope}")
             for value, entries in c["values"].items():
                 evidence = "; ".join(f"{e['path']}:{e['line']} `{e['evidence']}`" for e in entries)
                 lines.append(f"  - `{value}`: {evidence}")
@@ -77,6 +83,40 @@ def render_markdown(report, report_path=None):
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def render_instruction_scopes(lines, scopes, overrides):
+    lines.extend(["", "## Instruction scopes"])
+    if scopes:
+        lines.append("| Canonical file | Scope | Parent scope |")
+        lines.append("|---|---|---|")
+        for row in scopes:
+            parent = f"`{row['parent']}`" if row.get("parent") is not None else "—"
+            lines.append(f"| `{row['path']}` | `{row['scope']}` | {parent} |")
+    else:
+        lines.append("No canonical AGENTS.md / AGENT.md scope file was found.")
+
+    lines.extend(["", "## Declared scope overrides (non-blocking)"])
+    if not overrides:
+        lines.append("No parent → child instruction overrides were detected.")
+        return
+    lines.append(
+        "Closer canonical files intentionally override ancestor guidance. These records are evidence only "
+        "and never count toward `--fail-on-conflicts`."
+    )
+    for override in overrides:
+        parent_values = ", ".join(f"`{value}`" for value in override["parent_values"])
+        values = ", ".join(f"`{value}`" for value in override["values"])
+        lines.append(
+            f"- **{override['signal']}**: `{override['parent_scope']}` ({parent_values}) "
+            f"→ `{override['scope']}` ({values})"
+        )
+        evidence = "; ".join(
+            f"{entry['path']}:{entry['line']} `{entry['evidence']}`"
+            for entry in override.get("evidence", [])
+        )
+        if evidence:
+            lines.append(f"  - Evidence: {evidence}")
 
 
 def render_baseline(lines, baseline, findings):

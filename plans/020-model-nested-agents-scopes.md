@@ -379,19 +379,43 @@ compatibility, verify only in-scope files changed, and mark Plan 020 DONE.
 
 ## Done criteria
 
-- [ ] Conflict gates compare values only within one deterministic diagnostic
+- [x] Conflict gates compare values only within one deterministic diagnostic
   scope.
-- [ ] Parent→child differences are visible as non-blocking overrides.
-- [ ] Sibling scopes do not manufacture global conflicts.
-- [ ] Genuine root and nested same-scope conflicts still fail exit 7.
-- [ ] Scope metadata is visible in JSON, Markdown, and Treat output.
-- [ ] SARIF/PR review contain true scoped conflicts only.
-- [ ] Existing root baselines remain compatible; scoped identities do not
+- [x] Parent→child differences are visible as non-blocking overrides.
+- [x] Sibling scopes do not manufacture global conflicts.
+- [x] Genuine root and nested same-scope conflicts still fail exit 7.
+- [x] Scope metadata is visible in JSON, Markdown, and Treat output.
+- [x] SARIF/PR review contain true scoped conflicts only.
+- [x] Existing root baselines remain compatible; scoped identities do not
   collide.
-- [ ] A real nested-AGENTS public repo validates the behavior read-only and is
+- [x] A real nested-AGENTS public repo validates the behavior read-only and is
   logged in `EXTERNAL_VALIDATION.md`.
-- [ ] `npm run check`, evidence freshness, and strict drift pass.
-- [ ] Only in-scope files are modified.
+- [x] `npm run check`, evidence freshness, and strict drift pass.
+- [x] Only in-scope files are modified.
+
+## Completion evidence (2026-07-15)
+
+- `scripts/scan.py` now derives canonical scopes from contained lexical
+  `AGENTS.md` / `AGENT.md` paths already present in the shared file inventory;
+  no extra tree walk or prose inference is used.
+- Same-scope normalized values produce blocking `conflicts`; root findings keep
+  their historical JSON shape, while non-root conflicts add `scope`.
+  Ancestor-to-descendant differences produce deterministic non-blocking
+  `scope_overrides`, and sibling scopes are never compared.
+- JSON and Markdown expose `instruction_scopes` plus override evidence. Treat
+  plans preserve nested canonical files (including overlap cases) instead of
+  recommending root stubs. Overrides are intentionally absent from SARIF and PR
+  review; true scoped conflicts retain scope there and in baseline identity.
+- Characterization covers root/nested same-scope conflicts, sibling isolation,
+  three-level nearest ancestors, duplicate `AGENTS.md`/`AGENT.md` scopes,
+  component-safe similarly prefixed paths, no-op inherited values, exit 7,
+  baseline compatibility, Treat, Markdown, SARIF, and PR review.
+- Read-only external validation used `mastra-ai/mastra` commit `9fcb1db9`:
+  21 canonical scopes, 10 cross-scope test-command overrides, and only two
+  remaining true same-scope conflicts (`mastracode`, `packages/memory`).
+  Target `git status` was identical before and after; only Phase 0 scan was run.
+- The maintenance contract remains under strict D4 at 11,906 bytes, and the
+  manual-protocol evidence pack was honestly refreshed to 22/22, Grade A.
 
 ## STOP conditions
 

@@ -232,6 +232,187 @@ class NodeVersionConflictTests(unittest.TestCase):
         self.assertEqual(sigs[0]["value"], "node 18.17.0")
 
 
+class ScopedConflictTests(unittest.TestCase):
+    def _analyze(self, files):
+        return scan.analyze_scoped_conflicts(files)
+
+    def test_parent_child_difference_is_non_blocking_override(self):
+        scopes, conflicts, overrides = self._analyze(
+            [
+                {"path": "AGENTS.md", "text": "Use npm and run `npm test`."},
+                {"path": "packages/api/AGENTS.md", "text": "Use pnpm and run `pnpm test`."},
+            ]
+        )
+        self.assertEqual(conflicts, [])
+        self.assertEqual(
+            scopes,
+            [
+                {"path": "AGENTS.md", "scope": ".", "parent": None},
+                {"path": "packages/api/AGENTS.md", "scope": "packages/api", "parent": "."},
+            ],
+        )
+        self.assertEqual(
+            {(item["signal"], item["parent_scope"], item["scope"]) for item in overrides},
+            {
+                ("package_manager", ".", "packages/api"),
+                ("test_command", ".", "packages/api"),
+            },
+        )
+
+    def test_root_same_scope_tool_disagreement_remains_conflict(self):
+        _scopes, conflicts, overrides = self._analyze(
+            [
+                {"path": "AGENTS.md", "text": "Use npm."},
+                {"path": "CLAUDE.md", "text": "Use pnpm."},
+            ]
+        )
+        self.assertEqual(overrides, [])
+        self.assertEqual(len(conflicts), 1)
+        self.assertNotIn("scope", conflicts[0])  # backward-compatible root shape
+        self.assertEqual(set(conflicts[0]["values"]), {"npm", "pnpm"})
+
+    def test_nested_same_scope_tool_disagreement_remains_scoped_conflict(self):
+        _scopes, conflicts, _overrides = self._analyze(
+            [
+                {"path": "AGENTS.md", "text": "Use npm."},
+                {"path": "packages/api/AGENTS.md", "text": "Use pnpm."},
+                {"path": "packages/api/CLAUDE.md", "text": "Use yarn."},
+            ]
+        )
+        nested = [item for item in conflicts if item.get("scope") == "packages/api"]
+        self.assertEqual(len(nested), 1)
+        self.assertEqual(set(nested[0]["values"]), {"pnpm", "yarn"})
+
+    def test_sibling_scopes_neither_conflict_nor_override_each_other(self):
+        _scopes, conflicts, overrides = self._analyze(
+            [
+                {"path": "packages/a/AGENTS.md", "text": "Use pnpm."},
+                {"path": "packages/b/AGENTS.md", "text": "Use yarn."},
+            ]
+        )
+        self.assertEqual(conflicts, [])
+        self.assertEqual(overrides, [])
+
+    def test_three_level_chain_uses_nearest_ancestor_with_signal(self):
+        scopes, conflicts, overrides = self._analyze(
+            [
+                {"path": "AGENTS.md", "text": "Use npm."},
+                {"path": "packages/app/AGENTS.md", "text": "Use pnpm."},
+                {"path": "packages/app/ui/AGENT.md", "text": "Use yarn."},
+                {"path": "packages/application/CLAUDE.md", "text": "Use npm."},
+            ]
+        )
+        self.assertEqual(conflicts, [])
+        self.assertEqual(
+            scopes[-1],
+            {
+                "path": "packages/app/ui/AGENT.md",
+                "scope": "packages/app/ui",
+                "parent": "packages/app",
+            },
+        )
+        self.assertEqual(
+            [(item["parent_scope"], item["scope"]) for item in overrides],
+            [(".", "packages/app"), ("packages/app", "packages/app/ui")],
+        )
+
+    def test_same_inherited_value_is_not_noisy_override(self):
+        _scopes, conflicts, overrides = self._analyze(
+            [
+                {"path": "AGENTS.md", "text": "Use npm."},
+                {"path": "packages/api/AGENTS.md", "text": "Use npm."},
+            ]
+        )
+        self.assertEqual(conflicts, [])
+        self.assertEqual(overrides, [])
+
+    def test_subset_of_inherited_values_is_not_an_override(self):
+        _scopes, conflicts, overrides = self._analyze(
+            [
+                {
+                    "path": "AGENTS.md",
+                    "text": "Format with Prettier and lint with ESLint.",
+                },
+                {
+                    "path": "packages/api/AGENTS.md",
+                    "text": "Format with Prettier.",
+                },
+            ]
+        )
+        self.assertEqual(conflicts, [])
+        self.assertEqual(overrides, [])
+
+    def test_agents_and_agent_in_one_directory_share_one_scope(self):
+        scopes, conflicts, _overrides = self._analyze(
+            [
+                {"path": "packages/api/AGENTS.md", "text": "Use pnpm."},
+                {"path": "packages/api/AGENT.md", "text": "Use yarn."},
+            ]
+        )
+        self.assertEqual([row["scope"] for row in scopes], ["packages/api", "packages/api"])
+        self.assertEqual(conflicts[0]["scope"], "packages/api")
+
+    def test_markdown_renders_scopes_and_non_blocking_overrides(self):
+        report = {
+            "files": [],
+            "warnings": [],
+            "overlaps": [],
+            "conflicts": [],
+            "nested": ["packages/api/AGENTS.md"],
+            "instruction_scopes": [
+                {"path": "AGENTS.md", "scope": ".", "parent": None},
+                {"path": "packages/api/AGENTS.md", "scope": "packages/api", "parent": "."},
+            ],
+            "scope_overrides": [
+                {
+                    "signal": "package_manager",
+                    "parent_scope": ".",
+                    "scope": "packages/api",
+                    "parent_values": ["npm"],
+                    "values": ["pnpm"],
+                    "evidence": [
+                        {
+                            "path": "packages/api/AGENTS.md",
+                            "line": 2,
+                            "value": "pnpm",
+                            "evidence": "Use pnpm.",
+                        }
+                    ],
+                }
+            ],
+            "surface": {},
+        }
+        markdown = scan.render_markdown(report)
+        self.assertIn("## Instruction scopes", markdown)
+        self.assertIn("## Declared scope overrides (non-blocking)", markdown)
+        self.assertIn("never count toward `--fail-on-conflicts`", markdown)
+        self.assertIn("`packages/api`", markdown)
+
+    def test_cli_fail_on_conflicts_ignores_override_but_blocks_nested_conflict(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _write(root / "AGENTS.md", "# Project overview\nUse npm.\n")
+            _write(root / "packages/api/AGENTS.md", "# Project overview\nUse pnpm.\n")
+            clean = subprocess.run(
+                [sys.executable, str(SCAN), str(root), "--fail-on-conflicts", "--json"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+            payload = json.loads(clean.stdout)
+            self.assertEqual(payload["conflicts"], [])
+            self.assertTrue(payload["scope_overrides"])
+
+            _write(root / "packages/api/CLAUDE.md", "Use yarn.\n")
+            blocked = subprocess.run(
+                [sys.executable, str(SCAN), str(root), "--fail-on-conflicts", "--json"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(blocked.returncode, 7, blocked.stdout + blocked.stderr)
+            self.assertEqual(json.loads(blocked.stdout)["conflicts"][0]["scope"], "packages/api")
+
+
 class ScanTests(unittest.TestCase):
     def run_json(self, repo):
         proc = subprocess.run([sys.executable, str(SCAN), str(repo), "--json"], text=True, capture_output=True)
@@ -604,6 +785,24 @@ class ScanBaselineTests(unittest.TestCase):
         changed_category = self._report(semantic=[{**finding, "category": "path"}])
         scan.apply_scan_baseline(changed_category, scan.baseline_fingerprints(payload), "baseline.json")
         self.assertEqual(len(changed_category["semantic"]["findings"]), 1)
+
+    def test_scoped_conflict_baseline_identity_preserves_root_compatibility(self):
+        root_conflict = {
+            "signal": "package_manager",
+            "values": {"npm": [], "pnpm": []},
+        }
+        nested_conflict = {**root_conflict, "scope": "packages/api"}
+        root_payload = scan.scan_baseline_payload(self._report(conflicts=[root_conflict]))
+        nested_payload = scan.scan_baseline_payload(self._report(conflicts=[nested_conflict]))
+
+        root_entry = root_payload["findings"][0]
+        nested_entry = nested_payload["findings"][0]
+        self.assertNotIn("scope", root_entry)
+        self.assertEqual(nested_entry["scope"], "packages/api")
+        self.assertNotEqual(
+            scan.scan_finding_fingerprint(root_entry),
+            scan.scan_finding_fingerprint(nested_entry),
+        )
 
     def test_monorepo_suppression_is_visible_and_attributed_at_top_level(self):
         gap = {
@@ -1811,6 +2010,8 @@ class ScannerPerformanceTests(unittest.TestCase):
                 report["gaps"],
             )
             self.assertEqual(report["semantic"]["checked"], 0)
+            self.assertEqual(report["instruction_scopes"], [])
+            self.assertEqual(report["scope_overrides"], [])
 
     @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
     def test_external_guard_workflow_symlink_is_reported_missing(self):

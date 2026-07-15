@@ -89,6 +89,7 @@ class ScanReportTests(unittest.TestCase):
                 {
                     "signal": "package_manager",
                     "values": {"pnpm": [], "npm": []},
+                    "scope": "packages/api",
                 }
             ],
             "overlaps": [{"a": "AGENTS.md", "b": "CLAUDE.md"}],
@@ -151,10 +152,27 @@ class ScanReportTests(unittest.TestCase):
         self.assertEqual(conflict["level"], "warning")
         self.assertEqual(
             conflict["message"]["text"],
-            "Conflicting package_manager declarations: npm, pnpm",
+            "Conflicting package_manager declarations: npm, pnpm (scope: packages/api)",
         )
         self.assertEqual(conflict["locations"], [])
 
+    def test_scope_overrides_are_not_sarif_findings(self):
+        report = self._report()
+        report["scope_overrides"] = [
+            {
+                "signal": "package_manager",
+                "parent_scope": ".",
+                "scope": "packages/api",
+                "parent_values": ["npm"],
+                "values": ["pnpm"],
+                "evidence": [],
+            }
+        ]
+        results = sarif.scan_report_to_sarif(report)["runs"][0]["results"]
+        self.assertEqual(len(results), 7)
+
+    def test_scan_custom_findings_keep_locations(self):
+        results = sarif.scan_report_to_sarif(self._report())["runs"][0]["results"]
         custom = results[5]
         self.assertEqual(custom["ruleId"], "custom/org-policy")
         self.assertEqual(custom["level"], "error")

@@ -212,6 +212,8 @@ def _scan_results_for_report(report, prefix):
         values = conflict.get("values", {})
         rule_id = "conflict/" + signal
         message = f"Conflicting {signal} declarations: " + ", ".join(sorted(values.keys()))
+        if conflict.get("scope") not in (None, "", "."):
+            message += f" (scope: {conflict['scope']})"
         results.append(_result(rule_id, "warning", message))
     # opt-in plugin findings → custom/<rule>; plugins remain disabled unless the
     # scan caller explicitly supplied --allow-plugins.

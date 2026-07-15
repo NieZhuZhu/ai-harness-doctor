@@ -867,8 +867,76 @@ def _conflict_key(signal, value):
     return value
 
 
-def find_conflicts(files):
-    by_signal = {}
+def _path_parts(path):
+    """Repository-relative POSIX path components (component-safe ancestry)."""
+    return tuple(part for part in str(path).replace("\\", "/").split("/") if part not in ("", "."))
+
+
+def _scope_path(path):
+    parts = _path_parts(path)
+    return "." if len(parts) <= 1 else "/".join(parts[:-1])
+
+
+def _is_scope_ancestor(ancestor, descendant):
+    if ancestor == ".":
+        return descendant != "."
+    ancestor_parts = _path_parts(ancestor)
+    descendant_parts = _path_parts(descendant)
+    return len(ancestor_parts) < len(descendant_parts) and descendant_parts[: len(ancestor_parts)] == ancestor_parts
+
+
+def instruction_scope_map(files):
+    """Return canonical scope rows plus each config file's effective scope.
+
+    A canonical scope is the parent directory of AGENTS.md/AGENT.md. Every
+    config file belongs to its deepest canonical ancestor; files outside a
+    nested scope use the virtual repository-root scope ``"."``.
+    """
+    canonical_order = {name: index for index, name in enumerate(registry.load_canonical())}
+    canonical_files = []
+    for file_entry in files:
+        parts = _path_parts(file_entry.get("path", ""))
+        if parts and parts[-1] in canonical_order:
+            canonical_files.append((file_entry["path"], _scope_path(file_entry["path"]), canonical_order[parts[-1]]))
+
+    scope_names = {"."}
+    scope_names.update(scope for _path, scope, _order in canonical_files)
+
+    def nearest_parent(scope):
+        if scope == ".":
+            return None
+        ancestors = [candidate for candidate in scope_names if _is_scope_ancestor(candidate, scope)]
+        return max(ancestors, key=lambda candidate: len(_path_parts(candidate)), default=".")
+
+    rows = [
+        {"path": path, "scope": scope, "parent": nearest_parent(scope)}
+        for path, scope, _order in sorted(
+            canonical_files,
+            key=lambda item: (len(_path_parts(item[1])), item[1], item[2], item[0]),
+        )
+    ]
+
+    def effective_scope(path):
+        directory_parts = _path_parts(_scope_path(path))
+        candidates = []
+        for scope in scope_names:
+            if scope == ".":
+                candidates.append(scope)
+                continue
+            scope_parts = _path_parts(scope)
+            if directory_parts[: len(scope_parts)] == scope_parts:
+                candidates.append(scope)
+        return max(candidates, key=lambda candidate: len(_path_parts(candidate)))
+
+    file_scopes = {file_entry["path"]: effective_scope(file_entry["path"]) for file_entry in files}
+    parent_by_scope = {scope: nearest_parent(scope) for scope in scope_names}
+    return rows, file_scopes, parent_by_scope
+
+
+def analyze_scoped_conflicts(files):
+    """Return ``(instruction_scopes, conflicts, non-blocking overrides)``."""
+    scope_rows, file_scopes, parent_by_scope = instruction_scope_map(files)
+    by_scope = {}
     for f in files:
         # De-duplicate within a file by CONFLICT KEY (not raw value) so two
         # compatible references in one file — e.g. "node 18" and "node 18.17.0"
@@ -876,31 +944,66 @@ def find_conflicts(files):
         seen = {}
         for sig in extract_signals(f):
             seen[(sig["signal"], _conflict_key(sig["signal"], sig["value"]))] = sig
+        scope = file_scopes.get(f["path"], ".")
         for (signal, key), sig in seen.items():
-            by_signal.setdefault(signal, {}).setdefault(key, []).append(sig)
+            by_scope.setdefault(scope, {}).setdefault(signal, {}).setdefault(key, []).append(sig)
+
     conflicts = []
-    for signal, groups in by_signal.items():
-        # A conflict needs at least two DISTINCT normalized values (keys).
-        if len(groups) <= 1:
-            continue
-        # ESLint + Prettier are a complementary, standard combination — Prettier
-        # formats and ESLint lints, they are meant to run together — not two
-        # competing formatters. Skip when every distinct formatter value is one
-        # of {prettier, eslint}; a real biome-vs-{prettier,eslint} conflict is
-        # still reported because biome is not in that set.
-        if signal == "formatter":
-            distinct = {entries[0]["value"].lower() for entries in groups.values()}
-            if distinct <= {"prettier", "eslint"}:
+    for scope in sorted(by_scope, key=lambda value: (len(_path_parts(value)), value)):
+        for signal, groups in by_scope[scope].items():
+            # A conflict needs at least two DISTINCT normalized values (keys).
+            if len(groups) <= 1:
                 continue
-        conflicts.append(
-            {
+            # ESLint + Prettier are complementary, not competing formatters.
+            if signal == "formatter":
+                distinct = {entries[0]["value"].lower() for entries in groups.values()}
+                if distinct <= {"prettier", "eslint"}:
+                    continue
+            conflict = {
                 "signal": signal,
-                # Key the reported values by a representative actual value string
-                # (the first occurrence) so users still see the real version(s).
                 "values": {entries[0]["value"]: entries[:3] for entries in groups.values()},
             }
-        )
-    return conflicts
+            # Preserve the historical root conflict shape byte-for-byte.
+            if scope != ".":
+                conflict["scope"] = scope
+            conflicts.append(conflict)
+
+    overrides = []
+    for scope in sorted(by_scope, key=lambda value: (len(_path_parts(value)), value)):
+        if scope == ".":
+            continue
+        for signal, groups in by_scope[scope].items():
+            ancestor = parent_by_scope.get(scope)
+            while ancestor is not None and signal not in by_scope.get(ancestor, {}):
+                ancestor = parent_by_scope.get(ancestor)
+            if ancestor is None:
+                continue
+            parent_groups = by_scope[ancestor][signal]
+            # Repeating only a subset of inherited values is not an override:
+            # absence does not revoke ancestor guidance. Record a child scope
+            # only when it introduces at least one normalized value its nearest
+            # signal-bearing ancestor did not declare.
+            if set(groups).issubset(parent_groups):
+                continue
+            evidence = []
+            for entries in groups.values():
+                evidence.extend(entries[:3])
+            overrides.append(
+                {
+                    "signal": signal,
+                    "parent_scope": ancestor,
+                    "scope": scope,
+                    "parent_values": sorted(entries[0]["value"] for entries in parent_groups.values()),
+                    "values": sorted(entries[0]["value"] for entries in groups.values()),
+                    "evidence": sorted(evidence, key=lambda entry: (entry["path"], entry["line"], entry["value"])),
+                }
+            )
+    return scope_rows, conflicts, overrides
+
+
+def find_conflicts(files):
+    """Backward-compatible true-conflict view (scope overrides are separate)."""
+    return analyze_scoped_conflicts(files)[1]
 
 
 def nested_agents(files):
@@ -1374,12 +1477,14 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
         if facts.is_file_within_root(root, agents_path)
         else ""
     )
-    conflicts = find_conflicts(files)
+    instruction_scopes, conflicts, scope_overrides = analyze_scoped_conflicts(files)
     report = {
         "files": result_files,
         "warnings": warnings,
         "overlaps": find_overlaps(files),
         "conflicts": conflicts,
+        "instruction_scopes": instruction_scopes,
+        "scope_overrides": scope_overrides,
         "nested": nested_agents(result_files),
         "surface": surface,
         "security": security_findings(root, files, mcp, hooks, permissions, ctx),
@@ -1605,16 +1710,17 @@ def _scan_finding_records(report, package=""):
         )
     for finding in report.get("conflicts", []):
         values = sorted(str(value) for value in finding.get("values", {}))
-        records.append(
-            {
-                "family": "conflict",
-                "rule": finding.get("signal", ""),
-                "package": package,
-                "path": "",
-                "message": f"Conflicting {finding.get('signal', '')} declarations: " + ", ".join(values),
-                "values": values,
-            }
-        )
+        record = {
+            "family": "conflict",
+            "rule": finding.get("signal", ""),
+            "package": package,
+            "path": "",
+            "message": f"Conflicting {finding.get('signal', '')} declarations: " + ", ".join(values),
+            "values": values,
+        }
+        if finding.get("scope") not in (None, "", "."):
+            record["scope"] = finding["scope"]
+        records.append(record)
     return records
 
 
@@ -1642,6 +1748,8 @@ def _baseline_entry(record):
         entry["actual"] = record.get("actual", "")
     elif family == "conflict":
         entry["values"] = sorted(str(value) for value in record.get("values", []))
+        if record.get("scope") not in (None, "", "."):
+            entry["scope"] = record["scope"]
     return entry
 
 
