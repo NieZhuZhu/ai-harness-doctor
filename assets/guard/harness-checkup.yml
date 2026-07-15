@@ -59,7 +59,8 @@ jobs:
           } > harness-checkup-report.md
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit 0
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
+      - name: Upload harness checkup report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         if: always()
         with:
           name: harness-checkup-report
@@ -67,19 +68,52 @@ jobs:
             harness-scan-report.md
             harness-drift-report.md
             harness-checkup-report.md
-      - name: Create or update harness issue
-        if: steps.drift.outputs.status != '0'
+      - name: Reconcile harness issue
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           TITLE: "🩺 Harness checkup: issues detected"
+          CHECKUP_STATUS: ${{ steps.drift.outputs.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          body="$(cat harness-checkup-report.md)"
-          issue_number="$(gh issue list --state open --json number,title --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)"
-          if [ -n "$issue_number" ]; then
-            gh issue comment "$issue_number" --body "$body"
+          issue_number="$(
+            gh issue list \
+              --state open \
+              --limit 100 \
+              --search "$TITLE in:title" \
+              --json number,title \
+              --jq '[.[] | select(.title == env.TITLE) | .number][0] // empty'
+          )"
+          if [ "$CHECKUP_STATUS" != "0" ]; then
+            body="$(cat harness-checkup-report.md)"
+            if [ -n "$issue_number" ]; then
+              gh issue comment "$issue_number" --body "$body"
+            else
+              gh issue create --title "$TITLE" --body "$body"
+            fi
+          elif [ -n "$issue_number" ]; then
+            gh issue close \
+              "$issue_number" \
+              --comment "✅ Harness checkup recovered at \`$COMMIT_SHA\`. Verified by $RUN_URL."
           else
-            gh issue create --title "$TITLE" --body "$body"
+            echo "Harness checkup is healthy; no open incident issue."
           fi
-          exit "${{ steps.drift.outputs.status }}"
+      - name: Fail when harness issues remain
+        if: always()
+        env:
+          CHECKUP_STATUS: ${{ steps.drift.outputs.status }}
+        shell: bash
+        run: |
+          if [ -z "$CHECKUP_STATUS" ]; then
+            echo "Harness checkup did not produce a status." >&2
+            exit 1
+          fi
+          if [ "$CHECKUP_STATUS" != "0" ]; then
+            echo "Harness checkup reported status $CHECKUP_STATUS." >&2
+            exit "$CHECKUP_STATUS"
+          else
+            echo "Harness checkup passed."
+          fi

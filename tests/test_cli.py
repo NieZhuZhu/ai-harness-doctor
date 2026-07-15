@@ -748,6 +748,13 @@ class CliInstallerTests(unittest.TestCase):
             self.assertNotIn('npx -y ai-harness-doctor@latest scan . --write-baseline', workflow_text + checkup_text)
             self.assertNotIn("python3 scripts/", workflow_text)
             self.assertIn("🩺 Harness checkup: issues detected", checkup_text)
+            self.assertIn("Reconcile harness issue", checkup_text)
+            self.assertIn("CHECKUP_STATUS: ${{ steps.drift.outputs.status }}", checkup_text)
+            self.assertIn("select(.title == env.TITLE)", checkup_text)
+            self.assertIn("gh issue close", checkup_text)
+            self.assertIn("Harness checkup recovered", checkup_text)
+            self.assertIn("Fail when harness issues remain", checkup_text)
+            self.assertNotIn("|| true", checkup_text)
             self.assertEqual(
                 agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1
             )
