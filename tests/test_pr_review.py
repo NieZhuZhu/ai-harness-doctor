@@ -14,6 +14,33 @@ import pr_review  # noqa: E402
 
 
 class BuildReviewTests(unittest.TestCase):
+    def test_tail_security_finding_is_delivered_without_secret_value(self):
+        report = {
+            "analysis_limits": [
+                {
+                    "path": "AGENTS.md",
+                    "bytes": 50000,
+                    "analyzed_bytes": 32768,
+                    "security_scanned_bytes": 50000,
+                    "affected": ["conflicts", "overlaps", "scope_overrides", "semantic"],
+                }
+            ],
+            "security": [
+                {
+                    "level": "HIGH",
+                    "category": "secret",
+                    "path": "AGENTS.md",
+                    "message": "Possible GitHub token committed in AGENTS.md",
+                }
+            ],
+        }
+
+        payload = pr_review.build_review(report)
+
+        self.assertEqual(payload["summary_count"], 1)
+        self.assertIn("Possible GitHub token", payload["body"])
+        self.assertNotIn("ghp_", payload["body"])
+
     def test_located_findings_become_inline_comments(self):
         report = {
             "score": 85,

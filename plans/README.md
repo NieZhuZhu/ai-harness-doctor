@@ -163,7 +163,7 @@ verification gate, and update its status here.
 | 021 | Enforce drift checks in every nested AGENTS.md scope | P0 | M | — | DONE |
 | 022 | Reject untrusted inputs and off-main tags in privileged npm workflows | P0 | S | — | DONE |
 | 023 | Explain the effective instruction chain for any repository path | P1 | L | 020 (done) | DONE |
-| 024 | Scan every byte for security and identity without unbounded semantic reads | P0 | M | — | TODO |
+| 024 | Scan every byte for security and identity without unbounded semantic reads | P0 | M | — | IN PROGRESS |
 | 025 | Bind idempotent release reruns to the published npm artifact | P0 | S | — | TODO |
 | 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | TODO |
 

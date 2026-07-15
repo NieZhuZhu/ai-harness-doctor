@@ -107,8 +107,12 @@ class ActionMetadataTests(unittest.TestCase):
 
     def test_repository_dogfoods_the_composite_action(self):
         text = SELF_TEST.read_text(encoding="utf-8")
-        self.assertGreaterEqual(text.count("uses: ./"), 2)
+        self.assertGreaterEqual(text.count("uses: ./"), 3)
         self.assertIn("Validate SARIF output", text)
+        self.assertIn("Reject a tail credential through the repository Action", text)
+        self.assertIn("--max-bytes 100 --fail-on-security", text)
+        self.assertIn('item.ruleId === "security/secret"', text)
+        self.assertIn('raw.includes("ghp_")', text)
         self.assertIn("Assert invalid command failed", text)
 
     def test_pr_review_workflows_anchor_comments_to_pull_request_head(self):

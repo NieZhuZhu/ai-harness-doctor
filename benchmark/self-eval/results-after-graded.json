@@ -156,13 +156,20 @@
       "answer": "Same-scope differences are conflicts; ancestor-to-descendant differences are visible non-blocking overrides.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "oversize-scan-coverage",
+      "stdout": "--max-bytes limits semantic text only; full-file SHA, line count, and security checks still cover the complete file with bounded memory.",
+      "answer": "--max-bytes limits semantic text only; full-file SHA, line count, and security checks still cover the complete file with bounded memory.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 22,
-    "total": 22,
+    "passed": 23,
+    "total": 23,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -170,12 +177,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "e155f299f93fc61f64eaea4823f008678fe11d8fba392c87bbd02185b860c23b"
+      "sha256": "6c48928042255e07f33b197b84f25a4fefc5b1ded99dd83b040bbd839e6b4e17"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "22d7fddd606b4607577d9a33131f885a3fbdca8f9188f2479f8f17174b6a626d"
+        "sha256": "63748cb1f866d487d5d9df6d69eb04fd07efd54029e0473531183de54964f2e9"
       }
     ]
   }

@@ -425,6 +425,33 @@ class CliSmokeTests(unittest.TestCase):
             self.assertEqual(location["artifactLocation"]["uri"], "AGENTS.md")
             self.assertEqual(location["region"]["startLine"], 1)
 
+    def test_scan_cli_sarif_includes_secret_beyond_semantic_budget_without_value(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            token = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+            (repo / "AGENTS.md").write_text(
+                ("safe prefix\n" * 100) + f"token={token}\n",
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--max-bytes",
+                    "100",
+                    "--sarif",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertNotIn(token, proc.stdout)
+            results = json.loads(proc.stdout)["runs"][0]["results"]
+            self.assertIn("security/secret", {item["ruleId"] for item in results})
+
     def test_drift_cli_emits_valid_sarif(self):
         td, repo = self._fixture_repo()
         try:

@@ -6,10 +6,10 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
 
 - `SKILL.md` — the skill contract and the four-phase workflow (Checkup → Treat → Follow-up → Efficacy).
 - `scripts/` — deterministic Python engines:
-  - `scan.py` — Phase 0 Checkup: read-only inventory + security scan of a target repo. Monorepo-aware (`--monorepo` / auto-detects npm/yarn/pnpm workspaces) with per-package results, a top-level aggregate, and `--baseline`/`--write-baseline` adoption for existing non-security debt.
-  - `semantic.py` — Phase 0 helper: compares AGENTS.md declarations (commands/paths/package manager/language version) against code facts across Node, Python, Go, Rust, Java, and Ruby ecosystems.
-  - `canonicalize.py` — Phase 1 Treat: merge-plan skeleton with fact-aware conflict-default suggestions, `--draft` AGENTS.md auto-drafting, tool-stub downgrades, and validation.
-  - `check_drift.py` — Phase 2 Follow-up: root/nested drift guard (D1–D8), health score, `--fix`, and baselines.
+  - `scan.py` — Phase 0 inventory/security scan, monorepo results, and non-security debt baselines.
+  - `semantic.py` — Phase 0 declaration-vs-code facts for Node, Python, Go, Rust, Java, and Ruby.
+  - `canonicalize.py` — Phase 1 merge plan, `--draft`, tool-stub downgrade, and validation.
+  - `check_drift.py` — Phase 2 root/nested D1–D8 guard, health, `--fix`, and baselines.
   - `explain.py` — read-only target-path projection of scan's canonical scope, diagnostic-source, override, and conflict evidence.
   - `plugins.py` — opt-in deterministic `.ai-harness-doctor/rules/*.py` engine; plugin failures become `ERROR` findings instead of crashing.
   - `eval_run.py` — Phase 3 Efficacy: before/after + matrix eval runner and LLM-as-judge grading.
@@ -38,6 +38,7 @@ node bin/cli.js help
 - `bin/cli.js` must use Node >=16 standard library only; do not add npm runtime dependencies.
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
+- `--max-bytes` bounds semantic text only; full-file SHA/line/security stays bounded-memory. Mark prefix-only evidence; never call a prefix digest a file SHA or claim unseen tails clean.
 - Keep instruction scope deterministic and lexical: same-scope differences are conflicts; ancestor→descendant differences are non-blocking overrides. Phase 2 attributes each nested `AGENTS.md`, checks local facts/paths first with root fallback, and keeps D3/D4/D8/plugins repository-wide. Preserve root baselines; never infer prose/glob scopes.
 - Explain reuses scan's contained inventory/scope helpers; only canonical files are effective, others diagnostic. Keep CLI/MCP/Claude/generated-adapter schemas/counts synchronized.
 - Baselines are visible debt registers: HIGH security is ineligible; identities are deterministic, root/package-aware, and line-independent. Shrink repaired debt. Every finding family needs PR-review/SARIF traversal; preserve package paths, keep batch findings summary-only, and never post baselined debt as active.

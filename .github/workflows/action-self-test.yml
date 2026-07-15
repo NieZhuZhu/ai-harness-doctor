@@ -44,6 +44,52 @@ jobs:
             }
           '
 
+      - name: Create oversize tail-security fixture
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/tail-security-repo
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const path = require("node:path");
+            fs.mkdirSync(process.env.FIXTURE_ROOT, { recursive: true });
+            const token = "ghp_" + "A".repeat(24);
+            fs.writeFileSync(
+              path.join(process.env.FIXTURE_ROOT, "AGENTS.md"),
+              "safe prefix\n".repeat(100) + `token=${token}\n`,
+            );
+          '
+
+      - name: Reject a tail credential through the repository Action
+        id: tail-security
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/tail-security-repo
+          args: "--max-bytes 100 --fail-on-security"
+          sarif-file: ${{ runner.temp }}/tail-security.sarif
+
+      - name: Validate tail-security Action SARIF and failure
+        env:
+          OUTCOME: ${{ steps.tail-security.outcome }}
+          SARIF_FILE: ${{ runner.temp }}/tail-security.sarif
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            if (process.env.OUTCOME !== "failure") {
+              throw new Error(`Expected tail credential to fail, got ${process.env.OUTCOME}`);
+            }
+            const raw = fs.readFileSync(process.env.SARIF_FILE, "utf8");
+            const sarif = JSON.parse(raw);
+            const results = sarif.runs && sarif.runs[0] && sarif.runs[0].results;
+            if (!Array.isArray(results) || !results.some((item) => item.ruleId === "security/secret")) {
+              throw new Error("Tail credential did not reach Action SARIF");
+            }
+            if (raw.includes("ghp_")) {
+              throw new Error("Tail credential value leaked into Action SARIF");
+            }
+          '
+
       # A composite Action must not turn installation/CLI failures into a green
       # check. This deliberately invalid command should fail the Action step.
       - name: Reject an invalid command

@@ -51,6 +51,8 @@ The repository-root composite `action.yml` wraps the same SARIF path for GitHub 
 
 The scan checks the configuration-file inventory, size warnings, overlap candidates, conflict candidates, and nested `AGENTS.md` files. It also inventories the **extended harness surface** — MCP servers, subagents, slash commands, hooks, and permission rules — and runs a **security checkup** that flags plaintext secrets, overly broad permission rules (e.g. `Bash(*)`, `bypassPermissions`), insecure MCP transports, and risky hook bodies (`curl … | bash`, `rm -rf`, `--dangerously-skip-permissions`). It additionally runs a **semantic consistency** check (via `scripts/semantic.py`) that cross-checks the concrete claims in `AGENTS.md` — build/test commands, repo-relative paths, the package manager, and the Node.js version — against ground truth in `package.json`, `Makefile`, the filesystem, lockfiles, and `.nvmrc` / `engines.node`, surfacing declaration-vs-code mismatches at checkup time.
 
+`--max-bytes` is a semantic evidence budget, not a security boundary. For an oversize recognized instruction file, the scanner retains only that prefix for overlap/conflict/override/semantic analysis, but streams the complete contained file for SHA-256, line count, secret labels, and permission-bypass labels. JSON exposes per-file `analyzed_bytes`, `truncated`, `security_scanned_bytes`, plus top-level `analysis_limits`; Markdown and explain reports state when a conclusion is prefix-only. Never infer that an unseen tail is clean from an empty bounded-semantic result.
+
 The scanner's filesystem boundary is the audited repository root: repository-derived configs, manifests, workspace metadata, semantic facts, and default rule plugins are used only when their resolved targets remain inside that root. In-repo file symlinks stay supported and retain their lexical repo-relative report path. Explicit `--rules DIR` locations remain an intentional opt-in and may live outside the repository.
 
 Repository mutation is stricter than scanning: `stubs --apply`, `drift --fix --apply`, and `guard --apply` / `--remove --apply` refuse a repository-derived target when the file itself or any existing parent directory is a symlink. They never follow a symlink to rewrite/delete another location. Explicit output arguments such as `draft -o PATH`, `--write-baseline FILE`, and eval result paths remain user-selected destinations and are not inferred repository mutations.
@@ -70,7 +72,7 @@ Installer mutation follows the same ownership principle. Copy payloads live unde
 ### Outputs
 
 - A human-readable Checkup report.
-- `--json` machine output with `files`, `warnings`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), `security` (severity-ranked findings), and `custom` (findings from user rule plugins). With `--baseline` it additively includes `baseline` and attributed `baselined` debt; in monorepo mode it also includes `packages` and `monorepo`.
+- `--json` machine output with `files` (complete identity plus semantic/security coverage), `warnings`, `analysis_limits`, `overlaps`, `conflicts`, `nested`, `surface` (MCP/subagents/commands/hooks/permissions), `security` (severity-ranked findings), and `custom` (findings from user rule plugins). With `--baseline` it additively includes `baseline` and attributed `baselined` debt; in monorepo mode it also includes `packages` and `monorepo`.
 
 ### Explicit stop condition
 
