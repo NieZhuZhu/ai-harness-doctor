@@ -33,6 +33,10 @@ class TaskFileError(ValueError):
     """A safe, caller-facing task-file validation failure."""
 
 
+class ResultFileError(ValueError):
+    """A safe, caller-facing stored-result validation failure."""
+
+
 def _task_field_error(index, task, field, message):
     del task  # Never echo untrusted task content in validation diagnostics.
     raise TaskFileError(f"task {index} field `{field}` {message}")
@@ -1006,6 +1010,212 @@ def compute_health(data):
     }
 
 
+_RESULT_FAMILIES = ("tasks", "round_results", "agents")
+_HEALTH_FIELDS = ("score", "grade", "passed", "total", "timed_out", "pass_rate")
+
+
+def _result_error(location, message):
+    raise ResultFileError(f"{location} {message}")
+
+
+def _validate_result_records(records, location, allow_ungraded=False):
+    if not isinstance(records, list):
+        _result_error(location, "must be an array")
+    seen_ids = set()
+    all_graded = True
+    for index, record in enumerate(records):
+        item = f"{location} record {index}"
+        if not isinstance(record, dict):
+            _result_error(item, "must be an object")
+        task_id = record.get("id")
+        if not isinstance(task_id, str) or not task_id.strip():
+            _result_error(item, "field `id` must be a non-empty string")
+        if task_id in seen_ids:
+            _result_error(item, "field `id` must be unique within its task array")
+        seen_ids.add(task_id)
+        if "passed" not in record and allow_ungraded:
+            all_graded = False
+        elif not isinstance(record.get("passed"), bool):
+            _result_error(item, "field `passed` must be a boolean")
+        if "timed_out" in record and not isinstance(record["timed_out"], bool):
+            _result_error(item, "field `timed_out` must be a boolean")
+    return records, all_graded
+
+
+def _health_values_equal(stored, derived):
+    if isinstance(derived, bool):
+        return isinstance(stored, bool) and stored == derived
+    if isinstance(derived, (int, float)):
+        return (
+            isinstance(stored, (int, float))
+            and not isinstance(stored, bool)
+            and stored == derived
+        )
+    return type(stored) is type(derived) and stored == derived
+
+
+def _validate_stored_health(container, derived, location):
+    if "health" not in container:
+        return
+    stored = container["health"]
+    if not isinstance(stored, dict):
+        _result_error(f"{location} health", "must be an object")
+    for field in _HEALTH_FIELDS:
+        if field not in stored:
+            continue
+        if not _health_values_equal(stored[field], derived[field]):
+            _result_error(
+                f"{location} health field `{field}`",
+                "does not match the task records",
+            )
+
+
+def _validate_round_result_list(rounds):
+    if not isinstance(rounds, list):
+        _result_error("round_results", "must be an array")
+    records = []
+    for index, round_result in enumerate(rounds):
+        location = f"round_results entry {index}"
+        if not isinstance(round_result, dict):
+            _result_error(location, "must be an object")
+        if "tasks" not in round_result:
+            _result_error(location, "must contain `tasks`")
+        round_records, _all_graded = _validate_result_records(
+            round_result["tasks"],
+            f"{location} tasks",
+        )
+        round_health = compute_health({"tasks": round_records})
+        _validate_stored_health(round_result, round_health, location)
+        records.extend(round_records)
+    return records
+
+
+def validate_result(
+    data,
+    accepted_families=None,
+    allow_ungraded=False,
+    allow_bare_rounds=False,
+):
+    """Validate stored eval records and derive health from their task arrays.
+
+    The returned metadata is an internal projection; ``data`` itself is never
+    normalized or rewritten so valid producer JSON remains byte-compatible.
+    """
+    if allow_bare_rounds and isinstance(data, list):
+        if (
+            accepted_families is not None
+            and "round_results" not in set(accepted_families)
+        ):
+            raise ResultFileError(
+                "bare round-result arrays are not supported here"
+            )
+        records = _validate_round_result_list(data)
+        return {
+            "data": data,
+            "family": "round_results",
+            "records": records,
+            "round_results": data,
+            "health": compute_health({"tasks": records}),
+        }
+    if not isinstance(data, dict):
+        raise ResultFileError("result file must contain a JSON object")
+    families = [field for field in _RESULT_FAMILIES if field in data]
+    if len(families) != 1:
+        names = ", ".join(f"`{field}`" for field in _RESULT_FAMILIES)
+        raise ResultFileError(
+            f"result file must contain exactly one primary result family: {names}"
+        )
+    family = families[0]
+    if accepted_families is not None and family not in set(accepted_families):
+        expected = ", ".join(sorted(accepted_families))
+        raise ResultFileError(
+            f"result family `{family}` is not supported here (expected: {expected})"
+        )
+
+    if family == "tasks":
+        records, all_graded = _validate_result_records(
+            data["tasks"],
+            "tasks",
+            allow_ungraded=allow_ungraded,
+        )
+        derived = compute_health({"tasks": records}) if all_graded else None
+        if derived is not None:
+            _validate_stored_health(data, derived, "result")
+        elif "health" in data:
+            _result_error(
+                "result health",
+                "cannot be verified while task records are ungraded",
+            )
+        return {
+            "data": data,
+            "family": family,
+            "records": records,
+            "health": derived,
+        }
+
+    if family == "round_results":
+        rounds = data["round_results"]
+        records = _validate_round_result_list(rounds)
+        derived = compute_health({"tasks": records})
+        _validate_stored_health(data, derived, "result")
+        return {
+            "data": data,
+            "family": family,
+            "records": records,
+            "round_results": rounds,
+            "health": derived,
+        }
+
+    agents = data["agents"]
+    if not isinstance(agents, dict):
+        _result_error("agents", "must be an object")
+    records = []
+    for index, agent in enumerate(agents.values()):
+        # Agent names are caller-controlled metadata. Use only the stable
+        # position in diagnostics so a malformed file cannot echo a secret-
+        # shaped or newline-bearing name to CI logs.
+        location = f"agents entry {index}"
+        if not isinstance(agent, dict):
+            _result_error(location, "must be an object")
+        if "tasks" not in agent:
+            _result_error(location, "must contain `tasks`")
+        agent_records, _all_graded = _validate_result_records(
+            agent["tasks"],
+            f"{location} tasks",
+        )
+        records.extend(agent_records)
+    derived = compute_health({"tasks": records})
+    _validate_stored_health(data, derived, "result")
+    return {
+        "data": data,
+        "family": family,
+        "records": records,
+        "health": derived,
+    }
+
+
+def load_result_file(
+    result_path,
+    accepted_families=None,
+    allow_ungraded=False,
+    allow_bare_rounds=False,
+):
+    """Decode and validate a stored result with path/content-safe errors."""
+    path = Path(result_path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ResultFileError(
+            f"could not read valid JSON from {path.name}"
+        ) from exc
+    return validate_result(
+        data,
+        accepted_families=accepted_families,
+        allow_ungraded=allow_ungraded,
+        allow_bare_rounds=allow_bare_rounds,
+    )
+
+
 def _round_records(round_result):
     """Return the flat task records for a single round result."""
     if isinstance(round_result, dict):
@@ -1046,9 +1256,6 @@ def aggregate_task_stats(round_results):
 
 
 def _round_health_score(round_result):
-    health = round_result.get("health") if isinstance(round_result, dict) else None
-    if isinstance(health, dict) and "score" in health:
-        return health["score"]
     return compute_health(round_result)["score"]
 
 
@@ -1563,6 +1770,13 @@ def render_stats_summary(stats, overall_health=None):
 def regrade(args):
     tasks_path = Path(args.tasks)
     tasks = load_tasks_file(tasks_path)
+    result = load_result_file(
+        args.regrade,
+        accepted_families={"tasks"},
+        allow_ungraded=True,
+    )
+    results = result["data"]
+    had_health = "health" in results
     declared_evidence = _task_evidence_paths(tasks)
     evidence_manifest = None
     if args.evidence or declared_evidence:
@@ -1577,7 +1791,6 @@ def regrade(args):
             tasks=tasks,
         )
     task_map = {task["id"]: task for task in tasks}
-    results = json.loads(Path(args.regrade).read_text(encoding="utf-8"))
     for record in results.get("tasks", []):
         task = task_map.get(record.get("id"))
         answer = extract_answer(record.get("stdout", ""))
@@ -1593,8 +1806,9 @@ def regrade(args):
             record["regraded"] = False
         else:
             record["regraded"] = False
-    if evidence_manifest is not None:
+    if evidence_manifest is not None or had_health:
         results["health"] = compute_health(results)
+    if evidence_manifest is not None:
         results["evidence"] = evidence_manifest
     output = Path(args.output) if args.output else Path(args.regrade)
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1603,8 +1817,14 @@ def regrade(args):
 
 
 def compare(args):
-    before = json.loads(Path(args.compare[0]).read_text(encoding="utf-8"))
-    after = json.loads(Path(args.compare[1]).read_text(encoding="utf-8"))
+    before = load_result_file(
+        args.compare[0],
+        accepted_families={"tasks"},
+    )["data"]
+    after = load_result_file(
+        args.compare[1],
+        accepted_families={"tasks"},
+    )["data"]
     bmap = {t["id"]: t for t in before.get("tasks", [])}
     amap = {t["id"]: t for t in after.get("tasks", [])}
     ids = sorted(set(bmap) | set(amap))
@@ -1807,16 +2027,15 @@ def run_matrix(args, runners):
 
 def score_report(args, tasks=None):
     """One-click health score from an existing results / matrix JSON file."""
-    data = json.loads(Path(args.score).read_text(encoding="utf-8"))
+    result = load_result_file(args.score)
+    data = result["data"]
     if args.require_current_evidence:
         mismatches = verify_current_evidence(data, args, tasks=tasks)
         if mismatches:
             for mismatch in mismatches:
                 print(f"stale eval evidence: {mismatch}", file=sys.stderr)
             return EVIDENCE_STALE_EXIT
-    health = data.get("health") if isinstance(data, dict) else None
-    if not isinstance(health, dict) or "score" not in health:
-        health = compute_health(data)
+    health = result["health"]
     if args.as_json:
         print(json.dumps(health, ensure_ascii=False, indent=2))
     else:
@@ -1837,20 +2056,19 @@ def stats_report(args):
     or a bare list of round result objects. Re-computes the per-task flakiness
     and per-round health summary so old result files can be analysed offline.
     """
-    data = json.loads(Path(args.stats).read_text(encoding="utf-8"))
-    if isinstance(data, dict) and isinstance(data.get("round_results"), list):
-        round_results = data["round_results"]
-    elif isinstance(data, list):
-        round_results = data
-    elif isinstance(data, dict) and isinstance(data.get("tasks"), list):
+    result = load_result_file(
+        args.stats,
+        accepted_families={"round_results", "tasks"},
+        allow_bare_rounds=True,
+    )
+    data = result["data"]
+    if result["family"] == "round_results":
+        round_results = result["round_results"]
+    else:
         # A single-round result file: treat it as one round.
         round_results = [data]
-    else:
-        raise SystemExit(
-            "--stats file must contain 'round_results', a list of rounds, or a single-round 'tasks' result"
-        )
     task_stats, stats = summarize_rounds(round_results)
-    overall = compute_health({"tasks": [rec for rr in round_results for rec in _round_records(rr)]})
+    overall = result["health"]
     if args.as_json:
         print(json.dumps({"task_stats": task_stats, "stats": stats, "health": overall}, ensure_ascii=False, indent=2))
     else:
@@ -2198,6 +2416,9 @@ def main(argv=None):
         return run_tasks(args)
     except TaskFileError as exc:
         print(f"task error: {exc}", file=sys.stderr)
+        return 2
+    except ResultFileError as exc:
+        print(f"result error: {exc}", file=sys.stderr)
         return 2
 
 

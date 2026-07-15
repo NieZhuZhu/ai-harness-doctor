@@ -300,5 +300,6 @@ Stop and report back if:
 - Preflight is a cost/safety boundary, not merely nicer error handling.
 - Keep diagnostics metadata-only; never echo prompts, command bodies, evidence
   contents, or host paths.
-- A later result-schema validator is separate work and needs its own
-  reproduction.
+- Stored result validation is implemented separately by Plan 033; keep the two
+  schemas distinct because task definitions authorize execution while result
+  records authorize offline health and baseline decisions.

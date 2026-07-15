@@ -289,9 +289,12 @@ non-empty string `id`, a non-empty string `prompt`, a supported `check` object
 (`regex`/`command`/`judge`), and an optional finite positive `timeout_s`;
 evidence and judge fields are type-checked too. Invalid packs exit 2 with a
 concise `task error` that names only the task index/field and never echoes the
-prompt or task contents. Regrade and strict score use the same preflight;
-non-strict historical score/compare/stats/trend remain independent of a task
-file.
+prompt or task contents. Regrade and strict score use the same task preflight;
+non-strict historical score/compare/stats remain independent of a task file but
+validate their stored result records separately. Malformed single-run,
+multi-round, or matrix input exits 2 with a concise `result error` before a
+comparison/regrade output or baseline snapshot can be written. Trend history is
+a separate append-only schema.
 
 Run tasks:
 
@@ -380,7 +383,7 @@ python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/
 
 ### Health score
 
-Every eval computes a one-click efficacy **health score** = pass rate across all task records, expressed `0-100` with an A-F letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F). It is embedded as a `health` key in both single-run results (`{"tasks": ...}`) and matrix results (`{"agents": ...}`), and printed as a summary line: `health score: N/100 (grade X), P/T tasks passed`. Timeouts count as failures.
+Every eval computes a one-click efficacy **health score** = pass rate across all task records, expressed `0-100` with an A-F letter grade (A ≥90 / B ≥80 / C ≥70 / D ≥60 / F). It is embedded as a `health` key in both single-run results (`{"tasks": ...}`) and matrix results (`{"agents": ...}`), and printed as a summary line: `health score: N/100 (grade X), P/T tasks passed`. Timeouts count as failures. Stored `health` is a consistency cache, never score authority: offline consumers validate records, re-derive single/multi/matrix health, and reject every present canonical health field that disagrees. Historical blocks may omit additive health fields, but a contradictory cached score cannot pass `--fail-under`, regression checks, or baseline persistence.
 
 **Evidence freshness.** A high stored score is meaningful only for the inputs that produced it. With `--workdir`, run, matrix, and regrade parse task-level `evidence` and stamp its deterministic union with repeated explicit `--evidence FILE` inputs into result JSON. Schema version 1 keeps the legacy file shape `{path, sha256}`, adds directory entries `{path, kind: "directory"}`, and marks newly task-bound manifests with `taskEvidence: true`; directories prove existence/type only and are never recursively hashed. `--score RESULTS --tasks TASKS --workdir REPO --evidence AGENTS.md --require-current-evidence` re-derives the task sources, combines explicit sources, and exits 7 on changed tasks/files, missing/type-changed directories, missing metadata, or a different evidence set before printing/gating health. Every task evidence entry must be a non-empty contained file/directory path; escapes, external symlinks, and malformed entries fail closed before a runner executes, without storing contents or absolute host paths. Pre-feature schema-v1 manifests without the marker retain explicit-only verification with their original arguments; hand-written tasks with no declared/explicit evidence retain unstamped behavior, and omitting the strict flag keeps old result files usable for historical reporting.
 
@@ -408,7 +411,7 @@ python3 scripts/eval_run.py --trend baselines/history.json
 
 ### Multi-round stability (`--rounds`)
 
-`--rounds N` (N > 1) runs the whole task set N times and aggregates stability statistics so you can surface **flaky** tasks — ones that pass on some runs and fail on others. The results JSON then adds `rounds`, `round_results` (each round's full task records + per-round `health`), a per-task `task_stats` array (`runs`, `passed`, `failed`, `timed_out`, `pass_rate`, `flaky`), and a `stats` summary (`mean_health`, `variance`, `stddev`, `min_health`, `max_health`, `health_scores`, `flaky_tasks`, `flaky_count`). A task is `flaky` when it neither passes every round nor fails every round. Overall `health` is the pass rate across every task-run and `--fail-under N` gates on it. `--rounds 1` (the default) keeps the legacy single-round output shape byte-for-byte unchanged. `--stats PATH` re-aggregates an existing multi-round results file offline.
+`--rounds N` (N > 1) runs the whole task set N times and aggregates stability statistics so you can surface **flaky** tasks — ones that pass on some runs and fail on others. The results JSON then adds `rounds`, `round_results` (each round's full task records + per-round `health`), a per-task `task_stats` array (`runs`, `passed`, `failed`, `timed_out`, `pass_rate`, `flaky`), and a `stats` summary (`mean_health`, `variance`, `stddev`, `min_health`, `max_health`, `health_scores`, `flaky_tasks`, `flaky_count`). A task is `flaky` when it neither passes every round nor fails every round. Overall `health` is the pass rate across every task-run and `--fail-under N` gates on it. `--rounds 1` (the default) keeps the legacy single-round output shape byte-for-byte unchanged. `--stats PATH` validates each stored round/task record, derives per-round and overall health, rejects contradictory cached health, then re-aggregates the multi-round file offline.
 
 ```bash
 # Run the task set 5 times and aggregate flakiness + per-round health stats
