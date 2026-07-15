@@ -51,6 +51,13 @@ class BuildDocumentTests(unittest.TestCase):
 class ScanReportTests(unittest.TestCase):
     def _report(self):
         return {
+            "warnings": [
+                {
+                    "level": "NOTICE",
+                    "path": "AGENTS.md",
+                    "message": "AGENTS.md is oversized",
+                }
+            ],
             "security": [
                 {
                     "level": "HIGH",
@@ -85,23 +92,43 @@ class ScanReportTests(unittest.TestCase):
                 }
             ],
             "overlaps": [{"a": "AGENTS.md", "b": "CLAUDE.md"}],
-            "custom": [{"check": "X", "level": "ERROR", "message": "ignored for scan"}],
+            "custom": [
+                {
+                    "rule": "org-policy",
+                    "level": "ERROR",
+                    "path": "AGENTS.md",
+                    "line": 9,
+                    "message": "Custom policy failed",
+                    "suggestion": "Add the required owner.",
+                },
+                {
+                    "rule": "",
+                    "level": "WARN",
+                    "message": "Unlocated custom finding",
+                },
+            ],
         }
 
     def test_scan_ruleids_levels_and_locations(self):
         doc = sarif.scan_report_to_sarif(self._report(), version="1.0.0")
         results = doc["runs"][0]["results"]
-        # overlaps and custom are skipped for scan SARIF v1.
-        self.assertEqual(len(results), 4)
+        self.assertEqual(len(results), 7)
 
-        security = results[0]
+        warning = results[0]
+        self.assertEqual(warning["ruleId"], "warning/size")
+        self.assertEqual(warning["level"], "warning")
+        warning_loc = warning["locations"][0]["physicalLocation"]
+        self.assertEqual(warning_loc["artifactLocation"]["uri"], "AGENTS.md")
+        self.assertNotIn("region", warning_loc)
+
+        security = results[1]
         self.assertEqual(security["ruleId"], "security/secret")
         self.assertEqual(security["level"], "error")
         loc = security["locations"][0]["physicalLocation"]
         self.assertEqual(loc["artifactLocation"]["uri"], "src/config.js")
         self.assertEqual(loc["region"]["startLine"], 12)
 
-        gap = results[1]
+        gap = results[2]
         self.assertEqual(gap["ruleId"], "gap/G1")
         self.assertEqual(gap["level"], "error")
         self.assertEqual(
@@ -112,14 +139,14 @@ class ScanReportTests(unittest.TestCase):
         self.assertEqual(gap_loc["artifactLocation"]["uri"], "AGENTS.md")
         self.assertNotIn("region", gap_loc)
 
-        semantic = results[2]
+        semantic = results[3]
         self.assertEqual(semantic["ruleId"], "semantic/command")
         self.assertEqual(semantic["level"], "note")  # MISMATCH is unmapped
         sem_loc = semantic["locations"][0]["physicalLocation"]
         self.assertEqual(sem_loc["artifactLocation"]["uri"], "AGENTS.md")
         self.assertEqual(sem_loc["region"]["startLine"], 5)
 
-        conflict = results[3]
+        conflict = results[4]
         self.assertEqual(conflict["ruleId"], "conflict/package_manager")
         self.assertEqual(conflict["level"], "warning")
         self.assertEqual(
@@ -128,13 +155,37 @@ class ScanReportTests(unittest.TestCase):
         )
         self.assertEqual(conflict["locations"], [])
 
+        custom = results[5]
+        self.assertEqual(custom["ruleId"], "custom/org-policy")
+        self.assertEqual(custom["level"], "error")
+        self.assertEqual(
+            custom["message"]["text"],
+            "Custom policy failed — Add the required owner.",
+        )
+        custom_loc = custom["locations"][0]["physicalLocation"]
+        self.assertEqual(custom_loc["artifactLocation"]["uri"], "AGENTS.md")
+        self.assertEqual(custom_loc["region"]["startLine"], 9)
+
+        fallback = results[6]
+        self.assertEqual(fallback["ruleId"], "custom/custom")
+        self.assertEqual(fallback["level"], "warning")
+        self.assertEqual(fallback["locations"], [])
+
     def test_scan_rules_sorted_by_id(self):
         doc = sarif.scan_report_to_sarif(self._report())
         rule_ids = [r["id"] for r in doc["runs"][0]["tool"]["driver"]["rules"]]
         self.assertEqual(rule_ids, sorted(rule_ids))
         self.assertEqual(
             rule_ids,
-            ["conflict/package_manager", "gap/G1", "security/secret", "semantic/command"],
+            [
+                "conflict/package_manager",
+                "custom/custom",
+                "custom/org-policy",
+                "gap/G1",
+                "security/secret",
+                "semantic/command",
+                "warning/size",
+            ],
         )
         for rule in doc["runs"][0]["tool"]["driver"]["rules"]:
             self.assertEqual(rule["id"], rule["name"])
@@ -147,6 +198,13 @@ class ScanReportTests(unittest.TestCase):
                 {
                     "path": "packages/app",
                     "report": {
+                        "warnings": [
+                            {
+                                "level": "NOTICE",
+                                "path": "AGENTS.md",
+                                "message": "large package instructions",
+                            }
+                        ],
                         "security": [
                             {
                                 "level": "HIGH",
@@ -157,21 +215,47 @@ class ScanReportTests(unittest.TestCase):
                             }
                         ],
                         "gaps": [{"check": "G1", "level": "ERROR", "message": "missing"}],
+                        "custom": [
+                            {
+                                "rule": "org-policy",
+                                "level": "WARN",
+                                "path": "AGENTS.md",
+                                "line": 4,
+                                "message": "custom",
+                            }
+                        ],
                     },
                 }
             ]
         }
         doc = sarif.scan_report_to_sarif(report)
         results = doc["runs"][0]["results"]
-        self.assertEqual(len(results), 2)
+        self.assertEqual(len(results), 4)
         self.assertEqual(
             results[0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
-            "packages/app/index.js",
+            "packages/app/AGENTS.md",
         )
         self.assertEqual(
             results[1]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+            "packages/app/index.js",
+        )
+        self.assertEqual(
+            results[2]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
             "packages/app/AGENTS.md",
         )
+        custom_loc = results[3]["locations"][0]["physicalLocation"]
+        self.assertEqual(custom_loc["artifactLocation"]["uri"], "packages/app/AGENTS.md")
+        self.assertEqual(custom_loc["region"]["startLine"], 4)
+
+    def test_invalid_custom_rule_uses_safe_fallback_component(self):
+        report = {
+            "custom": [
+                {"rule": "../../", "level": "WARN", "message": "unsafe rule id"},
+                {"rule": 42, "level": "WARN", "message": "non-string rule id"},
+            ]
+        }
+        results = sarif.scan_report_to_sarif(report)["runs"][0]["results"]
+        self.assertEqual([result["ruleId"] for result in results], ["custom/custom", "custom/custom"])
 
     def test_security_without_path_has_no_location(self):
         report = {"security": [{"level": "MEDIUM", "category": "mcp", "message": "no path"}]}
@@ -261,6 +345,50 @@ class CliSmokeTests(unittest.TestCase):
             self.assertEqual(doc["runs"][0]["tool"]["driver"]["name"], "ai-harness-doctor")
         finally:
             td.cleanup()
+
+    def test_scan_cli_sarif_includes_size_warning_and_opted_in_custom_finding(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\n\n" + ("x" * 13000),
+                encoding="utf-8",
+            )
+            rules = repo / ".ai-harness-doctor" / "rules"
+            rules.mkdir(parents=True)
+            (rules / "policy.py").write_text(
+                "def check(root, context):\n"
+                "    return [{'level': 'ERROR', 'rule': 'org-policy', "
+                "'path': 'AGENTS.md', 'line': 1, 'message': 'custom violation'}]\n",
+                encoding="utf-8",
+            )
+
+            default = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--sarif"],
+                text=True,
+                capture_output=True,
+            )
+            opted_in = subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--allow-plugins", "--sarif"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(default.returncode, 0, default.stderr)
+            self.assertEqual(opted_in.returncode, 0, opted_in.stderr)
+            default_ids = [
+                result["ruleId"] for result in json.loads(default.stdout)["runs"][0]["results"]
+            ]
+            results = json.loads(opted_in.stdout)["runs"][0]["results"]
+            rule_ids = [result["ruleId"] for result in results]
+            self.assertIn("warning/size", default_ids)
+            self.assertNotIn("custom/org-policy", default_ids)
+            self.assertIn("warning/size", rule_ids)
+            self.assertIn("custom/org-policy", rule_ids)
+            custom = next(result for result in results if result["ruleId"] == "custom/org-policy")
+            location = custom["locations"][0]["physicalLocation"]
+            self.assertEqual(location["artifactLocation"]["uri"], "AGENTS.md")
+            self.assertEqual(location["region"]["startLine"], 1)
 
     def test_drift_cli_emits_valid_sarif(self):
         td, repo = self._fixture_repo()

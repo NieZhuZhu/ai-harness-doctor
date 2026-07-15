@@ -10,6 +10,7 @@ runtime dependencies, and stable output — ``rules`` are sorted by id while
 ``results`` keep the report's own order so diffs stay minimal.
 """
 
+import re
 from pathlib import Path
 
 TOOL_NAME = "ai-harness-doctor"
@@ -20,12 +21,16 @@ SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 # a ruleId). Used as each rule's shortDescription so GitHub's UI has a label even
 # for dynamically-generated rule ids.
 FAMILY_DESCRIPTIONS = {
+    "warning": "Instruction size / truncation warning",
+    "custom": "Custom rule plugin finding",
     "security": "Security checkup finding",
     "gap": "Missing harness infrastructure / gap analysis finding",
     "semantic": "Semantic consistency (AGENTS.md declaration vs code) finding",
     "conflict": "Conflicting declaration across agent config files",
     "drift": "AGENTS.md drift finding",
 }
+
+_RULE_COMPONENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 # Source severity vocabulary → SARIF level. Anything unmapped (INFO and any
 # unknown level) falls back to "note".
@@ -62,6 +67,14 @@ def _message_text(finding):
     if suggestion:
         message = message + " — " + suggestion
     return message
+
+
+def _rule_component(value, fallback):
+    """Return a stable SARIF-safe dynamic rule-id component."""
+    if not isinstance(value, str):
+        return fallback
+    component = _RULE_COMPONENT_RE.sub("-", value.strip()).strip("-._")
+    return component or fallback
 
 
 def _result(rule_id, level, message, uri=None, start_line=None):
@@ -147,6 +160,17 @@ def _scan_results_for_report(report, prefix):
         return f"{prefix}/{path}" if prefix else path
 
     results = []
+    # size/truncation warnings → warning/size.
+    for finding in report.get("warnings", []):
+        results.append(
+            _result(
+                "warning/size",
+                sarif_level(finding.get("level")),
+                _message_text(finding),
+                uri=make_uri(finding.get("path")),
+                start_line=finding.get("line"),
+            )
+        )
     # security → security/<category>; path/line come straight from the finding.
     for finding in report.get("security", []):
         rule_id = "security/" + finding.get("category", "")
@@ -189,6 +213,19 @@ def _scan_results_for_report(report, prefix):
         rule_id = "conflict/" + signal
         message = f"Conflicting {signal} declarations: " + ", ".join(sorted(values.keys()))
         results.append(_result(rule_id, "warning", message))
+    # opt-in plugin findings → custom/<rule>; plugins remain disabled unless the
+    # scan caller explicitly supplied --allow-plugins.
+    for finding in report.get("custom", []):
+        rule_id = "custom/" + _rule_component(finding.get("rule"), "custom")
+        results.append(
+            _result(
+                rule_id,
+                sarif_level(finding.get("level")),
+                _message_text(finding),
+                uri=make_uri(finding.get("path")),
+                start_line=finding.get("line"),
+            )
+        )
     return results
 
 

@@ -71,7 +71,7 @@ verification gate, and update its status here.
 | 009 | Make PR guard triggers cover every security and semantic scan input | P0 | M | — | DONE |
 | 010 | Deliver every active scan finding as attributed PR feedback | P1 | M | 009 | DONE |
 | 011 | Make installer manifest state fail closed and write atomically | P0 | M | — | DONE |
-| 012 | Emit every active scan finding family in SARIF | P1 | S | — | TODO |
+| 012 | Emit every active scan finding family in SARIF | P1 | S | — | DONE |
 | 013 | Make MCP tool failures machine-visible and keep its contract current | P1 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED

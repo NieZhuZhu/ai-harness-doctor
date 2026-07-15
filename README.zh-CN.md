@@ -334,7 +334,7 @@ npx ai-harness-doctor scan . --baseline .ai-harness-doctor/scan-baseline.json \
 
 **多仓库批量模式。** `scan --repos-file PATH` 会扫描 `PATH` 中列出的每个仓库（每行一个路径；空行和 `#` 注释会被忽略），而不是单个 `repo_root`，并打印一份组织级别的健康摘要——面向"多工具混用团队"和"OSS 维护者"这两类人设，他们此前除了对每个仓库手动跑一遍之外没有别的方案。每个仓库都在自己的根目录独立扫描（该模式不会在单个仓库内部展开 monorepo 的包）；一个解析不到目录的路径会被列在"无法扫描的仓库"下，而不会中断整个批次。`--json` 返回 `{ summary: { repo_count, error_count, aggregate }, repos: [{ path, resolved, name, has_agents_md, summary, report } | { path, resolved, error }] }`。四个 `--fail-on-*` 门禁都会综合考虑每个被扫描的仓库，因此这个模式可以作为整个组织范围的 CI 门禁。与 `repo_root` 位置参数互斥，也不能与 `--baseline` / `--write-baseline` 组合。
 
-**GitHub 原生发现（SARIF）。** `scan` 和 `drift` 都支持 `--sarif`，将 SARIF 2.1.0 文档输出到 stdout，使发现出现在 GitHub 的 Security 页签以及 PR 内联注释中。`--sarif` 优先于 `--json`/markdown，并基于活跃报告（根 + 每个 monorepo 包）生成，不受任何 `--no-*` 输出抑制影响。合法基线化的非安全债务会被排除；HIGH 安全发现始终保留。源级别映射到 SARIF 级别（`HIGH`/`ERROR`→`error`，`MEDIUM`/`WARN`/`NOTICE`→`warning`，其余→`note`）。
+**GitHub 原生发现（SARIF）。** `scan` 和 `drift` 都支持 `--sarif`，将 SARIF 2.1.0 文档输出到 stdout，使发现出现在 GitHub 的 Security 页签以及 PR 内联注释中。`--sarif` 优先于 `--json`/markdown，并基于活跃报告（根 + 每个 monorepo 包）生成，不受任何 `--no-*` 输出抑制影响。Scan SARIF 包含大小/截断警告、安全发现、gaps、语义不一致、conflicts，以及显式 opt-in 的自定义规则发现；drift SARIF 包含内置和自定义 drift findings。文件 inventory、overlap candidates、嵌套文件 inventory 和项目快照仍作为 JSON/Markdown 证据，而不会伪装成 code-scanning findings。合法基线化的非安全债务会被排除；HIGH 安全发现始终保留。源级别映射到 SARIF 级别（`HIGH`/`ERROR`→`error`，`MEDIUM`/`WARN`/`NOTICE`→`warning`，其余→`note`）。
 
 ```bash
 # Emit SARIF 2.1.0 to a file for GitHub code scanning
