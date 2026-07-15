@@ -1,12 +1,13 @@
 # Implementation Plans
 
-Generated and reconciled across five deep `improve` audit batches:
+Generated and reconciled across six deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
 - 2026-07-15 at commit `b3dd9e3` (plans 008–010).
 - 2026-07-15 at commit `b638ad7` (plans 011–013).
 - 2026-07-15 at commit `73bd749` (plans 014–017).
+- 2026-07-15 at commit `e4992c8` (plans 018–020).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -70,6 +71,23 @@ verification gate, and update its status here.
    generators, adoption evidence, and the project's audit/evidence/safety/
    efficacy differentiation.
 
+### 2026-07-15 post-v1.4.0 rounds
+
+1. **Core correctness and performance** — independently re-audited diagnostic
+   hot paths, cross-engine parity, documentation truth, filesystem containment,
+   and large-repository behavior. A measured 1,200-directory fixture confirmed
+   that each otherwise-missing path token causes another full subtree walk.
+2. **Action, release, and supply chain** — independently audited the live
+   release/npm/Marketplace chain, Action pins and permissions, public package
+   contents, lockfile sources, Dependabot, manual operations, and recent remote
+   workflow runs. Two real npm Dependabot jobs failed on the private lockfile
+   source, invalidating the earlier portability defer.
+3. **External validity and product direction** — independently rechecked the
+   AGENTS.md hierarchy standard, nested-file behavior, real public monorepos,
+   adoption evidence, and deferred false-positive classes. The scanner
+   reproduced a blocking global conflict for valid nearest-file package
+   overrides because nested canonical scopes are currently flattened.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -91,6 +109,9 @@ verification gate, and update its status here.
 | 015 | Bind eval results to the evidence they claim to score | P1 | M | — | DONE |
 | 016 | Negotiate modern MCP and expose standard structured results | P1 | M | — | DONE |
 | 017 | Establish a verifiable public-repository trust baseline | P1 | M | 014–016 | DONE |
+| 018 | Index subtree path resolution once per diagnostic run | P1 | M | — | TODO |
+| 019 | Restore public-registry dependency update automation | P0 | S | — | TODO |
+| 020 | Make conflict diagnostics honor nested AGENTS.md scopes | P1 | L | 018 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -127,6 +148,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Plan 014 is patch-level. Plans 015–016 add public capabilities, so a combined
   release after this batch is at least minor unless a STOP condition forces a
   breaking protocol/schema change.
+- Plans 018 and 019 are independent. Execute 019 early because the repository's
+  newly enabled dependency-update control is currently failing in production.
+  Plan 018 should land before 020 so real large nested-scope validation inherits
+  the one-index path behavior rather than amplifying the measured traversal
+  cost.
+- Keep Plans 018–020 in separate PRs. Plan 018 is a backward-compatible
+  performance fix; Plan 019 is a bugfix/operations repair; Plan 020 adds
+  scope/override report surfaces and is a backward-compatible feature. A
+  combined release after all three is therefore minor under the repository
+  policy unless a STOP condition exposes a breaking schema requirement.
 
 ## Findings considered and rejected or deferred
 
@@ -228,3 +259,45 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   self-approval restriction would deadlock the current sole maintainer's PR
   merges. Plan 017 keeps admin bypass but requires real CI contexts and
   documents that bypass must never override red checks.
+- **Stale self-bootstrap “eval gate is soft” prose** — confirmed in all three
+  READMEs and `SKILL.md`; the repository workflow now unconditionally requires
+  evidence freshness plus health. Included in Plan 019 so the small
+  public-maintenance repair leaves the operational trust docs truthful;
+  generic shipped guards remain optional.
+- **Manual deprecate workflow interpolates dispatch inputs directly in a shell
+  command** — confirmed at `.github/workflows/deprecate.yml:27`; command
+  substitution syntax in the trusted maintainer input can be interpreted by
+  Bash. This is a real hardening opportunity, but the workflow is
+  maintainer-only and Plan 019's already-failing public Dependabot control has
+  much higher leverage. Defer to a separate security PR; when selected, pass
+  both inputs through environment variables and validate the version as exact
+  SemVer.
+- **Repository permits all third-party Actions and does not enforce server-side
+  SHA pinning** — local structural tests already reject every unvetted or
+  mutable external `uses:` reference, and all current workflow dependencies are
+  full-SHA pinned. GitHub's remote `sha_pinning_required` is defense in depth,
+  but changing the allowed-actions policy could disrupt Dependabot/Marketplace
+  maintenance without repairing a demonstrated product failure; retain the
+  tested repository-level control for this batch.
+- **Action `args` shell word splitting** — rechecked and still real. No current
+  documented Action flag requires preserving a whitespace-bearing value, so
+  it remains below the measured path traversal, broken dependency automation,
+  and nested-scope false positive.
+- **Per-file-type conflict scope** — better-auth still says “tabs for code,
+  2 spaces for JSON,” and the global regex still reports both values. This
+  requires clause/file-type semantics and is explicitly outside Plan 020;
+  directory hierarchy is standardized and deterministic, whereas prose scope
+  is not. Keep deferred until another independent high-impact reproduction or
+  a structured applicability model exists.
+- **Cross-repository attributed paths** — still needs section/prose attribution
+  and has no second independent reproduction. Plan 020 must not broaden from
+  lexical nested scopes into heuristic external-repository suppression.
+- **Treat nested override evidence as a blocking finding** — rejected. The
+  AGENTS.md standard intentionally allows closer files to override ancestors.
+  Plan 020 keeps overrides visible in JSON/Markdown/Treat context but reserves
+  exit 7, SARIF, and PR-review findings for contradictory values inside one
+  effective diagnostic scope.
+- **Clone broad rule-distribution products** — rejected again. The selected
+  work improves diagnostic truth, performance, public maintenance, and
+  explainable scope evidence, preserving this project's audit/evidence/safety/
+  efficacy differentiation.
