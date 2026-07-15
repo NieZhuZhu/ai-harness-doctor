@@ -41,6 +41,11 @@ def render_markdown(report, report_path=None):
             )
     else:
         lines.append("No overlap candidates above 30% were found.")
+    render_applicability(
+        lines,
+        report.get("applicability", []),
+        report.get("applicability_warnings", []),
+    )
     render_instruction_scopes(
         lines,
         report.get("instruction_scopes", []),
@@ -88,6 +93,32 @@ def render_markdown(report, report_path=None):
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def render_applicability(lines, records, warnings):
+    lines.extend(["", "## Structured rule applicability"])
+    if not records:
+        lines.append("No modeled Cursor/Copilot structured rules were found.")
+        return
+    lines.append("| Rule | Mode | Patterns | Current matches |")
+    lines.append("|---|---|---|---:|")
+    for record in records:
+        patterns = ", ".join(f"`{item}`" for item in record.get("patterns", [])) or "—"
+        lines.append(
+            f"| `{record['path']}` | `{record['mode']}` | {patterns} | "
+            f"{record.get('match_count', 0)} |"
+        )
+    if warnings:
+        lines.extend(["", "### Applicability diagnostics"])
+        for finding in warnings:
+            lines.append(
+                f"- **{finding['level']}** `{finding['path']}`: "
+                f"{finding['message']} {finding['suggestion']}"
+            )
+    lines.append(
+        "Path modes are evaluated against current contained repository paths; "
+        "conditional/manual modes and unmatched future paths are not claimed effective."
+    )
 
 
 def render_analysis_limits(lines, limits):

@@ -18,6 +18,7 @@ SCRIPTS = ROOT / "scripts"
 REGISTRY_JSON = ROOT / "assets" / "agent-tools.json"
 
 sys.path.insert(0, str(SCRIPTS))
+import applicability  # noqa: E402
 import canonicalize  # noqa: E402
 import check_drift  # noqa: E402
 import eval_run  # noqa: E402
@@ -50,14 +51,31 @@ class RegistryConsistencyTests(unittest.TestCase):
 
     def test_scan_covers_every_registry_tool_and_canonical_file(self):
         """Every canonical file and tool label appears in scan.CONFIG_PATTERNS."""
-        scanned_labels = {label for label, _ in scan.CONFIG_PATTERNS}
+        scanned_labels = {spec["label"] for spec in scan.CONFIG_PATTERNS}
         for name in self.reg["canonical"]:
             self.assertIn(name, scanned_labels)
         for tool in self.tools:
             self.assertIn(tool["label"], scanned_labels)
             # The scan patterns for a tool are exactly what the registry declares.
-            declared = [p for label, ps in scan.CONFIG_PATTERNS if label == tool["label"] for p in ps]
+            declared = [
+                pattern
+                for spec in scan.CONFIG_PATTERNS
+                if spec["label"] == tool["label"]
+                for pattern in spec["patterns"]
+            ]
             self.assertEqual(declared, list(tool["scan_patterns"]))
+
+    def test_structured_applicability_formats_are_single_sourced(self):
+        declared = {
+            kind
+            for tool in self.tools
+            for kind in (tool.get("applicability") or {}).values()
+        }
+        self.assertEqual(declared, applicability.SUPPORTED_FORMATS)
+        for tool in self.tools:
+            for pattern, kind in (tool.get("applicability") or {}).items():
+                self.assertIn(pattern, tool["scan_patterns"])
+                self.assertIn(kind, applicability.SUPPORTED_FORMATS)
 
     def test_canonicalizable_tools_are_handled_by_canonicalize_and_drift(self):
         """A migrated tool must have stub_paths wired into BOTH canonicalize and drift."""

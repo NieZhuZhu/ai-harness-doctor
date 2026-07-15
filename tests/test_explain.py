@@ -173,14 +173,108 @@ class ExplainTests(unittest.TestCase):
             report = explain.build_explanation(td, "packages/api/src/future.py")
 
             self.assertTrue(report["scope_overrides"])
-            self.assertEqual(report["conflicts"][0]["scope"], "packages/api")
-            self.assertEqual(set(report["conflicts"][0]["values"]), {"pnpm", "yarn"})
+            self.assertEqual(report["conflicts"], [])
             source_paths = {item["path"] for item in report["diagnostic_sources"]}
             self.assertIn("packages/api/CLAUDE.md", source_paths)
             self.assertNotIn("packages/web/AGENTS.md", source_paths)
+            statuses = {
+                item["path"]: item["status"]
+                for item in report["source_applicability"]
+            }
+            self.assertEqual(statuses["packages/api/AGENTS.md"], "automatic")
+            self.assertEqual(statuses["packages/api/CLAUDE.md"], "diagnostic")
             serialized = json.dumps(report)
             self.assertNotIn("Use pnpm.", serialized)
             self.assertIn("diagnostically associated", report["limitations"][0])
+
+    def test_structured_rules_are_classified_for_existing_and_future_targets(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "AGENTS.md", "General guidance.\n")
+            write(td, "src/app.js", "x\n")
+            write(td, "scripts/check.py", "pass\n")
+            write(
+                td,
+                ".github/instructions/js.instructions.md",
+                '---\napplyTo: "src/**/*.js"\n---\nUse npm.\n',
+            )
+            write(
+                td,
+                ".github/instructions/python.instructions.md",
+                '---\napplyTo: "scripts/**/*.py"\n---\nUse uv.\n',
+            )
+            write(
+                td,
+                ".cursor/rules/conditional.mdc",
+                "---\ndescription: Database conventions\nalwaysApply: false\n---\nUse pnpm.\n",
+            )
+
+            js = explain.build_explanation(td, "src/app.js")
+            python_future = explain.build_explanation(td, "scripts/future.py")
+
+            js_status = {
+                item["path"]: item["status"]
+                for item in js["source_applicability"]
+            }
+            py_status = {
+                item["path"]: item["status"]
+                for item in python_future["source_applicability"]
+            }
+            self.assertEqual(
+                js_status[".github/instructions/js.instructions.md"],
+                "automatic",
+            )
+            self.assertEqual(
+                js_status[".github/instructions/python.instructions.md"],
+                "non-matching",
+            )
+            self.assertEqual(
+                py_status[".github/instructions/python.instructions.md"],
+                "automatic",
+            )
+            self.assertEqual(
+                py_status[".github/instructions/js.instructions.md"],
+                "non-matching",
+            )
+            self.assertEqual(
+                js_status[".cursor/rules/conditional.mdc"],
+                "conditional",
+            )
+            self.assertEqual(js["conflicts"], [])
+            self.assertEqual(python_future["conflicts"], [])
+            markdown = explain.render_markdown(js)
+            self.assertIn("Target applicability", markdown)
+            self.assertIn("`non-matching`", markdown)
+            self.assertIn("description", js["limitations"][0].lower())
+
+    def test_explain_reports_only_conflicts_applicable_to_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "src/app.js", "x\n")
+            write(td, "scripts/check.py", "pass\n")
+            write(
+                td,
+                ".github/instructions/js-a.instructions.md",
+                '---\napplyTo: "src/**/*.js"\n---\nUse npm.\n',
+            )
+            write(
+                td,
+                ".github/instructions/js-b.instructions.md",
+                '---\napplyTo: "src/**/*.js"\n---\nUse pnpm.\n',
+            )
+            write(
+                td,
+                ".github/instructions/python.instructions.md",
+                '---\napplyTo: "scripts/**/*.py"\n---\nUse uv.\n',
+            )
+
+            js = explain.build_explanation(td, "src/future.js")
+            python = explain.build_explanation(td, "scripts/check.py")
+
+            self.assertEqual(len(js["conflicts"]), 1)
+            self.assertEqual(
+                set(js["conflicts"][0]["values"]),
+                {"npm", "pnpm"},
+            )
+            self.assertEqual(python["conflicts"], [])
 
     def test_inventory_walks_once_and_repeat_json_is_deterministic(self):
         with tempfile.TemporaryDirectory() as td:

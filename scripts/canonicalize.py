@@ -619,6 +619,9 @@ def collect_stub_targets(root, tools):
         rules_dir = root / ".cursor" / "rules"
         if rules_dir.is_dir() and any(p.is_file() for p in rules_dir.iterdir()):
             changes.append({"action": "write", "path": rules_dir / "agents-md.mdc", "content": CURSOR_RULE_STUB})
+            # This historical migration surface is deliberately top-level only.
+            # Scanner recursive discovery is read authority, not permission to
+            # recursively delete nested, team-owned Cursor rule directories.
             for p in sorted(rules_dir.iterdir()):
                 if p.is_file() and p.name != "agents-md.mdc" and p.suffix in {".md", ".mdc"}:
                     changes.append({"action": "delete", "path": p})

@@ -58,6 +58,16 @@ class ScanReportTests(unittest.TestCase):
                     "message": "AGENTS.md is oversized",
                 }
             ],
+            "applicability_warnings": [
+                {
+                    "category": "ignored",
+                    "level": "WARN",
+                    "path": ".cursor/rules/legacy.md",
+                    "line": 1,
+                    "message": "Cursor ignores plain Markdown rules",
+                    "suggestion": "Rename the rule to .mdc.",
+                }
+            ],
             "security": [
                 {
                     "level": "HIGH",
@@ -113,7 +123,7 @@ class ScanReportTests(unittest.TestCase):
     def test_scan_ruleids_levels_and_locations(self):
         doc = sarif.scan_report_to_sarif(self._report(), version="1.0.0")
         results = doc["runs"][0]["results"]
-        self.assertEqual(len(results), 7)
+        self.assertEqual(len(results), 8)
 
         warning = results[0]
         self.assertEqual(warning["ruleId"], "warning/size")
@@ -122,14 +132,24 @@ class ScanReportTests(unittest.TestCase):
         self.assertEqual(warning_loc["artifactLocation"]["uri"], "AGENTS.md")
         self.assertNotIn("region", warning_loc)
 
-        security = results[1]
+        applicability = results[1]
+        self.assertEqual(applicability["ruleId"], "applicability/ignored")
+        self.assertEqual(applicability["level"], "warning")
+        applicability_loc = applicability["locations"][0]["physicalLocation"]
+        self.assertEqual(
+            applicability_loc["artifactLocation"]["uri"],
+            ".cursor/rules/legacy.md",
+        )
+        self.assertEqual(applicability_loc["region"]["startLine"], 1)
+
+        security = results[2]
         self.assertEqual(security["ruleId"], "security/secret")
         self.assertEqual(security["level"], "error")
         loc = security["locations"][0]["physicalLocation"]
         self.assertEqual(loc["artifactLocation"]["uri"], "src/config.js")
         self.assertEqual(loc["region"]["startLine"], 12)
 
-        gap = results[2]
+        gap = results[3]
         self.assertEqual(gap["ruleId"], "gap/G1")
         self.assertEqual(gap["level"], "error")
         self.assertEqual(
@@ -140,14 +160,14 @@ class ScanReportTests(unittest.TestCase):
         self.assertEqual(gap_loc["artifactLocation"]["uri"], "AGENTS.md")
         self.assertNotIn("region", gap_loc)
 
-        semantic = results[3]
+        semantic = results[4]
         self.assertEqual(semantic["ruleId"], "semantic/command")
         self.assertEqual(semantic["level"], "note")  # MISMATCH is unmapped
         sem_loc = semantic["locations"][0]["physicalLocation"]
         self.assertEqual(sem_loc["artifactLocation"]["uri"], "AGENTS.md")
         self.assertEqual(sem_loc["region"]["startLine"], 5)
 
-        conflict = results[4]
+        conflict = results[5]
         self.assertEqual(conflict["ruleId"], "conflict/package_manager")
         self.assertEqual(conflict["level"], "warning")
         self.assertEqual(
@@ -169,11 +189,11 @@ class ScanReportTests(unittest.TestCase):
             }
         ]
         results = sarif.scan_report_to_sarif(report)["runs"][0]["results"]
-        self.assertEqual(len(results), 7)
+        self.assertEqual(len(results), 8)
 
     def test_scan_custom_findings_keep_locations(self):
         results = sarif.scan_report_to_sarif(self._report())["runs"][0]["results"]
-        custom = results[5]
+        custom = results[6]
         self.assertEqual(custom["ruleId"], "custom/org-policy")
         self.assertEqual(custom["level"], "error")
         self.assertEqual(
@@ -184,7 +204,7 @@ class ScanReportTests(unittest.TestCase):
         self.assertEqual(custom_loc["artifactLocation"]["uri"], "AGENTS.md")
         self.assertEqual(custom_loc["region"]["startLine"], 9)
 
-        fallback = results[6]
+        fallback = results[7]
         self.assertEqual(fallback["ruleId"], "custom/custom")
         self.assertEqual(fallback["level"], "warning")
         self.assertEqual(fallback["locations"], [])
@@ -196,6 +216,7 @@ class ScanReportTests(unittest.TestCase):
         self.assertEqual(
             rule_ids,
             [
+                "applicability/ignored",
                 "conflict/package_manager",
                 "custom/custom",
                 "custom/org-policy",

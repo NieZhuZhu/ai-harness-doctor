@@ -66,6 +66,7 @@ _RULE_TITLES = {
     "size": "Instruction size warning",
     "gap": "Harness completeness gap",
     "batch_scan": "Batch scan coverage failure",
+    "applicability": "Structured rule applicability",
 }
 
 _IMPACT_BY_LABEL = {
@@ -95,6 +96,7 @@ _IMPACT_BY_LABEL = {
     "size": "Oversized agent instructions may be truncated or crowd useful repository context out of the prompt.",
     "gap": "Missing harness infrastructure can leave agents without canonical, enforceable repository guidance.",
     "batch_scan": "An organization-wide gate passed without checking every listed repository.",
+    "applicability": "A structured rule may be ignored or applied in an unintended scope.",
 }
 
 
@@ -281,6 +283,7 @@ def collect_findings(report):
             "custom",
             "security",
             "warnings",
+            "applicability_warnings",
             "gaps",
             "semantic",
             "conflicts",
@@ -292,11 +295,20 @@ def collect_findings(report):
             append(value, prefix, package, repository, summary_only)
             return
 
-        for key in ("findings", "custom", "security", "warnings"):
+        for key in (
+            "findings",
+            "custom",
+            "security",
+            "warnings",
+            "applicability_warnings",
+        ):
             for finding in value.get(key, []) if isinstance(value.get(key), list) else []:
                 normalized = dict(finding) if isinstance(finding, dict) else finding
                 if key == "warnings" and isinstance(normalized, dict):
                     normalized.setdefault("category", "size")
+                if key == "applicability_warnings" and isinstance(normalized, dict):
+                    detail = normalized.get("category") or "metadata"
+                    normalized["category"] = f"applicability/{detail}"
                 append(normalized, prefix, package, repository, summary_only)
 
         for finding in value.get("gaps", []) if isinstance(value.get("gaps"), list) else []:
@@ -449,6 +461,8 @@ def _impact_text(finding):
     label = finding_label(finding)
     if label.startswith("conflict/"):
         label = "conflict"
+    elif label.startswith("applicability/"):
+        label = "applicability"
     elif label.startswith("G") and label[1:].isdigit():
         label = "gap"
     return _IMPACT_BY_LABEL.get(
@@ -461,6 +475,9 @@ def _rule_title(label):
     if str(label).startswith("conflict/"):
         signal = str(label).split("/", 1)[1]
         return f"Conflicting {signal.replace('_', ' ')} declarations"
+    if str(label).startswith("applicability/"):
+        detail = str(label).split("/", 1)[1].replace("_", " ").replace("-", " ")
+        return f"Structured rule applicability: {detail}"
     if str(label).startswith("G") and str(label)[1:].isdigit():
         return f"Harness completeness gap {label}"
     return _RULE_TITLES.get(label, str(label).replace("_", " ").replace("-", " ").title())
