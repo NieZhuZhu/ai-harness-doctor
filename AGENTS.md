@@ -6,8 +6,9 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
 
 - `SKILL.md` — the skill contract and the four-phase workflow (Checkup → Treat → Follow-up → Efficacy).
 - `scripts/` — deterministic Python engines:
-  - `scan.py` — Phase 0 inventory/security scan, monorepo results, and non-security debt baselines.
+  - `scan.py` — Phase 0 inventory/security scan, monorepo results, structured applicability, and debt baselines.
   - `semantic.py` — Phase 0 declaration-vs-code facts for Node, Python, Go, Rust, Java, and Ruby.
+  - `applicability.py` — bounded Cursor/Copilot frontmatter + glob classifier; no general YAML.
   - `canonicalize.py` — Phase 1 merge plan, `--draft`, tool-stub downgrade, and validation.
   - `check_drift.py` — Phase 2 root/nested D1–D8 guard, health, `--fix`, and baselines.
   - `explain.py` — read-only target-path projection of scan's canonical scope, diagnostic-source, override, and conflict evidence.
@@ -39,10 +40,10 @@ node bin/cli.js help
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
 - `--max-bytes` bounds semantic text only; full-file SHA/line/security stays bounded-memory. Mark prefix-only evidence; never call a prefix digest a file SHA or claim unseen tails clean.
-- Instruction scope is lexical: same-scope differences conflict; ancestor→descendant differences are non-blocking overrides. Nested drift checks local facts/paths first with root fallback; D3/D4/D8/plugins stay repository-wide. Never infer prose/glob scopes.
-- Explain reuses scan scope/containment; only canonical files are effective, others diagnostic. Keep CLI/MCP/Claude/generated-adapter schemas/counts synchronized.
+- Instruction scope is lexical: same-scope differences conflict; ancestor→descendant differences are non-blocking overrides. Cursor/Copilot structured globs may narrow automatic conflict domains; conditional/manual/invalid/ignored rules stay diagnostic. Never infer prose scopes or let recursive discovery authorize recursive deletion.
+- Explain reuses scan scope/containment: canonical files form the chain; modeled Cursor/Copilot rules may apply automatically, while unmodeled sources stay diagnostic. Keep CLI/MCP/Claude/generated-adapter schemas/counts synchronized.
 - Baselines are visible debt registers: HIGH security is ineligible; identities are deterministic and line-independent. Shrink repaired debt. Every finding family needs PR-review/SARIF traversal; preserve package paths, keep batch findings summary-only, and never post baselined debt as active. Batch scans must report every reachable repo, fail on any unscanned entry (exit 8 after 2/3/4/7 precedence), and never leak resolved paths in PR feedback.
-- Eval validates the complete task pack before any runner/judge/hash/write. Then verify current task/effective-evidence before health: task sources bind automatically, explicit sources compose, files hash bytes, directories bind type only. Refresh changed committed results honestly.
+- Eval validates task packs before execution and stored result records before offline score/stats/compare/regrade. Derive health from records; cached health must agree. Then verify task/effective-evidence freshness before thresholds/baselines. Refresh committed results honestly.
 - Targeted eval reuses explain scope/containment. Keep root IDs; use local scripts/deps, nearest clear manager/runtime, inherited canonical rules, relative evidence, and no automatic all-scope expansion.
 - Root/scoped eval and Treat draft share `facts.py` containment and ambiguity semantics; external symlinks never supply facts, contained symlinks keep lexical evidence, and competing managers cause abstention.
 - MCP tools stay read-only. Sync negotiated-version wire shapes, required/closed schemas, exit policies, stdio tests, and docs; findings are not operational failures, and legacy clients must not receive modern-only fields.
@@ -92,4 +93,4 @@ Three repeatable loops let another agent reproduce how this repo is maintained; 
 - Keep the English, Simplified Chinese, and Japanese READMEs in sync within the same PR when user-facing behavior changes.
 - Any change to `action.yml`, Action-facing CLI/SARIF behavior, `.github/workflows/action-self-test.yml`, or `.github/workflows/release.yml` must update `tests/test_action_metadata.py` and pass a real `uses: ./` self-test. Direct CLI execution alone is not an Action regression test.
 - GitHub workflow changes must pass `actionlint`, preserve immutable Action-pin and trigger-contract tests, and keep release runs free of embedded Action-runtime deprecation warnings.
-- Release self-tests the tagged Action before npm. Stable publishes `latest`, moves/verifies the matching major tag, preserves older majors, and opens the Marketplace reminder. Prerelease publishes `next` and leaves stable pointers/Marketplace untouched. Never suppress failures.
+- Action changes must prove bundled scan+drift and an exact npm override. Release self-tests both bundled commands before npm; stable post-publish verifies floating bundled code plus the exact new npm version before Marketplace. Prerelease leaves stable pointers untouched. Never suppress failures.

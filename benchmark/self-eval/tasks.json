@@ -178,5 +178,23 @@
     "prompt": "How must multi-repo batch scans behave when a listed repository cannot be scanned? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)(?=.*report.*reachable)(?=.*unscanned)(?=.*exit.?8)(?=.*2.*3.*4.*7)"}
+  },
+  {
+    "id": "stored-result-health",
+    "prompt": "How must offline eval consumers treat stored result records and cached health? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)validat.*stored.*record.*deriv.*health.*cache.*agree|deriv.*health.*record.*cached.*agree"}
+  },
+  {
+    "id": "action-success-matrix",
+    "prompt": "Which GitHub Action success paths must PR and release validation prove? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)bundled.*scan.*drift.*exact.*npm.*release.*post.?publish|exact.*npm.*bundled.*scan.*drift.*post.?publish"}
+  },
+  {
+    "id": "structured-applicability",
+    "prompt": "How may Cursor/Copilot structured rules narrow conflicts, and what must remain diagnostic or mutation-safe? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)structured.*glob.*automatic.*conflict.*conditional.*diagnostic.*recursive.*delet|conditional.*manual.*diagnostic.*recursive.*delet"}
   }
 ]

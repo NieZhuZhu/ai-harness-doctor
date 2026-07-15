@@ -237,9 +237,9 @@ verification gate, and update its status here.
 | 030 | Validate every eval task before any runner or judge executes | P0 | M | — | DONE |
 | 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | DONE |
 | 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | DONE |
-| 033 | Derive eval health only from validated stored result records | P0 | M | — | IN PROGRESS |
-| 034 | Self-test every public GitHub Action success path | P1 | S | — | IN PROGRESS |
-| 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | IN PROGRESS |
+| 033 | Derive eval health only from validated stored result records | P0 | M | — | DONE |
+| 034 | Self-test every public GitHub Action success path | P1 | S | — | DONE |
+| 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -411,6 +411,31 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   conditions do not expose a behavior bug. Plan 035 adds public structured-rule
   applicability and explain/report metadata, so the combined release is at
   least minor unless a STOP condition requires a breaking schema.
+
+## Post-v1.8.1 completion evidence
+
+- Plan 033 landed in PR [#184](https://github.com/NieZhuZhu/ai-harness-doctor/pull/184)
+  (`2def2fb`): offline score/stats/compare/regrade now validate stored
+  single/multi/matrix records, derive health, reject contradictory caches, and
+  preserve historical partial-health/bare-round compatibility.
+- Plan 034 landed in PR [#185](https://github.com/NieZhuZhu/ai-harness-doctor/pull/185)
+  (`68662b6`): required self-test now succeeds through bundled scan, bundled
+  drift, and exact public npm override; stable release preflights both bundled
+  commands and verifies the new exact npm version through the floating Action.
+- Plan 035 landed in PR [#186](https://github.com/NieZhuZhu/ai-harness-doctor/pull/186)
+  (`4e04021`): bounded Cursor/Copilot applicability, recursive discovery,
+  current-path conflict domains, target explain, SARIF/PR diagnostics, and the
+  no-recursive-delete boundary shipped; github/docs + VS Code are round 25.
+- Every implementation PR passed all nine required contexts: drift, lint,
+  Node 16/20/22, self-test, and Python 3.9/3.10/3.12. Local final validation on
+  current main is 673 Python tests, 26 Node tests, strict drift 100/A, and
+  evidence-bound self-eval 33/33 after the completion refresh.
+- `AGENTS.md` now records all three durable invariants: stored-result health
+  derivation, complete Action command/source self-tests, and structured
+  applicability without prose inference or recursive mutation authority.
+- Release classification: Plans 033–034 are backward-compatible correctness
+  and test hardening; Plan 035 is a public feature. Publish the batch as the
+  next minor version after this completion record merges.
 
 ## Findings considered and rejected or deferred
 
