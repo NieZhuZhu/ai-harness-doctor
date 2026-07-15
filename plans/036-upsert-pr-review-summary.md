@@ -21,7 +21,8 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `43366d9`, 2026-07-16
-- **Implementation**: in progress on `fix/036-pr-review-summary-upsert`
+- **Implementation**: DONE in PR
+  [#192](https://github.com/NieZhuZhu/ai-harness-doctor/pull/192)
 
 ## Implementation evidence
 
@@ -29,8 +30,10 @@
 - First head `320bd53` passed all nine required contexts and created exactly
   one `github-actions[bot]` marker comment:
   `id=4986399749`, `created_at=updated_at=2026-07-15T23:51:39Z`.
-- The next evidence-only commit must leave that ID unchanged, advance only
-  `updated_at`, and keep the marker count at one before this plan is DONE.
+- Second head `5673d11` also passed all nine required contexts, left the marker
+  count at one and ID at `4986399749`, and advanced `updated_at` to
+  `2026-07-15T23:53:22Z`. The live workflow log linked the posted summary to
+  that same issue-comment URL.
 
 ## Why this matters
 
@@ -290,18 +293,18 @@ executions.
 
 ## Done criteria
 
-- [ ] A second clean post PATCHes the existing owned marker comment.
-- [ ] Clean/finding transitions leave one current summary comment.
-- [ ] Foreign marker comments are never updated.
-- [ ] Pagination is bounded and never forwards credentials cross-host.
-- [ ] Inline findings remain inline.
-- [ ] Inline 422 creates no duplicate summary; other errors remain fatal.
-- [ ] Dry-run stays offline and output-compatible.
-- [ ] Trilingual docs and `SKILL.md` describe the lifecycle truthfully.
-- [ ] `AGENTS.md` records the invariant, stays below threshold, and self-eval is
+- [x] A second clean post PATCHes the existing owned marker comment.
+- [x] Clean/finding transitions leave one current summary comment.
+- [x] Foreign marker comments are never updated.
+- [x] Pagination is bounded and never forwards credentials cross-host.
+- [x] Inline findings remain inline.
+- [x] Inline 422 creates no duplicate summary; other errors remain fatal.
+- [x] Dry-run stays offline and output-compatible.
+- [x] Trilingual docs and `SKILL.md` describe the lifecycle truthfully.
+- [x] `AGENTS.md` records the invariant, stays below threshold, and self-eval is
       current at 33/33.
-- [ ] Full local gate and all nine required PR contexts pass.
-- [ ] Real PR read-back shows one owned marker after at least two runs.
+- [x] Full local gate and all nine required PR contexts pass.
+- [x] Real PR read-back shows one owned marker after at least two runs.
 
 ## STOP conditions
 
