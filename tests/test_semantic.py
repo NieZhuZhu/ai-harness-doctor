@@ -2,9 +2,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+import facts  # noqa: E402
 import semantic  # noqa: E402
 
 
@@ -233,6 +235,86 @@ class SemanticPackageScriptsTests(unittest.TestCase):
 
 
 class SemanticPathTests(unittest.TestCase):
+    def test_many_missing_paths_build_one_subtree_index(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for i in range(120):
+                write(root, f"areas/area-{i:03d}/keep.txt", "x")
+            write(root, "workspace/Cargo.toml", "[package]\nname = \"demo\"\n")
+            write(root, "workspace/src/config/settings.py", "# exists\n")
+            text = "\n".join(
+                ["Use `src/config` and `Cargo.toml`."]
+                + [f"Missing `not-present-{i}/file.txt`." for i in range(20)]
+            )
+
+            calls = {"n": 0}
+            real_build = facts.build_subtree_path_index
+            real_walk = facts.os.walk
+            walk_calls = {"n": 0}
+
+            def counting_build(*args, **kwargs):
+                calls["n"] += 1
+                return real_build(*args, **kwargs)
+
+            def counting_walk(*args, **kwargs):
+                walk_calls["n"] += 1
+                return real_walk(*args, **kwargs)
+
+            with mock.patch.object(facts, "build_subtree_path_index", counting_build), mock.patch.object(
+                facts.os, "walk", counting_walk
+            ):
+                findings = semantic.compare_paths(root, text)
+
+            self.assertEqual(calls["n"], 1)
+            # One package-name walk plus one subtree-index walk, regardless of
+            # how many missing path tokens the document contains.
+            self.assertEqual(walk_calls["n"], 2)
+            self.assertEqual(
+                {finding["declared"] for finding in findings},
+                {f"not-present-{i}/file.txt" for i in range(20)},
+            )
+
+    def test_root_valid_and_ineligible_paths_do_not_build_subtree_index(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(root, "docs/guide.md", "exists\n")
+            text = "Use `docs/guide.md`; the tool name is `pytest`."
+            with mock.patch.object(facts, "build_subtree_path_index", wraps=facts.build_subtree_path_index) as build:
+                self.assertEqual(semantic.compare_paths(root, text), [])
+            build.assert_not_called()
+
+    def test_subtree_index_preserves_skip_and_symlink_boundaries(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(root, "workspace/shared/src/config/settings.py", "# exists\n")
+            write(root, "workspace/Cargo.toml", "[workspace]\n")
+            write(root, "node_modules/pkg/src/private/config.py", "# vendored\n")
+            write(root, "workspace/docs/guide.md", "# guide\n")
+
+            alias = root / "workspace" / "package" / "alias"
+            file_alias = root / "workspace" / "links" / "guide.md"
+            outside_tmp = tempfile.TemporaryDirectory()
+            self.addCleanup(outside_tmp.cleanup)
+            outside = Path(outside_tmp.name)
+            (outside / "secret.txt").write_text("secret\n", encoding="utf-8")
+            external_alias = root / "workspace" / "external"
+            alias.parent.mkdir(parents=True)
+            file_alias.parent.mkdir(parents=True)
+            try:
+                alias.symlink_to(root / "workspace" / "shared", target_is_directory=True)
+                file_alias.symlink_to(root / "workspace" / "docs" / "guide.md")
+                external_alias.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks unsupported on this platform")
+
+            index = facts.build_subtree_path_index(root)
+            self.assertTrue(facts.path_resolves_in_subtree(root, "src/config", index))
+            self.assertTrue(facts.path_resolves_in_subtree(root, "Cargo.toml", index))
+            self.assertTrue(facts.path_resolves_in_subtree(root, "alias/src/config", index))
+            self.assertTrue(facts.path_resolves_in_subtree(root, "links/guide.md", index))
+            self.assertFalse(facts.path_resolves_in_subtree(root, "pkg/src/private", index))
+            self.assertFalse(facts.path_resolves_in_subtree(root, "external/secret.txt", index))
+
     def test_missing_path_flagged(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "src/index.ts", "// exists")

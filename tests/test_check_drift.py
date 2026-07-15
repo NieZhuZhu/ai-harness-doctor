@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "messy-repo"
@@ -12,6 +13,7 @@ DRIFT = ROOT / "scripts" / "check_drift.py"
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import check_drift  # noqa: E402
+import facts  # noqa: E402
 
 
 def _can_symlink_dirs():
@@ -95,6 +97,45 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(len(findings), 1)
             self.assertEqual(findings[0]["check"], "D2")
             self.assertIn("src/missing-config", findings[0]["message"])
+
+    def test_many_missing_paths_build_one_subtree_index(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for i in range(120):
+                path = root / "areas" / f"area-{i:03d}" / "keep.txt"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("x", encoding="utf-8")
+            (root / "workspace" / "src" / "config").mkdir(parents=True)
+            (root / "workspace" / "Cargo.toml").write_text("[package]\nname = \"demo\"\n", encoding="utf-8")
+            text = "\n".join(
+                ["Use `src/config` and `Cargo.toml`."]
+                + [f"Missing `not-present-{i}/file.txt`." for i in range(20)]
+            )
+
+            calls = {"n": 0}
+            real_build = facts.build_subtree_path_index
+            real_walk = facts.os.walk
+            walk_calls = {"n": 0}
+
+            def counting_build(*args, **kwargs):
+                calls["n"] += 1
+                return real_build(*args, **kwargs)
+
+            def counting_walk(*args, **kwargs):
+                walk_calls["n"] += 1
+                return real_walk(*args, **kwargs)
+
+            with mock.patch.object(facts, "build_subtree_path_index", counting_build), mock.patch.object(
+                facts.os, "walk", counting_walk
+            ):
+                findings = check_drift.d2_path_drift(root, text)
+
+            self.assertEqual(calls["n"], 1)
+            self.assertEqual(walk_calls["n"], 2)
+            self.assertEqual(
+                {finding["message"].split("`")[1] for finding in findings},
+                {f"not-present-{i}/file.txt" for i in range(20)},
+            )
 
     def test_unknown_script_d1(self):
         td, repo = self.copy_repo()
