@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "findings": [
+    {
+      "family": "conflict",
+      "rule": "formatter",
+      "package": "",
+      "path": "",
+      "message": "Conflicting formatter declarations: eslint, prettier",
+      "values": [
+        "eslint",
+        "prettier"
+      ]
+    },
+    {
+      "family": "conflict",
+      "rule": "indent_style",
+      "package": "",
+      "path": "",
+      "message": "Conflicting indent_style declarations: 2 spaces, 4 spaces",
+      "values": [
+        "2 spaces",
+        "4 spaces"
+      ]
+    },
+    {
+      "family": "conflict",
+      "rule": "package_manager",
+      "package": "",
+      "path": "",
+      "message": "Conflicting package_manager declarations: npm, pnpm",
+      "values": [
+        "npm",
+        "pnpm"
+      ]
+    },
+    {
+      "family": "conflict",
+      "rule": "quote_style",
+      "package": "",
+      "path": "",
+      "message": "Conflicting quote_style declarations: double, single",
+      "values": [
+        "double",
+        "single"
+      ]
+    },
+    {
+      "family": "conflict",
+      "rule": "test_command",
+      "package": "",
+      "path": "",
+      "message": "Conflicting test_command declarations: jest, npm test, pnpm test",
+      "values": [
+        "jest",
+        "npm test",
+        "pnpm test"
+      ]
+    }
+  ]
+}

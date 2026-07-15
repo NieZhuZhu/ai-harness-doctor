@@ -2,7 +2,7 @@
 # Self-bootstrapped guard: weekly (and on-demand) checkup that runs this repo's
 # OWN scan/drift code against itself. Adapted from assets/guard/harness-checkup.yml
 # to use the local CLI instead of `npx -y ai-harness-doctor`. Scheduled only, so
-# it never gates pull requests; the drift issue it opens is the signal, and the
+# it never gates pull requests; the harness issue it opens is the signal, and the
 # job itself is kept non-failing so a scheduled run never shows a red X.
 name: harness-checkup
 
@@ -27,14 +27,31 @@ jobs:
         with:
           python-version: "3.12"
       - name: Scan harness
-        run: node bin/cli.js scan . > harness-scan-report.md
+        id: scan
+        shell: bash
+        run: |
+          set +e
+          node bin/cli.js scan . \
+            --baseline .ai-harness-doctor/scan-baseline.json \
+            --fail-on-security \
+            --fail-on-gaps \
+            --fail-on-semantic \
+            --fail-on-conflicts \
+            > harness-scan-report.md 2>&1
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          exit 0
       - name: Check drift
         id: drift
         shell: bash
         run: |
           set +e
           node bin/cli.js drift . --strict > harness-drift-report.md 2>&1
-          status=$?
+          drift_status=$?
+          scan_status="${{ steps.scan.outputs.status }}"
+          status="$drift_status"
+          if [ "$scan_status" != "0" ]; then
+            status="$scan_status"
+          fi
           {
             echo "# Harness checkup"
             echo
@@ -54,11 +71,11 @@ jobs:
             harness-scan-report.md
             harness-drift-report.md
             harness-checkup-report.md
-      - name: Create or update drift issue
+      - name: Create or update harness issue
         if: steps.drift.outputs.status != '0'
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: "🩺 Harness checkup: drift detected"
+          TITLE: "🩺 Harness checkup: issues detected"
         shell: bash
         run: |
           set -euo pipefail

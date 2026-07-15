@@ -21,6 +21,7 @@ on:
       - GEMINI.md
       - .clinerules
       - .cursor/rules/**
+      - .ai-harness-doctor/scan-baseline.json
       - scripts/**
       - bin/**
       - .github/workflows/**
@@ -42,9 +43,20 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # actions/setup-python@v6
         with:
           python-version: "3.12"
+      # Dogfood the local scan implementation and the committed, reviewable
+      # debt register. Security remains unsuppressible.
+      - name: Check new scan debt (self)
+        run: |
+          node bin/cli.js scan . \
+            --baseline .ai-harness-doctor/scan-baseline.json \
+            --fail-on-security \
+            --fail-on-gaps \
+            --fail-on-semantic \
+            --fail-on-conflicts
       # Dogfood: run this repo's local drift guard against itself (strict mode
       # promotes NOTICE findings to blocking so the repo holds itself to grade A).
       - name: Check AI harness drift (self)
+        if: ${{ always() }}
         run: node bin/cli.js drift . --strict
       # Surface drift findings as inline PR review comments. check_drift.py --json
       # emits a machine-readable report; pr_review.py turns located findings into
