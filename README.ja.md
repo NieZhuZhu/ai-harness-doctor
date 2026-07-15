@@ -229,21 +229,21 @@ skill、slash commands、adapter prompts の一部または全部をインスト
 | `cursor` | `.cursor/commands/` | target project 内の `.cursor/commands/`。 |
 | `gemini` | `~/.gemini/commands/harness/` + shared payload | 同じ command location。project は payload path に影響します。 |
 
-Adapters は `{{PLAYBOOK}}` を installed playbook path に置き換えます。Installs は `~/.ai-harness-doctor/manifest.json` に記録され、冪等で、`update` によって refresh できます。`--link` は payload files をコピーする代わりに global package を指します。CLI は安全でない `npx` cache linking をブロックし、先に global install するよう案内します。
+Adapters は `{{PLAYBOOK}}` を installed playbook path に置き換えます。copy payload は repository-owned baseline、rules、その他 state と分離された `.ai-harness-doctor/payload/` subtree に置かれます。version 付き `~/.ai-harness-doctor/manifest.json` は exact managed path と SHA-256 digest を記録します。install/update は unowned な同名 file や install 後に編集された managed file を上書きせず、`manual-merge` / `modified-preserved` として報告します。uninstall は byte 検証済み managed file だけを削除し、最後の参照 agent が削除されるまで shared payload を保持します。legacy manifest は additive に移行し、byte-identical な旧 payload file だけを退役させます。`--link` は payload files をコピーする代わりに global package を指します。CLI は安全でない `npx` cache linking をブロックし、先に global install するよう案内します。
 
 </details>
 
 <details>
 <summary><code>uninstall</code></summary>
 
-指定された `--agent` について、インストール済みの Claude skill files、slash commands、adapter prompts、shared payloads を削除します。`--agent all` は既知のすべての surface を削除します。対応する manifest records も削除します。
+指定した `--agent` について、manifest ownership record と一致する pristine な Claude skill files、slash commands、adapter prompts、shared payloads だけを削除します。user-edited / unowned file は保持して報告します。`--agent all` は検証済み managed surface をすべて削除します。対応する manifest records も削除します。
 
 </details>
 
 <details>
 <summary><code>update</code></summary>
 
-manifest で追跡されているすべての copy install を、現在の package version へ再デプロイします。Linked installs は command pointers を refresh し、payload は `npm update -g ai-harness-doctor` に追随します。
+manifest で追跡されているすべての copy install を現在の package version へ再デプロイし、user-edited file は保持します。Linked installs は command pointers を refresh し、payload は `npm update -g ai-harness-doctor` に追随します。
 
 </details>
 

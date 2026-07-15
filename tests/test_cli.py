@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -67,7 +68,7 @@ class CliInstallerTests(unittest.TestCase):
             update = self.run_cli(["update"], home, project)
             self.assertIn(f"Deploying ai-harness-doctor {PKG_VERSION}", update.stdout)
             self.assertIn("Update summary", update.stdout)
-            self.assertIn(f"deployed {PKG_VERSION}", update.stdout)
+            self.assertIn("unchanged", update.stdout)
 
             link = self.run_cli(["install", "--link", "--project"], home, project)
             self.assertIn("Linked install", link.stdout)
@@ -84,6 +85,306 @@ class CliInstallerTests(unittest.TestCase):
             self.assertFalse(skill_link.exists())
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["installs"], [])
+
+    def test_project_adapter_install_preserves_repository_harness_state(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            state = project / ".ai-harness-doctor"
+            rules = state / "rules"
+            rules.mkdir(parents=True)
+            baseline = state / "scan-baseline.json"
+            rule = rules / "custom.py"
+            unrelated = state / "owner-notes.md"
+            baseline.write_text('{"version": 1, "findings": []}\n', encoding="utf-8")
+            rule.write_text("def check(root, context): return []\n", encoding="utf-8")
+            unrelated.write_text("keep me\n", encoding="utf-8")
+            expected = {path: path.read_bytes() for path in (baseline, rule, unrelated)}
+
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            self.run_cli(["update"], home, project)
+            self.run_cli(["uninstall", "--agent", "cursor", "--project"], home, project)
+
+            for path, content in expected.items():
+                self.assertEqual(path.read_bytes(), content, f"installer changed user-owned {path}")
+            self.assertFalse((state / "payload").exists())
+
+    def test_cursor_install_tracks_implicit_target_root_across_working_directories(self):
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as first_dir,
+            ResilientTemporaryDirectory() as second_dir,
+        ):
+            home = Path(home_dir)
+            first = Path(first_dir)
+            second = Path(second_dir)
+            for project in (first, second):
+                subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+                (project / "package.json").write_text("{}\n", encoding="utf-8")
+
+            self.run_cli(["install", "--agent", "cursor"], home, first)
+            adapter = first / ".cursor" / "commands" / "harness-scan.md"
+            self.assertTrue(adapter.is_file())
+            manifest_path = home / ".ai-harness-doctor" / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            cursor = next(record for record in manifest["installs"] if record["agent"] == "cursor")
+            self.assertEqual(Path(cursor["targetRoot"]).resolve(), first.resolve())
+
+            adapter.unlink()
+            self.run_cli(["update"], home, second)
+            self.assertTrue(adapter.is_file())
+            self.assertFalse((second / ".cursor").exists())
+
+            self.run_cli(["uninstall", "--agent", "cursor"], home, second)
+            self.assertTrue(adapter.is_file())
+            self.run_cli(["uninstall", "--agent", "cursor"], home, first)
+            self.assertFalse(adapter.exists())
+
+    def test_install_preserves_unowned_adapter_name_collision(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            adapter = project / ".cursor" / "commands" / "harness-scan.md"
+            adapter.parent.mkdir(parents=True)
+            adapter.write_text("user-owned adapter\n", encoding="utf-8")
+            before = adapter.read_bytes()
+
+            install = self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            self.assertIn("manual-merge", install.stdout)
+            self.assertEqual(adapter.read_bytes(), before)
+
+            self.run_cli(["uninstall", "--agent", "cursor", "--project"], home, project)
+            self.assertEqual(adapter.read_bytes(), before)
+
+    def test_project_adapter_install_refuses_symlinked_parent_directory(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            base = Path(parent_dir)
+            project = base / "project"
+            outside = base / "outside-cursor"
+            project.mkdir()
+            outside.mkdir()
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            try:
+                (project / ".cursor").symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks unsupported on this platform")
+
+            proc = self.run_cli_raw(["install", "--agent", "cursor", "--project"], home, project)
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("symlink", proc.stderr.lower())
+            self.assertEqual(list(outside.iterdir()), [])
+
+    def test_update_and_uninstall_preserve_edited_managed_adapter(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            adapter = project / ".cursor" / "commands" / "harness-scan.md"
+            adapter.write_text(adapter.read_text(encoding="utf-8") + "\nuser extension\n", encoding="utf-8")
+            edited = adapter.read_bytes()
+
+            update = self.run_cli(["update"], home, project)
+            self.assertIn("modified-preserved", update.stdout)
+            self.assertEqual(adapter.read_bytes(), edited)
+
+            uninstall = self.run_cli(["uninstall", "--agent", "cursor", "--project"], home, project)
+            self.assertIn("modified-preserved", uninstall.stdout)
+            self.assertEqual(adapter.read_bytes(), edited)
+            manifest = json.loads(
+                (home / ".ai-harness-doctor" / "manifest.json").read_text(encoding="utf-8")
+            )
+            cursor = next(record for record in manifest["installs"] if record["agent"] == "cursor")
+            self.assertTrue(cursor["orphaned"])
+            self.assertEqual(
+                [Path(output["path"]).resolve() for output in cursor["outputs"]],
+                [adapter.resolve()],
+            )
+            update_again = self.run_cli(["update"], home, project)
+            self.assertIn("orphaned-preserved", update_again.stdout)
+            self.assertEqual(adapter.read_bytes(), edited)
+
+    def test_manifest_cannot_claim_and_delete_external_file(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            external = home.parent / "external-owned-by-user.txt"
+            external.write_text("do not delete\n", encoding="utf-8")
+            manifest_path = home / ".ai-harness-doctor" / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            cursor = next(record for record in manifest["installs"] if record["agent"] == "cursor")
+            cursor["outputs"].append(
+                {
+                    "path": str(external),
+                    "kind": "file",
+                    "digest": hashlib.sha256(external.read_bytes()).hexdigest(),
+                }
+            )
+            manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+
+            self.run_cli(["uninstall", "--agent", "cursor", "--project"], home, project)
+
+            self.assertEqual(external.read_text(encoding="utf-8"), "do not delete\n")
+
+    def test_uninstall_one_agent_keeps_shared_project_payload(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+
+            self.run_cli(["install", "--agent", "all", "--project"], home, project)
+            payload = project / ".ai-harness-doctor" / "payload"
+            self.assertTrue((payload / "SKILL.md").is_file())
+
+            self.run_cli(["uninstall", "--agent", "cursor", "--project"], home, project)
+            self.assertTrue((payload / "SKILL.md").is_file())
+
+            self.run_cli(["uninstall", "--agent", "codex", "--project"], home, project)
+            self.run_cli(["uninstall", "--agent", "gemini", "--project"], home, project)
+            self.assertFalse(payload.exists())
+
+    def test_uninstall_keeps_unowned_empty_adapter_parent_directories(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            command_dir = project / ".cursor" / "commands"
+
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            self.run_cli(["uninstall", "--agent", "cursor", "--project"], home, project)
+
+            self.assertTrue(command_dir.is_dir())
+
+    def test_shared_payload_mode_switch_updates_existing_non_claude_agents(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--agent", "codex", "--project"], home, project)
+            payload = project / ".ai-harness-doctor" / "payload"
+            self.assertTrue((payload / "SKILL.md").is_file())
+            codex = home / ".codex" / "prompts" / "harness-scan.md"
+            self.assertIn(str(payload), codex.read_text(encoding="utf-8"))
+
+            self.run_cli(["install", "--agent", "cursor", "--project", "--link"], home, project)
+
+            self.assertTrue(payload.is_symlink())
+            self.assertEqual(payload.resolve(), ROOT)
+            self.assertIn(str(ROOT), codex.read_text(encoding="utf-8"))
+            cursor = project / ".cursor" / "commands" / "harness-scan.md"
+            self.assertIn(str(ROOT), cursor.read_text(encoding="utf-8"))
+            manifest = json.loads(
+                (home / ".ai-harness-doctor" / "manifest.json").read_text(encoding="utf-8")
+            )
+            records = {
+                record["agent"]: record
+                for record in manifest["installs"]
+                if record.get("project") == str(project.resolve())
+            }
+            self.assertTrue(records["codex"]["link"])
+            self.assertTrue(records["cursor"]["link"])
+
+    def test_copy_to_link_refuses_claude_skill_with_user_extension(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--project"], home, project)
+            skill = project / ".claude" / "skills" / "ai-harness-doctor"
+            extension = skill / "user-notes.md"
+            extension.write_text("keep this extension\n", encoding="utf-8")
+
+            link = self.run_cli(["install", "--link", "--project"], home, project)
+
+            self.assertIn("modified-preserved", link.stdout)
+            self.assertFalse(skill.is_symlink())
+            self.assertEqual(extension.read_text(encoding="utf-8"), "keep this extension\n")
+
+    def test_claude_link_to_copy_retires_owned_link_without_writing_package(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--link", "--project"], home, project)
+            skill = project / ".claude" / "skills" / "ai-harness-doctor"
+            self.assertTrue(skill.is_symlink())
+            package_skill_before = (ROOT / "SKILL.md").read_bytes()
+
+            copy_install = self.run_cli(["install", "--project"], home, project)
+
+            self.assertIn("link-retired", copy_install.stdout)
+            self.assertTrue(skill.is_dir())
+            self.assertFalse(skill.is_symlink())
+            self.assertTrue((skill / "SKILL.md").is_file())
+            self.assertEqual((ROOT / "SKILL.md").read_bytes(), package_skill_before)
+
+    def test_legacy_manifest_migrates_managed_payload_without_unknown_file_loss(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            state = project / ".ai-harness-doctor"
+            state.mkdir()
+            # Recreate the legacy v1 copy layout at the state root.
+            shutil.copy2(ROOT / "SKILL.md", state / "SKILL.md")
+            for name in ("scripts", "references", "assets"):
+                shutil.copytree(
+                    ROOT / name,
+                    state / name,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                )
+            unknown = state / "owner-notes.md"
+            unknown.write_text("preserve\n", encoding="utf-8")
+            baseline = state / "scan-baseline.json"
+            baseline.write_text('{"version": 1, "findings": []}\n', encoding="utf-8")
+            manifest_dir = home / ".ai-harness-doctor"
+            manifest_dir.mkdir(parents=True)
+            (manifest_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "version": PKG_VERSION,
+                        "lastUpdateCheck": 0,
+                        "installs": [
+                            {
+                                "agent": "cursor",
+                                "project": str(project.resolve()),
+                                "link": False,
+                                "installedAt": "legacy",
+                            }
+                        ],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            self.run_cli(["update"], home, project)
+
+            self.assertTrue((state / "payload" / "SKILL.md").is_file())
+            self.assertEqual(unknown.read_text(encoding="utf-8"), "preserve\n")
+            self.assertEqual(baseline.read_text(encoding="utf-8"), '{"version": 1, "findings": []}\n')
+            # Matching legacy payload is safely retired; unknown state remains.
+            self.assertFalse((state / "SKILL.md").exists())
+            self.assertFalse((state / "scripts").exists())
+            manifest = json.loads((manifest_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schemaVersion"], 2)
+            self.assertTrue(manifest["installs"][0]["outputs"])
 
     def test_guard_dry_run_prints_plan_and_writes_nothing(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:

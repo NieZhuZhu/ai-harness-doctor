@@ -229,21 +229,21 @@ Installs the skill, slash commands, and/or adapter prompts.
 | `cursor` | `.cursor/commands/` | `.cursor/commands/` in the target project. |
 | `gemini` | `~/.gemini/commands/harness/` + shared payload | Same command location; project affects payload path. |
 
-Adapters replace `{{PLAYBOOK}}` with the installed playbook path. Installs are recorded in `~/.ai-harness-doctor/manifest.json`, are idempotent, and can be refreshed by `update`. `--link` points at a global package instead of copying payload files; the CLI blocks unsafe `npx` cache linking and tells you to install globally first.
+Adapters replace `{{PLAYBOOK}}` with the installed playbook path. Copy payloads live in the dedicated `.ai-harness-doctor/payload/` subtree, separate from repository-owned baselines, rules, and other state. The versioned `~/.ai-harness-doctor/manifest.json` records exact managed paths and SHA-256 digests. Install/update never overwrites an unowned collision or a managed file edited after installation; it reports `manual-merge` / `modified-preserved` instead. Uninstall removes only byte-verified managed files and keeps shared payloads until the last referencing agent is removed. Legacy manifests migrate additively, retiring only byte-identical old payload files. `--link` points at a global package instead of copying payload files; the CLI blocks unsafe `npx` cache linking and tells you to install globally first.
 
 </details>
 
 <details>
 <summary><code>uninstall</code></summary>
 
-Removes installed Claude skill files, slash commands, adapter prompts, and shared payloads for the requested `--agent`. `--agent all` removes every known surface. It also removes matching manifest records.
+Removes only pristine manifest-owned Claude skill files, slash commands, adapter prompts, and shared payloads for the requested `--agent`. User-edited or unowned files are preserved and reported. `--agent all` removes every verified managed surface. It also removes matching manifest records.
 
 </details>
 
 <details>
 <summary><code>update</code></summary>
 
-Redeploys every manifest-tracked copy install to the current package version. Linked installs refresh command pointers while the payload follows `npm update -g ai-harness-doctor`.
+Redeploys every manifest-tracked copy install to the current package version without replacing user-edited files. Linked installs refresh command pointers while the payload follows `npm update -g ai-harness-doctor`.
 
 </details>
 
