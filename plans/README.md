@@ -212,9 +212,9 @@ verification gate, and update its status here.
 | 027 | Confine every fact-derived generator to repository truth | P0 | M | — | DONE |
 | 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | DONE |
 | 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | DONE |
-| 030 | Validate every eval task before any runner or judge executes | P0 | M | — | IN PROGRESS |
-| 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | IN PROGRESS |
-| 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | IN PROGRESS |
+| 030 | Validate every eval task before any runner or judge executes | P0 | M | — | DONE |
+| 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | DONE |
+| 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -347,6 +347,30 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   adding a new user workflow. They are patch-level if their compatibility STOP
   conditions do not trigger; a batch release is patch unless implementation
   uncovers a public feature or breaking requirement.
+
+## Post-v1.8.0 completion evidence
+
+- Plan 030 landed in PR [#177](https://github.com/NieZhuZhu/ai-harness-doctor/pull/177)
+  (`969d135`): complete task-schema preflight now rejects malformed packs before
+  any runner/LLM/judge/hash/write; Mastra round 23 proved zero calls.
+- Plan 031 landed in PR [#178](https://github.com/NieZhuZhu/ai-harness-doctor/pull/178)
+  (`1c4fc6b`): shipped/self weekly checkups now create/update one exact incident
+  and close it with recovery evidence; extracted shell lifecycle tests cover
+  create/update/recover/no-op.
+- Plan 032 landed in PR [#179](https://github.com/NieZhuZhu/ai-harness-doctor/pull/179)
+  (`4b38fb8`): multi-repo scans preserve all reachable reports but exit 8 for
+  any unscanned entry after 2/3/4/7 precedence; round 24 validated two real
+  clean public checkouts plus one missing path and safe summary-only review.
+- Every implementation PR passed all nine required contexts: drift, lint,
+  Node 16/20/22, self-test, and Python 3.9/3.10/3.12. Final local validation on
+  current main is 648 Python tests, 26 Node tests, strict drift 100/A, and
+  evidence-bound self-eval 27/27 before this completion refresh.
+- `AGENTS.md` now records all three durable invariants: preflight before eval
+  side effects, symmetric weekly incident lifecycle, and fail-closed batch
+  coverage without resolved-path leakage.
+- Release classification: Plans 030–032 are backward-compatible bug fixes.
+  Publish the batch as the next patch version after this completion record
+  merges.
 
 ## Findings considered and rejected or deferred
 

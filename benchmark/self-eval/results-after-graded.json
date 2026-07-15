@@ -191,13 +191,34 @@
       "answer": "Required lint CI must use npm ci --ignore-scripts against the committed public package-lock.json, with no unlocked fallback.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "eval-task-preflight",
+      "stdout": "Validate the complete task pack before any runner, judge, evidence hash, or write.",
+      "answer": "Validate the complete task pack before any runner, judge, evidence hash, or write.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "checkup-issue-lifecycle",
+      "stdout": "Failure opens or updates one exact-title issue; recovery comments and closes it, and unrelated issues stay untouched.",
+      "answer": "Failure opens or updates one exact-title issue; recovery comments and closes it, and unrelated issues stay untouched.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "batch-scan-coverage",
+      "stdout": "Report every reachable repository, but any unscanned entry fails with exit 8 after finding exits 2, 3, 4, and 7 take precedence.",
+      "answer": "Report every reachable repository, but any unscanned entry fails with exit 8 after finding exits 2, 3, 4, and 7 take precedence.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 27,
-    "total": 27,
+    "passed": 30,
+    "total": 30,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -205,12 +226,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "e2a9a62661c24ed2d6f0f9f94ddb108ea444c5eb97a993e0c3704430811e49b8"
+      "sha256": "a85260ac891f9cdef6d3316e770948d91a9d2a57a309798e35fd3f1bf6cd11a6"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "d09a75542c1a041d2f69f81bc127e3ba12c0681078609e9185e4f0cc14afeda9"
+        "sha256": "99916b841c799f5b53aab869ac6d78d011a1a121d6ea8705f8f620be3e83eb23"
       }
     ]
   }
