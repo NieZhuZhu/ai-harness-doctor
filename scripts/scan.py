@@ -883,6 +883,15 @@ def find_conflicts(files):
         # A conflict needs at least two DISTINCT normalized values (keys).
         if len(groups) <= 1:
             continue
+        # ESLint + Prettier are a complementary, standard combination — Prettier
+        # formats and ESLint lints, they are meant to run together — not two
+        # competing formatters. Skip when every distinct formatter value is one
+        # of {prettier, eslint}; a real biome-vs-{prettier,eslint} conflict is
+        # still reported because biome is not in that set.
+        if signal == "formatter":
+            distinct = {entries[0]["value"].lower() for entries in groups.values()}
+            if distinct <= {"prettier", "eslint"}:
+                continue
         conflicts.append(
             {
                 "signal": signal,

@@ -202,7 +202,12 @@ _GO_IMPORT_HOST_RE = re.compile(r"^[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+$")
 #   package_manager/test_command conflict out of the explicitly-rejected
 #   alternatives, even though the doc is unusually unambiguous.
 _NEGATED_CLAUSE_RE = re.compile(
-    r"\b(?:do not|don't|never|avoid|shouldn't|should not)\b[^.;)\n]*",
+    r"\b(?:do not|don't|never|avoid|shouldn't|should not"
+    # Existence negations — "There are no per-package npm lockfiles" states a
+    # tool is ABSENT, so the manager named inside must not be extracted as a
+    # declared signal (found scanning cline/cline, a false package_manager
+    # conflict).
+    r"|there are no|there is no|there's no|have no|has no)\b[^.;)\n]*",
     re.I,
 )
 
