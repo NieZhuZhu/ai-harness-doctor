@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across nine deep `improve` audit batches:
+Generated and reconciled across ten deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -11,6 +11,7 @@ Generated and reconciled across nine deep `improve` audit batches:
 - 2026-07-15 at commit `ced1530` (plans 021–023).
 - 2026-07-15 at commit `935eeb6` (plans 024–026).
 - 2026-07-16 at commit `150d1c9` (plans 027–029).
+- 2026-07-16 at commit `704806e` (plans 030–032).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -157,6 +158,27 @@ verification gate, and update its status here.
    `--evidence`; changing the package fact still passed strict freshness. This
    promotes Plan 026's explicitly deferred provenance binding follow-up.
 
+### 2026-07-16 post-v1.8.0 premium-project rounds
+
+1. **Eval execution safety and result trust** — independently traced task JSON
+   from parse through evidence, single/multi/matrix runners, judge dispatch,
+   regrade, and strict score. A valid first task executed a marker runner before
+   a malformed second task raised `KeyError: 'prompt'`; no result was written.
+   Evidence-only validation therefore does not protect paid execution from a
+   malformed pack.
+2. **GitHub operations and alert lifecycle** — independently audited live
+   community/security/protection settings, recent workflows, dependency
+   advisories, guard templates, and scheduled issue behavior. Remote trust
+   posture is healthy (100% community profile, nine strict checks, no recent
+   failed runs), but both shipped and self checkups only create/comment an
+   incident issue on failure; a healthy later run has no close path.
+3. **Organization-scale product reliability** — independently rechecked the
+   AGENTS.md scope standard, adjacent linter/distributor positioning, batch
+   scanning, external-validation boundaries, and deferred roadmap items. A
+   repos list containing only a missing path reported `error_count: 1` yet
+   exited 0 with all four fail-on flags, proving the advertised org-wide CI gate
+   can pass without scanning one repository.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -190,6 +212,9 @@ verification gate, and update its status here.
 | 027 | Confine every fact-derived generator to repository truth | P0 | M | — | DONE |
 | 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | DONE |
 | 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | DONE |
+| 030 | Validate every eval task before any runner or judge executes | P0 | M | — | TODO |
+| 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | TODO |
+| 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -311,6 +336,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Release classification: Plans 027–028 are backward-compatible fixes; Plan
   029 adds public eval provenance behavior. Publish the batch as the next minor
   version after this completion record merges.
+- Plans 030–032 are independent and may land in any order, but keep them in
+  separate PRs: eval cost-safety, GitHub incident lifecycle, and batch coverage
+  are distinct review/rollback units.
+- Plan 030 must preserve valid generated/hand-written task packs and result
+  shapes. Plan 031 must preserve the shipped failing schedule versus this
+  repository's non-failing self-checkup. Plan 032 must scan every reachable
+  repo before selecting its final exit and retain 2/3/4/7 finding precedence.
+- Plans 030–032 repair false-late/false-stale/false-green behavior without
+  adding a new user workflow. They are patch-level if their compatibility STOP
+  conditions do not trigger; a batch release is patch unless implementation
+  uncovers a public feature or breaking requirement.
 
 ## Findings considered and rejected or deferred
 
@@ -513,3 +549,45 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - **Treat generated task `evidence` as display-only provenance** — promoted to
   Plan 029. It was an explicit Plan 026 defer, but package-fact mutation now
   proves strict freshness can return success for stale generated truth.
+- **Structured Action `args` after v1.8.0** — rechecked and still deferred.
+  Bash word splitting cannot preserve one whitespace-bearing argument, but no
+  documented Action invocation consumes such a value. The selected findings
+  each have a current side-effect/CI/operations reproduction.
+- **Automatic all-scope eval after v1.8.0** — still deferred. Explicit Mastra
+  targets validate scope truth and evidence, but no bounded cost/task-selection
+  policy exists for default expansion. Plan 030 first makes any future larger
+  pack fail before paid execution.
+- **Adopt `AGENTS.override.md`/custom fallback names immediately** — ecosystem
+  documentation shows Codex-specific override/fallback behavior, but this
+  project intentionally models the cross-tool AGENTS.md nearest-file baseline.
+  Adding one tool's replacement semantics to canonical inheritance would need a
+  compatibility/design plan and multiple real-repo measurements, not a regex.
+- **Move guard templates from npm `@latest` to exact package versions** —
+  rejected for this batch. Existing Plan 005 deliberately chose a documented
+  floating update channel for long-lived guards; changing update philosophy
+  needs a migration/update mechanism and is unrelated to checkup recovery.
+- **Treat partial batch coverage as success with only a warning** — rejected.
+  `summary.error_count` already identifies operational coverage loss and the
+  mode is advertised as an org-wide CI gate. Continuing to scan good entries is
+  valuable; returning 0 is not.
+- **Add a generic result-JSON schema validator while fixing task preflight** —
+  deferred. Task packs are execution inputs with a demonstrated paid
+  side-effect before failure. Stored result/matrix/baseline validation has no
+  equivalent reproduction in this audit and should not broaden Plan 030.
+- **Clone AgentLint/Ruler/rulesync feature breadth** — rejected again.
+  Adjacent tools reinforce the project's differentiation on contained
+  diagnostic truth, freshness, CI feedback, and efficacy evidence rather than
+  more rule generation or opt-in AI analyzers.
+- **Fix the stale deterministic temp-report filename prose as a standalone
+  plan** — confirmed: `README.md` still describes
+  `${TMPDIR}/harness-scan-<hash>.json`, while `write_report_file()` correctly
+  uses an unpredictable `mkstemp` path after SEC-02. This is a small docs bug,
+  but it does not outrank the three reproduced execution/operations/CI defects;
+  repair it with the next user-facing scan-doc change rather than padding this
+  batch with a docs-only implementation PR.
+- **Enable GitHub server-side SHA pinning / restrict allowed Actions now** —
+  rechecked and still not selected. Remote `sha_pinning_required` is false, but
+  every current external Action is full-SHA pinned and repository tests enforce
+  that invariant. Changing org/repo Action policy has a larger operational
+  blast radius than the selected concrete failures and no current bypass
+  reproduction.
