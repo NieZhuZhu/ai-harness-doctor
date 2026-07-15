@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across eight deep `improve` audit batches:
+Generated and reconciled across nine deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -10,6 +10,7 @@ Generated and reconciled across eight deep `improve` audit batches:
 - 2026-07-15 at commit `e4992c8` (plans 018–020).
 - 2026-07-15 at commit `ced1530` (plans 021–023).
 - 2026-07-15 at commit `935eeb6` (plans 024–026).
+- 2026-07-16 at commit `150d1c9` (plans 027–029).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -136,6 +137,26 @@ verification gate, and update its status here.
    target-aware generation; automatic all-scope expansion remains deferred
    until real task volume and cost are measured.
 
+### 2026-07-16 post-v1.7.0 premium-project rounds
+
+1. **Fact-generation containment and truth parity** — independently audited
+   root/target eval, Treat draft inference, shared fact helpers, ambiguity
+   policy, symlink boundaries, and safe output. External root
+   `package.json`/`.nvmrc`/`AGENTS.md` symlinks manufactured eval answers, while
+   an external `CLAUDE.md` supplied a drafted command. Root competing lockfiles
+   also selected the first manager instead of matching scan/drift abstention.
+2. **Required-CI dependency reproducibility** — independently audited lockfile
+   consumption, real main logs, Node/npm runtime behavior, package integrity,
+   Dependabot, and install commands. The lint job says “No lockfile found,”
+   ignores committed npm records, and creates a Yarn lock; an altered committed
+   Prettier record did not affect the installed version. Exact `npm ci` now
+   succeeds on the pinned Node 20.19.5/npm 10.8.2 runner.
+3. **Generated efficacy evidence lifecycle** — independently traced scoped task
+   provenance through generate, run, matrix, regrade, score, CLI, and MCP. Tasks
+   named `package.json`/lock evidence, but result manifests included only manual
+   `--evidence`; changing the package fact still passed strict freshness. This
+   promotes Plan 026's explicitly deferred provenance binding follow-up.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -166,6 +187,9 @@ verification gate, and update its status here.
 | 024 | Scan every byte for security and identity without unbounded semantic reads | P0 | M | — | DONE |
 | 025 | Bind idempotent release reruns to the published npm artifact | P0 | S | — | DONE |
 | 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | DONE |
+| 027 | Confine every fact-derived generator to repository truth | P0 | M | — | TODO |
+| 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | TODO |
+| 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -253,6 +277,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Release classification: Plans 024–025 are backward-compatible bug/security
   fixes; Plan 026 adds a public CLI/MCP feature. Publish the batch as the next
   minor version after this completion record merges.
+- Plans 027 and 028 are independent and may land in either order. Keep them in
+  separate PRs: one changes product fact-generation safety and one changes the
+  repository's dependency-install gate.
+- Execute Plan 029 only after 027. Automatically trusting task-declared
+  evidence is safe only after every generator guarantees contained paths and
+  ambiguity-safe facts.
+- Keep Plans 027–029 in separate PRs. Plans 027–028 are patch-level if their
+  compatibility STOP conditions do not trigger. Plan 029 adds public eval
+  provenance behavior, so the combined batch is minor unless a STOP condition
+  exposes a breaking schema requirement.
 
 ## Findings considered and rejected or deferred
 
@@ -440,3 +474,18 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   available release-immutability toggle. Plan 025 enforces npm identity on every
   rerun and documents server-side protection as an operations follow-up instead
   of claiming a control the repository cannot currently prove.
+- **General `scan.py` / `eval_run.py` refactor after v1.7.0** — still rejected.
+  File size alone is not a defect. Plans 027 and 029 use concrete containment
+  and provenance seams and must not become broad module rewrites.
+- **Structured Action `args` after v1.7.0** — still deferred. No documented
+  Action invocation needs one whitespace-bearing argument; all three selected
+  findings have current mechanical or production-log reproductions.
+- **Automatic all-scope eval expansion after v1.7.0** — still deferred. Mastra
+  measurements validate explicit targets but do not establish bounded model
+  cost or useful default task selection across every scope.
+- **Keep Yarn as an npm-ci fallback** — rejected. A fallback silently changes
+  the reviewed dependency graph and restores the reproduced unlocked install.
+  If locked npm CI fails again, stop and diagnose the exact runtime instead.
+- **Treat generated task `evidence` as display-only provenance** — promoted to
+  Plan 029. It was an explicit Plan 026 defer, but package-fact mutation now
+  proves strict freshness can return success for stale generated truth.
