@@ -607,12 +607,12 @@ npx ai-harness-doctor mcp   # or directly: node bin/mcp-server.js
 
 Transport は newline-delimited JSON 上の JSON-RPC 2.0 です（stdin/stdout で 1 行につき 1 つの JSON object）。サポートされる methods:
 
-- `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`。
+- `initialize` → client が要求した `protocolVersion` から stable MCP `2025-11-25` または legacy `2024-11-05` を negotiate し、`{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }` を返します。unsupported version には server の latest stable version を返します。
 - `notifications/initialized` → notification、response なし。
 - `tools/list` → `harness_scan`、`harness_drift`、`harness_validate`、`harness_plan`、`harness_stubs`、`harness_eval_generate` を、それぞれ input schema `{ repo: string (default "."), ... }` 付きで広告します。
-- `tools/call` → 対応する Python script へ dispatch し、人間/tool 向けの出力を `content[0]` に保持します。`content[1]` は `{ kind, exitCode, ok, status, report? }` を持つ compact な JSON metadata text block です。
+- `tools/call` → 対応する Python script へ dispatch し、人間/tool 向けの出力を `content[0]` に保持します。`content[1]` は `{ kind, exitCode, ok, status, report? }` を持つ compact な JSON metadata text block です。MCP `2025-11-25` では同じ metadata を standard `structuredContent` としても返し、`2024-11-05` では text-only compatibility shape を維持します。
 
-Tool booleans: `harness_scan`（`json`）、`harness_drift`（`json`、`strict`）、`harness_validate`（`json`）、`harness_plan`、`harness_stubs`、`harness_eval_generate`。6 tools はすべて read-only です。`harness_stubs` は `--apply` を、`harness_eval_generate` は `-o` を受け取らず、agent/LLM も実行しません。広告される各 input schema は Python 起動前に未知の properties と不正な types を拒否します。metadata の `status` は `ok`、`findings`、`error` です。明示的に要求された valid JSON finding report は `isError: false` のまま利用でき、invalid target、runtime failure、timeout、malformed report、および安全に判定できない non-zero text report は `isError: true` になります。server は MCP `2024-11-05` を引き続き広告するため、metadata は新しい `structuredContent` field ではなく 2 つ目の text content item を使います。未知の methods/tools と invalid arguments は JSON-RPC error objects を返します。
+Tool booleans: `harness_scan`（`json`）、`harness_drift`（`json`、`strict`）、`harness_validate`（`json`）、`harness_plan`、`harness_stubs`、`harness_eval_generate`。6 tools はすべて read-only です。`harness_stubs` は `--apply` を、`harness_eval_generate` は `-o` を受け取らず、agent/LLM も実行しません。広告される各 input schema は Python 起動前に未知の properties と不正な types を拒否します。modern protocol では read-only/non-destructive/idempotent/closed-world annotations と typed result-envelope `outputSchema` も広告し、legacy protocol はその schema にない fields を省略します。metadata の `status` は `ok`、`findings`、`error` です。明示的に要求された valid JSON finding report は `isError: false` のまま利用でき、invalid target、runtime failure、timeout、malformed report、および安全に判定できない non-zero text report は `isError: true` になります。backward compatibility のため initialize 前の direct tool call は historical 2024 shape を返し、valid initialize handshake が connection の wire version を選びます。未知の methods/tools と invalid arguments は JSON-RPC error objects を返します。server は stdio-only のままで、roots、resources、prompts、sampling、HTTP transport は広告しません。
 
 </details>
 

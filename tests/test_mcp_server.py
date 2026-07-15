@@ -12,6 +12,8 @@ SERVER = ROOT / "bin" / "mcp-server.js"
 NODE = shutil.which("node") or "node"
 DRIFT = ROOT / "scripts" / "check_drift.py"
 CANONICALIZE = ROOT / "scripts" / "canonicalize.py"
+LATEST_PROTOCOL = "2025-11-25"
+LEGACY_PROTOCOL = "2024-11-05"
 
 
 class McpServerTests(unittest.TestCase):
@@ -36,15 +38,35 @@ class McpServerTests(unittest.TestCase):
             responses.append(json.loads(line))
         return responses
 
-    def _call(self, name, arguments=None, env=None):
+    def _initialize(self, request_id=100, version=LATEST_PROTOCOL):
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": version,
+                "capabilities": {},
+                "clientInfo": {"name": "ai-harness-doctor-tests", "version": "1.0.0"},
+            },
+        }
+
+    def _call(self, name, arguments=None, env=None, protocol=LATEST_PROTOCOL):
         params = {"name": name}
         if arguments is not None:
             params["arguments"] = arguments
-        responses = self._exchange(
-            [{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}],
-            env=env,
+        messages = []
+        if protocol is not None:
+            messages.extend(
+                [
+                    self._initialize(version=protocol),
+                    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                ]
+            )
+        messages.append(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
         )
-        return responses[0]
+        responses = self._exchange(messages, env=env)
+        return next(response for response in responses if response.get("id") == 1)
 
     def _metadata(self, result):
         self.assertEqual(len(result["content"]), 2)
@@ -52,6 +74,9 @@ class McpServerTests(unittest.TestCase):
         metadata = json.loads(result["content"][1]["text"])
         self.assertEqual(metadata["kind"], "ai-harness-doctor/tool-result")
         self.assertIn(metadata["status"], {"ok", "findings", "error"})
+        self.assertEqual(result["structuredContent"], metadata)
+        self.assertIsInstance(metadata["ok"], bool)
+        self.assertTrue(metadata["exitCode"] is None or isinstance(metadata["exitCode"], int))
         return metadata
 
     def _complete_repo(self, root):
@@ -90,7 +115,7 @@ class McpServerTests(unittest.TestCase):
             (repo / "AGENTS.md").write_text("# Project overview\n\nUse pnpm install.\n", encoding="utf-8")
 
             messages = [
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                self._initialize(request_id=1),
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
                 {
@@ -107,7 +132,7 @@ class McpServerTests(unittest.TestCase):
             self.assertEqual(len(responses), 3)
 
             init = by_id[1]["result"]
-            self.assertEqual(init["protocolVersion"], "2024-11-05")
+            self.assertEqual(init["protocolVersion"], LATEST_PROTOCOL)
             self.assertIn("tools", init["capabilities"])
             self.assertEqual(init["serverInfo"]["name"], "ai-harness-doctor")
             self.assertTrue(init["serverInfo"]["version"])
@@ -129,24 +154,22 @@ class McpServerTests(unittest.TestCase):
                 self.assertEqual(tool["inputSchema"]["type"], "object")
                 self.assertFalse(tool["inputSchema"]["additionalProperties"])
                 self.assertIn("repo", tool["inputSchema"]["properties"])
-
-            # The 2024-11-05 wire schema predates ToolAnnotations/readOnlyHint,
-            # so enforce the read-only declaration on the internal registry
-            # rather than advertising an unsupported protocol field.
-            registry_script = (
-                "const {TOOLS}=require(process.argv[1]);"
-                "process.stdout.write(JSON.stringify(TOOLS.map(t=>({"
-                "name:t.name,readOnly:t.readOnly,policy:Boolean(t.resultPolicy)}))))"
-            )
-            registry = subprocess.run(
-                [NODE, "-e", registry_script, str(SERVER)],
-                text=True,
-                capture_output=True,
-            )
-            self.assertEqual(registry.returncode, 0, registry.stderr)
-            declarations = json.loads(registry.stdout)
-            self.assertEqual({item["name"] for item in declarations}, names)
-            self.assertTrue(all(item["readOnly"] and item["policy"] for item in declarations))
+                self.assertEqual(
+                    tool["annotations"],
+                    {
+                        "readOnlyHint": True,
+                        "destructiveHint": False,
+                        "idempotentHint": True,
+                        "openWorldHint": False,
+                    },
+                )
+                schema = tool["outputSchema"]
+                self.assertEqual(schema["type"], "object")
+                self.assertFalse(schema["additionalProperties"])
+                self.assertEqual(
+                    set(schema["required"]),
+                    {"kind", "exitCode", "ok", "status"},
+                )
 
             call = by_id[3]["result"]
             self.assertFalse(call.get("isError"))
@@ -159,12 +182,101 @@ class McpServerTests(unittest.TestCase):
             self.assertFalse(metadata["ok"])
             self.assertEqual(metadata["report"], scan)
 
+    def test_protocol_negotiation_and_legacy_wire_shape(self):
+        for requested, expected in (
+            (LATEST_PROTOCOL, LATEST_PROTOCOL),
+            (LEGACY_PROTOCOL, LEGACY_PROTOCOL),
+            ("2099-01-01", LATEST_PROTOCOL),
+        ):
+            with self.subTest(requested=requested):
+                responses = self._exchange([self._initialize(version=requested)])
+                self.assertEqual(
+                    responses[0]["result"]["protocolVersion"],
+                    expected,
+                )
+
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
+            responses = self._exchange(
+                [
+                    self._initialize(request_id=1, version=LEGACY_PROTOCOL),
+                    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "harness_drift",
+                            "arguments": {"repo": str(repo)},
+                        },
+                    },
+                ]
+            )
+            by_id = {response.get("id"): response for response in responses}
+            for tool in by_id[2]["result"]["tools"]:
+                self.assertNotIn("annotations", tool)
+                self.assertNotIn("outputSchema", tool)
+            legacy_result = by_id[3]["result"]
+            self.assertNotIn("structuredContent", legacy_result)
+            metadata = json.loads(legacy_result["content"][1]["text"])
+            self.assertEqual(metadata["kind"], "ai-harness-doctor/tool-result")
+
+            # Pre-initialize direct calls retain the historical 2024 wire shape.
+            direct = self._call(
+                "harness_drift",
+                {"repo": str(repo)},
+                protocol=None,
+            )["result"]
+            self.assertNotIn("structuredContent", direct)
+            self.assertEqual(len(direct["content"]), 2)
+
+    def test_malformed_and_duplicate_initialize_are_protocol_errors(self):
+        malformed = [
+            {},
+            {
+                "protocolVersion": LATEST_PROTOCOL,
+                "capabilities": [],
+                "clientInfo": {"name": "test", "version": "1"},
+            },
+            {
+                "protocolVersion": LATEST_PROTOCOL,
+                "capabilities": {},
+                "clientInfo": {"name": "test"},
+            },
+        ]
+        for index, params in enumerate(malformed, 1):
+            with self.subTest(params=params):
+                response = self._exchange(
+                    [
+                        {
+                            "jsonrpc": "2.0",
+                            "id": index,
+                            "method": "initialize",
+                            "params": params,
+                        }
+                    ]
+                )[0]
+                self.assertEqual(response["error"]["code"], -32602)
+
+        responses = self._exchange(
+            [
+                self._initialize(request_id=1),
+                self._initialize(request_id=2),
+            ]
+        )
+        by_id = {response.get("id"): response for response in responses}
+        self.assertEqual(by_id[1]["result"]["protocolVersion"], LATEST_PROTOCOL)
+        self.assertEqual(by_id[2]["error"]["code"], -32600)
+
     def test_call_drift_returns_text(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
             (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
             messages = [
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                self._initialize(request_id=1),
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 {
                     "jsonrpc": "2.0",
                     "id": 2,
@@ -338,7 +450,8 @@ class McpServerTests(unittest.TestCase):
             (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
             (repo / "CLAUDE.md").write_text("Old CLAUDE instructions, not yet a stub.\n", encoding="utf-8")
             messages = [
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                self._initialize(request_id=1),
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 {
                     "jsonrpc": "2.0",
                     "id": 2,
@@ -369,7 +482,8 @@ class McpServerTests(unittest.TestCase):
             (repo / "AGENTS.md").write_text("# Build & test\nRun `npm test`.\n", encoding="utf-8")
             (repo / "package.json").write_text('{"scripts": {"test": "echo ok"}}', encoding="utf-8")
             messages = [
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                self._initialize(request_id=1),
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 {
                     "jsonrpc": "2.0",
                     "id": 2,
@@ -509,7 +623,8 @@ class McpServerTests(unittest.TestCase):
             repo = Path(td)
             (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
             messages = [
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                self._initialize(request_id=1),
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
                 {
                     "jsonrpc": "2.0",
                     "id": 2,

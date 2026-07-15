@@ -607,12 +607,12 @@ npx ai-harness-doctor mcp   # or directly: node bin/mcp-server.js
 
 Transport 是基于换行分隔 JSON 的 JSON-RPC 2.0（stdin/stdout 上每行一个 JSON 对象）。支持的方法：
 
-- `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`。
+- `initialize` → 根据客户端请求的 `protocolVersion` 协商稳定版 MCP `2025-11-25` 或旧版 `2024-11-05`，并返回 `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`；不支持的版本会收到服务器最新的稳定版本。
 - `notifications/initialized` → 通知，无响应。
 - `tools/list` → 公布 `harness_scan`、`harness_drift`、`harness_validate`、`harness_plan`、`harness_stubs`、`harness_eval_generate`，各自带一个输入 schema `{ repo: string (default "."), ... }`。
-- `tools/call` → 分派到匹配的 Python 脚本，并将面向人/工具的输出保留在 `content[0]`；`content[1]` 是包含 `{ kind, exitCode, ok, status, report? }` 的紧凑 JSON 元数据文本块。
+- `tools/call` → 分派到匹配的 Python 脚本，并将面向人/工具的输出保留在 `content[0]`；`content[1]` 是包含 `{ kind, exitCode, ok, status, report? }` 的紧凑 JSON 元数据文本块。在 MCP `2025-11-25` 下，同一元数据还会作为标准 `structuredContent` 返回；在 `2024-11-05` 下保持纯文本兼容格式。
 
-工具布尔值：`harness_scan`（`json`）、`harness_drift`（`json`、`strict`）、`harness_validate`（`json`）、`harness_plan`、`harness_stubs`、`harness_eval_generate`。六个工具全部只读；`harness_stubs` 永远不会收到 `--apply`，`harness_eval_generate` 永远不会收到 `-o`，也不会运行 agent/LLM。每个公开的输入 schema 都会在 Python 启动前拒绝未知属性和错误类型。元数据 `status` 为 `ok`、`findings` 或 `error`：显式请求且合法的 JSON 发现报告会保留内容并使用 `isError: false`，而非法目标、运行时失败、超时、畸形报告，以及无法安全判定的非零文本报告会设置 `isError: true`。由于服务器仍声明 MCP `2024-11-05`，元数据使用第二个 text content item，而不是较新的 `structuredContent` 字段。未知的方法/工具与非法参数会返回 JSON-RPC error 对象。
+工具布尔值：`harness_scan`（`json`）、`harness_drift`（`json`、`strict`）、`harness_validate`（`json`）、`harness_plan`、`harness_stubs`、`harness_eval_generate`。六个工具全部只读；`harness_stubs` 永远不会收到 `--apply`，`harness_eval_generate` 永远不会收到 `-o`，也不会运行 agent/LLM。每个公开的输入 schema 都会在 Python 启动前拒绝未知属性和错误类型。现代协议下还会公布只读、非破坏、幂等、closed-world annotations 以及带类型的结果 envelope `outputSchema`；旧协议会省略其 schema 未定义的字段。元数据 `status` 为 `ok`、`findings` 或 `error`：显式请求且合法的 JSON 发现报告会保留内容并使用 `isError: false`，而非法目标、运行时失败、超时、畸形报告，以及无法安全判定的非零文本报告会设置 `isError: true`。为向后兼容，未 initialize 就直接调用工具的客户端会得到历史 2024 结果格式；合法 initialize handshake 会为整条连接选定 wire version。未知的方法/工具与非法参数会返回 JSON-RPC error 对象。服务器仍只支持 stdio，不会宣称 roots、resources、prompts、sampling 或 HTTP transport。
 
 </details>
 

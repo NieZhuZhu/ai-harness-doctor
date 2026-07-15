@@ -1128,7 +1128,21 @@ class CliInstallerTests(unittest.TestCase):
             env = os.environ.copy()
             env["HOME"] = home_dir
             env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
-            payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}) + "\n"
+            payload = (
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-11-25",
+                            "capabilities": {},
+                            "clientInfo": {"name": "cli-smoke", "version": "1.0.0"},
+                        },
+                    }
+                )
+                + "\n"
+            )
             proc = subprocess.run(
                 ["node", str(CLI), "mcp"],
                 input=payload,
@@ -1142,6 +1156,7 @@ class CliInstallerTests(unittest.TestCase):
             first = next(line for line in proc.stdout.splitlines() if line.strip())
             response = json.loads(first)
             self.assertEqual(response["id"], 1)
+            self.assertEqual(response["result"]["protocolVersion"], "2025-11-25")
             self.assertEqual(response["result"]["serverInfo"]["name"], "ai-harness-doctor")
 
 

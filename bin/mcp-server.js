@@ -17,7 +17,9 @@ const PACKAGE_ROOT = path.resolve(__dirname, '..');
 const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'));
 const PACKAGE_VERSION = PACKAGE_JSON.version;
 const SERVER_NAME = 'ai-harness-doctor';
-const PROTOCOL_VERSION = '2024-11-05';
+const SUPPORTED_PROTOCOL_VERSIONS = Object.freeze(['2025-11-25', '2024-11-05']);
+const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
+const LEGACY_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[1];
 
 // JSON-RPC 2.0 error codes.
 const PARSE_ERROR = -32700;
@@ -130,6 +132,20 @@ const TOOLS = [
 ];
 
 const TOOL_BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));
+const TOOL_RESULT_OUTPUT_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    kind: { type: 'string', const: 'ai-harness-doctor/tool-result' },
+    exitCode: { type: ['integer', 'null'] },
+    ok: { type: 'boolean' },
+    status: { type: 'string', enum: ['ok', 'findings', 'error'] },
+    // Tool-specific JSON reports are intentionally heterogeneous; an empty
+    // schema accepts any JSON value while the envelope remains closed/typed.
+    report: {},
+  },
+  required: ['kind', 'exitCode', 'ok', 'status'],
+});
 
 // Hard cap on how long a single Python tool subprocess may run. Without this,
 // a script that blocks (e.g. drift/scan walking a huge or symlink-looped tree)
@@ -292,6 +308,61 @@ function resultMetadata(outcome) {
   return metadata;
 }
 
+function negotiateProtocolVersion(requested) {
+  return SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+    ? requested
+    : LATEST_PROTOCOL_VERSION;
+}
+
+function validateInitializeParams(params) {
+  if (!isPlainObject(params)) return 'initialize params must be an object.';
+  if (typeof params.protocolVersion !== 'string' || !params.protocolVersion) {
+    return 'initialize params.protocolVersion must be a non-empty string.';
+  }
+  if (!isPlainObject(params.capabilities)) {
+    return 'initialize params.capabilities must be an object.';
+  }
+  if (!isPlainObject(params.clientInfo)
+      || typeof params.clientInfo.name !== 'string'
+      || typeof params.clientInfo.version !== 'string') {
+    return 'initialize params.clientInfo must contain string name and version.';
+  }
+  return null;
+}
+
+function toolForProtocol(tool, protocolVersion) {
+  const wire = {
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+  };
+  if (protocolVersion === LATEST_PROTOCOL_VERSION) {
+    wire.annotations = {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    };
+    wire.outputSchema = TOOL_RESULT_OUTPUT_SCHEMA;
+  }
+  return wire;
+}
+
+function resultForProtocol(outcome, protocolVersion) {
+  const metadata = resultMetadata(outcome);
+  const result = {
+    content: [
+      { type: 'text', text: outcome.text },
+      { type: 'text', text: JSON.stringify(metadata) },
+    ],
+    isError: Boolean(outcome.isError),
+  };
+  if (protocolVersion === LATEST_PROTOCOL_VERSION) {
+    result.structuredContent = metadata;
+  }
+  return result;
+}
+
 function callTool(tool, argsObj) {
   const { scriptPath, argv } = buildScriptArgs(tool, argsObj || {});
   if (tool.resultPolicy.requireRepoDirectory) {
@@ -325,7 +396,7 @@ function callTool(tool, argsObj) {
   return classifySubprocess(tool, argsObj, result);
 }
 
-function handleToolsCall(id, params) {
+function handleToolsCall(id, params, session) {
   if (!isPlainObject(params)) {
     sendError(id, INVALID_PARAMS, 'tools/call params must be an object.');
     return;
@@ -342,16 +413,10 @@ function handleToolsCall(id, params) {
     return;
   }
   const outcome = callTool(tool, validation.value);
-  sendResult(id, {
-    content: [
-      { type: 'text', text: outcome.text },
-      { type: 'text', text: JSON.stringify(resultMetadata(outcome)) },
-    ],
-    isError: Boolean(outcome.isError),
-  });
+  sendResult(id, resultForProtocol(outcome, session.protocolVersion));
 }
 
-function handleRequest(message) {
+function handleRequest(message, session) {
   const { id, method, params } = message;
   const isNotification = id === undefined || id === null;
 
@@ -361,8 +426,19 @@ function handleRequest(message) {
   }
 
   if (method === 'initialize') {
+    if (session.initialized) {
+      sendError(id, INVALID_REQUEST, 'Server is already initialized.');
+      return;
+    }
+    const problem = validateInitializeParams(params);
+    if (problem) {
+      sendError(id, INVALID_PARAMS, problem);
+      return;
+    }
+    session.protocolVersion = negotiateProtocolVersion(params.protocolVersion);
+    session.initialized = true;
     sendResult(id, {
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: session.protocolVersion,
       capabilities: { tools: {} },
       serverInfo: { name: SERVER_NAME, version: PACKAGE_VERSION },
     });
@@ -375,17 +451,13 @@ function handleRequest(message) {
   }
 
   if (method === 'tools/list') {
-    const tools = TOOLS.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    }));
+    const tools = TOOLS.map((tool) => toolForProtocol(tool, session.protocolVersion));
     sendResult(id, { tools });
     return;
   }
 
   if (method === 'tools/call') {
-    handleToolsCall(id, params);
+    handleToolsCall(id, params, session);
     return;
   }
 
@@ -397,6 +469,13 @@ function handleRequest(message) {
 }
 
 function main() {
+  // Direct calls made by older/lightweight clients before initialize retain the
+  // original 2024 wire shape. A valid initialize request selects a version for
+  // the remainder of this stdio connection.
+  const session = {
+    protocolVersion: LEGACY_PROTOCOL_VERSION,
+    initialized: false,
+  };
   const rl = readline.createInterface({ input: process.stdin, terminal: false });
   rl.on('line', (line) => {
     const trimmed = line.trim();
@@ -413,7 +492,7 @@ function main() {
       return;
     }
     try {
-      handleRequest(message);
+      handleRequest(message, session);
     } catch (error) {
       sendError(message.id !== undefined ? message.id : null, INTERNAL_ERROR, `Internal error: ${error && error.message}`);
     }
@@ -426,9 +505,17 @@ if (require.main === module) {
 }
 
 module.exports = {
+  LATEST_PROTOCOL_VERSION,
+  LEGACY_PROTOCOL_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
   TOOLS,
+  TOOL_RESULT_OUTPUT_SCHEMA,
   buildScriptArgs,
   classifySubprocess,
+  negotiateProtocolVersion,
   resolvePython,
+  resultForProtocol,
+  toolForProtocol,
+  validateInitializeParams,
   validateToolArguments,
 };
