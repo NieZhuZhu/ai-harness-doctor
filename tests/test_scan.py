@@ -123,6 +123,61 @@ class PackageManagerConflictTests(unittest.TestCase):
         self.assertEqual([c for c in conflicts if c["signal"] == "test_command"], [])
 
 
+class FormatterConflictTests(unittest.TestCase):
+    """ESLint and Prettier are a complementary, standard combination, not two
+    competing formatters, so they must not manufacture a formatter conflict —
+    but a genuine biome-vs-{prettier,eslint} conflict must still surface."""
+
+    def _formatter_values(self, text):
+        conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
+        fmt = [c for c in conflicts if c["signal"] == "formatter"]
+        return set(fmt[0]["values"].keys()) if fmt else set()
+
+    def test_eslint_and_prettier_are_not_a_formatter_conflict(self):
+        # Prettier formats, ESLint lints — declaring both is the recommended
+        # standard setup, not a conflict. Found in round 16 external validation
+        # across google-gemini/gemini-cli and block/goose.
+        self.assertEqual(
+            self._formatter_values("Format with `prettier` and lint with `eslint`."),
+            set(),
+        )
+
+    def test_biome_and_prettier_still_conflict(self):
+        # Biome is an all-in-one alternative to the prettier+eslint stack, so a
+        # doc declaring both biome AND prettier is a genuine formatter conflict.
+        self.assertEqual(
+            self._formatter_values("Use `biome` here, but `prettier` there."),
+            {"biome", "prettier"},
+        )
+
+
+class NegatedExistenceClauseTests(unittest.TestCase):
+    """Existence negations ("There are no ... npm lockfiles") state a tool is
+    ABSENT, so a manager named inside must not be extracted as a declared
+    signal or manufacture a false package_manager conflict. Found in round 16
+    external validation scanning cline/cline."""
+
+    def _pm_values(self, text):
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+            if s["signal"] == "package_manager"
+        ]
+        return {s["value"] for s in sigs}
+
+    def test_there_are_no_npm_lockfiles_is_not_a_declaration(self):
+        self.assertEqual(
+            self._pm_values("There are no per-package npm lockfiles. Run `pnpm install`."),
+            {"pnpm"},
+        )
+
+    def test_existence_negation_does_not_manufacture_conflict(self):
+        conflicts = scan.find_conflicts(
+            [{"path": "AGENTS.md", "text": "We use `pnpm`. There is no npm lockfile here."}]
+        )
+        self.assertEqual([c for c in conflicts if c["signal"] == "package_manager"], [])
+
+
 class NodeVersionConflictTests(unittest.TestCase):
     """CORR-05: Node version conflicts must be compared as normalized semantic
     versions, so a bare major is compatible with a fuller version and only a
