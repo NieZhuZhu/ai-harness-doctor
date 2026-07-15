@@ -368,6 +368,13 @@ def declared_paths(text):
             # genuine drift and stays checked.
             if _is_gitignored_dotenv(token):
                 continue
+            # Conventional generated-output roots are absent from a clean
+            # checkout by design. An instruction can document where a build
+            # writes declarations/assets (e.g. `dist/_types/`) without claiming
+            # that generated output is committed. These directories are also
+            # excluded from every repository walk via SKIP_DIRS.
+            if token.split("/", 1)[0] in {"dist", "build"}:
+                continue
             if token.startswith(CMD_PATH_PREFIXES):
                 continue
             if "*" in token or "?" in token:

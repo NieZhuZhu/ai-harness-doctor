@@ -326,6 +326,23 @@ class DriftReportTests(unittest.TestCase):
         self.assertEqual(loc["artifactLocation"]["uri"], "AGENTS.md")
         self.assertNotIn("region", loc)
 
+    def test_nested_drift_finding_preserves_canonical_file_location(self):
+        report = {
+            "findings": [
+                {
+                    "check": "D1",
+                    "level": "ERROR",
+                    "path": "packages/api/AGENTS.md",
+                    "line": 4,
+                    "message": "Unknown package.json script `removed-script`",
+                }
+            ]
+        }
+        doc = sarif.drift_report_to_sarif(report)
+        loc = doc["runs"][0]["results"][0]["locations"][0]["physicalLocation"]
+        self.assertEqual(loc["artifactLocation"]["uri"], "packages/api/AGENTS.md")
+        self.assertEqual(loc["region"]["startLine"], 4)
+
     def test_drift_includes_custom_findings(self):
         report = {
             "findings": [],

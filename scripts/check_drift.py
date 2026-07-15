@@ -52,15 +52,27 @@ _STUB_POINTER_SIGNAL_RE = re.compile(
 )
 
 
-def d1_command_drift(root, text):
+def d1_command_drift(root, text, fallback_root=None):
     findings = []
     scripts = package_scripts(root)
+    scope_dependencies = "not computed"
+    fallback_scripts = None
+    if fallback_root is not None and Path(fallback_root).resolve() != Path(root).resolve():
+        fallback_scripts = package_scripts(fallback_root)
+        if scripts is None and not facts.is_file_within_root(root, Path(root) / "package.json"):
+            scripts, fallback_scripts = fallback_scripts, None
     targets = make_targets(root)
+    fallback_targets = None
+    if fallback_root is not None and Path(fallback_root).resolve() != Path(root).resolve():
+        fallback_targets = make_targets(fallback_root)
+        if targets is None:
+            targets, fallback_targets = fallback_targets, None
     # Keep the package-manager alternation in lock-step with semantic.py's
     # _NODE_CMD_RE (npm|pnpm|bun); omitting bun left this CI gate blind to
     # `bun run <script>` references that the Phase-0 engine already audits.
     cmd_re = re.compile(
-        r"\b(?:(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_-]+)|yarn\s+([A-Za-z0-9:_-]+)|make\s+([A-Za-z0-9_.-]+))\b"
+        r"\b(?:(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_][A-Za-z0-9:_-]*)"
+        r"|yarn\s+([A-Za-z0-9:_][A-Za-z0-9:_-]*)|make\s+([A-Za-z0-9_.-]+))\b"
     )
     for lineno, code in line_collected_code(text):
         # Skip English prose sentences so imperatives like "make sure the tests
@@ -74,7 +86,12 @@ def d1_command_drift(root, text):
             # "make the ...") is prose, not a Makefile target (CORR-02).
             if tool == "make" and name in _PROSE_TARGET_WORDS:
                 continue
-            if tool == "make" and targets is not None and name not in targets:
+            if (
+                tool == "make"
+                and targets is not None
+                and name not in targets
+                and (fallback_targets is None or name not in fallback_targets)
+            ):
                 findings.append(
                     {
                         "check": "D1",
@@ -88,11 +105,33 @@ def d1_command_drift(root, text):
             # are cheaper than noisy false positives here.
             if tool != "make" and name in PACKAGE_MANAGER_BUILTINS:
                 continue
-            # Same for yarn's node_modules/.bin passthrough (`yarn vitest`) — see
-            # facts.is_yarn_bin_passthrough (TD-02).
-            if tool != "make" and facts.is_yarn_bin_passthrough(root, tool, name):
+            # Same for yarn/pnpm node_modules/.bin passthrough (`yarn vitest`,
+            # `pnpm mastra`) — see facts.is_node_bin_passthrough (TD-02).
+            if tool != "make" and (
+                facts.is_node_bin_passthrough(root, tool, name)
+                or (
+                    fallback_root is not None
+                    and facts.is_node_bin_passthrough(fallback_root, tool, name)
+                )
+                or (
+                    tool in {"yarn", "pnpm"}
+                    and name
+                    in (
+                        scope_dependencies
+                        if scope_dependencies != "not computed"
+                        else facts.all_package_dependency_names(root)
+                    )
+                )
+            ):
+                if tool in {"yarn", "pnpm"} and scope_dependencies == "not computed":
+                    scope_dependencies = facts.all_package_dependency_names(root)
                 continue
-            if tool != "make" and scripts is not None and name not in scripts:
+            if (
+                tool != "make"
+                and scripts is not None
+                and name not in scripts
+                and (fallback_scripts is None or name not in fallback_scripts)
+            ):
                 findings.append(
                     {
                         "check": "D1",
@@ -111,8 +150,9 @@ def d1_command_drift(root, text):
 _within_root = facts.within_root
 
 
-def d2_path_drift(root, text):
+def d2_path_drift(root, text, fallback_root=None):
     findings = []
+    containment_root = Path(fallback_root).resolve() if fallback_root is not None else Path(root).resolve()
     # Use the shared registry.declared_paths classifier so this Phase-2 gate and
     # the Phase-0 semantic check agree on exactly what counts as a declared path
     # (TD-03). Candidacy is decided by the shared token rules; this gate then
@@ -127,9 +167,16 @@ def d2_path_drift(root, text):
         token, lineno = decl["path"], decl["line"]
         # Never probe outside the repo root: an absolute or `../`-escaping token
         # is not repo drift and must not be stat()'d (info-leak guard).
-        if not _within_root(root, token):
+        candidate = facts.resolve_within_root(Path(root) / token, containment_root, strict=False)
+        if candidate is None:
             continue
-        if not facts.exists_within_root(root, root / token):
+        if not facts.exists_within_root(containment_root, candidate):
+            if (
+                fallback_root is not None
+                and _within_root(fallback_root, token)
+                and facts.exists_within_root(fallback_root, Path(fallback_root) / token)
+            ):
+                continue
             # Monorepo package self-import guard — mirrors semantic.compare_paths
             # so both gates agree (TD-03). A token whose first segment matches a
             # package.json `name` (e.g. `better-auth/test`) is a package export
@@ -138,6 +185,8 @@ def d2_path_drift(root, text):
             if package_names == "not computed":
                 package_names = facts.all_package_names(root)
             if token.split("/", 1)[0] in package_names:
+                continue
+            if facts.is_eslint_rule_identifier(root, token):
                 continue
             # A root AGENTS.md may scope a section to one workspace and then
             # name paths relative to that subtree. Match Phase 0's existence
@@ -284,16 +333,23 @@ declared_package_managers = facts.declared_package_managers
 lockfile_managers = facts.lockfile_managers
 
 
-def d6_fact_drift(root, text):
+def d6_fact_drift(root, text, fallback_root=None):
     """Cross-validate factual claims in AGENTS.md against repo ground-truth files."""
     findings = []
     if not text:
         return findings
+    fallback_root = (
+        Path(fallback_root)
+        if fallback_root is not None and Path(fallback_root).resolve() != Path(root).resolve()
+        else None
+    )
 
     # Node version: declared claim vs .nvmrc and package.json engines.node.
     declared_node, node_line = declared_node_version(text)
     if declared_node is not None:
         nvmrc = nvmrc_node_version(root)
+        if nvmrc is None and fallback_root is not None:
+            nvmrc = nvmrc_node_version(fallback_root)
         if nvmrc is not None and nvmrc != declared_node:
             findings.append(
                 {
@@ -305,6 +361,8 @@ def d6_fact_drift(root, text):
                 }
             )
         engines = engines_node_version(root)
+        if engines is None and fallback_root is not None:
+            engines = engines_node_version(fallback_root)
         if engines is not None and engines != declared_node:
             findings.append(
                 {
@@ -320,6 +378,10 @@ def d6_fact_drift(root, text):
     # Package manager: declared claim vs the lockfile that actually exists.
     declared_pms = declared_package_managers(text)
     ground_pms = lockfile_managers(root)
+    ground_root = Path(root)
+    if not ground_pms and fallback_root is not None:
+        ground_pms = lockfile_managers(fallback_root)
+        ground_root = fallback_root
     if len(declared_pms) == 1 and len(ground_pms) == 1:
         declared_pm = next(iter(declared_pms))
         ground_pm = next(iter(ground_pms))
@@ -327,7 +389,7 @@ def d6_fact_drift(root, text):
             lockfile = next(
                 name
                 for name, mgr in LOCKFILE_MANAGERS.items()
-                if mgr == ground_pm and facts.is_file_within_root(root, root / name)
+                if mgr == ground_pm and facts.is_file_within_root(ground_root, ground_root / name)
             )
             findings.append(
                 {
@@ -371,7 +433,7 @@ def _link_target_is_probeable(target):
     return target or None
 
 
-def d7_markdown_link_drift(root, text):
+def d7_markdown_link_drift(root, text, fallback_root=None):
     """Broken relative Markdown-link targets in AGENTS.md.
 
     D2 only probes backtick-quoted tokens; a canonical section that links to a
@@ -382,6 +444,7 @@ def d7_markdown_link_drift(root, text):
     findings = []
     if not text:
         return findings
+    containment_root = Path(fallback_root).resolve() if fallback_root is not None else Path(root).resolve()
     for lineno, line in enumerate(text.splitlines(), 1):
         for m in _MD_LINK_RE.finditer(line):
             target = _link_target_is_probeable(m.group(1))
@@ -391,9 +454,10 @@ def d7_markdown_link_drift(root, text):
             # (`docs/my%20file.md`); decode before probing so a valid file is
             # not falsely reported as a broken link and failing CI.
             target = unquote(target)
-            if not _within_root(root, target):
+            candidate = facts.resolve_within_root(Path(root) / target, containment_root, strict=False)
+            if candidate is None:
                 continue
-            if not facts.exists_within_root(root, root / target):
+            if not facts.exists_within_root(containment_root, candidate):
                 findings.append(
                     {
                         "check": "D7",
@@ -450,6 +514,37 @@ def nested_agents(root):
             continue
         out.append(p.relative_to(root).as_posix())
     return sorted(out)
+
+
+def drift_scopes(root):
+    """Return the root and contained nested AGENTS.md drift scopes.
+
+    Content-relative checks prefer each canonical file's parent as their
+    fact/path root and use the repository root as a conservative fallback.
+    The repository root stays first and nested paths inherit the deterministic,
+    pruned, non-symlink-following discovery in ``nested_agents``.
+    """
+    root = Path(root).resolve()
+    scopes = [{"root": root, "path": "AGENTS.md", "is_root": True}]
+    for rel_path in nested_agents(root):
+        scopes.append(
+            {
+                "root": root / Path(rel_path).parent,
+                "path": rel_path,
+                "is_root": False,
+            }
+        )
+    return scopes
+
+
+def _attribute_scope(findings, scope):
+    """Attach nested content findings to their canonical source file."""
+    if scope["is_root"]:
+        # Preserve the historical root finding/baseline shape: root D1/D2/D6/D7
+        # findings intentionally omit `path` and use AGENTS.md as the implicit
+        # source in SARIF/PR-review integrations.
+        return findings
+    return [{**finding, "path": scope["path"]} for finding in findings]
 
 
 SCORE_WEIGHTS = {"ERROR": 15, "NOTICE": 5}
@@ -536,15 +631,26 @@ def baseline_payload(findings):
 
 
 def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=False, baseline=None):
-    agents = root / "AGENTS.md"
-    text = facts.read_text_within_root(root, agents, errors="replace") or ""
+    root = Path(root).resolve()
+    scopes = drift_scopes(root)
+    root_text = ""
     findings = []
-    findings.extend(d1_command_drift(root, text))
-    findings.extend(d2_path_drift(root, text))
+    for scope in scopes:
+        text = facts.read_text_within_root(root, root / scope["path"], errors="replace") or ""
+        if scope["is_root"]:
+            root_text = text
+        scoped = []
+        fallback_root = root if not scope["is_root"] else None
+        scoped.extend(d1_command_drift(scope["root"], text, fallback_root=fallback_root))
+        scoped.extend(d2_path_drift(scope["root"], text, fallback_root=fallback_root))
+        scoped.extend(d6_fact_drift(scope["root"], text, fallback_root=fallback_root))
+        scoped.extend(d7_markdown_link_drift(scope["root"], text, fallback_root=fallback_root))
+        findings.extend(_attribute_scope(scoped, scope))
+
+    # Repository ownership/size/lockfile checks run once. They are not
+    # content-relative checks and must not be multiplied by nested scopes.
     findings.extend(d3_stub_regrowth(root))
     findings.extend(d4_size(root, max_bytes))
-    findings.extend(d6_fact_drift(root, text))
-    findings.extend(d7_markdown_link_drift(root, text))
     findings.extend(d8_competing_lockfiles(root))
     if strict:
         for f in findings:
@@ -561,8 +667,14 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
             (baselined if finding_fingerprint(f) in baseline else kept).append(f)
         findings = kept
     info = [
-        {"check": "D5", "level": "INFO", "path": p, "message": "Nested AGENTS.md inventory"}
-        for p in nested_agents(root)
+        {
+            "check": "D5",
+            "level": "INFO",
+            "path": scope["path"],
+            "message": "Nested AGENTS.md inventory",
+        }
+        for scope in scopes
+        if not scope["is_root"]
     ]
     # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
     # files live inside the scanned repo, so importing them runs arbitrary code
@@ -572,7 +684,12 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
     # --rules DIR; each plugin is isolated so a broken one is reported as an
     # ERROR finding, never a crash. Custom findings are reported additively
     # under `custom`; they do not alter the built-in D1-D8 health score.
-    custom = plugins.run_plugins(root, {"phase": "drift", "agents_text": text}, rules_dirs, allow_plugins=allow_plugins)
+    custom = plugins.run_plugins(
+        root,
+        {"phase": "drift", "agents_text": root_text},
+        rules_dirs,
+        allow_plugins=allow_plugins,
+    )
     if strict:
         for f in custom:
             if f.get("level") == "NOTICE":
@@ -600,7 +717,7 @@ def render(report):
             continue
         lines.extend(["", f"## {check}"])
         for f in items:
-            loc = f":{f['line']}" if "line" in f else f" `{f.get('path')}`" if "path" in f else ""
+            loc = _finding_loc(f)
             lines.append(f"- **{f['level']}**{loc} {f['message']} Repair advice: {f['suggestion']}")
     lines.extend(["", "## D5 Nested AGENTS.md (informational, non-blocking)"])
     if report["info"]:
@@ -649,6 +766,8 @@ def canonical_stub_content(root, rel_path):
 
 
 def _finding_loc(f):
+    if "path" in f and "line" in f:
+        return f" `{f['path']}:{f['line']}`"
     if "line" in f:
         return f":{f['line']}"
     if "path" in f:

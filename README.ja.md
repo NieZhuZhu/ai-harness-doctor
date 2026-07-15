@@ -512,6 +512,8 @@ Example finding lines:
 - D7: `Markdown link target references/runbook.md does not exist` (Markdown-link drift)
 - D8: `Competing package-manager lockfiles committed (package-lock.json, pnpm-lock.yaml)`
 
+**Nested drift scopes.** D5 は引き続き informational inventory ですが、そこに列挙された contained nested `AGENTS.md` はすべて D1/D2/D6/D7 でも検査されます。local fact/path を優先し、明示的な root-scoped guidance には repository-root fact/path を保守的な fallback として使います。Nested finding は canonical-file path を保持したまま strict health、baseline、`--fix` の manual guidance、SARIF、PR review に渡ります。D3/D4/D8 と custom plugin は引き続き repository ごとに 1 回だけ実行され、既存の root finding は scope-less baseline identity を維持します。
+
 **D6 fact drift** は `AGENTS.md` で宣言された *facts* を repo の ground truth と cross-validate します。Node version（`.nvmrc` と `package.json` の `engines.node` と照合）と package manager（実際の lockfile と照合——`package-lock.json`→npm、`pnpm-lock.yaml`→pnpm、`yarn.lock`→yarn）です。明確な矛盾のみを flag し、`AGENTS.md` が沈黙している場合は沈黙するため、沈黙が false positive を生むことはありません。
 
 **D7 Markdown-link drift** は `AGENTS.md` 内の repo 相対 Markdown link target（`[text](path)`）を probe し、すでに存在しない file や directory を指す link を flag します。D2（backtick で囲まれた token のみを probe）を補完します。URL、ページ内 anchor、repo 外の target は無視されるため、repo の外を probe することはありません。

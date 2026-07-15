@@ -329,6 +329,17 @@ def all_package_names(root):
     return names
 
 
+def all_package_dependency_names(root):
+    """Union of dependency names across every contained package.json."""
+    names = set()
+    for data in _walk_package_jsons(root):
+        for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+            section = data.get(key)
+            if isinstance(section, dict):
+                names.update(section.keys())
+    return names
+
+
 # Build-system manifest/lockfile basenames that are ubiquitous and routinely
 # referenced generically in an AGENTS.md ("if you change `Cargo.toml` or
 # `Cargo.lock`, run ...", "check the closest `pyproject.toml`"). A bare mention
@@ -461,10 +472,9 @@ def package_dependency_names(root):
     """Return dependency names declared in package.json, or ``None`` if unreadable.
 
     Covers ``dependencies``, ``devDependencies``, ``peerDependencies``, and
-    ``optionalDependencies``. Used as a fallback ground truth for yarn's binary
-    passthrough (see ``is_yarn_bin_passthrough``) when ``node_modules/.bin`` has
-    not been installed. Mirrors ``package_scripts``'s None-vs-empty-set contract
-    (CORR-01).
+    ``optionalDependencies``. Used as fallback ground truth for yarn/pnpm
+    binary passthrough when ``node_modules/.bin`` has not been installed.
+    Mirrors ``package_scripts``'s None-vs-empty-set contract (CORR-01).
     """
     path = root / "package.json"
     text = read_text_within_root(root, path)
@@ -494,18 +504,15 @@ def node_modules_bin_names(root):
         return None
 
 
-# Yarn Classic and Berry fall back to executing a binary straight out of
-# ``node_modules/.bin`` when the token after ``yarn`` does not match a
-# package.json script name — e.g. `yarn vitest` runs the vitest binary directly
-# even though no "vitest" script is declared. npm has no such fallback (`npm
-# vitest` errors with "Unknown command"), and pnpm does not resolve
-# node_modules/.bin entries this way either (pnpm/pnpm#3297), so this passthrough
-# is scoped to yarn only.
-_BIN_PASSTHROUGH_TOOLS = {"yarn"}
+# Yarn and pnpm can execute a binary straight out of ``node_modules/.bin``
+# without an explicit ``run``/``exec`` token — e.g. `yarn vitest` and
+# `pnpm mastra dev`. npm has no such fallback (`npm vitest` is an unknown
+# command). Keep this fact shared by semantic.py and check_drift.py.
+_BIN_PASSTHROUGH_TOOLS = {"yarn", "pnpm"}
 
 
-def is_yarn_bin_passthrough(root, tool, name):
-    """True if ``tool name`` is a legitimate yarn binary passthrough, not a missing script.
+def is_node_bin_passthrough(root, tool, name):
+    """True if ``tool name`` is a legitimate package binary passthrough.
 
     Prefers the installed ``node_modules/.bin`` ground truth when available (it
     reflects the binary's real name, e.g. ``tsc`` from the ``typescript``
@@ -519,6 +526,41 @@ def is_yarn_bin_passthrough(root, tool, name):
         return name in bin_names
     deps = package_dependency_names(root)
     return deps is not None and name in deps
+
+
+def is_yarn_bin_passthrough(root, tool, name):
+    """Backward-compatible alias for the shared yarn/pnpm passthrough policy."""
+    return is_node_bin_passthrough(root, tool, name)
+
+
+_ESLINT_CONFIG_NAMES = (
+    "eslint.config.js",
+    "eslint.config.mjs",
+    "eslint.config.cjs",
+    "eslint.config.ts",
+    ".eslintrc",
+    ".eslintrc.js",
+    ".eslintrc.cjs",
+    ".eslintrc.json",
+)
+
+
+def is_eslint_rule_identifier(root, token):
+    """Return whether ``token`` is a configured ESLint ``plugin/rule`` id.
+
+    Rule ids resemble two-segment filesystem paths. Require the exact quoted
+    token to appear in a contained, package-root ESLint config instead of
+    guessing from prose or suppressing arbitrary hyphenated paths.
+    """
+    if token.count("/") != 1 or "." in token.rsplit("/", 1)[-1]:
+        return False
+    for name in _ESLINT_CONFIG_NAMES:
+        text = read_text_within_root(root, Path(root) / name, errors="replace")
+        if text is None:
+            continue
+        if any(quote + token + quote in text for quote in ("'", '"', "`")):
+            return True
+    return False
 
 
 # Matches a rule/assignment header: one or more whitespace-separated names,

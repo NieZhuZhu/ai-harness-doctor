@@ -846,6 +846,64 @@ class CliInstallerTests(unittest.TestCase):
             self.assertEqual(len(d7_comments), 1)
             self.assertEqual(d7_comments[0]["path"], "AGENTS.md")
 
+    def test_guard_consumer_review_preserves_nested_drift_path(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+
+            package = repo / "packages" / "api"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text(
+                json.dumps({"scripts": {"test:api": "echo ok"}}),
+                encoding="utf-8",
+            )
+            (package / "AGENTS.md").write_text(
+                "# API\n\nRun `npm run removed-script`.\n",
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+
+            drift = subprocess.run(
+                ["node", str(CLI), "drift", str(repo), "--strict", "--json"],
+                cwd=str(repo),
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(drift.returncode, 1, drift.stdout + drift.stderr)
+            report = repo / "drift-report.json"
+            report.write_text(drift.stdout, encoding="utf-8")
+
+            review = subprocess.run(
+                [
+                    "node",
+                    str(CLI),
+                    "review",
+                    "--report",
+                    str(report),
+                    "--default-path",
+                    "AGENTS.md",
+                ],
+                cwd=str(repo),
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(review.returncode, 0, review.stderr)
+            payload = json.loads(review.stdout)
+            comments = [
+                comment
+                for comment in payload["comments"]
+                if "removed-script" in comment["body"]
+            ]
+            self.assertEqual(len(comments), 1)
+            self.assertEqual(comments[0]["path"], "packages/api/AGENTS.md")
+            self.assertEqual(comments[0]["line"], 3)
+
     def test_guard_without_agents_exits_1(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)

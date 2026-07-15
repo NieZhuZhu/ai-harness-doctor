@@ -67,15 +67,31 @@ class SemanticCommandTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
 
-    def test_yarn_bin_passthrough_does_not_apply_to_npm_or_pnpm(self):
-        # npm has no such fallback (`npm vitest` errors) and pnpm does not resolve
-        # node_modules/.bin this way either, so the exemption must stay yarn-only.
+    def test_pnpm_bin_passthrough_via_dependency_not_flagged(self):
+        # `pnpm <cmd>` is shorthand for `pnpm exec <cmd>` when the token is not a
+        # builtin/script. Mastra's nested AGENTS.md legitimately uses
+        # `pnpm mastra dev` with mastra declared as a devDependency.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}, "devDependencies": {"mastra": "link:../cli"}}')
+            text = "Run `pnpm mastra dev`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_pnpm_descendant_dependency_binary_not_flagged_from_parent_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}}')
+            write(td, "examples/agent/package.json", '{"devDependencies": {"mastra": "1.0.0"}}')
+            text = "Run `pnpm mastra dev` from an example directory."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_bin_passthrough_does_not_apply_to_npm(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "package.json", '{"scripts": {}, "devDependencies": {"vitest": "^2.0.0"}}')
-            text = "Run `npm vitest` or `pnpm vitest`."
+            text = "Run `npm vitest`."
             result = semantic.analyze(td, text)
             cmds = [f for f in result["findings"] if f["category"] == "command"]
-            self.assertEqual(len(cmds), 2)
+            self.assertEqual(len(cmds), 1)
 
     def test_yarn_unknown_binary_still_flagged(self):
         # A yarn invocation with no matching script AND no matching dependency
@@ -329,6 +345,34 @@ class SemanticPathTests(unittest.TestCase):
             text = "See `https://example.com/x`, `<your-path>`, `${VAR}`, `~/.config`."
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_generated_output_path_not_flagged_but_source_path_is(self):
+        with tempfile.TemporaryDirectory() as td:
+            text = "Generated declarations go to `dist/_types/`; source lives at `src/missing.ts`."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("src/missing.ts", paths[0]["message"])
+
+    def test_configured_eslint_rule_identifier_not_flagged_as_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(
+                td,
+                "eslint.config.js",
+                "export default [{ rules: { 'e2e-bdd/test-needs-when-describe': 'error' } }];\n",
+            )
+            text = "E2E uses `e2e-bdd/test-needs-when-describe`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
+    def test_unconfigured_rule_shaped_path_still_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "eslint.config.js", "export default [];\n")
+            text = "See `unknown-rule/missing-file`."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("unknown-rule/missing-file", paths[0]["message"])
 
     def test_negated_anti_pattern_path_not_flagged(self):
         # Found scanning vercel/ai's AGENTS.md: "Do not create flat top-level
