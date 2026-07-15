@@ -27,7 +27,9 @@ Python 3.9 standard library only; no third-party dependencies.
 
 import argparse
 import json
+import posixpath
 import sys
+from pathlib import PurePosixPath
 
 # Identifying marker embedded in every summary/general comment body so re-runs
 # can recognize (and, if desired, supersede) a prior ai-harness-doctor review.
@@ -60,6 +62,9 @@ _RULE_TITLES = {
     "path": "Path consistency",
     "package_manager": "Package-manager consistency",
     "node_version": "Node.js version consistency",
+    "conflict": "Conflicting agent declarations",
+    "size": "Instruction size warning",
+    "gap": "Harness completeness gap",
 }
 
 _IMPACT_BY_LABEL = {
@@ -85,7 +90,138 @@ _IMPACT_BY_LABEL = {
     "path": "Agents may operate on a stale or missing repository path.",
     "package_manager": "Agents may install dependencies or run scripts with the wrong package manager.",
     "node_version": "Agents and CI may use a Node.js version that conflicts with the repository.",
+    "conflict": "Conflicting declarations can make different AI coding agents follow incompatible guidance.",
+    "size": "Oversized agent instructions may be truncated or crowd useful repository context out of the prompt.",
+    "gap": "Missing harness infrastructure can leave agents without canonical, enforceable repository guidance.",
 }
+
+
+def _join_report_path(prefix, value):
+    """Prefix a report-local path with its monorepo package path."""
+    if value in (None, ""):
+        return None
+    path = str(value).replace("\\", "/")
+    if not prefix:
+        return path
+    if path.startswith("./"):
+        path = path[2:]
+    return posixpath.join(str(prefix).strip("/"), path)
+
+
+def _safe_repo_label(entry):
+    """Return a public batch-repo label without exposing ``resolved`` paths."""
+    raw = _no_embedded_newlines(entry.get("path") or "repository")
+    path = PurePosixPath(raw.replace("\\", "/"))
+    raw_label = (path.name or "repository") if path.is_absolute() else raw
+    name = _no_embedded_newlines(entry.get("name")) if entry.get("name") else None
+    if name and raw_label and name != raw_label:
+        return f"{name} ({raw_label})"
+    return name or raw_label
+
+
+def _safe_batch_finding_path(value):
+    """Keep only non-escaping relative paths in public batch summaries."""
+    if value in (None, ""):
+        return None
+    raw = str(value).replace("\\", "/")
+    path = PurePosixPath(raw)
+    if path.is_absolute() or ".." in path.parts:
+        return None
+    return path.as_posix()
+
+
+def _normalize_finding(finding, prefix="", package=None, repository=None, summary_only=False):
+    normalized = dict(finding)
+    if normalized.get("path"):
+        if repository:
+            safe_path = _safe_batch_finding_path(normalized["path"])
+            if safe_path:
+                normalized["path"] = safe_path
+            else:
+                normalized.pop("path", None)
+        else:
+            normalized["path"] = _join_report_path(prefix, normalized["path"])
+    if package:
+        normalized["_review_package"] = _no_embedded_newlines(package)
+    if repository:
+        normalized["_review_repository"] = _no_embedded_newlines(repository)
+    if summary_only:
+        normalized["_review_summary_only"] = True
+    return normalized
+
+
+def _conflict_evidence(raw_values, prefix="", repository=None):
+    """Render deterministic, safe source locations for conflict values."""
+    if not isinstance(raw_values, dict):
+        return []
+    evidence = []
+    for value in sorted(raw_values, key=str):
+        locations = []
+        entries = raw_values.get(value)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict) or not entry.get("path"):
+                continue
+            path = (
+                _safe_batch_finding_path(entry["path"])
+                if repository
+                else _join_report_path(prefix, entry["path"])
+            )
+            if not path:
+                continue
+            line = _coerce_line(entry.get("line"))
+            locations.append(f"{path}:{line}" if line is not None else path)
+        if locations:
+            evidence.append(f"{value}: {', '.join(locations)}")
+    return evidence
+
+
+def _normalize_conflict(
+    conflict,
+    prefix="",
+    package=None,
+    repository=None,
+    summary_only=False,
+):
+    signal = str(conflict.get("signal", ""))
+    raw_values = conflict.get("values", {})
+    if isinstance(raw_values, dict):
+        values = sorted(str(value) for value in raw_values)
+    elif isinstance(raw_values, (list, tuple, set)):
+        values = sorted(str(value) for value in raw_values)
+    else:
+        values = [str(raw_values)] if raw_values not in (None, "") else []
+    finding = {
+        "category": f"conflict/{signal}",
+        "level": "WARN",
+        "message": f"Conflicting {signal} declarations: " + ", ".join(values),
+        "values": values,
+        "suggestion": (
+            "Choose one canonical declaration in AGENTS.md and reduce tool-specific "
+            "files to compatible pointers."
+        ),
+    }
+    evidence = _conflict_evidence(raw_values, prefix=prefix, repository=repository)
+    if evidence:
+        finding["evidence"] = evidence
+    return _normalize_finding(
+        finding,
+        package=package,
+        repository=repository,
+        summary_only=summary_only,
+    )
+
+
+def _finding_fingerprint(finding, include_package=True):
+    """Stable identity used to avoid duplicate findings in combined reports."""
+    identity = {
+        key: value
+        for key, value in finding.items()
+        if key != "_review_summary_only"
+        and (include_package or key != "_review_package")
+    }
+    return json.dumps(identity, ensure_ascii=False, sort_keys=True, default=str)
 
 
 def collect_findings(report):
@@ -95,34 +231,154 @@ def collect_findings(report):
     report dicts, and gathers findings from all the shapes those two tools emit:
 
       - ``check_drift.py --json`` -> ``{"findings": [...], "custom": [...]}``
-      - ``scan.py --json``        -> ``{"security": [...], "gaps": [...],
-                                         "semantic": {"findings": [...]}}``
+      - ``scan.py --json``        -> root findings plus ``packages`` / ``repos``
+      - combined guard input      -> ``{"reports": [scan_report, drift_report]}``
 
-    Returns a flat list of finding dicts, preserving input order.
+    ``baselined`` scan debt is deliberately not traversed. Monorepo findings
+    receive repository-relative package paths; independent batch-repo findings
+    receive a public repo label and are forced to summary-only delivery.
+
+    Returns a de-duplicated flat list of finding dicts, preserving first-seen
+    input order.
     """
     findings = []
-    if isinstance(report, list):
-        for item in report:
-            findings.extend(collect_findings(item))
-        return findings
-    if not isinstance(report, dict):
-        return findings
-    # A bare finding dict (has a message but none of the container keys).
-    container_keys = ("findings", "custom", "security", "gaps", "semantic")
-    if "message" in report and not any(k in report for k in container_keys):
-        return [report]
-    if isinstance(report.get("findings"), list):
-        findings.extend(f for f in report["findings"] if isinstance(f, dict))
-    if isinstance(report.get("custom"), list):
-        findings.extend(f for f in report["custom"] if isinstance(f, dict))
-    if isinstance(report.get("security"), list):
-        findings.extend(f for f in report["security"] if isinstance(f, dict))
-    if isinstance(report.get("gaps"), list):
-        findings.extend(f for f in report["gaps"] if isinstance(f, dict))
-    semantic = report.get("semantic")
-    if isinstance(semantic, dict) and isinstance(semantic.get("findings"), list):
-        findings.extend(f for f in semantic["findings"] if isinstance(f, dict))
-    return findings
+
+    def append(finding, prefix="", package=None, repository=None, summary_only=False):
+        if not isinstance(finding, dict):
+            return
+        findings.append(
+            _normalize_finding(
+                finding,
+                prefix=prefix,
+                package=package,
+                repository=repository,
+                summary_only=summary_only,
+            )
+        )
+
+    def walk(value, prefix="", package=None, repository=None, summary_only=False):
+        if isinstance(value, list):
+            for item in value:
+                walk(
+                    item,
+                    prefix=prefix,
+                    package=package,
+                    repository=repository,
+                    summary_only=summary_only,
+                )
+            return
+        if not isinstance(value, dict):
+            return
+
+        container_keys = (
+            "findings",
+            "custom",
+            "security",
+            "warnings",
+            "gaps",
+            "semantic",
+            "conflicts",
+            "packages",
+            "repos",
+            "reports",
+        )
+        if "message" in value and not any(key in value for key in container_keys):
+            append(value, prefix, package, repository, summary_only)
+            return
+
+        for key in ("findings", "custom", "security", "warnings"):
+            for finding in value.get(key, []) if isinstance(value.get(key), list) else []:
+                normalized = dict(finding) if isinstance(finding, dict) else finding
+                if key == "warnings" and isinstance(normalized, dict):
+                    normalized.setdefault("category", "size")
+                append(normalized, prefix, package, repository, summary_only)
+
+        for finding in value.get("gaps", []) if isinstance(value.get("gaps"), list) else []:
+            normalized = dict(finding) if isinstance(finding, dict) else finding
+            if isinstance(normalized, dict) and not normalized.get("path"):
+                normalized["path"] = "AGENTS.md"
+            append(normalized, prefix, package, repository, summary_only)
+
+        semantic = value.get("semantic")
+        if isinstance(semantic, dict):
+            for finding in semantic.get("findings", []) if isinstance(semantic.get("findings"), list) else []:
+                normalized = dict(finding) if isinstance(finding, dict) else finding
+                if isinstance(normalized, dict) and not normalized.get("path"):
+                    normalized["path"] = "AGENTS.md"
+                append(normalized, prefix, package, repository, summary_only)
+
+        for conflict in value.get("conflicts", []) if isinstance(value.get("conflicts"), list) else []:
+            if isinstance(conflict, dict):
+                findings.append(
+                    _normalize_conflict(
+                        conflict,
+                        prefix=prefix,
+                        package=package,
+                        repository=repository,
+                        summary_only=summary_only,
+                    )
+                )
+
+        reports = value.get("reports")
+        if isinstance(reports, list):
+            for nested in reports:
+                walk(
+                    nested,
+                    prefix=prefix,
+                    package=package,
+                    repository=repository,
+                    summary_only=summary_only,
+                )
+
+        packages = value.get("packages")
+        if isinstance(packages, list):
+            for entry in packages:
+                if not isinstance(entry, dict) or not isinstance(entry.get("report"), dict):
+                    continue
+                package_path = _join_report_path(prefix, entry.get("path") or "")
+                walk(
+                    entry["report"],
+                    prefix=package_path or prefix,
+                    package=package_path or package,
+                    repository=repository,
+                    summary_only=summary_only,
+                )
+
+        repos = value.get("repos")
+        if isinstance(repos, list):
+            for entry in repos:
+                if not isinstance(entry, dict) or not isinstance(entry.get("report"), dict):
+                    continue
+                walk(
+                    entry["report"],
+                    repository=_safe_repo_label(entry),
+                    summary_only=True,
+                )
+
+    walk(report)
+    unique = []
+    seen = set()
+    root_fingerprints = {
+        _finding_fingerprint(finding, include_package=False)
+        for finding in findings
+        if not finding.get("_review_package")
+        and not finding.get("_review_repository")
+    }
+    for finding in findings:
+        # Root scan reports can already index a nested package file. Keep the
+        # root occurrence and suppress the package copy, but preserve identical
+        # findings from two packages when no root occurrence exists.
+        if (
+            finding.get("_review_package")
+            and _finding_fingerprint(finding, include_package=False) in root_fingerprints
+        ):
+            continue
+        fingerprint = _finding_fingerprint(finding)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        unique.append(finding)
+    return unique
 
 
 def finding_label(finding):
@@ -167,6 +423,10 @@ def _severity_icon(level):
 def _impact_text(finding):
     """Explain why a finding matters to an AI-harness user."""
     label = finding_label(finding)
+    if label.startswith("conflict/"):
+        label = "conflict"
+    elif label.startswith("G") and label[1:].isdigit():
+        label = "gap"
     return _IMPACT_BY_LABEL.get(
         label,
         "AI coding agents may act on inconsistent, stale, or unsafe repository guidance.",
@@ -174,6 +434,11 @@ def _impact_text(finding):
 
 
 def _rule_title(label):
+    if str(label).startswith("conflict/"):
+        signal = str(label).split("/", 1)[1]
+        return f"Conflicting {signal.replace('_', ' ')} declarations"
+    if str(label).startswith("G") and str(label)[1:].isdigit():
+        return f"Harness completeness gap {label}"
     return _RULE_TITLES.get(label, str(label).replace("_", " ").replace("-", " ").title())
 
 
@@ -191,8 +456,11 @@ def _evidence_lines(finding, path=None, line=None):
     if location:
         evidence.append(f"- **Location:** `{location}`")
     field_labels = (
+        ("_review_package", "Package"),
+        ("_review_repository", "Repository"),
         ("declared", "Declared"),
         ("actual", "Repository fact"),
+        ("values", "Conflicting values"),
         ("evidence", "Source evidence"),
         ("item", "Affected item"),
         ("source", "Source"),
@@ -240,10 +508,25 @@ def _coerce_line(value):
     if isinstance(value, bool):  # bool is an int subclass; never a line number
         return None
     if isinstance(value, int):
-        return value
+        return value if value > 0 else None
     if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
+        parsed = int(value.strip())
+        return parsed if parsed > 0 else None
     return None
+
+
+def _inline_path(value):
+    """Return a safe GitHub repo-relative POSIX path, else ``None``."""
+    if value in (None, ""):
+        return None
+    raw = str(value)
+    if "\n" in raw or "\r" in raw or "\\" in raw:
+        return None
+    path = PurePosixPath(raw)
+    if path.is_absolute() or ".." in path.parts or ":" in path.parts[0]:
+        return None
+    normalized = path.as_posix()
+    return normalized if normalized not in ("", ".") else None
 
 
 def build_review(report, default_path=None, marker=MARKER, event=REVIEW_EVENT):
@@ -277,25 +560,26 @@ def build_review(report, default_path=None, marker=MARKER, event=REVIEW_EVENT):
     comments = []
     summary_findings = []
     for finding in findings:
-        path = finding.get("path")
+        raw_path = finding.get("path")
+        path = _inline_path(raw_path)
         line = _coerce_line(finding.get("line"))
-        if not path and line is not None and default_path:
-            path = default_path
+        if not raw_path and line is not None and default_path:
+            path = _inline_path(default_path)
         # An inline comment is only safe to post when it has BOTH a path and a
         # concrete line; otherwise GitHub 422-rejects the entire review. Route
         # everything else (no location, or path-without-line) to the summary.
-        if path and line is not None:
+        if path and line is not None and not finding.get("_review_summary_only"):
             comments.append(
                 {
-                    "path": str(path),
+                    "path": path,
                     "line": line,
-                    "body": format_body(finding, path=str(path), line=line),
+                    "body": format_body(finding, path=path, line=line),
                 }
             )
         else:
             summary_findings.append(finding)
 
-    metadata = report if isinstance(report, dict) else {}
+    metadata = _report_metadata(report)
     body = build_summary(
         findings,
         summary_findings,
@@ -342,6 +626,22 @@ def _resolved_location(finding, default_path=None):
     if not path and line is not None and default_path:
         path = default_path
     return (str(path), line) if path and line is not None else (path, line)
+
+
+def _report_metadata(report):
+    """Find the first score/grade metadata in a combined report structure."""
+    if isinstance(report, list):
+        candidates = report
+    elif isinstance(report, dict) and isinstance(report.get("reports"), list):
+        candidates = [report, *report["reports"]]
+    else:
+        candidates = [report]
+    for candidate in candidates:
+        if isinstance(candidate, dict) and (
+            candidate.get("score") is not None or candidate.get("grade") is not None
+        ):
+            return candidate
+    return {}
 
 
 def build_summary(
@@ -416,8 +716,13 @@ def build_summary(
     lines.extend(["", "<details>", f"<summary><strong>Detailed findings ({total})</strong></summary>", ""])
     for finding in all_findings:
         path, line = _resolved_location(finding, default_path=default_path)
-        if path and line is not None:
+        if path and line is not None and not finding.get("_review_summary_only"):
             placement = f"Inline comment posted at `{_display_location(path, line)}`."
+        elif path and line is not None:
+            placement = (
+                f"Summary only: `{_display_location(path, line)}` belongs to an "
+                "independent batch repository."
+            )
         elif path:
             placement = f"Summary only: `{_no_embedded_newlines(path)}` has no attachable line."
         else:
@@ -446,8 +751,17 @@ def build_summary(
     return "\n".join(lines) + "\n"
 
 
-def load_report(path):
-    """Read the JSON report from ``path`` (``-`` or ``None`` means stdin)."""
+def load_report(paths):
+    """Read one or more JSON reports; repeated ``--report`` forms one review."""
+    paths = paths if isinstance(paths, list) else [paths]
+    reports = []
+    for path in paths:
+        reports.append(_load_one_report(path))
+    return reports[0] if len(reports) == 1 else {"reports": reports}
+
+
+def _load_one_report(path):
+    """Read one JSON report from ``path`` (``-`` or ``None`` means stdin)."""
     if path in (None, "-"):
         raw = sys.stdin.read()
     else:
@@ -543,7 +857,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Turn drift/scan findings into GitHub PR review comments.")
     parser.add_argument(
         "--report",
-        help="Path to a JSON findings report (default: read from stdin).",
+        action="append",
+        help="Path to a JSON findings report; repeat to combine scan + drift "
+        "into one review (default: read one report from stdin).",
     )
     parser.add_argument(
         "--default-path",
@@ -580,7 +896,7 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    report = load_report(args.report)
+    report = load_report(args.report or [None])
     payload = build_review(report, default_path=args.default_path, event=args.event)
 
     if args.dry_run:
