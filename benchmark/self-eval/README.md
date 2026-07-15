@@ -3,7 +3,7 @@
 This directory dogfoods **Phase 3 (Efficacy)** on the `ai-harness-doctor` repo itself:
 does *this repo's own* `AGENTS.md` actually steer an AI agent to correct answers?
 
-## Methodology
+## Methodology and evidence boundary
 
 Because no `claude`/`codex` runner CLI is available in the eval environment, the harness
 falls back to its documented **manual protocol** (`eval_run.py` prints it when the runner
@@ -11,19 +11,28 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 12 objective questions an agent would ask about this repo (build/test
-  commands, language/runtime constraints, safety rules, and where the core scripts live).
+- `tasks.json` — 17 objective questions an agent would ask about this repo (build/test
+  commands, language/runtime constraints, safety/release rules, installer/MCP policy,
+  and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
-- `results-after.json` — answers from an agent given the **post-fix** `AGENTS.md`.
+- `results-after.json` — manual-protocol answers refreshed on 2026-07-15 from the
+  current `AGENTS.md`, with no repository browsing or external model call.
 - `*-graded.json` — the same files after `--regrade` (adds `passed`/`answer`).
-- `report.md` — `eval_run.py --compare` before vs after.
+- `results-after-graded.json` additionally binds the exact `tasks.json` and
+  `AGENTS.md` bytes through a deterministic SHA-256 evidence manifest.
+- `report.md` — the historical 12-task pre-fix vs post-fix comparison. The five
+  newer maintenance-contract tasks have no historical before measurement and
+  are deliberately not retrofitted into that claim.
+
+The fingerprints prove that a stored result matches the current input bytes.
+They do **not** prove that manually recorded answers came from a real model; the
+manual-protocol label remains part of the result and this document.
 
 ## Reproduce
 
 ```bash
-python3 scripts/eval_run.py --tasks benchmark/self-eval/tasks.json --regrade benchmark/self-eval/results-before.json -o benchmark/self-eval/results-before-graded.json
-python3 scripts/eval_run.py --tasks benchmark/self-eval/tasks.json --regrade benchmark/self-eval/results-after.json  -o benchmark/self-eval/results-after-graded.json
-python3 scripts/eval_run.py --compare benchmark/self-eval/results-before-graded.json benchmark/self-eval/results-after-graded.json -o benchmark/self-eval/report.md
+python3 scripts/eval_run.py --regrade benchmark/self-eval/results-after.json --tasks benchmark/self-eval/tasks.json --workdir . --evidence AGENTS.md -o benchmark/self-eval/results-after-graded.json
+python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.json --tasks benchmark/self-eval/tasks.json --workdir . --evidence AGENTS.md --require-current-evidence --fail-under 80
 ```
 
 ## Result
@@ -31,7 +40,8 @@ python3 scripts/eval_run.py --compare benchmark/self-eval/results-before-graded.
 | | Pass rate |
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
-| after (post-fix `AGENTS.md`)  | 12/12 |
+| after (historical post-fix `AGENTS.md`) | 12/12 |
+| current evidence-bound maintenance pack | 17/17 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -43,3 +53,9 @@ conventions: **project structure**, required commands …").
 script and listing the key directories. Closing that gap raised the pass rate to 12/12 while
 keeping `AGENTS.md` small (progressive disclosure preserved). The drift guard stays green
 (100/100, grade A) after the change.
+
+The 2026-07-15 refresh adds objective checks for installer manifest safety,
+unsuppressible HIGH security findings, MCP read-only/error semantics, semantic
+release classification, and isolated-HOME installer tests. Any change to
+`AGENTS.md` or `tasks.json` now makes the self-bootstrap PR gate fail stale
+evidence (exit 7) until the manual protocol is rerun and reviewed in the same PR.

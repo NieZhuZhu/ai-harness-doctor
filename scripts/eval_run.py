@@ -2,6 +2,7 @@
 """Small pluggable eval harness for before/after AI harness validation."""
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -19,6 +20,9 @@ from pathlib import Path
 # same sources (single source of truth) instead of maintaining a divergent copy.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import semantic  # noqa: E402
+
+EVIDENCE_SCHEMA_VERSION = 1
+EVIDENCE_STALE_EXIT = 7
 
 
 def runner_binary(template):
@@ -83,6 +87,122 @@ def extract_answer(stdout):
 
 def regex_passes(pattern, answer):
     return re.search(pattern or "", answer or "") is not None
+
+
+def _sha256_file(path):
+    """Return the SHA-256 of the exact bytes at ``path``."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _logical_path(path, workdir, allow_external=False):
+    """Return a deterministic non-absolute name for an input file.
+
+    Evidence must stay inside ``workdir``. A tasks file may intentionally live
+    outside it, so that case uses the caller-supplied basename rather than
+    leaking an absolute host path into committed results.
+    """
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(workdir).as_posix()
+    except ValueError:
+        if allow_external:
+            return path.name
+        raise ValueError(f"evidence path escapes workdir: {path}") from None
+
+
+def build_evidence_manifest(tasks_path, evidence_paths, workdir):
+    """Fingerprint the task definition and explicit repository evidence."""
+    workdir = Path(workdir).resolve()
+    tasks_path = Path(tasks_path)
+    if not tasks_path.is_file():
+        raise ValueError(f"tasks file does not exist: {tasks_path}")
+    files = []
+    seen = set()
+    for raw in evidence_paths or []:
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = workdir / candidate
+        resolved = candidate.resolve()
+        logical = _logical_path(candidate, workdir)
+        if logical in seen:
+            continue
+        if not resolved.is_file():
+            raise ValueError(f"evidence file does not exist: {raw}")
+        seen.add(logical)
+        files.append({"path": logical, "sha256": _sha256_file(resolved)})
+    files.sort(key=lambda item: item["path"])
+    return {
+        "schemaVersion": EVIDENCE_SCHEMA_VERSION,
+        "tasks": {
+            "path": _logical_path(tasks_path, workdir, allow_external=True),
+            "sha256": _sha256_file(tasks_path),
+        },
+        "files": files,
+    }
+
+
+def attach_evidence_manifest(result, args, tasks_path, workdir):
+    """Attach evidence metadata only when the caller explicitly requested it."""
+    if getattr(args, "evidence", None):
+        try:
+            result["evidence"] = build_evidence_manifest(tasks_path, args.evidence, workdir)
+        except ValueError as exc:
+            raise SystemExit(f"evidence error: {exc}") from None
+
+
+def verify_current_evidence(result, args):
+    """Return mismatch messages for a strict score-time evidence check."""
+    stored = result.get("evidence") if isinstance(result, dict) else None
+    if not isinstance(stored, dict):
+        return ["result has no evidence manifest"]
+    try:
+        current = build_evidence_manifest(args.tasks, args.evidence, args.workdir)
+    except ValueError as exc:
+        return [str(exc)]
+    mismatches = []
+    if stored.get("schemaVersion") != EVIDENCE_SCHEMA_VERSION:
+        mismatches.append(
+            f"unsupported evidence schema: {stored.get('schemaVersion')!r}"
+        )
+    stored_tasks_value = stored.get("tasks")
+    stored_tasks = stored_tasks_value if isinstance(stored_tasks_value, dict) else {}
+    if not isinstance(stored_tasks_value, dict):
+        mismatches.append("malformed tasks evidence")
+    if stored_tasks.get("path") != current["tasks"]["path"]:
+        mismatches.append("tasks logical path changed")
+    if stored_tasks.get("sha256") != current["tasks"]["sha256"]:
+        mismatches.append(f"tasks changed: {current['tasks']['path']}")
+    stored_items = stored.get("files")
+    if not isinstance(stored_items, list):
+        mismatches.append("malformed evidence file list")
+        stored_items = []
+    stored_files = {}
+    for item in stored_items:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("path"), str)
+            or not isinstance(item.get("sha256"), str)
+        ):
+            mismatches.append("malformed evidence file entry")
+            continue
+        path = item["path"]
+        if path in stored_files:
+            mismatches.append(f"duplicate evidence entry: {path}")
+            continue
+        stored_files[path] = item["sha256"]
+    current_files = {item["path"]: item["sha256"] for item in current["files"]}
+    for path in sorted(set(stored_files) | set(current_files)):
+        if path not in stored_files:
+            mismatches.append(f"evidence added: {path}")
+        elif path not in current_files:
+            mismatches.append(f"evidence missing from verification: {path}")
+        elif stored_files[path] != current_files[path]:
+            mismatches.append(f"evidence changed: {path}")
+    return mismatches
 
 
 def _as_pattern_list(value):
@@ -949,6 +1069,7 @@ def run_tasks(args):
         # Single-round default: byte-compatible with the previous output shape.
         results = {"label": args.label, "workdir": str(workdir), "tasks": _run_round(tasks, args, workdir)}
         results["health"] = compute_health(results)
+        attach_evidence_manifest(results, args, tasks_path, workdir)
         output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
         output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"wrote {output}")
@@ -982,6 +1103,7 @@ def run_tasks(args):
     # Overall health = pass rate across every task record from every round.
     all_records = {"tasks": [rec for rr in round_results for rec in rr["tasks"]]}
     results["health"] = compute_health(all_records)
+    attach_evidence_manifest(results, args, tasks_path, workdir)
     output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
@@ -1016,7 +1138,8 @@ def render_stats_summary(stats, overall_health=None):
 
 
 def regrade(args):
-    tasks = json.loads(Path(args.tasks).read_text(encoding="utf-8"))
+    tasks_path = Path(args.tasks)
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
     task_map = {task["id"]: task for task in tasks}
     results = json.loads(Path(args.regrade).read_text(encoding="utf-8"))
     for record in results.get("tasks", []):
@@ -1034,6 +1157,9 @@ def regrade(args):
             record["regraded"] = False
         else:
             record["regraded"] = False
+    if args.evidence:
+        results["health"] = compute_health(results)
+        attach_evidence_manifest(results, args, tasks_path, Path(args.workdir).resolve())
     output = Path(args.output) if args.output else Path(args.regrade)
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
@@ -1179,7 +1305,8 @@ def render_matrix(tasks, agent_records, runners):
 
 
 def run_matrix(args, runners):
-    tasks = json.loads(Path(args.tasks).read_text(encoding="utf-8"))
+    tasks_path = Path(args.tasks)
+    tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
     workdir = Path(args.workdir).resolve()
     agent_records = {}
     for name, runner in runners.items():
@@ -1212,6 +1339,7 @@ def run_matrix(args, runners):
         "summary": summary,
     }
     matrix["health"] = compute_health(matrix)
+    attach_evidence_manifest(matrix, args, tasks_path, workdir)
     json_out = Path(args.matrix_json) if args.matrix_json else Path("matrix-results.json")
     json_out.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
     report_out = (
@@ -1237,6 +1365,12 @@ def run_matrix(args, runners):
 def score_report(args):
     """One-click health score from an existing results / matrix JSON file."""
     data = json.loads(Path(args.score).read_text(encoding="utf-8"))
+    if args.require_current_evidence:
+        mismatches = verify_current_evidence(data, args)
+        if mismatches:
+            for mismatch in mismatches:
+                print(f"stale eval evidence: {mismatch}", file=sys.stderr)
+            return EVIDENCE_STALE_EXIT
     health = data.get("health") if isinstance(data, dict) else None
     if not isinstance(health, dict) or "score" not in health:
         health = compute_health(data)
@@ -1469,6 +1603,18 @@ def main(argv=None):
     parser.add_argument("--tasks")
     parser.add_argument("--label")
     parser.add_argument("--workdir")
+    parser.add_argument(
+        "--evidence",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="Repeatable repository-relative evidence file to fingerprint in results.",
+    )
+    parser.add_argument(
+        "--require-current-evidence",
+        action="store_true",
+        help="With --score, exit 7 unless stored task/evidence digests match current files.",
+    )
     parser.add_argument("--runner", default="claude -p {prompt} --output-format json")
     parser.add_argument("-o", "--output")
     parser.add_argument("--compare", nargs=2)
@@ -1562,6 +1708,13 @@ def main(argv=None):
     )
     parser.add_argument("--trend", help="Render the trend of an existing --baseline-style history file and exit.")
     args = parser.parse_args(argv)
+    if args.require_current_evidence and not (args.score and args.tasks and args.workdir and args.evidence):
+        parser.error(
+            "--require-current-evidence requires --score, --tasks, --workdir, "
+            "and at least one --evidence FILE"
+        )
+    if args.evidence and not args.workdir:
+        parser.error("--evidence requires --workdir")
     if args.judge_model:
         # A model override is expressed through the check's optional "model"
         # field; expose it via env so llm_judge picks it up for both providers.

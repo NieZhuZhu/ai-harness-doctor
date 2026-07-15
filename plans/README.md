@@ -88,7 +88,7 @@ verification gate, and update its status here.
 | 012 | Emit every active scan finding family in SARIF | P1 | S | — | DONE |
 | 013 | Make MCP tool failures machine-visible and keep its contract current | P1 | S | — | DONE |
 | 014 | Restore subtree-scoped path parity between scan and drift | P0 | S | — | DONE |
-| 015 | Bind eval results to the evidence they claim to score | P1 | M | — | TODO |
+| 015 | Bind eval results to the evidence they claim to score | P1 | M | — | DONE |
 | 016 | Negotiate modern MCP and expose standard structured results | P1 | M | — | TODO |
 | 017 | Establish a verifiable public-repository trust baseline | P1 | M | 014–016 | TODO |
 

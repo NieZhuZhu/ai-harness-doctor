@@ -745,6 +745,306 @@ class HealthScoreTests(unittest.TestCase):
             self.assertEqual(gated.returncode, 0)
 
 
+class EvidenceFingerprintTests(unittest.TestCase):
+    def _fixture(self, td):
+        root = Path(td)
+        workdir = root / "repo"
+        workdir.mkdir()
+        agents = workdir / "AGENTS.md"
+        agents.write_text("# Project overview\nDemo.\n", encoding="utf-8")
+        tasks = root / "tasks.json"
+        tasks.write_text(
+            json.dumps(
+                [
+                    {
+                        "id": "answer",
+                        "prompt": "answer",
+                        "check": {"type": "regex", "value": "^ok$"},
+                        "timeout_s": 10,
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        runner = f"{sys.executable} -c \"print('ok')\""
+        return workdir, agents, tasks, runner
+
+    def _run_with_evidence(self, td):
+        workdir, agents, tasks, runner = self._fixture(td)
+        output = Path(td) / "results.json"
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(EVAL),
+                "--tasks",
+                str(tasks),
+                "--label",
+                "evidence",
+                "--workdir",
+                str(workdir),
+                "--runner",
+                runner,
+                "--evidence",
+                "AGENTS.md",
+                "-o",
+                str(output),
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        return workdir, agents, tasks, output
+
+    def test_manifest_is_deterministic_relative_and_deduped(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir, agents, tasks, _runner = self._fixture(td)
+            first = eval_run.build_evidence_manifest(
+                tasks,
+                ["AGENTS.md", str(agents), "AGENTS.md"],
+                workdir,
+            )
+            second = eval_run.build_evidence_manifest(tasks, [str(agents)], workdir)
+            self.assertEqual(first, second)
+            self.assertEqual(first["schemaVersion"], 1)
+            self.assertEqual(first["tasks"]["path"], "tasks.json")
+            self.assertEqual([item["path"] for item in first["files"]], ["AGENTS.md"])
+            self.assertRegex(first["tasks"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertNotIn(str(Path(td).resolve()), json.dumps(first))
+
+    def test_run_result_is_stamped_only_when_explicitly_requested(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir, _agents, tasks, runner = self._fixture(td)
+            legacy = Path(td) / "legacy.json"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "legacy",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "-o",
+                    str(legacy),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertNotIn("evidence", json.loads(legacy.read_text(encoding="utf-8")))
+
+        with tempfile.TemporaryDirectory() as td:
+            _workdir, _agents, _tasks, stamped = self._run_with_evidence(td)
+            data = json.loads(stamped.read_text(encoding="utf-8"))
+            self.assertEqual(data["evidence"]["files"][0]["path"], "AGENTS.md")
+            self.assertEqual(data["health"]["score"], 100)
+
+    def test_current_evidence_passes_and_changed_inputs_exit_seven(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir, agents, tasks, output = self._run_with_evidence(td)
+            command = [
+                sys.executable,
+                str(EVAL),
+                "--score",
+                str(output),
+                "--tasks",
+                str(tasks),
+                "--workdir",
+                str(workdir),
+                "--evidence",
+                "AGENTS.md",
+                "--require-current-evidence",
+                "--fail-under",
+                "100",
+            ]
+            current = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(current.returncode, 0, current.stdout + current.stderr)
+
+            agents.write_text("# Project overview\nChanged.\n", encoding="utf-8")
+            changed_agents = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(changed_agents.returncode, eval_run.EVIDENCE_STALE_EXIT)
+            self.assertIn("evidence changed: AGENTS.md", changed_agents.stderr)
+            self.assertNotIn("Changed.", changed_agents.stderr)
+
+            agents.write_text("# Project overview\nDemo.\n", encoding="utf-8")
+            tasks.write_text(tasks.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+            changed_tasks = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(changed_tasks.returncode, eval_run.EVIDENCE_STALE_EXIT)
+            self.assertIn("tasks changed: tasks.json", changed_tasks.stderr)
+
+    def test_strict_mode_rejects_unstamped_legacy_result(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir, _agents, tasks, _runner = self._fixture(td)
+            result = Path(td) / "legacy.json"
+            result.write_text(json.dumps({"tasks": [{"passed": True}]}), encoding="utf-8")
+            strict = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--score",
+                    str(result),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--evidence",
+                    "AGENTS.md",
+                    "--require-current-evidence",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(strict.returncode, eval_run.EVIDENCE_STALE_EXIT)
+            self.assertIn("no evidence manifest", strict.stderr)
+
+            legacy = subprocess.run(
+                [sys.executable, str(EVAL), "--score", str(result)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(legacy.returncode, 0, legacy.stderr)
+
+    def test_strict_mode_fails_closed_on_malformed_manifest(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir, _agents, tasks, _runner = self._fixture(td)
+            result = Path(td) / "malformed.json"
+            result.write_text(
+                json.dumps(
+                    {
+                        "tasks": [{"passed": True}],
+                        "evidence": {
+                            "schemaVersion": 1,
+                            "tasks": "not-an-object",
+                            "files": None,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--score",
+                    str(result),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--evidence",
+                    "AGENTS.md",
+                    "--require-current-evidence",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, eval_run.EVIDENCE_STALE_EXIT)
+            self.assertIn("malformed tasks evidence", proc.stderr)
+            self.assertIn("malformed evidence file list", proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+
+    def test_evidence_escape_and_external_symlink_are_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            workdir, _agents, tasks, runner = self._fixture(td)
+            outside = root / "outside.md"
+            outside.write_text("outside\n", encoding="utf-8")
+            link = workdir / "linked.md"
+            try:
+                link.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported on this platform")
+            for evidence in ("../outside.md", "linked.md"):
+                with self.subTest(evidence=evidence):
+                    proc = subprocess.run(
+                        [
+                            sys.executable,
+                            str(EVAL),
+                            "--tasks",
+                            str(tasks),
+                            "--label",
+                            "unsafe",
+                            "--workdir",
+                            str(workdir),
+                            "--runner",
+                            runner,
+                            "--evidence",
+                            evidence,
+                            "-o",
+                            str(root / "unsafe.json"),
+                        ],
+                        text=True,
+                        capture_output=True,
+                    )
+                    self.assertNotEqual(proc.returncode, 0)
+                    self.assertIn("escapes workdir", proc.stderr)
+                    self.assertNotIn("outside\n", proc.stderr)
+
+    def test_matrix_and_regrade_results_are_stamped(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir, _agents, tasks, runner = self._fixture(td)
+            matrix = Path(td) / "matrix.json"
+            report = Path(td) / "matrix.md"
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--runner-cmd",
+                    f"one={runner}",
+                    "--matrix-json",
+                    str(matrix),
+                    "--matrix-report",
+                    str(report),
+                    "--evidence",
+                    "AGENTS.md",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertIn("evidence", json.loads(matrix.read_text(encoding="utf-8")))
+
+            raw = Path(td) / "raw.json"
+            raw.write_text(
+                json.dumps(
+                    {
+                        "label": "manual",
+                        "tasks": [{"id": "answer", "stdout": "ok", "passed": False}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            regraded = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--regrade",
+                    str(raw),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--evidence",
+                    "AGENTS.md",
+                    "-o",
+                    str(raw),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(regraded.returncode, 0, regraded.stdout + regraded.stderr)
+            data = json.loads(raw.read_text(encoding="utf-8"))
+            self.assertTrue(data["tasks"][0]["passed"])
+            self.assertIn("evidence", data)
+
+
 class MultiRoundStatsTests(unittest.TestCase):
     """Deterministic multi-round runs: one stable task, one flaky task."""
 
