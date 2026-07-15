@@ -148,5 +148,11 @@
     "prompt": "What facts may targeted eval generation use, and how must task identity/evidence behave? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)local.*script.*nearest.*manager.*root.*ID.*relative.*evidence|root.*ID.*local.*script.*relative.*evidence"}
+  },
+  {
+    "id": "fact-generator-containment",
+    "prompt": "What containment and ambiguity rules apply to root/scoped eval generation and Treat draft inference? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)external.*symlink.*no fact.*contained.*symlink.*lexical.*ambig.*abst|ambig.*abst.*external.*symlink"}
   }
 ]

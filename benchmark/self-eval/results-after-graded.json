@@ -177,13 +177,20 @@
       "answer": "Use local scripts/dependencies, the nearest unambiguous manager/runtime, inherited canonical conventions, compatible root IDs, and repository-relative evidence.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "fact-generator-containment",
+      "stdout": "External symlinks supply no fact, contained symlinks keep lexical evidence, and ambiguous package-manager/runtime facts cause abstention in root/scoped eval and Treat draft.",
+      "answer": "External symlinks supply no fact, contained symlinks keep lexical evidence, and ambiguous package-manager/runtime facts cause abstention in root/scoped eval and Treat draft.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 25,
-    "total": 25,
+    "passed": 26,
+    "total": 26,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -191,12 +198,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "ec1256a4bf86c18e67f267431709ad4e5663151f258e5ea526041b5b6f4becd8"
+      "sha256": "95ca30ecb05c952518fcf50ccf0aee1d69ff382596f05aa37b891a37980b0753"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "232aae60ac1a9b19a32aad59d2a23f57fca030ac0f861dc51bf5058fa93181ae"
+        "sha256": "07c6455c4e469284fd496d2be37a23b32e0564760538badfde19fc5ffb75511c"
       }
     ]
   }

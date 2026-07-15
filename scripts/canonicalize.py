@@ -154,15 +154,16 @@ def _lockfile_backed_manager(root):
     """
     if root is None:
         return None, None
-    found = []
-    for name, mgr in LOCKFILE_MANAGERS.items():
-        if (Path(root) / name).is_file():
-            found.append((mgr, name))
-    managers = sorted({m for m, _ in found})
+    root = Path(root)
+    managers = facts.lockfile_managers(root)
     if len(managers) == 1:
-        mgr = managers[0]
-        lockfile = next(name for m, name in found if m == mgr)
-        return mgr, lockfile
+        manager = next(iter(managers))
+        lockfile = next(
+            name
+            for name, candidate in LOCKFILE_MANAGERS.items()
+            if candidate == manager and facts.is_file_within_root(root, root / name)
+        )
+        return manager, lockfile
     return None, None
 
 
@@ -340,7 +341,12 @@ def _detected_package_manager(root):
     mgr, lockfile = _lockfile_backed_manager(root)
     if mgr is not None:
         return mgr, f"from the committed `{lockfile}` lockfile"
-    if (root / "package.json").is_file():
+    if facts.lockfile_managers(root):
+        return None, None
+    field_manager = facts.package_manager_field(root)
+    if field_manager is not None:
+        return field_manager, "from the contained `package.json#packageManager` field"
+    if facts.is_file_within_root(root, root / "package.json"):
         return "npm", "`package.json` present (no lockfile; npm assumed)"
     return None, None
 
@@ -360,23 +366,27 @@ def _detected_python_manager(root):
 
 def _has_pytest(root):
     """True when the repo shows evidence of a pytest-based test setup."""
-    if (root / "tests").is_dir() or (root / "test").is_dir():
+    if facts.is_dir_within_root(root, root / "tests") or facts.is_dir_within_root(root, root / "test"):
         return True
     for name in ("pytest.ini", "conftest.py", "tox.ini"):
-        if (root / name).is_file():
+        if facts.is_file_within_root(root, root / name):
             return True
     pyproject = root / "pyproject.toml"
-    if pyproject.is_file() and "pytest" in pyproject.read_text(encoding="utf-8", errors="replace"):
+    text = facts.read_text_within_root(root, pyproject, errors="replace")
+    if text is not None and "pytest" in text:
         return True
     return False
 
 
 def _has_ruff(root):
     """True when the repo shows evidence of ruff being configured."""
-    if (root / "ruff.toml").is_file() or (root / ".ruff.toml").is_file():
+    if facts.is_file_within_root(root, root / "ruff.toml") or facts.is_file_within_root(
+        root, root / ".ruff.toml"
+    ):
         return True
     pyproject = root / "pyproject.toml"
-    if pyproject.is_file() and "ruff" in pyproject.read_text(encoding="utf-8", errors="replace"):
+    text = facts.read_text_within_root(root, pyproject, errors="replace")
+    if text is not None and "ruff" in text:
         return True
     return False
 
@@ -392,9 +402,9 @@ def _claude_documented_commands(root):
     humans. Read-only; empty list when there is no ``CLAUDE.md``.
     """
     path = root / "CLAUDE.md"
-    if not path.is_file():
+    text = facts.read_text_within_root(root, path, errors="replace")
+    if text is None:
         return []
-    text = path.read_text(encoding="utf-8", errors="replace")
     commands = []
     seen = set()
     for _lineno, token in semantic.iter_code_tokens(text):
@@ -422,7 +432,11 @@ def _draft_python_commands(root):
     if pm is None:
         return []
     install_cmd, run_prefix = PYTHON_MANAGER_COMMANDS[pm]
-    if pm == "pip" and not (root / "pyproject.toml").is_file() and (root / "requirements.txt").is_file():
+    if (
+        pm == "pip"
+        and not facts.is_file_within_root(root, root / "pyproject.toml")
+        and facts.is_file_within_root(root, root / "requirements.txt")
+    ):
         install_cmd = "pip install -r requirements.txt"
     commands = [(install_cmd, f"{INFERRED} Python package manager {pm_why}")]
     seen = {install_cmd}
@@ -556,8 +570,8 @@ def render_draft(report, root):
     )
     if scripts and "test" in scripts:
         pm, _ = _detected_package_manager(root)
-        pm = pm or "npm"
-        lines += ["", f"- A `test` script is defined; run `{pm} run test` before pushing. {INFERRED}"]
+        if pm is not None:
+            lines += ["", f"- A `test` script is defined; run `{pm} run test` before pushing. {INFERRED}"]
 
     lines += ["", "# Safety", ""]
     lines.append("TODO: Call out secrets, production resources, data boundaries, and destructive commands.")

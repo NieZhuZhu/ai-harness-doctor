@@ -20,6 +20,7 @@ REGISTRY_JSON = ROOT / "assets" / "agent-tools.json"
 sys.path.insert(0, str(SCRIPTS))
 import canonicalize  # noqa: E402
 import check_drift  # noqa: E402
+import eval_run  # noqa: E402
 import registry  # noqa: E402
 import scan  # noqa: E402
 import semantic  # noqa: E402
@@ -364,6 +365,58 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             self.assertEqual(semantic.package_scripts(root), {"build", "lint"})
             self.assertEqual(semantic.lockfile_managers(root), {"npm"})
             self.assertEqual(semantic.declared_node_version(doc), (18, 2))
+
+    def test_fact_generators_share_containment_and_manager_ambiguity(self):
+        import facts  # noqa: E402
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "package.json").write_text(
+                json.dumps(
+                    {
+                        "packageManager": "pnpm@9.0.0",
+                        "scripts": {"test": "vitest"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+
+            self.assertEqual(eval_run.detect_package_manager(root), "pnpm")
+            self.assertEqual(canonicalize._detected_package_manager(root)[0], "pnpm")
+            self.assertEqual(facts.lockfile_managers(root), {"pnpm"})
+
+            (root / "package-lock.json").write_text("{}\n", encoding="utf-8")
+            self.assertIsNone(eval_run.detect_package_manager(root))
+            self.assertIsNone(canonicalize._detected_package_manager(root)[0])
+            self.assertEqual(facts.lockfile_managers(root), {"npm", "pnpm"})
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "package.json").write_text(
+                json.dumps({"packageManager": "yarn@4.0.0"}),
+                encoding="utf-8",
+            )
+            self.assertEqual(eval_run.detect_package_manager(root), "yarn")
+            self.assertEqual(canonicalize._detected_package_manager(root)[0], "yarn")
+
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "repo"
+            root.mkdir()
+            outside = base / "outside-package.json"
+            outside.write_text(
+                json.dumps({"packageManager": "yarn@4.0.0", "scripts": {"test": "outside"}}),
+                encoding="utf-8",
+            )
+            try:
+                (root / "package.json").symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported")
+
+            self.assertIsNone(facts.load_json_within_root(root, root / "package.json"))
+            self.assertIsNone(eval_run.detect_package_manager(root))
+            self.assertIsNone(canonicalize._detected_package_manager(root)[0])
 
     def test_gap_stub_files_derived_from_registry(self):
         # TD-04: scan.GAP_STUB_FILES must be derived from the shared registry, not

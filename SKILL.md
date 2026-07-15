@@ -250,7 +250,7 @@ The same template can run an **eval evidence + health gate**. Add repeatable `--
 
 ### Zero-config bootstrap (auto-generate tasks)
 
-You do not need to hand-write `tasks.json`. `--generate REPO` inspects the target repo's ground truth — `package.json` scripts/engines/deps, lockfiles (package manager), `.nvmrc`, `go.mod`, `pyproject.toml`, plus `AGENTS.md` conventions — and emits a deterministic task set whose regex checks encode the true facts. Add `--target PATH` to select one explicit effective instruction scope through the same containment/nearest-file model as `explain`: scripts/dependencies stay local; package manager/runtime may use the nearest unambiguous ancestor; canonical conventions inherit root → nearest. Scoped tasks carry percent-encoded IDs plus repository-relative `scope`, `target`, and fact-source `evidence`. Root generation remains compatible, and automatic all-scope expansion is intentionally deferred.
+You do not need to hand-write `tasks.json`. `--generate REPO` inspects contained target-repository ground truth — `package.json` scripts/engines/deps, lockfiles (package manager), `.nvmrc`, `go.mod`, `pyproject.toml`, plus `AGENTS.md` conventions — and emits a deterministic task set whose regex checks encode the true facts. External symlink targets supply no fact; safe in-repo symlinks retain lexical evidence paths; ambiguous package-manager/runtime facts cause abstention. Add `--target PATH` to select one explicit effective instruction scope through the same containment/nearest-file model as `explain`: scripts/dependencies stay local; package manager/runtime may use the nearest unambiguous ancestor; canonical conventions inherit root → nearest. Scoped tasks carry percent-encoded IDs plus repository-relative `scope`, `target`, and fact-source `evidence`. Root generation remains compatible, and automatic all-scope expansion is intentionally deferred.
 
 ```bash
 python3 scripts/eval_run.py --generate /path/to/repo -o tasks.json
@@ -258,6 +258,11 @@ python3 scripts/eval_run.py --generate /path/to/repo --target packages/api/src/i
 ```
 
 Each generated task asks the agent for a concrete fact (install command, test/lint/build command, Node/Go/Python version, test framework, formatter, commit convention, ...) and passes only when the answer matches the fact the repo actually declares — so a higher score directly reflects whether `AGENTS.md` made the agent answer correctly.
+
+Treat draft inference follows the same fact boundary: only contained manifests,
+lockfiles, Makefiles, Python tooling, CI config, and instruction sources may
+contribute inferred lines. Unsafe or ambiguous sources are omitted for human
+review rather than followed or silently adjudicated.
 
 ### Actions
 
