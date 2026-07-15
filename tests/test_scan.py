@@ -1201,6 +1201,175 @@ class ScannerPerformanceTests(unittest.TestCase):
             self.assertEqual([entry["path"] for entry in report["files"]], ["AGENTS.md"])
             self.assertEqual(report["files"][0]["tool"], "AGENTS.md")
 
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_semantic_fact_symlinks_are_not_read(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\nUse Node.js 20 and run `npm run external-only`.\n",
+                encoding="utf-8",
+            )
+            outside_package = base / "outside-package.json"
+            outside_package.write_text(
+                json.dumps(
+                    {
+                        "scripts": {"external-only": "echo outside"},
+                        "engines": {"node": "99"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (repo / "package.json").symlink_to(outside_package)
+
+            report = scan.scan_repo(repo, 32768)
+            serialized = json.dumps(report, ensure_ascii=False)
+
+            self.assertNotIn("Node 99", serialized)
+            command_findings = [
+                finding
+                for finding in report["semantic"]["findings"]
+                if finding["category"] == "command"
+            ]
+            self.assertEqual(command_findings, [])
+            self.assertEqual(report["semantic"]["checked"], 1)
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_nested_package_symlink_cannot_supply_semantic_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            package_dir = repo / "packages" / "app"
+            package_dir.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\nRun `npm run external-only`.\n",
+                encoding="utf-8",
+            )
+            (repo / "package.json").write_text('{"scripts": {}}\n', encoding="utf-8")
+            outside_package = base / "outside-package.json"
+            outside_package.write_text(
+                '{"scripts": {"external-only": "echo outside"}}\n',
+                encoding="utf-8",
+            )
+            (package_dir / "package.json").symlink_to(outside_package)
+
+            report = scan.scan_repo(repo, 32768)
+            command_findings = [
+                finding
+                for finding in report["semantic"]["findings"]
+                if finding["category"] == "command"
+            ]
+
+            self.assertEqual(len(command_findings), 1)
+            self.assertIn("external-only", command_findings[0]["message"])
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_workspace_manifest_symlink_cannot_enable_monorepo(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            package_dir = repo / "packages" / "app"
+            package_dir.mkdir(parents=True)
+            (package_dir / "package.json").write_text('{"name": "app"}\n', encoding="utf-8")
+            outside_package = base / "outside-package.json"
+            outside_package.write_text(
+                '{"workspaces": ["packages/*"]}\n',
+                encoding="utf-8",
+            )
+            (repo / "package.json").symlink_to(outside_package)
+            ctx = scan.ScanContext(repo)
+
+            dirs, source = scan.detect_packages(repo, "auto", ctx=ctx)
+
+            self.assertEqual(dirs, {})
+            self.assertIsNone(source)
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_subtree_symlink_does_not_satisfy_declared_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            scoped_docs = repo / "package" / "docs"
+            scoped_docs.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\nSee `docs/guide.md`.\n",
+                encoding="utf-8",
+            )
+            outside_guide = base / "outside-guide.md"
+            outside_guide.write_text("outside\n", encoding="utf-8")
+            (scoped_docs / "guide.md").symlink_to(outside_guide)
+
+            report = scan.scan_repo(repo, 32768)
+            path_findings = [
+                finding
+                for finding in report["semantic"]["findings"]
+                if finding["category"] == "path"
+            ]
+
+            self.assertEqual(len(path_findings), 1)
+            self.assertIn("docs/guide.md", path_findings[0]["message"])
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_githooks_directory_does_not_change_surface(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
+            outside_hooks = base / "outside-hooks"
+            outside_hooks.mkdir()
+            (outside_hooks / "pre-commit").write_text("#!/bin/sh\n", encoding="utf-8")
+            try:
+                (repo / ".githooks").symlink_to(outside_hooks, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks unsupported on this platform")
+
+            report = scan.scan_repo(repo, 32768)
+
+            self.assertEqual(report["surface"]["hooks"], [])
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_agents_symlink_is_reported_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            repo.mkdir()
+            outside_agents = base / "outside-agents.md"
+            outside_agents.write_text("# Project overview\n", encoding="utf-8")
+            (repo / "AGENTS.md").symlink_to(outside_agents)
+
+            report = scan.scan_repo(repo, 32768)
+
+            self.assertTrue(
+                any(gap["check"] == "G1" for gap in report["gaps"]),
+                report["gaps"],
+            )
+            self.assertEqual(report["semantic"]["checked"], 0)
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_guard_workflow_symlink_is_reported_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            workflow = repo / ".github" / "workflows" / "harness-drift.yml"
+            workflow.parent.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text("# Project overview\n", encoding="utf-8")
+            outside_workflow = base / "outside-workflow.yml"
+            outside_workflow.write_text("name: outside\n", encoding="utf-8")
+            workflow.symlink_to(outside_workflow)
+
+            report = scan.scan_repo(repo, 32768)
+
+            self.assertTrue(
+                any(
+                    gap["check"] == "G4"
+                    and gap["item"] == "drift guard CI workflow"
+                    for gap in report["gaps"]
+                ),
+                report["gaps"],
+            )
+
     def test_shared_config_file_is_read_once(self):
         repo = self._make_repo()
         ctx = scan.ScanContext(repo)
@@ -1209,7 +1378,7 @@ class ScannerPerformanceTests(unittest.TestCase):
         orig = Path.read_bytes
 
         def counting_read_bytes(self, *a, **k):
-            if Path(self) == settings:
+            if Path(self).resolve() == settings.resolve():
                 reads["n"] += 1
             return orig(self, *a, **k)
 

@@ -17,7 +17,7 @@ AI Harness Doctor は、そのドリフトを見える化し、散らばった a
 npx ai-harness-doctor scan .
 ```
 
-> **Repository boundary:** read-only scanner は、マッチした config-file symlink が audited repository の外を指す場合、そのリンクをたどりません。repository 内の file symlink は引き続きサポートされ、lexical repo-relative report path を保持します。
+> **Repository boundary:** read-only scanner は、repository 由来の config、manifest、workspace、semantic fact、default plugin の symlink が audited repository の外を指す場合、そのリンクをたどりません。repository 内の file symlink は引き続きサポートされ、lexical repo-relative report path を保持します。明示的に指定した `--rules DIR` path は、意図された opt-in として引き続き利用できます。
 
 ## Why
 

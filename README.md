@@ -17,7 +17,7 @@ Try it in one command — no install, nothing written to your repo:
 npx ai-harness-doctor scan .
 ```
 
-> **Repository boundary:** the read-only scanner never follows a matched config-file symlink outside the audited repository. In-repo file symlinks remain supported and keep their lexical repo-relative report path.
+> **Repository boundary:** the read-only scanner never follows a repository-derived config, manifest, workspace, semantic-fact, or default-plugin symlink outside the audited repository. In-repo file symlinks remain supported and keep their lexical repo-relative report path; explicitly supplied `--rules DIR` paths remain an intentional opt-in.
 
 ## Why
 

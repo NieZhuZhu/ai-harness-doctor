@@ -138,12 +138,10 @@ def _finding(category, level, message, suggestion, declared, actual, line=None):
     return entry
 
 
-def _read(path):
+def _read(path, root=None):
     """Read text defensively; return ``""`` on any error so callers stay pure."""
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
+    root = Path(root) if root is not None else Path(path).parent
+    return facts.read_text_within_root(root, path, errors="replace") or ""
 
 
 # Shared code-span tokenizer (fenced blocks + inline backticks). Single-sourced
@@ -420,9 +418,9 @@ def python_scripts(root):
     ``None`` when no ``pyproject.toml`` exists (nothing to verify against).
     """
     path = root / "pyproject.toml"
-    if not path.is_file():
+    if not facts.is_file_within_root(root, path):
         return None
-    text = _read(path)
+    text = _read(path, root)
     return _toml_table_keys(text, "project.scripts") | _toml_table_keys(text, "tool.poetry.scripts")
 
 
@@ -433,26 +431,26 @@ def cargo_bin_targets(root):
     ``src/main.rs`` exists), and ``src/bin/*.rs`` file stems.
     """
     path = root / "Cargo.toml"
-    if not path.is_file():
+    if not facts.is_file_within_root(root, path):
         return None
-    text = _read(path)
+    text = _read(path, root)
     bins = set()
     for table in _toml_array_tables(text, "bin"):
         for line in table:
             m = re.match(r'\s*name\s*=\s*["\']([^"\']+)["\']', line)
             if m:
                 bins.add(m.group(1))
-    if (root / "src" / "main.rs").is_file():
+    if facts.is_file_within_root(root, root / "src" / "main.rs"):
         for line in _toml_section_lines(text, "package"):
             m = re.match(r'\s*name\s*=\s*["\']([^"\']+)["\']', line)
             if m:
                 bins.add(m.group(1))
                 break
     bindir = root / "src" / "bin"
-    if bindir.is_dir():
+    if facts.is_dir_within_root(root, bindir):
         try:
             for entry in bindir.iterdir():
-                if entry.suffix == ".rs" and entry.is_file():
+                if entry.suffix == ".rs" and facts.is_file_within_root(root, entry):
                     bins.add(entry.stem)
         except OSError:
             pass
@@ -479,7 +477,7 @@ def _node_ground_pm(root):
         return None, None
     manager = next(iter(managers))
     for name, mgr in LOCKFILE_MANAGERS.items():
-        if mgr == manager and (root / name).is_file():
+        if mgr == manager and facts.is_file_within_root(root, root / name):
             return manager, name
     return None, None
 
@@ -492,39 +490,46 @@ def _python_ground_pm(root):
         ("Pipfile.lock", "pipenv"),
         ("Pipfile", "pipenv"),
     ):
-        if (root / name).is_file():
+        if facts.is_file_within_root(root, root / name):
             return pm, name
     pyproject = root / "pyproject.toml"
-    if pyproject.is_file():
-        text = _read(pyproject)
+    if facts.is_file_within_root(root, pyproject):
+        text = _read(pyproject, root)
         if re.search(r"(?m)^\[tool\.poetry\b", text):
             return "poetry", "pyproject.toml"
         if re.search(r"(?m)^\[tool\.uv\b", text):
             return "uv", "pyproject.toml"
         if re.search(r"(?m)^\[tool\.pdm\b", text):
             return "pdm", "pyproject.toml"
-    if (root / "requirements.txt").is_file():
+    if facts.is_file_within_root(root, root / "requirements.txt"):
         return "pip", "requirements.txt"
     return None, None
 
 
 def _rust_ground_pm(root):
     for name in ("Cargo.lock", "Cargo.toml"):
-        if (root / name).is_file():
+        if facts.is_file_within_root(root, root / name):
             return "cargo", name
     return None, None
 
 
 def _go_ground_pm(root):
     for name in ("go.mod", "go.sum"):
-        if (root / name).is_file():
+        if facts.is_file_within_root(root, root / name):
             return "go", name
     return None, None
 
 
 def _java_ground_pm(root):
-    has_pom = (root / "pom.xml").is_file()
-    gradle = next((n for n in ("build.gradle", "build.gradle.kts") if (root / n).is_file()), None)
+    has_pom = facts.is_file_within_root(root, root / "pom.xml")
+    gradle = next(
+        (
+            name
+            for name in ("build.gradle", "build.gradle.kts")
+            if facts.is_file_within_root(root, root / name)
+        ),
+        None,
+    )
     if has_pom and not gradle:
         return "maven", "pom.xml"
     if gradle and not has_pom:
@@ -537,7 +542,7 @@ def _ruby_ground_pm(root):
     # is "bundle" (the CLI command), matching every other ecosystem's token
     # convention here — see the PM_TO_ECOSYSTEM comment.
     for name in ("Gemfile.lock", "Gemfile"):
-        if (root / name).is_file():
+        if facts.is_file_within_root(root, root / name):
             return "bundle", name
     return None, None
 
@@ -560,13 +565,13 @@ def python_ground_versions(root):
     """Return ``[(source_label, (major, minor)), ...]`` pinned Python versions."""
     out = []
     pyver = root / ".python-version"
-    if pyver.is_file():
-        v = _two_part(_read(pyver))
+    if facts.is_file_within_root(root, pyver):
+        v = _two_part(_read(pyver, root))
         if v:
             out.append((".python-version", v))
     pyproject = root / "pyproject.toml"
-    if pyproject.is_file():
-        text = _read(pyproject)
+    if facts.is_file_within_root(root, pyproject):
+        text = _read(pyproject, root)
         m = re.search(r'requires-python\s*=\s*["\']([^"\']+)["\']', text)
         if m:
             v = _two_part(m.group(1))
@@ -580,8 +585,11 @@ def python_ground_versions(root):
                     out.append(("pyproject.toml tool.poetry.dependencies.python", v))
                 break
     setup = root / "setup.py"
-    if setup.is_file():
-        m = re.search(r'python_requires\s*=\s*["\']([^"\']+)["\']', _read(setup))
+    if facts.is_file_within_root(root, setup):
+        m = re.search(
+            r'python_requires\s*=\s*["\']([^"\']+)["\']',
+            _read(setup, root),
+        )
         if m:
             v = _two_part(m.group(1))
             if v:
@@ -591,9 +599,9 @@ def python_ground_versions(root):
 
 def go_ground_versions(root):
     path = root / "go.mod"
-    if not path.is_file():
+    if not facts.is_file_within_root(root, path):
         return []
-    for line in _read(path).splitlines():
+    for line in _read(path, root).splitlines():
         m = re.match(r"\s*go\s+(\d+)\.(\d+)", line)
         if m:
             return [("go.mod", (int(m.group(1)), int(m.group(2))))]
@@ -603,14 +611,17 @@ def go_ground_versions(root):
 def rust_ground_versions(root):
     out = []
     cargo = root / "Cargo.toml"
-    if cargo.is_file():
-        m = re.search(r'rust-version\s*=\s*["\'](\d+)\.(\d+)', _read(cargo))
+    if facts.is_file_within_root(root, cargo):
+        m = re.search(
+            r'rust-version\s*=\s*["\'](\d+)\.(\d+)',
+            _read(cargo, root),
+        )
         if m:
             out.append(("Cargo.toml rust-version", (int(m.group(1)), int(m.group(2)))))
     for name in ("rust-toolchain.toml", "rust-toolchain"):
         rt = root / name
-        if rt.is_file():
-            v = _two_part(_read(rt))
+        if facts.is_file_within_root(root, rt):
+            v = _two_part(_read(rt, root))
             if v:
                 out.append((name, v))
             break
@@ -620,13 +631,17 @@ def rust_ground_versions(root):
 def ruby_ground_versions(root):
     out = []
     ruby_version_file = root / ".ruby-version"
-    if ruby_version_file.is_file():
-        v = _two_part(_read(ruby_version_file))
+    if facts.is_file_within_root(root, ruby_version_file):
+        v = _two_part(_read(ruby_version_file, root))
         if v:
             out.append((".ruby-version", v))
     gemfile = root / "Gemfile"
-    if gemfile.is_file():
-        m = re.search(r'^\s*ruby\s+["\'](\d+)\.(\d+)', _read(gemfile), re.MULTILINE)
+    if facts.is_file_within_root(root, gemfile):
+        m = re.search(
+            r'^\s*ruby\s+["\'](\d+)\.(\d+)',
+            _read(gemfile, root),
+            re.MULTILINE,
+        )
         if m:
             out.append(("Gemfile", (int(m.group(1)), int(m.group(2)))))
     return out
@@ -635,8 +650,8 @@ def ruby_ground_versions(root):
 def java_ground_versions(root):
     out = []
     pom = root / "pom.xml"
-    if pom.is_file():
-        text = _read(pom)
+    if facts.is_file_within_root(root, pom):
+        text = _read(pom, root)
         for tag in ("maven.compiler.release", "maven.compiler.source", "maven.compiler.target", "java.version"):
             m = re.search(r"<" + re.escape(tag) + r">\s*(1\.\d+|\d+)", text)
             if m:
@@ -646,8 +661,8 @@ def java_ground_versions(root):
                     break
     for name in ("build.gradle", "build.gradle.kts"):
         gradle = root / name
-        if gradle.is_file():
-            text = _read(gradle)
+        if facts.is_file_within_root(root, gradle):
+            text = _read(gradle, root)
             m = re.search(
                 r"(?:source|target)Compatibility\s*=?\s*(?:JavaVersion\.VERSION_)?[\"']?(1[._]\d+|\d+)", text
             )
@@ -739,7 +754,7 @@ def compare_commands(root, text):
             path = decl["path"]
             if "..." in path or not _within_root(root, path):
                 continue
-            if not (root / path).exists():
+            if not facts.exists_within_root(root, root / path):
                 findings.append(
                     _finding(
                         "command",
@@ -783,7 +798,7 @@ def compare_paths(root, text):
         token, line = decl["path"], decl["line"]
         if not _within_root(root, token):
             continue
-        if not (root / token).exists():
+        if not facts.exists_within_root(root, root / token):
             if package_names == "not computed":
                 package_names = facts.all_package_names(root)
             if token.split("/", 1)[0] in package_names:

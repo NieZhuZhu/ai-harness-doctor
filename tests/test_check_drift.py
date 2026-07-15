@@ -26,6 +26,18 @@ def _can_symlink_dirs():
         return link.is_symlink()
 
 
+def _can_symlink_files():
+    with tempfile.TemporaryDirectory() as td:
+        target = Path(td) / "target"
+        target.write_text("target\n", encoding="utf-8")
+        link = Path(td) / "link"
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            return False
+        return link.is_symlink()
+
+
 CLEAN_AGENTS = """# Project overview
 Fixture repo.
 
@@ -72,6 +84,50 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("D1", proc.stdout)
         self.assertIn("nonexist", proc.stdout)
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_external_package_json_symlink_cannot_supply_drift_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\n"
+                "# Build & test\n"
+                "Use Node.js 20 and run `npm run external-only`.\n"
+                "# Conventions\n"
+                "Keep changes small.\n",
+                encoding="utf-8",
+            )
+            outside = base / "outside-package.json"
+            outside.write_text(
+                json.dumps(
+                    {
+                        "scripts": {"external-only": "echo outside"},
+                        "engines": {"node": "99"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (repo / "package.json").symlink_to(outside)
+
+            proc = subprocess.run(
+                [sys.executable, str(DRIFT), str(repo), "--json"],
+                text=True,
+                capture_output=True,
+            )
+            report = json.loads(proc.stdout)
+
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertFalse(
+                any("Node 99" in finding["message"] for finding in report["findings"])
+            )
+            self.assertFalse(
+                any(
+                    finding["check"] == "D1" and "external-only" in finding["message"]
+                    for finding in report["findings"]
+                )
+            )
 
     def test_package_manager_builtins_do_not_trigger_d1(self):
         td, repo = self.copy_repo()
