@@ -135,7 +135,7 @@ verification gate, and update its status here.
 | 019 | Restore public-registry dependency update automation | P0 | S | — | DONE |
 | 020 | Make conflict diagnostics honor nested AGENTS.md scopes | P1 | L | 018 | DONE |
 | 021 | Enforce drift checks in every nested AGENTS.md scope | P0 | M | — | IN PROGRESS |
-| 022 | Reject untrusted inputs and off-main tags in privileged npm workflows | P0 | S | — | TODO |
+| 022 | Reject untrusted inputs and off-main tags in privileged npm workflows | P0 | S | — | IN PROGRESS |
 | 023 | Explain the effective instruction chain for any repository path | P1 | L | 020 (done) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED

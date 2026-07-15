@@ -112,6 +112,24 @@ jobs:
             exit 1
           fi
 
+      - name: Verify release tag is reachable from main
+        run: |
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          release_commit="$(
+            git rev-parse --verify "$GITHUB_REF_NAME^{commit}"
+          )"
+          if git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
+            echo "Verified $GITHUB_REF_NAME ($release_commit) is reachable from origin/main."
+          else
+            status=$?
+            if [ "$status" -eq 1 ]; then
+              echo "Refusing release: $GITHUB_REF_NAME ($release_commit) is not reachable from origin/main." >&2
+            else
+              echo "Unable to verify $GITHUB_REF_NAME against origin/main (git status $status)." >&2
+            fi
+            exit 1
+          fi
+
       - name: Determine release metadata
         id: release_meta
         run: |

@@ -93,9 +93,10 @@ npm run coverage:js       # node --test --experimental-test-coverage over bin/
 Releases are tag-driven and published by GitHub Actions. See `RELEASING.md` for
 the full flow. In short, a maintainer bumps the version on `main`
 (`npm version <patch|minor|major>`) and pushes the tag; CI verifies the tag
-matches `package.json`, publishes to npm with provenance, and creates a GitHub
-Release with auto-generated notes. There is no `CHANGELOG.md`; the GitHub
-Release notes are the canonical change history.
+matches `package.json` and its exact commit is reachable from `origin/main`,
+publishes to npm with provenance, and creates a GitHub Release with
+auto-generated notes. There is no `CHANGELOG.md`; the GitHub Release notes are
+the canonical change history.
 
 Dependency updates for npm development tooling and immutable GitHub Action pins
 are opened weekly by Dependabot. Treat them as code changes and require the
