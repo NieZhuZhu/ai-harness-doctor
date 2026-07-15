@@ -688,6 +688,76 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("npm pack --dry-run --json", script)
         self.assertNotIn("|| true", script)
 
+    def test_release_visibility_retries_the_exact_action_install_path(self):
+        script = self._run_script(RELEASE, "Wait for exact npm package visibility")
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            runner_temp = base / "runner"
+            bin_dir = base / "bin"
+            call_log = base / "npm-calls.jsonl"
+            attempt_file = base / "npm-attempt"
+            runner_temp.mkdir()
+            bin_dir.mkdir()
+
+            npm = bin_dir / "npm"
+            npm.write_text(
+                f"#!{sys.executable}\n"
+                "import json, os, pathlib, sys\n"
+                "args = sys.argv[1:]\n"
+                "with open(os.environ['MOCK_NPM_CALLS'], 'a', encoding='utf-8') as stream:\n"
+                "    stream.write(json.dumps(args) + '\\n')\n"
+                "if not args or args[0] != 'install':\n"
+                "    raise SystemExit('expected an install probe')\n"
+                "attempt_file = pathlib.Path(os.environ['MOCK_NPM_ATTEMPT'])\n"
+                "attempt = int(attempt_file.read_text() or '0') if attempt_file.exists() else 0\n"
+                "attempt_file.write_text(str(attempt + 1))\n"
+                "if attempt == 0:\n"
+                "    print('npm error code ETARGET', file=sys.stderr)\n"
+                "    raise SystemExit(1)\n"
+                "prefix = pathlib.Path(args[args.index('--prefix') + 1])\n"
+                "package = prefix / 'node_modules' / 'ai-harness-doctor'\n"
+                "package.mkdir(parents=True)\n"
+                "(package / 'package.json').write_text(\n"
+                "    json.dumps({'version': os.environ['PACKAGE_VERSION']}) + '\\n'\n"
+                ")\n",
+                encoding="utf-8",
+            )
+            npm.chmod(0o755)
+            sleep = bin_dir / "sleep"
+            sleep.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            sleep.chmod(0o755)
+
+            proc = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", script],
+                env={
+                    **os.environ,
+                    "PATH": str(bin_dir) + os.pathsep + os.environ.get("PATH", ""),
+                    "RUNNER_TEMP": str(runner_temp),
+                    "PACKAGE_VERSION": "1.2.3",
+                    "MOCK_NPM_CALLS": str(call_log),
+                    "MOCK_NPM_ATTEMPT": str(attempt_file),
+                },
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            calls = [
+                json.loads(line)
+                for line in call_log.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(calls), 2)
+            for call in calls:
+                self.assertEqual(call[0], "install")
+                self.assertIn("ai-harness-doctor@1.2.3", call)
+                self.assertIn("--prefix", call)
+                self.assertIn("--no-audit", call)
+                self.assertIn("--no-fund", call)
+                self.assertIn("--ignore-scripts", call)
+            self.assertIn("Waiting for ai-harness-doctor@1.2.3", proc.stdout)
+            self.assertIn("Verified ai-harness-doctor@1.2.3", proc.stdout)
+            self.assertFalse((runner_temp / "npm-visibility").exists())
+
     def test_release_self_tests_before_publish_and_after_floating_tag(self):
         text = RELEASE.read_text(encoding="utf-8")
         preflight_scan = text.index("Pre-publish bundled scan self-test")
@@ -737,7 +807,9 @@ class ActionMetadataTests(unittest.TestCase):
             "Wait for exact npm package visibility",
         )
         self.assertIn('"ai-harness-doctor@$PACKAGE_VERSION"', visibility)
-        self.assertIn("--pack-destination", visibility)
+        self.assertIn("npm install", visibility)
+        self.assertIn("--prefix", visibility)
+        self.assertNotIn("npm pack", visibility)
         self.assertIn("for attempt in {1..12}", visibility)
         self.assertNotIn("@latest", visibility)
         self.assertNotIn("|| true", visibility)

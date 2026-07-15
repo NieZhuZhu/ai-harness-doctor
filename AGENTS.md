@@ -53,7 +53,7 @@ node bin/cli.js help
 - Guard templates may consume the reviewed, committed default scan-baseline file; installers/CI never create or refresh it. Keep `--fail-on-security` active with baselines.
 - External Actions stay on vetted full SHAs with version hints. Dependabot updates npm dev tooling and Action pins; keep lockfile sources public, review updates as code, and move self/template copies together.
 - Lint CI uses `npm ci --ignore-scripts` with committed `package-lock.json`; never use an unlocked/fallback installer.
-- Privileged workflow expressions enter scripts only through `env`; validate exact versions and quote all uses. Release tags must be on `origin/main`; reruns skip npm only after `gitHead` + pack shasum match.
+- Privileged workflow expressions enter scripts only through `env`; validate exact versions and quote all uses. Release tags must be on `origin/main`; reruns skip npm only after `gitHead` + pack shasum match. Post-publish visibility must retry the same isolated exact-version npm install used by the Action, not a weaker pack probe.
 - Keep security/contribution templates truthful. Secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution are operational. Admin bypass only avoids sole-maintainer self-approval deadlock—never red CI.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
 
