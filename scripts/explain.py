@@ -120,21 +120,54 @@ def _safe_override(override):
     }
 
 
-def build_explanation(repo_root, target, max_bytes=32768):
-    """Build the deterministic schema-version-1 explain report."""
+def build_target_context(repo_root, target, max_bytes=32768):
+    """Resolve one target through the shared contained instruction-scope model."""
     root = Path(repo_root).resolve()
     if not root.is_dir():
         raise ValueError("repository root is not a directory")
     _resolved, target_info = normalize_target(root, target)
+    if target_info["excluded_by_scan"]:
+        # Explain may still display the visible ancestor chain, but consumers
+        # that derive facts/tasks must not claim coverage for an un-inventoried
+        # subtree. They can reject this context deterministically.
+        excluded = True
+    else:
+        excluded = False
     ctx = scan.ScanContext(root)
     files, public_files, _warnings, _ctx = scan.collect_instruction_files(root, max_bytes, ctx)
-    limits = scan.analysis_limits(files)
     scope_rows, file_scopes, parent_by_scope = scan.instruction_scope_map(files)
-    _rows, conflicts, overrides = scan.analyze_scoped_conflicts(files)
     scope_names = set(parent_by_scope)
     effective_scope = _scope_for_target(target_info["path"], target_info["kind"], scope_names)
     chain = scan.instruction_scope_chain(effective_scope, parent_by_scope)
+    return {
+        "root": root,
+        "target": target_info,
+        "excluded": excluded,
+        "files": files,
+        "public_files": public_files,
+        "scope_rows": scope_rows,
+        "file_scopes": file_scopes,
+        "parent_by_scope": parent_by_scope,
+        "scope_names": scope_names,
+        "effective_scope": effective_scope,
+        "chain": chain,
+    }
+
+
+def build_explanation(repo_root, target, max_bytes=32768):
+    """Build the deterministic schema-version-1 explain report."""
+    context = build_target_context(repo_root, target, max_bytes)
+    target_info = context["target"]
+    files = context["files"]
+    public_files = context["public_files"]
+    scope_rows = context["scope_rows"]
+    file_scopes = context["file_scopes"]
+    scope_names = context["scope_names"]
+    effective_scope = context["effective_scope"]
+    chain = context["chain"]
     chain_set = set(chain)
+    limits = scan.analysis_limits(files)
+    _rows, conflicts, overrides = scan.analyze_scoped_conflicts(files)
     canonical_chain = [row for scope in chain for row in scope_rows if row["scope"] == scope]
     relevant_overrides = [
         _safe_override(item)

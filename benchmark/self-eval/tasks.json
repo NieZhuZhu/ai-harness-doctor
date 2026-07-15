@@ -142,5 +142,11 @@
     "prompt": "When may a release rerun skip publishing an npm version that already exists? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)gitHead.*pack.*shasum.*match|pack.*shasum.*gitHead.*match"}
+  },
+  {
+    "id": "targeted-eval-generation",
+    "prompt": "What facts may targeted eval generation use, and how must task identity/evidence behave? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)local.*script.*nearest.*manager.*root.*ID.*relative.*evidence|root.*ID.*local.*script.*relative.*evidence"}
   }
 ]

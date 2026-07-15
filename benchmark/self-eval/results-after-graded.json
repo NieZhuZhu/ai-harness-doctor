@@ -170,13 +170,20 @@
       "answer": "A rerun may skip npm only when the published gitHead and packed tarball shasum match the exact release tag.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "targeted-eval-generation",
+      "stdout": "Use local scripts/dependencies, the nearest unambiguous manager/runtime, inherited canonical conventions, compatible root IDs, and repository-relative evidence.",
+      "answer": "Use local scripts/dependencies, the nearest unambiguous manager/runtime, inherited canonical conventions, compatible root IDs, and repository-relative evidence.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 24,
-    "total": 24,
+    "passed": 25,
+    "total": 25,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -184,12 +191,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "e227820cf2034f28c6ab5e56290ae69983a2426ac3fa57da178d78aba19c0071"
+      "sha256": "ec1256a4bf86c18e67f267431709ad4e5663151f258e5ea526041b5b6f4becd8"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "c3326050c67002d2cfe490e5cd267422ab7a719972f7757194fdc6a427db51ee"
+        "sha256": "232aae60ac1a9b19a32aad59d2a23f57fca030ac0f861dc51bf5058fa93181ae"
       }
     ]
   }

@@ -13,6 +13,7 @@ EVAL = ROOT / "scripts" / "eval_run.py"
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import eval_run  # noqa: E402
+import explain  # noqa: E402
 
 
 class EvalRunTests(unittest.TestCase):
@@ -1293,6 +1294,7 @@ class GenerateTasksTests(unittest.TestCase):
             encoding="utf-8",
         )
         (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+        (repo / ".python-version").write_text("3.12\n", encoding="utf-8")
         (repo / "AGENTS.md").write_text("# Overview\nUse Conventional Commits.\n", encoding="utf-8")
         (repo / "go.mod").write_text("module github.com/acme/widget\n\ngo 1.22\n", encoding="utf-8")
         return repo
@@ -1369,6 +1371,242 @@ class GenerateTasksTests(unittest.TestCase):
             (repo / "pyproject.toml").write_text('[project]\nrequires-python = ">=3.11"\n', encoding="utf-8")
             by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
             self.assertNotIn("python-version", by_id)
+
+    def _make_scoped_repo(self, td):
+        repo = Path(td) / "repo"
+        (repo / "packages" / "api" / "src").mkdir(parents=True)
+        (repo / "packages" / "web" / "src").mkdir(parents=True)
+        (repo / "AGENTS.md").write_text(
+            "# Conventions\nUse Conventional Commits.\n",
+            encoding="utf-8",
+        )
+        (repo / "package.json").write_text(
+            json.dumps(
+                {
+                    "packageManager": "pnpm@9.0.0",
+                    "engines": {"node": ">=20"},
+                    "scripts": {"test": "root-only"},
+                    "devDependencies": {"jest": "^30"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+        (repo / ".python-version").write_text("3.12\n", encoding="utf-8")
+        api = repo / "packages" / "api"
+        (api / "AGENTS.md").write_text("# API\nUse package-local commands.\n", encoding="utf-8")
+        (api / "package.json").write_text(
+            json.dumps(
+                {
+                    "scripts": {"test:api": "vitest run", "lint": "eslint ."},
+                    "devDependencies": {"vitest": "^3", "eslint": "^9"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        web = repo / "packages" / "web"
+        (web / "AGENTS.md").write_text("# Web\nUse web commands.\n", encoding="utf-8")
+        (web / "package.json").write_text(
+            json.dumps(
+                {
+                    "scripts": {"test:web": "jest"},
+                    "devDependencies": {"jest": "^30"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return repo
+
+    def test_target_generation_uses_effective_scope_local_facts_and_safe_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_scoped_repo(td)
+            target = "packages/api/src/future.py"
+
+            root_tasks = eval_run.generate_tasks(repo)
+            scoped_tasks = eval_run.generate_tasks(repo, target=target)
+            by_id = {task["id"]: task for task in scoped_tasks}
+
+            # Legacy root task IDs and facts stay unchanged.
+            self.assertIn("test", {task["id"] for task in root_tasks})
+            self.assertIn("test-framework", {task["id"] for task in root_tasks})
+            self.assertTrue(eval_run.regex_passes(
+                next(task for task in root_tasks if task["id"] == "test-framework")["check"]["value"],
+                "jest",
+            ))
+
+            prefix = "scope:packages%2Fapi:"
+            for suffix in (
+                "package-manager",
+                "install",
+                "test:api",
+                "lint",
+                "test-framework",
+                "formatter",
+                "node-version",
+                "python-version",
+                "commit-convention",
+            ):
+                self.assertIn(prefix + suffix, by_id)
+            self.assertNotIn(prefix + "test", by_id)
+            self.assertTrue(
+                eval_run.regex_passes(by_id[prefix + "test:api"]["check"]["value"], "pnpm test:api")
+            )
+            self.assertTrue(
+                eval_run.regex_passes(by_id[prefix + "test-framework"]["check"]["value"], "vitest")
+            )
+            self.assertFalse(
+                eval_run.regex_passes(by_id[prefix + "test-framework"]["check"]["value"], "jest")
+            )
+            for task in scoped_tasks:
+                self.assertEqual(task["scope"], "packages/api")
+                self.assertEqual(task["target"], target)
+                self.assertTrue(all(not Path(path).is_absolute() for path in task["evidence"]))
+                self.assertNotIn("packages/web", json.dumps(task))
+            self.assertEqual(
+                by_id[prefix + "test:api"]["evidence"],
+                ["packages/api/package.json"],
+            )
+            self.assertEqual(
+                by_id[prefix + "package-manager"]["evidence"],
+                ["package.json", "pnpm-lock.yaml"],
+            )
+            self.assertEqual(
+                by_id[prefix + "commit-convention"]["evidence"],
+                ["AGENTS.md", "packages/api/AGENTS.md"],
+            )
+            self.assertEqual(
+                by_id[prefix + "python-version"]["evidence"],
+                [".python-version"],
+            )
+
+    def test_target_generation_matches_explain_scope_and_keeps_siblings_distinct(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_scoped_repo(td)
+            api_target = "packages/api/src/future.py"
+            web_target = "packages/web/src/future.py"
+
+            api = eval_run.generate_tasks(repo, target=api_target)
+            web = eval_run.generate_tasks(repo, target=web_target)
+            api_scope = explain.build_explanation(repo, api_target)["effective_scope"]
+            web_scope = explain.build_explanation(repo, web_target)["effective_scope"]
+
+            self.assertEqual({task["scope"] for task in api}, {api_scope})
+            self.assertEqual({task["scope"] for task in web}, {web_scope})
+            self.assertTrue(all(task["id"].startswith("scope:packages%2Fapi:") for task in api))
+            self.assertTrue(all(task["id"].startswith("scope:packages%2Fweb:") for task in web))
+            self.assertFalse({task["id"] for task in api} & {task["id"] for task in web})
+
+    def test_target_package_manager_prefers_local_override_and_abstains_on_local_ambiguity(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_scoped_repo(td)
+            package = repo / "packages" / "api"
+            package_json = json.loads((package / "package.json").read_text())
+            package_json["packageManager"] = "yarn@4.0.0"
+            (package / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
+            target = "packages/api/src/future.py"
+
+            local = {
+                task["id"]: task
+                for task in eval_run.generate_tasks(repo, target=target)
+            }
+            prefix = "scope:packages%2Fapi:"
+            self.assertTrue(
+                eval_run.regex_passes(
+                    local[prefix + "package-manager"]["check"]["value"],
+                    "yarn",
+                )
+            )
+            self.assertEqual(
+                local[prefix + "package-manager"]["evidence"],
+                ["packages/api/package.json"],
+            )
+
+            (package / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            ambiguous_ids = {
+                task["id"]
+                for task in eval_run.generate_tasks(repo, target=target)
+            }
+            self.assertNotIn(prefix + "package-manager", ambiguous_ids)
+            self.assertNotIn(prefix + "install", ambiguous_ids)
+            self.assertNotIn(prefix + "test:api", ambiguous_ids)
+            self.assertIn(prefix + "test-framework", ambiguous_ids)
+
+    def test_root_effective_target_preserves_legacy_generation_exactly(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_repo(td)
+            self.assertEqual(
+                eval_run.generate_tasks(repo),
+                eval_run.generate_tasks(repo, target="src/future.py"),
+            )
+
+    def test_scoped_id_percent_encodes_separator_and_punctuation(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            scope = repo / "packages" / "api v2"
+            scope.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text("Use pnpm.\n", encoding="utf-8")
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            (scope / "AGENTS.md").write_text("Use local commands.\n", encoding="utf-8")
+            (scope / "package.json").write_text(
+                json.dumps({"scripts": {"test": "vitest run"}}),
+                encoding="utf-8",
+            )
+
+            tasks = eval_run.generate_tasks(
+                repo,
+                target="packages/api v2/src/future.py",
+            )
+
+            self.assertTrue(tasks)
+            self.assertTrue(
+                all(task["id"].startswith("scope:packages%2Fapi%20v2:") for task in tasks)
+            )
+
+    def test_target_rejects_escape_external_symlink_and_excluded_subtree(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            repo = self._make_scoped_repo(td)
+            outside = base / "outside"
+            outside.mkdir()
+            try:
+                (repo / "escape").symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks unsupported")
+
+            for target in ("../outside/x.py", "escape/x.py", "node_modules/pkg/x.js"):
+                with self.subTest(target=target):
+                    with self.assertRaises(ValueError):
+                        eval_run.generate_tasks(repo, target=target)
+
+    def test_target_cli_writes_scoped_tasks_and_target_requires_generate(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_scoped_repo(td)
+            out = Path(td) / "tasks.json"
+            target = "packages/api/src/future.py"
+            generated = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--generate",
+                    str(repo),
+                    "--target",
+                    target,
+                    "-o",
+                    str(out),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            invalid = subprocess.run(
+                [sys.executable, str(EVAL), "--target", target],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            self.assertTrue(all(task["scope"] == "packages/api" for task in json.loads(out.read_text())))
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertIn("--target requires --generate", invalid.stderr)
 
 
 class JudgePromptTests(unittest.TestCase):
