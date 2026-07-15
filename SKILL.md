@@ -390,12 +390,12 @@ npx ai-harness-doctor mcp
 
 Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line on stdin/stdout). Supported methods:
 
-- `initialize` → `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
+- `initialize` → negotiates stable MCP `2025-11-25` or legacy `2024-11-05` from the requested protocol version (unsupported versions receive the latest stable version), then returns `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
 - `notifications/initialized` → notification, no response.
 - `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, and `harness_eval_generate`, each with a closed input schema `{ repo: string (default "."), ... }`.
-- `tools/call` → dispatches to the matching Python script, keeps its output in `content[0]`, and returns machine-readable `{ exitCode, ok, status, report? }` metadata as JSON in `content[1]`.
+- `tools/call` → dispatches to the matching Python script, keeps its output in `content[0]`, and returns machine-readable `{ exitCode, ok, status, report? }` metadata as JSON in `content[1]`; modern connections also receive the identical standard `structuredContent`.
 
-Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, and `harness_eval_generate`. All six are read-only. Explicitly requested valid JSON finding reports return `status: "findings"` without becoming MCP execution errors; invalid targets, runtime failures, timeouts, malformed reports, and ambiguous non-zero text reports set `isError: true`. Unknown methods/tools and invalid arguments return a JSON-RPC error object. The metadata is a second text item because the server advertises MCP `2024-11-05`, predating `structuredContent`.
+Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, and `harness_eval_generate`. All six are read-only. Under `2025-11-25`, tools advertise closed input schemas, read-only/non-destructive/idempotent/closed-world annotations, and an output schema for the typed metadata envelope; under `2024-11-05`, modern-only fields are omitted. Explicitly requested valid JSON finding reports return `status: "findings"` without becoming MCP execution errors; invalid targets, runtime failures, timeouts, malformed reports, and ambiguous non-zero text reports set `isError: true`. Unknown methods/tools and invalid arguments return a JSON-RPC error object. A pre-initialize direct tool call retains the historical 2024 shape for compatibility; a valid handshake selects the connection's wire version. The server remains stdio-only and does not expose mutation or other MCP capability families.
 
 ## Runtime & self-test
 
