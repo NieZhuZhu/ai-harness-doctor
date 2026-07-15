@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across seven deep `improve` audit batches:
+Generated and reconciled across eight deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -9,6 +9,7 @@ Generated and reconciled across seven deep `improve` audit batches:
 - 2026-07-15 at commit `73bd749` (plans 014–017).
 - 2026-07-15 at commit `e4992c8` (plans 018–020).
 - 2026-07-15 at commit `ced1530` (plans 021–023).
+- 2026-07-15 at commit `935eeb6` (plans 024–026).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -110,6 +111,31 @@ verification gate, and update its status here.
    scope evidence; scope-aware eval generation remains the next follow-up after
    that target-path vocabulary and public schema are validated.
 
+### 2026-07-15 post-v1.6.0 premium-project rounds
+
+1. **Core security and diagnostic truth** — independently re-audited file-read
+   budgets, security gates, inventory identity, overlap/conflict evidence,
+   monorepo reuse, and scan/explain parity. A 50,087-byte synthetic AGENTS.md
+   proved that tail credentials and permission-bypass guidance are invisible
+   after the 32 KiB semantic budget; same-prefix/different-tail files also
+   receive the same reported SHA and misleadingly complete overlap/conflict
+   output.
+2. **Release replay and supply-chain identity** — independently audited the
+   live npm/GitHub/Marketplace release chain, privileged reruns, exact/floating
+   tags, package provenance, remote settings, and immutable-release controls.
+   A moved same-version tag still passes version/main ancestry and skips npm
+   publish without comparing the registry artifact's `gitHead`; the legitimate
+   v1.6.0 `gitHead` and reproducible pack shasum establish a concrete identity
+   contract, while unavailable server-side immutability remains an operational
+   limitation rather than a fictitious automation claim.
+3. **Monorepo efficacy and premium product direction** — independently
+   re-audited Phase 3 generation, explain scope vocabulary, MCP parity, task
+   identity/evidence, and bounded large-monorepo UX. A root npm + nested
+   pnpm/Vitest package reproduced root-only tasks despite explain selecting the
+   package scope. With Plan 023 now validated, the selected feature is explicit
+   target-aware generation; automatic all-scope expansion remains deferred
+   until real task volume and cost are measured.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -137,6 +163,9 @@ verification gate, and update its status here.
 | 021 | Enforce drift checks in every nested AGENTS.md scope | P0 | M | — | DONE |
 | 022 | Reject untrusted inputs and off-main tags in privileged npm workflows | P0 | S | — | DONE |
 | 023 | Explain the effective instruction chain for any repository path | P1 | L | 020 (done) | DONE |
+| 024 | Scan every byte for security and identity without unbounded semantic reads | P0 | M | — | TODO |
+| 025 | Bind idempotent release reruns to the published npm artifact | P0 | S | — | TODO |
+| 026 | Generate efficacy tasks for one explicit instruction scope | P1 | L | 023 (done) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -194,6 +223,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   a false negative but expands a public gate, and Plan 023 adds CLI/MCP/adapter
   surfaces; the combined release is therefore minor unless a STOP condition
   exposes a breaking contract.
+- Plans 024 and 025 are independent P0 repairs and may land in either order,
+  but keep them as separate PRs: one changes scanner evidence/security
+  coverage and one changes privileged release rerun behavior. Plan 026 depends
+  only on already-DONE Plan 023's target/scope vocabulary, not on 024/025.
+- Execute 026 after re-reading any small scan/explain metadata changes from
+  Plan 024. Target normalization and effective scope must remain shared, while
+  bounded scan evidence and eval fact-source evidence are distinct contracts.
+- Keep Plans 024–026 in separate PRs. Plans 024–025 are patch-level if their
+  STOP conditions do not force breaking schemas. Plan 026 adds public CLI/MCP
+  behavior, so the combined release is minor unless a STOP condition exposes a
+  breaking change.
 
 ## Findings considered and rejected or deferred
 
@@ -352,3 +392,32 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   honestly mark it complete. Plan 022 hardens the input/ref boundary regardless
   of credential mechanism; revisit OIDC in a separately confirmed operations
   loop.
+- **Structured Action `args` after v1.6.0** — `action.yml` still splits the
+  free-form input with Bash word rules and cannot preserve one whitespace-
+  bearing argument. This remains a real limitation, but no documented Action
+  flag currently needs that shape and this batch has three mechanically
+  reproduced higher-impact gaps. Keep deferred until a structured input has a
+  concrete consumer.
+- **Treat a size warning as sufficient security coverage** — rejected. Context
+  truncation is itself useful evidence, but `--fail-on-security` must not miss
+  a credential solely because it appears after an agent's context budget. Plan
+  024 separates bounded semantic text from complete streaming identity/security
+  coverage rather than choosing either unbounded reads or silent tails.
+- **Run full semantic/conflict analysis over every oversize file** — rejected.
+  It would remove the memory/context budget and make adversarial files
+  unbounded. Plan 024 keeps semantic/overlap/conflict analysis prefix-bounded
+  and makes that evidence boundary explicit.
+- **Automatically expand zero-config eval across every nested scope** —
+  deferred. The direction is valuable, but default expansion can multiply task
+  count and model cost in large monorepos. Plan 026 exposes one explicit target
+  with deterministic scope/evidence first; revisit `--all-scopes` only after
+  external measurements.
+- **Infer package scopes from manifests without AGENTS.md** — rejected for this
+  feature. Phase 3 is evaluating harness efficacy, so target-aware generation
+  follows the canonical instruction-scope model; generic workspace/package
+  benchmarking is a different product surface.
+- **Claim immutable GitHub Releases or protected exact tags from workflow
+  code** — rejected. Live remote/API verification found no ruleset and no
+  available release-immutability toggle. Plan 025 enforces npm identity on every
+  rerun and documents server-side protection as an operations follow-up instead
+  of claiming a control the repository cannot currently prove.
