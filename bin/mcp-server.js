@@ -5,7 +5,7 @@
 //
 // Transport: newline-delimited JSON. Each JSON-RPC 2.0 message is a single line
 // terminated by "\n" on both stdin (requests) and stdout (responses). The server
-// exposes the core Python capabilities (scan / drift / validate / plan) as MCP tools.
+// exposes six read-only Python capabilities as MCP tools.
 
 const fs = require('fs');
 const path = require('path');
@@ -29,14 +29,20 @@ const INTERNAL_ERROR = -32603;
 // Tool definitions. Each maps to a Python script under scripts/. `script[0]` is the
 // file name; `script.slice(1)` are fixed leading args (e.g. the canonicalize subcommand).
 // `booleans` maps an input-schema boolean property to the CLI flag it toggles.
+// `resultPolicy` declares which subprocess codes are valid reports and, for
+// JSON-capable tools, the minimal report shape used to distinguish findings
+// from operational failures. Every MCP tool is deliberately read-only.
 const TOOLS = [
   {
     name: 'harness_scan',
     description: 'Scan a repository for AI harness config files (AGENTS.md, CLAUDE.md, .cursorrules, ...) and report inventory, size warnings, overlap and conflict candidates (Phase 0 — Checkup).',
     script: ['scan.py'],
     booleans: { json: '--json' },
+    readOnly: true,
+    resultPolicy: { reportExitCodes: [0], jsonShape: 'scan', requireRepoDirectory: true },
     inputSchema: {
       type: 'object',
+      additionalProperties: false,
       properties: {
         repo: { type: 'string', description: 'Target repository root.', default: '.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of markdown.', default: false },
@@ -48,8 +54,11 @@ const TOOLS = [
     description: 'Run the read-only drift guard over a canonical AGENTS.md and its stubs (Phase 2 — Follow-up).',
     script: ['check_drift.py'],
     booleans: { json: '--json', strict: '--strict' },
+    readOnly: true,
+    resultPolicy: { reportExitCodes: [0, 1], jsonShape: 'drift', requireRepoDirectory: true },
     inputSchema: {
       type: 'object',
+      additionalProperties: false,
       properties: {
         repo: { type: 'string', description: 'Target repository root.', default: '.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of markdown.', default: false },
@@ -62,8 +71,11 @@ const TOOLS = [
     description: 'Validate the canonicalization state of AGENTS.md and tool stubs (Phase 1 — Treat validation).',
     script: ['canonicalize.py', '--validate'],
     booleans: { json: '--json' },
+    readOnly: true,
+    resultPolicy: { reportExitCodes: [0, 1], jsonShape: 'validate', requireRepoDirectory: true },
     inputSchema: {
       type: 'object',
+      additionalProperties: false,
       properties: {
         repo: { type: 'string', description: 'Target repository root.', default: '.' },
         json: { type: 'boolean', description: 'Emit machine-readable JSON instead of text.', default: false },
@@ -75,8 +87,11 @@ const TOOLS = [
     description: 'Generate a merge-plan skeleton for consolidating scattered configs into AGENTS.md (Phase 1 — Treat planning).',
     script: ['canonicalize.py', '--plan'],
     booleans: {},
+    readOnly: true,
+    resultPolicy: { reportExitCodes: [0], requireRepoDirectory: true },
     inputSchema: {
       type: 'object',
+      additionalProperties: false,
       properties: {
         repo: { type: 'string', description: 'Target repository root.', default: '.' },
       },
@@ -87,8 +102,11 @@ const TOOLS = [
     description: 'Preview downgrading existing tool config files (CLAUDE.md, .cursorrules, ...) to minimal AGENTS.md pointer stubs (Phase 1 — Treat). Read-only: always a dry-run diff preview, never writes to the repository. Requires AGENTS.md to already exist.',
     script: ['canonicalize.py', '--write-stubs'],
     booleans: {},
+    readOnly: true,
+    resultPolicy: { reportExitCodes: [0], requireRepoDirectory: true },
     inputSchema: {
       type: 'object',
+      additionalProperties: false,
       properties: {
         repo: { type: 'string', description: 'Target repository root.', default: '.' },
       },
@@ -99,8 +117,11 @@ const TOOLS = [
     description: 'Auto-generate a benchmark task set from repository facts (AGENTS.md content plus detected build/test commands) for the Phase 3 — Efficacy eval harness. Read-only: prints the generated tasks as JSON without writing a file or running any agent/LLM calls.',
     script: ['eval_run.py', '--generate'],
     booleans: {},
+    readOnly: true,
+    resultPolicy: { reportExitCodes: [0], requireRepoDirectory: true },
     inputSchema: {
       type: 'object',
+      additionalProperties: false,
       properties: {
         repo: { type: 'string', description: 'Target repository root.', default: '.' },
       },
@@ -150,6 +171,28 @@ function sendError(id, code, message, data) {
   writeMessage({ jsonrpc: '2.0', id, error });
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateToolArguments(tool, value) {
+  if (value === undefined) return { ok: true, value: {} };
+  if (!isPlainObject(value)) {
+    return { ok: false, message: `Arguments for ${tool.name} must be an object.` };
+  }
+  const properties = tool.inputSchema.properties || {};
+  for (const key of Object.keys(value)) {
+    if (!Object.prototype.hasOwnProperty.call(properties, key)) {
+      return { ok: false, message: `Unknown argument for ${tool.name}: ${key}` };
+    }
+    const expected = properties[key].type;
+    if (expected && typeof value[key] !== expected) {
+      return { ok: false, message: `Argument ${key} for ${tool.name} must be ${expected}.` };
+    }
+  }
+  return { ok: true, value };
+}
+
 // Build the argv for the Python interpreter from a tool definition + arguments.
 function buildScriptArgs(tool, argsObj) {
   const scriptPath = path.join(PACKAGE_ROOT, 'scripts', tool.script[0]);
@@ -162,14 +205,111 @@ function buildScriptArgs(tool, argsObj) {
   return { scriptPath, argv: [scriptPath, ...leading, repo, ...flags] };
 }
 
+function explicitJsonReport(tool, argsObj, stdout) {
+  if (!tool.resultPolicy.jsonShape || argsObj.json !== true) return { requested: false };
+  try {
+    return { requested: true, parsed: JSON.parse(stdout) };
+  } catch (_) {
+    return { requested: true };
+  }
+}
+
+function hasValidJsonShape(shape, report) {
+  if (!isPlainObject(report) || Object.prototype.hasOwnProperty.call(report, 'error')) return false;
+  if (shape === 'scan') return Array.isArray(report.files);
+  if (shape === 'drift') {
+    return typeof report.ok === 'boolean' && Array.isArray(report.findings)
+      && typeof report.score === 'number';
+  }
+  if (shape === 'validate') {
+    return typeof report.ok === 'boolean' && Array.isArray(report.findings);
+  }
+  return false;
+}
+
+function reportHasFindings(shape, report) {
+  if (shape === 'scan') {
+    const reports = [report, ...(report.packages || []).map((item) => item.report || {})];
+    return reports.some((item) => (
+      (item.warnings || []).length
+      || (item.security || []).length
+      || (item.gaps || []).length
+      || (item.semantic && item.semantic.findings || []).length
+      || (item.conflicts || []).length
+      || (item.custom || []).length
+    ));
+  }
+  if (shape === 'drift' || shape === 'validate') return report.findings.length > 0;
+  return false;
+}
+
+function classifySubprocess(tool, argsObj, result) {
+  const stdout = result.stdout || '';
+  const stderr = result.stderr || '';
+  const exitCode = Number.isInteger(result.status) ? result.status : null;
+  const json = explicitJsonReport(tool, argsObj, stdout);
+  const validJsonReport = json.requested
+    && hasValidJsonShape(tool.resultPolicy.jsonShape, json.parsed);
+  const allowedCode = exitCode !== null
+    && tool.resultPolicy.reportExitCodes.includes(exitCode);
+
+  let status = 'error';
+  if (exitCode === 0 && (!json.requested || validJsonReport)) {
+    status = validJsonReport && reportHasFindings(tool.resultPolicy.jsonShape, json.parsed)
+      ? 'findings'
+      : 'ok';
+  } else if (exitCode !== 0 && allowedCode && validJsonReport) {
+    // A non-zero code is a valid finding-bearing report only when the caller
+    // explicitly requested JSON and the output matches this tool's report
+    // contract. Markdown is deliberately not scraped to guess success.
+    status = 'findings';
+  }
+
+  let text = stdout;
+  if (!text && stderr) text = summarizeStderr(stderr);
+  const outcome = {
+    isError: status === 'error',
+    text,
+    exitCode,
+    status,
+  };
+  if (json.requested && json.parsed !== undefined) outcome.report = json.parsed;
+  return outcome;
+}
+
+function errorOutcome(text) {
+  return { isError: true, text, exitCode: null, status: 'error' };
+}
+
+function resultMetadata(outcome) {
+  const metadata = {
+    kind: 'ai-harness-doctor/tool-result',
+    exitCode: outcome.exitCode,
+    ok: outcome.status === 'ok',
+    status: outcome.status,
+  };
+  if (outcome.report !== undefined) metadata.report = outcome.report;
+  return metadata;
+}
+
 function callTool(tool, argsObj) {
+  const { scriptPath, argv } = buildScriptArgs(tool, argsObj || {});
+  if (tool.resultPolicy.requireRepoDirectory) {
+    const repo = typeof argsObj.repo === 'string' && argsObj.repo.length ? argsObj.repo : '.';
+    try {
+      if (!fs.statSync(path.resolve(repo)).isDirectory()) {
+        return errorOutcome(`Target repository is not a directory: ${repo}`);
+      }
+    } catch (_) {
+      return errorOutcome(`Target repository is not a directory: ${repo}`);
+    }
+  }
   const python = resolvePython();
   if (!python) {
-    return { isError: true, text: 'Python is required (python3 or python) but was not found on PATH.' };
+    return errorOutcome('Python is required (python3 or python) but was not found on PATH.');
   }
-  const { scriptPath, argv } = buildScriptArgs(tool, argsObj || {});
   if (!fs.existsSync(scriptPath)) {
-    return { isError: true, text: `Script not found: ${scriptPath}` };
+    return errorOutcome(`The packaged script for ${tool.name} was not found.`);
   }
   const timeoutMs = toolTimeoutMs();
   const result = childProcess.spawnSync(python, argv, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: timeoutMs });
@@ -177,29 +317,36 @@ function callTool(tool, argsObj) {
     if (result.error.code === 'ETIMEDOUT') {
       // Return a clean tool error instead of hanging/throwing. Do not leak argv
       // or internal paths — just report the timeout budget.
-      return { isError: true, text: `Tool ${tool.name} timed out after ${timeoutMs}ms and was terminated.` };
+      return errorOutcome(`Tool ${tool.name} timed out after ${timeoutMs}ms and was terminated.`);
     }
-    return { isError: true, text: `Failed to run ${tool.name}: ${result.error.message}` };
+    const code = result.error.code ? ` (${result.error.code})` : '';
+    return errorOutcome(`Failed to run ${tool.name}${code}.`);
   }
-  const stdout = result.stdout || '';
-  const stderr = result.stderr || '';
-  // Some tools (e.g. drift) return a non-zero exit code to signal findings; that is not a
-  // transport error. Surface the output as tool content and let the caller interpret it.
-  let text = stdout;
-  if (!text && stderr) text = summarizeStderr(stderr);
-  return { isError: false, text, exitCode: result.status };
+  return classifySubprocess(tool, argsObj, result);
 }
 
 function handleToolsCall(id, params) {
-  const name = params && params.name;
+  if (!isPlainObject(params)) {
+    sendError(id, INVALID_PARAMS, 'tools/call params must be an object.');
+    return;
+  }
+  const name = params.name;
   const tool = name ? TOOL_BY_NAME.get(name) : undefined;
   if (!tool) {
     sendError(id, INVALID_PARAMS, `Unknown tool: ${name}`);
     return;
   }
-  const outcome = callTool(tool, (params && params.arguments) || {});
+  const validation = validateToolArguments(tool, params.arguments);
+  if (!validation.ok) {
+    sendError(id, INVALID_PARAMS, validation.message);
+    return;
+  }
+  const outcome = callTool(tool, validation.value);
   sendResult(id, {
-    content: [{ type: 'text', text: outcome.text }],
+    content: [
+      { type: 'text', text: outcome.text },
+      { type: 'text', text: JSON.stringify(resultMetadata(outcome)) },
+    ],
     isError: Boolean(outcome.isError),
   });
 }
@@ -278,4 +425,10 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { TOOLS, buildScriptArgs, resolvePython };
+module.exports = {
+  TOOLS,
+  buildScriptArgs,
+  classifySubprocess,
+  resolvePython,
+  validateToolArguments,
+};
