@@ -40,6 +40,19 @@ class CliInstallerTests(unittest.TestCase):
             capture_output=True,
         )
 
+    def run_cli_raw_with_env(self, args, home, cwd, extra_env):
+        env = os.environ.copy()
+        env["HOME"] = str(home)
+        env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+        env.update(extra_env)
+        return subprocess.run(
+            ["node", str(CLI), *args],
+            cwd=str(cwd),
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+
     def make_git_repo(self, parent, with_agents=True):
         repo = parent / "target"
         repo.mkdir()
@@ -85,6 +98,186 @@ class CliInstallerTests(unittest.TestCase):
             self.assertFalse(skill_link.exists())
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["installs"], [])
+
+    def test_install_refuses_malformed_manifest_without_overwriting_it(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            manifest = home / ".ai-harness-doctor" / "manifest.json"
+            manifest.parent.mkdir(parents=True)
+            original = b"{broken\n"
+            manifest.write_bytes(original)
+
+            proc = self.run_cli_raw(
+                ["install", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("manifest", proc.stderr.lower())
+            self.assertIn("back up", proc.stderr.lower())
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertFalse((project / ".cursor").exists())
+
+    def test_all_installer_commands_preserve_malformed_manifest(self):
+        for args in (
+            ["install", "--agent", "cursor", "--project"],
+            ["update"],
+            ["uninstall", "--agent", "cursor", "--project"],
+        ):
+            with (
+                self.subTest(command=args[0]),
+                ResilientTemporaryDirectory() as home_dir,
+                ResilientTemporaryDirectory() as project_dir,
+            ):
+                home = Path(home_dir)
+                project = Path(project_dir)
+                (project / "package.json").write_text("{}\n", encoding="utf-8")
+                manifest = home / ".ai-harness-doctor" / "manifest.json"
+                manifest.parent.mkdir(parents=True)
+                original = b"{broken\n"
+                manifest.write_bytes(original)
+
+                proc = self.run_cli_raw(args, home, project)
+
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("manifest", proc.stderr.lower())
+                self.assertEqual(manifest.read_bytes(), original)
+
+    def test_installer_refuses_invalid_or_future_manifest_schema(self):
+        payloads = (
+            {"schemaVersion": 2, "version": PKG_VERSION, "lastUpdateCheck": 0, "installs": {}},
+            {"schemaVersion": 999, "version": PKG_VERSION, "lastUpdateCheck": 0, "installs": []},
+        )
+        for payload in payloads:
+            with (
+                self.subTest(payload=payload),
+                ResilientTemporaryDirectory() as home_dir,
+                ResilientTemporaryDirectory() as project_dir,
+            ):
+                home = Path(home_dir)
+                project = Path(project_dir)
+                (project / "package.json").write_text("{}\n", encoding="utf-8")
+                manifest = home / ".ai-harness-doctor" / "manifest.json"
+                manifest.parent.mkdir(parents=True)
+                original = (json.dumps(payload) + "\n").encode()
+                manifest.write_bytes(original)
+
+                proc = self.run_cli_raw(
+                    ["install", "--agent", "cursor", "--project"],
+                    home,
+                    project,
+                )
+
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("manifest", proc.stderr.lower())
+                self.assertEqual(manifest.read_bytes(), original)
+
+    def test_install_refuses_symlinked_manifest_directory(self):
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as project_dir,
+            ResilientTemporaryDirectory() as outside_dir,
+        ):
+            home = Path(home_dir)
+            project = Path(project_dir)
+            outside = Path(outside_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            try:
+                (home / ".ai-harness-doctor").symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks unsupported on this platform")
+
+            proc = self.run_cli_raw(
+                ["install", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("symlink", proc.stderr.lower())
+            self.assertEqual(list(outside.iterdir()), [])
+            self.assertFalse((project / ".cursor").exists())
+
+    def test_install_refuses_symlinked_manifest_file(self):
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as project_dir,
+            ResilientTemporaryDirectory() as outside_dir,
+        ):
+            home = Path(home_dir)
+            project = Path(project_dir)
+            outside = Path(outside_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            state = home / ".ai-harness-doctor"
+            state.mkdir()
+            target = outside / "manifest.json"
+            original = b'{"outside": true}\n'
+            target.write_bytes(original)
+            try:
+                (state / "manifest.json").symlink_to(target)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported on this platform")
+
+            proc = self.run_cli_raw(
+                ["install", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("symlink", proc.stderr.lower())
+            self.assertEqual(target.read_bytes(), original)
+            self.assertFalse((project / ".cursor").exists())
+
+    def test_update_nudge_skips_malformed_manifest_without_overwriting_it(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            manifest = home / ".ai-harness-doctor" / "manifest.json"
+            manifest.parent.mkdir(parents=True)
+            original = b"{broken\n"
+            manifest.write_bytes(original)
+
+            proc = self.run_cli_raw_with_env(
+                ["help"],
+                home,
+                project,
+                {
+                    "AI_HARNESS_DOCTOR_NO_UPDATE_CHECK": "0",
+                    "AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK": "1",
+                },
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("AI Harness Doctor", proc.stdout)
+            self.assertEqual(manifest.read_bytes(), original)
+
+    def test_failed_atomic_manifest_replace_preserves_previous_state(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            manifest = home / ".ai-harness-doctor" / "manifest.json"
+            original = manifest.read_bytes()
+
+            proc = self.run_cli_raw_with_env(
+                ["uninstall", "--agent", "cursor", "--project"],
+                home,
+                project,
+                {"AI_HARNESS_DOCTOR_TEST_MANIFEST_WRITE_FAILURE": "1"},
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("manifest", proc.stderr.lower())
+            self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual(
+                [path for path in manifest.parent.iterdir() if path.name.startswith(".manifest-")],
+                [],
+            )
 
     def test_project_adapter_install_preserves_repository_harness_state(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:

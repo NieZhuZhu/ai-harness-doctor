@@ -245,7 +245,7 @@ skill、slash commands、adapter prompts の一部または全部をインスト
 | `cursor` | `.cursor/commands/` | target project 内の `.cursor/commands/`。 |
 | `gemini` | `~/.gemini/commands/harness/` + shared payload | 同じ command location。project は payload path に影響します。 |
 
-Adapters は `{{PLAYBOOK}}` を installed playbook path に置き換えます。copy payload は repository-owned baseline、rules、その他 state と分離された `.ai-harness-doctor/payload/` subtree に置かれます。version 付き `~/.ai-harness-doctor/manifest.json` は exact managed path と SHA-256 digest を記録します。install/update は unowned な同名 file や install 後に編集された managed file を上書きせず、`manual-merge` / `modified-preserved` として報告します。uninstall は byte 検証済み managed file だけを削除し、最後の参照 agent が削除されるまで shared payload を保持します。legacy manifest は additive に移行し、byte-identical な旧 payload file だけを退役させます。`--link` は payload files をコピーする代わりに global package を指します。CLI は安全でない `npx` cache linking をブロックし、先に global install するよう案内します。
+Adapters は `{{PLAYBOOK}}` を installed playbook path に置き換えます。copy payload は repository-owned baseline、rules、その他 state と分離された `.ai-harness-doctor/payload/` subtree に置かれます。version 付き `~/.ai-harness-doctor/manifest.json` は exact managed path と SHA-256 digest を記録します。既存 manifest が malformed、unsupported schema、または state path が symlink の場合、installer は fail closed して元の state を変更しません。valid state は atomic replacement で書き込みます。install/update は unowned な同名 file や install 後に編集された managed file を上書きせず、`manual-merge` / `modified-preserved` として報告します。uninstall は byte 検証済み managed file だけを削除し、最後の参照 agent が削除されるまで shared payload を保持します。legacy manifest は additive に移行し、byte-identical な旧 payload file だけを退役させます。`--link` は payload files をコピーする代わりに global package を指します。CLI は安全でない `npx` cache linking をブロックし、先に global install するよう案内します。
 
 </details>
 

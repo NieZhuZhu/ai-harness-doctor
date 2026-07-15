@@ -271,24 +271,90 @@ function directoryMatchesOwnedFiles(directory, previousOutputs) {
   return actual.length === expected.size && actual.every((file) => expected.get(file) === fileDigest(file));
 }
 
-function readManifest() {
+function emptyManifest() {
+  return { schemaVersion: 2, version: PACKAGE_VERSION, lastUpdateCheck: 0, installs: [] };
+}
+
+function manifestReadFailure(message, bestEffort) {
+  if (bestEffort) return null;
+  fail(
+    `Cannot use installer manifest ${MANIFEST_PATH}: ${message}. ` +
+    'Back up or repair the file before retrying; it will not be overwritten.'
+  );
+}
+
+function ensureManifestPath(bestEffort) {
+  const violation = mutationPathViolation(homePath(), MANIFEST_PATH);
+  if (!violation) return true;
+  return manifestReadFailure(violation, bestEffort);
+}
+
+function readManifest(options = {}) {
+  const bestEffort = options.bestEffort === true;
+  if (!ensureManifestPath(bestEffort)) return null;
+  let raw;
   try {
-    const parsed = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8'));
-    if (!parsed || typeof parsed !== 'object') throw new Error('bad manifest');
-    if (!Array.isArray(parsed.installs)) parsed.installs = [];
-    if (typeof parsed.schemaVersion !== 'number') parsed.schemaVersion = 1;
-    if (typeof parsed.lastUpdateCheck !== 'number') parsed.lastUpdateCheck = 0;
-    if (typeof parsed.version !== 'string') parsed.version = PACKAGE_VERSION;
-    return parsed;
-  } catch (_) {
-    return { schemaVersion: 2, version: PACKAGE_VERSION, lastUpdateCheck: 0, installs: [] };
+    raw = fs.readFileSync(MANIFEST_PATH, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return emptyManifest();
+    return manifestReadFailure(error.message, bestEffort);
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return manifestReadFailure(`invalid JSON (${error.message})`, bestEffort);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return manifestReadFailure('top level must be a JSON object', bestEffort);
+  }
+  if (!Array.isArray(parsed.installs)) {
+    return manifestReadFailure('`installs` must be an array', bestEffort);
+  }
+  if (parsed.schemaVersion === undefined) parsed.schemaVersion = 1;
+  if (![1, 2].includes(parsed.schemaVersion)) {
+    return manifestReadFailure(`unsupported schemaVersion ${JSON.stringify(parsed.schemaVersion)}`, bestEffort);
+  }
+  if (parsed.lastUpdateCheck === undefined) parsed.lastUpdateCheck = 0;
+  if (typeof parsed.lastUpdateCheck !== 'number') {
+    return manifestReadFailure('`lastUpdateCheck` must be a number', bestEffort);
+  }
+  if (parsed.version === undefined) parsed.version = PACKAGE_VERSION;
+  if (typeof parsed.version !== 'string') {
+    return manifestReadFailure('`version` must be a string', bestEffort);
+  }
+  return parsed;
 }
 
 function writeManifest(manifest) {
+  ensureManifestPath(false);
   ensureDir(MANIFEST_DIR);
+  ensureManifestPath(false);
   manifest.schemaVersion = 2;
-  fs.writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  const content = `${JSON.stringify(manifest, null, 2)}\n`;
+  const tempPath = path.join(
+    MANIFEST_DIR,
+    `.manifest-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`
+  );
+  try {
+    fs.writeFileSync(tempPath, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    if (process.env.AI_HARNESS_DOCTOR_TEST_MANIFEST_WRITE_FAILURE === '1') {
+      throw new Error('injected manifest replacement failure');
+    }
+    fs.renameSync(tempPath, MANIFEST_PATH);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') {
+        fail(`Cannot clean temporary installer manifest ${tempPath}: ${cleanupError.message}`);
+      }
+    }
+    fail(
+      `Cannot replace installer manifest ${MANIFEST_PATH}: ${error.message}. ` +
+      'The previous manifest was preserved.'
+    );
+  }
 }
 
 function sameInstall(a, b) {
@@ -402,7 +468,8 @@ function maybeCheckForUpdate() {
     // Internal testability hook: bypass only the TTY and 24h throttle gates.
     const force = process.env.AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK === '1';
     if (!force && !process.stderr.isTTY) return;
-    const manifest = readManifest();
+    const manifest = readManifest({ bestEffort: true });
+    if (!manifest) return;
     const now = Date.now();
     if (!force && now - manifest.lastUpdateCheck < UPDATE_CHECK_INTERVAL_MS) return;
     manifest.lastUpdateCheck = now;
@@ -1301,26 +1368,32 @@ function gitCommonDir(target) {
   return fs.realpathSync(absolute);
 }
 
-function assertSafeMutationPath(root, target) {
+function mutationPathViolation(root, target) {
   const base = fs.realpathSync(root);
   const absolute = path.resolve(target);
   const relative = path.relative(base, absolute);
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    fail(`Refusing unsafe mutation outside ${base}: ${absolute}`);
+    return `refusing unsafe mutation outside ${base}: ${absolute}`;
   }
   let current = base;
   for (const part of relative.split(path.sep).filter(Boolean)) {
     current = path.join(current, part);
     try {
       if (fs.lstatSync(current).isSymbolicLink()) {
-        fail(`Refusing unsafe mutation through symlink: ${current}`);
+        return `refusing unsafe mutation through symlink: ${current}`;
       }
     } catch (error) {
       if (error.code === 'ENOENT') break;
       throw error;
     }
   }
-  return absolute;
+  return null;
+}
+
+function assertSafeMutationPath(root, target) {
+  const violation = mutationPathViolation(root, target);
+  if (violation) fail(violation);
+  return path.resolve(target);
 }
 
 function readTextIfExists(file) {

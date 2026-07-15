@@ -54,7 +54,7 @@ node bin/cli.js help
 # Safety
 
 - The installer must never write into the real `~/.claude`, `~/.codex`, or other user config directories; always target an isolated `HOME` during tests.
-- Installer mutations require manifest ownership (digest/link target); preserve collisions/user edits and reference-count shared payloads.
+- Installer state is authorization evidence: parse manifests fail-closed, reject symlinked state, replace atomically, preserve user edits/collisions, and test only with isolated HOME.
 - Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
 - Every repository-derived file/directory read, existence probe, write, delete, or directory creation in scan/treat/drift/guard/default-plugin code must use the shared containment/mutation contract (`scripts/facts.py` for Python and the matching guard helper in `bin/cli.js`). External symlinks must neither affect output nor receive mutations; write-capable commands refuse symlinked files and existing parent directories. Explicit external inputs/outputs such as `--rules DIR`, `draft -o`, and baseline files are allowed only as documented user opt-ins.
 - Never commit secrets, tokens, or credentials.
