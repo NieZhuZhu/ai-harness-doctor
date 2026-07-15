@@ -1,11 +1,12 @@
 # Implementation Plans
 
-Generated and reconciled across four deep `improve` audit batches:
+Generated and reconciled across five deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
 - 2026-07-15 at commit `b3dd9e3` (plans 008–010).
 - 2026-07-15 at commit `b638ad7` (plans 011–013).
+- 2026-07-15 at commit `73bd749` (plans 014–017).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -56,6 +57,19 @@ verification gate, and update its status here.
    JSON-RPC/input schemas, subprocess exit semantics, error signaling,
    read-only guarantees, timeout hygiene, and documentation/API symmetry.
 
+### 2026-07-15 post-v1.3.1 premium-project rounds
+
+1. **Core diagnostic truth** — independently re-audited semantic/drift parity,
+   monorepo path scoping, finding lifecycle, efficacy evidence, cross-engine
+   invariants, performance, coverage, and external-validation claims.
+2. **GitHub/public-project engineering** — independently audited community
+   health, dependency updates, remote security settings, branch protection,
+   contribution flows, release issue hygiene, package reproducibility, and CI.
+3. **Ecosystem and product direction** — independently researched the current
+   MCP stable contract, AGENTS.md ecosystem expectations, adjacent linters and
+   generators, adoption evidence, and the project's audit/evidence/safety/
+   efficacy differentiation.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -73,6 +87,10 @@ verification gate, and update its status here.
 | 011 | Make installer manifest state fail closed and write atomically | P0 | M | — | DONE |
 | 012 | Emit every active scan finding family in SARIF | P1 | S | — | DONE |
 | 013 | Make MCP tool failures machine-visible and keep its contract current | P1 | S | — | DONE |
+| 014 | Restore subtree-scoped path parity between scan and drift | P0 | S | — | TODO |
+| 015 | Bind eval results to the evidence they claim to score | P1 | M | — | TODO |
+| 016 | Negotiate modern MCP and expose standard structured results | P1 | M | — | TODO |
+| 017 | Establish a verifiable public-repository trust baseline | P1 | M | 014–016 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -100,6 +118,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Plans 011–013 are bugfixes under the current contracts unless a STOP condition
   forces a breaking schema/protocol change. A combined release is patch-only if
   every implementation remains backward-compatible.
+- Execute Plan 014 first because it fixes a reproduced cross-engine false
+  positive with the smallest blast radius. Plans 015 and 016 are independent
+  backward-compatible features and should remain separate PRs.
+- Execute Plan 017 last: it records the final maintenance contract in
+  `AGENTS.md`, then applies remote GitHub settings only after all code changes
+  and their CI contexts exist on main.
+- Plan 014 is patch-level. Plans 015–016 add public capabilities, so a combined
+  release after this batch is at least minor unless a STOP condition forces a
+  breaking protocol/schema change.
 
 ## Findings considered and rejected or deferred
 
@@ -172,3 +199,32 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   found no documented Action use case requiring a whitespace-bearing single
   argument; installer state, SARIF omissions, and MCP false-success signals have
   direct reproductions and higher leverage.
+- **Per-file-type conflict scoping** — still a real false-positive class
+  (`tabs for code, 2 spaces for JSON`), but correctly solving it needs
+  scope-aware extraction rather than another regex exception. Plan 014's
+  reproduced scan/drift inconsistency is higher confidence and lower risk.
+- **Cross-repository attributed paths** — OpenHands evidence shows paths can be
+  explicitly owned by another repository, but safe suppression requires
+  section/context attribution. Defer until a second independent reproduction
+  or a structured scope model; do not infer from nearby prose heuristically.
+- **Normalize private-registry URLs in package-lock.json** — fresh isolated
+  `npm ci` using only the committed manifests succeeded against the public npm
+  registry, and runtime dependencies remain zero. The URLs are undesirable
+  provenance noise but not currently blocking contributors; do not mix a
+  lockfile rewrite into Plans 014–017.
+- **General coverage-percentage gate** — measured Python coverage is 61% and
+  Node CLI line coverage is low because real-CLI subprocess tests are not
+  attributed to the parent process. High-risk paths have substantial
+  end-to-end coverage; a percentage target would incentivize test-shape gaming
+  without a concrete uncovered failure. Add characterization tests behind
+  selected behavior instead.
+- **Clone Ruler/rulesync distribution breadth** — rejected again. The strongest
+  product signal is diagnostic truth, evidence freshness, safety, protocol
+  integration, and efficacy—not generating disposable rules for every tool.
+- **Adopt draft MCP 2026-07-28** — rejected. It is a release candidate/future
+  contract at the audit date. Plan 016 targets latest stable 2025-11-25 and
+  centralizes version negotiation so a later stable upgrade is incremental.
+- **Enforce branch protection for administrators** — deferred because GitHub's
+  self-approval restriction would deadlock the current sole maintainer's PR
+  merges. Plan 017 keeps admin bypass but requires real CI contexts and
+  documents that bypass must never override red checks.
