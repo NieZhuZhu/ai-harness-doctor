@@ -26,6 +26,12 @@ The npm publish never runs before the tagged Action self-test passes. For stable
 versions, floating-major verification runs after publish so it exercises the
 same ref consumers will use.
 
+Release verification also includes the workflow annotations: current
+full-SHA-pinned Action dependencies must not emit embedded Node runtime
+deprecation warnings. Dependabot is the supported path for refreshing these
+pins; review its Action updates before merging, especially for the publish job
+with `id-token: write`.
+
 ## Stable and prerelease channels
 
 The version in `package.json` determines the release channel:

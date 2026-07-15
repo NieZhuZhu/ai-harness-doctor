@@ -322,10 +322,14 @@ A reusable composite GitHub Action ships at the repo root (`action.yml`) so any 
   with:
     command: scan
     path: .
-- uses: github/codeql-action/upload-sarif@v3
+- uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: ai-harness-doctor.sarif
 ```
+
+The example keeps major tags readable. In production workflows, pin external
+Actions to a reviewed full commit SHA and keep the `owner/action@vN` major as an
+adjacent update hint; Dependabot can then refresh the pin safely.
 
 By default, the Action runs the implementation bundled with the selected Action ref, so the `uses:` version is the code that actually executes. Set the optional `version` input only when you intentionally want to run a different npm version or tag. Installation and CLI failures propagate to the workflow instead of leaving an empty SARIF file behind in a green job.
 

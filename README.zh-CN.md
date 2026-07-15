@@ -322,10 +322,12 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
   with:
     command: scan
     path: .
-- uses: github/codeql-action/upload-sarif@v3
+- uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: ai-harness-doctor.sarif
 ```
+
+该示例为了可读性保留主版本标签。生产 workflow 应将外部 Action 固定到经过审查的完整 commit SHA，并在旁边保留 `owner/action@vN` 主版本作为更新提示；这样 Dependabot 就能安全刷新固定引用。
 
 Action 默认运行所选 Action ref 内自带的实现，因此 `uses:` 指向的版本就是实际执行的代码。只有在明确想覆盖为其他 npm 版本或标签时，才需要设置可选的 `version` 输入。安装或 CLI 失败会真实传递给 workflow，不会在绿色任务中留下空 SARIF 文件。
 

@@ -115,6 +115,14 @@ class CliInstallerTests(unittest.TestCase):
             agents = repo / "AGENTS.md"
             self.assertIn("# ai-harness-doctor:guard", hook.read_text(encoding="utf-8"))
             workflow_text = drift_workflow.read_text(encoding="utf-8")
+            self.assertEqual(
+                workflow_text,
+                (ROOT / "assets" / "guard" / "harness-drift.yml").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                checkup_workflow.read_text(encoding="utf-8"),
+                (ROOT / "assets" / "guard" / "harness-checkup.yml").read_text(encoding="utf-8"),
+            )
             self.assertIn("npx -y ai-harness-doctor@latest drift . --strict", workflow_text)
             self.assertIn("npx -y ai-harness-doctor@latest review", workflow_text)
             self.assertNotIn("python3 scripts/", workflow_text)

@@ -322,10 +322,12 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
   with:
     command: scan
     path: .
-- uses: github/codeql-action/upload-sarif@v3
+- uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: ai-harness-doctor.sarif
 ```
+
+この例では可読性のため major tag を使っています。本番 workflow では外部 Action をレビュー済みの完全な commit SHA に固定し、隣に `owner/action@vN` の major を更新ヒントとして残してください。これにより Dependabot が pin を安全に更新できます。
 
 Action はデフォルトで選択した Action ref に同梱された実装を実行するため、`uses:` で指定したバージョンが実際に動くコードになります。別の npm バージョンまたはタグを意図的に使う場合に限り、任意の `version` input を設定してください。インストールまたは CLI の失敗は workflow にそのまま伝播し、空の SARIF ファイルを残したままジョブが成功扱いになることはありません。
 
