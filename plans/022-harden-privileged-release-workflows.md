@@ -359,3 +359,9 @@ Stop and report back (do not improvise) if:
   unreviewed tag safe.
 - Any future default-branch rename must update both workflow and structural
   tests atomically.
+## Completion evidence (2026-07-15)
+
+- Security PR [#157](https://github.com/NieZhuZhu/ai-harness-doctor/pull/157) passed all nine required contexts and was squash-merged as `d864f44`.
+- Manual deprecation inputs now enter executable code only through environment variables; the extracted validator accepts exact stable/prerelease SemVer, rejects ranges/tags/leading `v`/build metadata/malformed versions, and rejects an empty message before npm runs.
+- The extracted release ancestry step passed a tag on local `main` history and rejected a matching-version tag on an unmerged branch before npm lookup/publish. Workflow YAML and actionlint passed; no real npm operation or credential output was used.
+- npm trusted publishing remains explicitly deferred because account-side configuration and a real publish proof are required.

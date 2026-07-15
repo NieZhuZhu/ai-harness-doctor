@@ -516,3 +516,10 @@ Stop and report back (do not improvise) if:
 - Scope-aware eval generation is the most valuable follow-up after real users
   validate explain output. It should consume this vocabulary rather than
   independently rediscover package scopes.
+## Completion evidence (2026-07-15)
+
+- Feature PR [#158](https://github.com/NieZhuZhu/ai-harness-doctor/pull/158) passed all nine required contexts and was squash-merged as `97f0f69`.
+- `explain REPO TARGET` shipped as schema version 1 through CLI, a seventh read-only MCP tool, Claude command, and 18 generated Codex/Cursor/Gemini adapters. It reuses scan's single contained inventory and scope/conflict helpers; scan output stayed compatible.
+- Tests cover root/nested/deep/sibling/missing-root/existing/future/absolute/escape/external-symlink/contained-symlink/skipped-subtree targets, deterministic JSON, required MCP input, legacy wire shape, installer ownership, and packaged contents.
+- Read-only Mastra validation at `bd2f1d27` checked existing nested `packages/memory`, sibling `packages/core`, and future `packages/playground` targets. Canonical chains, overrides, and conflicts matched filtered Phase 0 scan records exactly; target status stayed byte-identical.
+- The public trust boundary is documented and persisted in `AGENTS.md`: only canonical files are called effective; tool-specific configs remain diagnostically associated until their applicability languages are modeled.
