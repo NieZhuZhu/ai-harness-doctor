@@ -128,7 +128,7 @@ def d2_path_drift(root, text):
         # is not repo drift and must not be stat()'d (info-leak guard).
         if not _within_root(root, token):
             continue
-        if not (root / token).exists():
+        if not facts.exists_within_root(root, root / token):
             # Monorepo package self-import guard — mirrors semantic.compare_paths
             # so both gates agree (TD-03). A token whose first segment matches a
             # package.json `name` (e.g. `better-auth/test`) is a package export
@@ -152,13 +152,24 @@ def d2_path_drift(root, text):
 
 def d3_stub_regrowth(root):
     findings = []
-    if not (root / "AGENTS.md").is_file():
+    if not facts.is_file_within_root(root, root / "AGENTS.md"):
         return findings
     for rel in STUB_FILES:
         path = root / rel
-        if not path.is_file():
+        if path.is_symlink():
+            findings.append(
+                {
+                    "check": "D3",
+                    "level": "ERROR",
+                    "path": rel,
+                    "message": f"Unsafe tool stub `{rel}` is a symlink",
+                    "suggestion": "Replace it with an owned regular file before applying fixes.",
+                }
+            )
             continue
-        data = path.read_bytes()
+        data = facts.read_bytes_within_root(root, path)
+        if data is None:
+            continue
         text = data.decode("utf-8", errors="replace")
         # Only flag a file as a regrown/broken canonical stub when there is
         # positive evidence it IS a managed pointer stub: it carries a canonical
@@ -178,11 +189,22 @@ def d3_stub_regrowth(root):
                 }
             )
     cursor_rules = root / ".cursor" / "rules"
-    if cursor_rules.is_dir():
+    if cursor_rules.is_symlink():
+        findings.append(
+            {
+                "check": "D3",
+                "level": "ERROR",
+                "path": ".cursor/rules",
+                "message": "Unsafe Cursor rules directory is a symlink",
+                "suggestion": "Replace it with an owned directory before applying fixes.",
+            }
+        )
+        return findings
+    if facts.is_dir_within_root(root, cursor_rules):
         for p in cursor_rules.glob("*"):
-            if not p.is_file():
+            data = facts.read_bytes_within_root(root, p)
+            if data is None:
                 continue
-            data = p.read_bytes()
             text = data.decode("utf-8", errors="replace")
             # Same rule as above: only a genuine pointer rule (carries a
             # canonical `@AGENTS.md`/"instructions live in AGENTS.md" signal)
@@ -203,7 +225,8 @@ def d3_stub_regrowth(root):
 
 def d4_size(root, max_bytes):
     path = root / "AGENTS.md"
-    if not path.is_file():
+    data = facts.read_bytes_within_root(root, path)
+    if data is None:
         return [
             {
                 "check": "D4",
@@ -212,7 +235,7 @@ def d4_size(root, max_bytes):
                 "suggestion": "Create canonical AGENTS.md first.",
             }
         ]
-    size = len(path.read_bytes())
+    size = len(data)
     if size > max_bytes:
         return [
             {
@@ -293,7 +316,9 @@ def d6_fact_drift(root, text):
         ground_pm = next(iter(ground_pms))
         if declared_pm != ground_pm:
             lockfile = next(
-                name for name, mgr in LOCKFILE_MANAGERS.items() if mgr == ground_pm and (root / name).is_file()
+                name
+                for name, mgr in LOCKFILE_MANAGERS.items()
+                if mgr == ground_pm and facts.is_file_within_root(root, root / name)
             )
             findings.append(
                 {
@@ -359,7 +384,7 @@ def d7_markdown_link_drift(root, text):
             target = unquote(target)
             if not _within_root(root, target):
                 continue
-            if not (root / target).exists():
+            if not facts.exists_within_root(root, root / target):
                 findings.append(
                     {
                         "check": "D7",
@@ -381,7 +406,11 @@ def d8_competing_lockfiles(root):
     ground truth. This is not mechanically auto-fixable — a human must decide
     which manager wins — so it is reported for manual attention.
     """
-    present = [(name, mgr) for name, mgr in LOCKFILE_MANAGERS.items() if (root / name).is_file()]
+    present = [
+        (name, mgr)
+        for name, mgr in LOCKFILE_MANAGERS.items()
+        if facts.is_file_within_root(root, root / name)
+    ]
     managers = sorted({mgr for _, mgr in present})
     if len(managers) <= 1:
         return []
@@ -407,6 +436,8 @@ def nested_agents(root):
             continue
         p = Path(dirpath) / "AGENTS.md"
         if p == root / "AGENTS.md":
+            continue
+        if not facts.is_file_within_root(root, p):
             continue
         out.append(p.relative_to(root).as_posix())
     return sorted(out)
@@ -497,7 +528,7 @@ def baseline_payload(findings):
 
 def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=False, baseline=None):
     agents = root / "AGENTS.md"
-    text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
+    text = facts.read_text_within_root(root, agents, errors="replace") or ""
     findings = []
     findings.extend(d1_command_drift(root, text))
     findings.extend(d2_path_drift(root, text))
@@ -635,6 +666,26 @@ def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None, allow_plugins
     lines.append("## Auto-fixable: D3 stub regrowth")
     if not d3:
         lines.append("- None.")
+    unsafe = []
+    for f in d3:
+        rel_path = f["path"]
+        if canonical_stub_content(root, rel_path) is None:
+            continue
+        if facts.safe_mutation_path(root, root / rel_path) is None:
+            unsafe.append(
+                {
+                    **f,
+                    "message": f"Unsafe repository mutation target `{rel_path}` is a symlink or escapes the root",
+                    "suggestion": "Replace the symlink with an owned regular file before applying fixes.",
+                }
+            )
+    if unsafe:
+        skipped.extend(unsafe)
+        d3 = [
+            f
+            for f in d3
+            if canonical_stub_content(root, f["path"]) is None
+        ]
     for f in d3:
         rel_path = f["path"]
         path = root / rel_path
@@ -642,11 +693,21 @@ def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None, allow_plugins
         if new is None:
             skipped.append(f)
             continue
-        old = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+        old = facts.read_text_within_root(root, path, errors="replace") or ""
         if old == new:
             continue
         fixed += 1
         if apply:
+            if facts.safe_mutation_path(root, path) is None:
+                skipped.append(
+                    {
+                        **f,
+                        "message": f"Unsafe repository mutation target `{rel_path}` changed before apply",
+                        "suggestion": "Retry after replacing the symlink with an owned regular file.",
+                    }
+                )
+                fixed -= 1
+                continue
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(new, encoding="utf-8")
             lines.append(f"- rewrote `{rel_path}` back to minimal canonical stub")

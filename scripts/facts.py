@@ -207,6 +207,38 @@ def read_bytes_within_root(root, path):
         return None
 
 
+def safe_mutation_path(root, path):
+    """Return a lexical in-root path only when no existing component is a symlink.
+
+    Read containment may safely follow an in-repo symlink and inspect its
+    resolved target. Mutations need a stricter contract: preserving the lexical
+    path matters, and writes/deletes must never follow either a target symlink
+    or a symlinked parent directory. Missing trailing components are allowed so
+    callers can create a new file below an existing, symlink-free parent.
+    """
+    try:
+        lexical_root = Path(root).resolve(strict=True)
+        lexical_path = Path(os.path.abspath(str(path)))
+        relative = lexical_path.relative_to(lexical_root)
+        current = lexical_root
+        missing_parent = False
+        for part in relative.parts:
+            current = current / part
+            if missing_parent:
+                continue
+            try:
+                if current.is_symlink():
+                    return None
+                current.lstat()
+            except FileNotFoundError:
+                missing_parent = True
+            except OSError:
+                return None
+        return lexical_path
+    except (OSError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Repository facts — what the code actually says.
 # ---------------------------------------------------------------------------

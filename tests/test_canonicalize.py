@@ -25,6 +25,18 @@ Keep changes small.
 """
 
 
+def _can_symlink_files():
+    with ResilientTemporaryDirectory() as td:
+        target = Path(td) / "target"
+        target.write_text("target\n", encoding="utf-8")
+        link = Path(td) / "link"
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            return False
+        return link.is_symlink()
+
+
 class CanonicalizeTests(unittest.TestCase):
     def test_plan_contains_inventory_and_conflict(self):
         proc = subprocess.run([sys.executable, str(CANON), "--plan", str(FIXTURE)], text=True, capture_output=True)
@@ -86,6 +98,71 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertFalse((repo / ".cursor" / "rules" / "extra.mdc").exists())
             self.assertTrue((repo / ".cursor" / "rules" / "agents-md.mdc").is_file())
 
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_write_stubs_apply_refuses_external_file_symlink(self):
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            repo.mkdir()
+            outside = base / "outside-claude.md"
+            outside.write_text("outside instructions\n", encoding="utf-8")
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            (repo / "CLAUDE.md").symlink_to(outside)
+            regular_stub = repo / ".cursorrules"
+            regular_stub.write_text("regular cursor instructions\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+            before = outside.read_bytes()
+            regular_before = regular_stub.read_bytes()
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo), "--apply"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("unsafe", (proc.stdout + proc.stderr).lower())
+            self.assertEqual(outside.read_bytes(), before)
+            self.assertEqual(regular_stub.read_bytes(), regular_before)
+            self.assertTrue((repo / "CLAUDE.md").is_symlink())
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_write_stubs_apply_refuses_symlinked_cursor_rules_directory(self):
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            outside_rules = base / "outside-rules"
+            (repo / ".cursor").mkdir(parents=True)
+            outside_rules.mkdir()
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            outside_rule = outside_rules / "external.mdc"
+            outside_rule.write_text("external cursor rule\n", encoding="utf-8")
+            try:
+                (repo / ".cursor" / "rules").symlink_to(outside_rules, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks unsupported on this platform")
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+            before = outside_rule.read_bytes()
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo), "--apply"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("unsafe", (proc.stdout + proc.stderr).lower())
+            self.assertEqual(outside_rule.read_bytes(), before)
+            self.assertFalse((outside_rules / "agents-md.mdc").exists())
+
     def test_write_stubs_default_tools_covers_every_canonicalizable_registry_tool(self):
         # Regression: --tools' default used to be a hand-maintained string
         # ("claude,cursor,windsurf,copilot,gemini,cline") instead of being
@@ -143,6 +220,30 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertTrue(report["ok"])
             notices = [f for f in report["findings"] if f["level"] == "NOTICE"]
             self.assertTrue(any("CLAUDE.md" == f.get("path") for f in notices))
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_validate_reports_external_agents_and_stub_symlinks_as_unsafe(self):
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            repo.mkdir()
+            outside_agents = base / "outside-agents.md"
+            outside_stub = base / "outside-claude.md"
+            outside_agents.write_text(AGENTS_MIN, encoding="utf-8")
+            outside_stub.write_text("@AGENTS.md\n", encoding="utf-8")
+            (repo / "AGENTS.md").symlink_to(outside_agents)
+            (repo / "CLAUDE.md").symlink_to(outside_stub)
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"],
+                text=True,
+                capture_output=True,
+            )
+            report = json.loads(proc.stdout)
+
+            self.assertEqual(proc.returncode, 1)
+            unsafe = [f for f in report["findings"] if f["check"] == "UNSAFE_PATH"]
+            self.assertEqual({f.get("path") for f in unsafe}, {"AGENTS.md", "CLAUDE.md"})
 
     def test_validate_missing_required_section_still_fails(self):
         with ResilientTemporaryDirectory() as td:

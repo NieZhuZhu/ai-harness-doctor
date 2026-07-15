@@ -11,6 +11,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
+import facts  # noqa: E402  # contained reads and repository mutation guard
 import registry  # noqa: E402
 import scan  # noqa: E402
 import semantic  # noqa: E402  # reuse package.json/Makefile/lockfile/node fact readers
@@ -572,7 +573,7 @@ def collect_stub_targets(root, tools):
 
 def write_stubs(args):
     root = Path(args.repo_root).resolve()
-    if not (root / "AGENTS.md").is_file():
+    if not facts.is_file_within_root(root, root / "AGENTS.md"):
         raise SystemExit("AGENTS.md must exist before writing stubs.")
     tools = [t.strip() for t in args.tools.split(",") if t.strip()]
     changes = collect_stub_targets(root, tools)
@@ -581,9 +582,22 @@ def write_stubs(args):
     if not changes:
         print("No existing tool files matched; nothing to change.")
         return
+    unsafe = [
+        change["path"].relative_to(root).as_posix()
+        for change in changes
+        if facts.safe_mutation_path(root, change["path"]) is None
+    ]
+    if unsafe:
+        joined = ", ".join(f"`{path}`" for path in unsafe)
+        raise SystemExit(
+            "Refusing unsafe repository mutation through a symlink or escaping path: "
+            + joined
+        )
     for change in changes:
         path = change["path"]
         rp = path.relative_to(root)
+        if facts.safe_mutation_path(root, path) is None:
+            raise SystemExit(f"Refusing unsafe repository mutation: `{rp.as_posix()}`")
         if change["action"] == "delete":
             if args.apply:
                 path.unlink()
@@ -656,10 +670,22 @@ def validate(args):
     root = Path(args.repo_root).resolve()
     findings = []
     agents = root / "AGENTS.md"
-    if not agents.is_file():
+    agents_unsafe = agents.is_symlink() or (
+        agents.exists() and facts.safe_mutation_path(root, agents) is None
+    )
+    if agents_unsafe:
+        findings.append(
+            {
+                "level": "ERROR",
+                "check": "UNSAFE_PATH",
+                "path": "AGENTS.md",
+                "message": "AGENTS.md is a symlink or escapes the repository root",
+            }
+        )
+    elif not facts.is_file_within_root(root, agents):
         findings.append({"level": "ERROR", "check": "AGENTS_EXISTS", "message": "AGENTS.md is missing"})
     else:
-        data = agents.read_bytes()
+        data = facts.read_bytes_within_root(root, agents) or b""
         text = data.decode("utf-8", errors="replace")
         # A large end-user library/reference AGENTS.md is not a contributor guide,
         # so it must not be hard-failed for lacking contributor-guide sections or
@@ -686,14 +712,24 @@ def validate(args):
                         "message": f"Missing required heading: {req.strip()}{note}",
                     }
                 )
-    if agents.is_file():
+    if agents.exists() or agents.is_symlink():
         all_canonicalizable = [t["id"] for t in registry.canonicalizable_tools()]
         for change in collect_stub_targets(root, all_canonicalizable):
             path = change["path"]
-            if not path.is_file():
+            if path.is_symlink() or facts.safe_mutation_path(root, path) is None:
+                findings.append(
+                    {
+                        "level": "ERROR",
+                        "check": "UNSAFE_PATH",
+                        "path": path.relative_to(root).as_posix(),
+                        "message": "tool file is a symlink or escapes the repository root",
+                    }
+                )
+                continue
+            if not facts.is_file_within_root(root, path):
                 continue
             if change["action"] == "write":
-                text = path.read_text(encoding="utf-8", errors="replace")
+                text = facts.read_text_within_root(root, path, errors="replace") or ""
                 if "AGENTS.md" in text and len(text.encode("utf-8")) <= registry.STUB_POINTER_MAX_BYTES:
                     continue
             # Existing full files are allowed before stub-writing; check_drift catches post-migration re-divergence.

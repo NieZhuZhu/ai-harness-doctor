@@ -762,6 +762,35 @@ function gitPath(target, gitRelativePath) {
   return path.isAbsolute(output) ? output : path.join(target, output);
 }
 
+function gitCommonDir(target) {
+  const output = commandOutput('git', ['rev-parse', '--git-common-dir'], target);
+  if (!output) fail(`Cannot resolve git directory for ${target}`);
+  const absolute = path.isAbsolute(output) ? output : path.join(target, output);
+  return fs.realpathSync(absolute);
+}
+
+function assertSafeMutationPath(root, target) {
+  const base = fs.realpathSync(root);
+  const absolute = path.resolve(target);
+  const relative = path.relative(base, absolute);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    fail(`Refusing unsafe mutation outside ${base}: ${absolute}`);
+  }
+  let current = base;
+  for (const part of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) {
+        fail(`Refusing unsafe mutation through symlink: ${current}`);
+      }
+    } catch (error) {
+      if (error.code === 'ENOENT') break;
+      throw error;
+    }
+  }
+  return absolute;
+}
+
 function readTextIfExists(file) {
   try {
     return fs.readFileSync(file, 'utf8');
@@ -853,6 +882,7 @@ function plannedGuardInstallChanges(target, provider) {
   const changes = [];
   const marker = '# ai-harness-doctor:guard';
   const hookPath = gitPath(target, 'hooks/pre-commit');
+  assertSafeMutationPath(gitCommonDir(target), hookPath);
   const hookBefore = readTextIfExists(hookPath);
   const hookAfter = guardTemplate('pre-commit.sh');
   if (hookBefore !== null && !hookBefore.includes(marker)) {
@@ -871,6 +901,7 @@ function plannedGuardInstallChanges(target, provider) {
 
   for (const [name, template] of GUARD_CI_FILES[provider]) {
     const file = path.join(target, name);
+    assertSafeMutationPath(target, file);
     const before = readTextIfExists(file);
     const after = guardTemplate(template);
     const mode = name.endsWith('.sh') ? 0o755 : undefined;
@@ -893,6 +924,7 @@ function plannedGuardInstallChanges(target, provider) {
   }
 
   const agentsPath = path.join(target, 'AGENTS.md');
+  assertSafeMutationPath(target, agentsPath);
   const agentsBefore = fs.readFileSync(agentsPath, 'utf8');
   const agentsAfter = replaceMaintenanceContract(agentsBefore, guardTemplate('maintenance-contract.md'));
   if (agentsBefore !== agentsAfter) changes.push({ action: 'update', path: agentsPath, before: agentsBefore, after: agentsAfter, write: true });
@@ -903,6 +935,7 @@ function plannedGuardRemoveChanges(target) {
   const changes = [];
   const marker = '# ai-harness-doctor:guard';
   const hookPath = gitPath(target, 'hooks/pre-commit');
+  assertSafeMutationPath(gitCommonDir(target), hookPath);
   const hookBefore = readTextIfExists(hookPath);
   const hookTemplate = guardTemplate('pre-commit.sh');
   if (hookBefore !== null && hookBefore.includes(marker)) {
@@ -932,6 +965,7 @@ function plannedGuardRemoveChanges(target) {
   for (const files of Object.values(GUARD_CI_FILES)) for (const [name] of files) ciNames.add(name);
   for (const name of ciNames) {
     const file = path.join(target, name);
+    assertSafeMutationPath(target, file);
     const before = readTextIfExists(file);
     if (before === null) continue;
     const template = guardTemplate(GUARD_CI_TEMPLATE_BY_NAME.get(name));
@@ -943,14 +977,20 @@ function plannedGuardRemoveChanges(target) {
   }
 
   const agentsPath = path.join(target, 'AGENTS.md');
+  assertSafeMutationPath(target, agentsPath);
   const agentsBefore = fs.readFileSync(agentsPath, 'utf8');
   const agentsAfter = removeMaintenanceContract(agentsBefore);
   if (agentsBefore !== agentsAfter) changes.push({ action: 'update', path: agentsPath, before: agentsBefore, after: agentsAfter, write: true });
   return changes;
 }
 
-function applyGuardChanges(changes) {
+function applyGuardChanges(changes, target, hookPath) {
+  const gitRoot = gitCommonDir(target);
   for (const change of changes) {
+    assertSafeMutationPath(change.path === hookPath ? gitRoot : target, change.path);
+  }
+  for (const change of changes) {
+    assertSafeMutationPath(change.path === hookPath ? gitRoot : target, change.path);
     if (change.remove) {
       removePath(change.path);
     } else if (change.write) {
@@ -962,9 +1002,14 @@ function applyGuardChanges(changes) {
 }
 
 function guard(argv) {
-  const { target, apply, remove, provider } = parseGuardArgs(argv);
-  if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) fail(`Target is not a directory: ${target}`);
+  const parsed = parseGuardArgs(argv);
+  const { apply, remove, provider } = parsed;
+  if (!fs.existsSync(parsed.target) || !fs.statSync(parsed.target).isDirectory()) {
+    fail(`Target is not a directory: ${parsed.target}`);
+  }
+  const target = fs.realpathSync(parsed.target);
   if (!isGitRepo(target)) fail(`Target must be a git repo: ${target}`);
+  assertSafeMutationPath(target, path.join(target, 'AGENTS.md'));
   if (!fs.existsSync(path.join(target, 'AGENTS.md'))) fail('run the treat phase first');
 
   const resolvedProvider = provider === 'auto' ? detectProvider(target) : provider;
@@ -976,7 +1021,7 @@ function guard(argv) {
   for (const change of changes) describeChange(change);
   if (!remove && GUARD_PROVIDER_NOTES[resolvedProvider]) console.log(`\nNote: ${GUARD_PROVIDER_NOTES[resolvedProvider]}`);
   if (apply) {
-    applyGuardChanges(changes);
+    applyGuardChanges(changes, target, gitPath(target, 'hooks/pre-commit'));
     console.log(`\nApplied ${changes.filter((change) => change.write || change.remove).length} change(s).`);
   } else {
     console.log('\nDry-run only; no files written.');

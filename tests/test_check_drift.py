@@ -458,6 +458,36 @@ class DriftTests(unittest.TestCase):
         recheck = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
         self.assertEqual(recheck.returncode, 0, recheck.stdout + recheck.stderr)
 
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_fix_apply_refuses_external_stub_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            repo.mkdir()
+            outside = base / "outside-claude.md"
+            outside.write_text("@AGENTS.md\n" + "outside\n" * 200, encoding="utf-8")
+            (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+            (repo / "CLAUDE.md").symlink_to(outside)
+            regular_stub = repo / ".cursorrules"
+            regular_stub.write_text(
+                "All agent instructions live in AGENTS.md.\n" + "regular\n" * 200,
+                encoding="utf-8",
+            )
+            before = outside.read_bytes()
+            regular_before = regular_stub.read_bytes()
+
+            proc = subprocess.run(
+                [sys.executable, str(DRIFT), str(repo), "--fix", "--apply"],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("unsafe", proc.stdout.lower())
+            self.assertEqual(outside.read_bytes(), before)
+            self.assertEqual(regular_stub.read_bytes(), regular_before)
+            self.assertTrue((repo / "CLAUDE.md").is_symlink())
+
     def test_fix_reports_non_autofixable_drift_and_leaves_files_untouched(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
