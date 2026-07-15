@@ -204,6 +204,7 @@ Stop when checks pass or repair advice has been provided. Do not rewrite semanti
 
 After Treat completes and root `AGENTS.md` exists, install the long-term guard suite with `npx ai-harness-doctor guard /path/to/repo --apply`.
 It installs only the core suite: pre-commit drift hook, CI drift/checkup gate, and `AGENTS.md` maintenance contract.
+Repositories already on the [pre-commit](https://pre-commit.com) framework can instead reference the shipped `.pre-commit-hooks.yaml` (`ai-harness-doctor-drift`, `ai-harness-doctor-scan`) from their `.pre-commit-config.yaml`; both hooks call only the public packaged CLI.
 The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (default `auto`, detected from the git remote / `.gitlab-ci.yml`):
 - `github` → `.github/workflows/harness-drift.yml` + `harness-checkup.yml`
 - `gitlab` → includable `.gitlab/harness-ci.yml` (add `include: { local: .gitlab/harness-ci.yml }`)
@@ -471,6 +472,7 @@ Correction: proceed strictly through Checkup, Treat, Follow-up, and Efficacy, wi
 - `references/example-rule-plugin.py`: a copy-paste starting point for a custom rule plugin (`check(root, context)` contract).
 - `assets/AGENTS.template.md`: English `AGENTS.md` template.
 - `assets/guard/`: long-term follow-up guard suite templates: pre-commit, PR gate, weekly checkup, and maintenance contract.
+- `.pre-commit-hooks.yaml`: pre-commit framework hook definitions (`ai-harness-doctor-drift`, `ai-harness-doctor-scan`) for consumers who already run pre-commit.
 - `commands/`: Claude Code slash commands routed to this skill by phase.
 - `adapters/`: thin pointer templates for Codex, Cursor, Gemini, and universal agents. The per-command adapters are generated from a single source by `scripts/gen_adapters.py`; run `python3 scripts/gen_adapters.py` to regenerate and `python3 scripts/gen_adapters.py --check` (or `npm run lint:adapters`) to verify they match in CI.
 - `bin/cli.js`: npm CLI, installer, and forwarding entry point for Python scripts.

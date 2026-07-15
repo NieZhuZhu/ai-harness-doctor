@@ -192,6 +192,22 @@ Why detection over regeneration? Silently “fixing” drift removes human aware
 
 Adopting the gate on a repo that already drifted? `drift --write-baseline FILE` records today's findings once, then `drift --baseline FILE` suppresses exactly those so CI fails only on new drift — the same on-ramp ruff, mypy, and detekt offer. Baseline fingerprints ignore line numbers, suppressed findings stay visible under a `baselined` array, and the health score counts only new drift, so a fully baselined repo still reads grade A.
 
+### Pre-commit framework
+
+Already standardized on [pre-commit](https://pre-commit.com)? Add the drift and scan guards straight to your `.pre-commit-config.yaml` instead of running `guard --apply`:
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/NieZhuZhu/ai-harness-doctor
+    rev: v1.3.0
+    hooks:
+      - id: ai-harness-doctor-drift
+      - id: ai-harness-doctor-scan
+```
+
+`ai-harness-doctor-drift` blocks the commit when `AGENTS.md` drifts from repository facts; `ai-harness-doctor-scan` fails on HIGH security findings. Both run over the whole repository (`pass_filenames: false`, `always_run: true`) and need Node and Python 3 on the machine. Add flags with `args:` (for example `["--strict"]` to escalate drift notices), and skip a single commit with pre-commit's own `SKIP=ai-harness-doctor-drift git commit ...`.
+
 ## Works with
 
 | Surface | Support |
