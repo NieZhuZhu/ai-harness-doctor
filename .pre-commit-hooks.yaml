@@ -1,0 +1,20 @@
+# pre-commit framework hook definitions for ai-harness-doctor.
+# Consumers add this repository to their .pre-commit-config.yaml to guard
+# AGENTS.md drift and scan AI-agent configs on every commit. See the
+# "Long-term guard" section of the README. These hooks call only the public
+# packaged `ai-harness-doctor` CLI, so they work in a fresh consumer repository
+# with no copied `scripts/` tree; Node and Python 3 must be on the machine.
+- id: ai-harness-doctor-drift
+  name: AI Harness Doctor drift guard
+  description: Block the commit when AGENTS.md drifts from repository facts (commands, paths, versions, stubs).
+  entry: ai-harness-doctor drift
+  language: node
+  pass_filenames: false
+  always_run: true
+- id: ai-harness-doctor-scan
+  name: AI Harness Doctor security scan
+  description: Scan AI-agent config files and fail on HIGH security findings.
+  entry: ai-harness-doctor scan --fail-on-security
+  language: node
+  pass_filenames: false
+  always_run: true

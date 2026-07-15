@@ -192,6 +192,22 @@ Defense in depth、強い順です。
 
 すでにドリフトした repo に gate を導入したいですか。まず `drift --write-baseline FILE` で現在の findings を一度記録し、次に `drift --baseline FILE` でそれらだけを正確に抑制すれば、CI は新しい drift でのみ失敗します——ruff・mypy・detekt が提供するのと同じ導入パスです。baseline のフィンガープリントは行番号に依存せず、抑制された findings は `baselined` 配列で引き続き可視化され、health score は新しい drift のみを数えるため、完全に baseline 化した repo でも grade A のままです。
 
+### Pre-commit フレームワーク
+
+すでに [pre-commit](https://pre-commit.com) に統一していますか？ `guard --apply` を実行する代わりに、drift と scan のガードを `.pre-commit-config.yaml` に直接追加できます：
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/NieZhuZhu/ai-harness-doctor
+    rev: v1.2.0
+    hooks:
+      - id: ai-harness-doctor-drift
+      - id: ai-harness-doctor-scan
+```
+
+`ai-harness-doctor-drift` は `AGENTS.md` がリポジトリの事実からドリフトするとコミットをブロックし、`ai-harness-doctor-scan` は HIGH のセキュリティ検出で失敗します。どちらもリポジトリ全体に対して実行され（`pass_filenames: false`、`always_run: true`）、マシンに Node と Python 3 が必要です。`args:` でフラグを追加でき（例：drift の notice を昇格させる `["--strict"]`）、単一コミットは pre-commit 標準の `SKIP=ai-harness-doctor-drift git commit ...` でバイパスできます。
+
 ## Works with
 
 | Surface | Support |
