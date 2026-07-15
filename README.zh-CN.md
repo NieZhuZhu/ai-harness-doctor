@@ -284,7 +284,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。复制 paylo
 
 `AI_HARNESS_DOCTOR_SKIP=1` 是本地 hook 显式且可审计的逃生口。`guard --remove --apply` 会移除托管片段、清理**所有 provider** 的 CI 文件（这样切换 provider 不会残留任何东西），并在可能时按字节精确恢复此前已存在的 hook 内容。安装与移除都是非破坏性的：每个托管文件都带有 `ai-harness-doctor:guard` 标记，因此 `guard --apply` 绝不会覆盖缺少该标记的用户自改 CI 文件（会报告 `manual-merge` 并保持你的文件不动）；而 `--remove` 仅在托管文件与工具原始产物逐字节一致时才删除——对于被手工扩展的 hook，只会剥离它自己的 guard 块，若该块已被修改则跳过而非销毁。
 
-**Self-bootstrap：** 本仓库运行自己的 guard。`.github/workflows/harness-drift.yml` 与 `.github/workflows/harness-checkup.yml` 由 `assets/guard/` 模板改写而来，运行本仓库的**本地** scan 与 drift 实现而非已发布包，因此对 `scripts/` 的改动会被正在改动的代码本身所守护。经审查的 `.ai-harness-doctor/scan-baseline.json` 登记了 benchmark/test fixtures 带来的五条已知冲突；PR 门禁会因任何新增 scan 债务或 drift 而失败。eval 门禁保持软性，只有 PR review 发布步骤容忍缺失/受限 token。
+**Self-bootstrap：** 本仓库运行自己的 guard。`.github/workflows/harness-drift.yml` 与 `.github/workflows/harness-checkup.yml` 由 `assets/guard/` 模板改写而来，运行本仓库的**本地** scan 与 drift 实现而非已发布包，因此对 `scripts/` 的改动会被正在改动的代码本身所守护。经审查的 `.ai-harness-doctor/scan-baseline.json` 登记了 benchmark/test fixtures 带来的已知冲突；PR 门禁会因任何新增 scan 债务或 drift 而失败。通用发布版 guard 仍把 eval 作为可选项，但本仓库会无条件以当前 task/`AGENTS.md` 证据和健康分校验已提交的自举 eval。只有 PR review 发布步骤容忍缺失/受限 token。
 
 </details>
 

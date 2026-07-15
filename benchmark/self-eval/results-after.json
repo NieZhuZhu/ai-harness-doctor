@@ -22,6 +22,7 @@
     {"id": "installer-test-home", "stdout": "Installer smoke tests may write only to an isolated HOME, never the real user HOME."},
     {"id": "eval-evidence-gate", "stdout": "CI must verify current task and evidence fingerprints before trusting health."},
     {"id": "mcp-version-wire", "stdout": "Synchronize negotiated-version wire shapes, and never send modern-only fields to legacy MCP clients."},
-    {"id": "repository-operations", "stdout": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI."}
+    {"id": "repository-operations", "stdout": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI."},
+    {"id": "public-dependency-source", "stdout": "registry.npmjs.org"}
   ]
 }

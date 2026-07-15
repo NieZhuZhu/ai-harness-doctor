@@ -142,13 +142,20 @@
       "answer": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "public-dependency-source",
+      "stdout": "registry.npmjs.org",
+      "answer": "registry.npmjs.org",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 20,
-    "total": 20,
+    "passed": 21,
+    "total": 21,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -156,12 +163,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "79953555e438c162d4eb8a1e35b1c7cd9f70563b4ed6dc608ab9ff5d93b0d110"
+      "sha256": "e66da93f683c521aff8369e5a07349ef5d7973effc3b1f057736b4fc7f3e031d"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "326458078884d6b80e3856d0ad1b82b1256770d513a2100eea6fa9df2464183b"
+        "sha256": "572fab05310392b4c8504ae21ec9b16d7b3e65279b735d60fd6f87e101bf822f"
       }
     ]
   }

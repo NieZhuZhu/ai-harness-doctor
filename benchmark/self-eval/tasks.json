@@ -118,5 +118,11 @@
     "prompt": "What is the GitHub repository security/check baseline, and when may admin bypass be used? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)secret scanning.*push protection.*required.*admin bypass.*self-approval|admin bypass.*self-approval.*never.*red"}
+  },
+  {
+    "id": "public-dependency-source",
+    "prompt": "Which registry host must committed npm lockfile sources use in this public project? Answer with ONLY the host.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "^registry\\.npmjs\\.org$"}
   }
 ]
