@@ -49,7 +49,10 @@ Zero-install, read-only checkup — one command surfaces your harness's inventor
 
 ```bash
 npx ai-harness-doctor scan .
+npx ai-harness-doctor explain . packages/api/src/handler.ts
 ```
+
+`explain` answers a focused scope question without modifying files: which canonical `AGENTS.md` chain applies to the target, which recognized configs are diagnostically associated, and which scoped overrides/conflicts are relevant.
 
 Ready to fix it? Install the Claude Code skill and let the agent drive the full flow:
 
@@ -88,7 +91,7 @@ Three ways to write `AGENTS.md`:
 
 - Target must be a git repo.
 - Node >=16 for the `ai-harness-doctor` CLI.
-- Python >=3.9, stdlib-only, for deterministic scan/plan/validate/stubs/drift/review/eval scripts.
+- Python >=3.9, stdlib-only, for deterministic scan/explain/plan/validate/stubs/drift/review/eval scripts.
 - Run `ai-harness-doctor doctor --self-test` to verify the Node + Python runtime; set `AI_HARNESS_DOCTOR_PYTHON` to pin a specific interpreter.
 - `AGENTS.md` must exist before `stubs` or `guard` writes anything.
 
@@ -108,6 +111,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | Step | CI-safe? | Writes? | Note |
 |---|---:|---:|---|
 | `scan` | ✅ | Only with `--write-baseline` | Exits 0 by default; inventory, evidence, security, gaps, semantic consistency, conflicts, and a project snapshot. `--fail-on-security`/`--fail-on-gaps`/`--fail-on-semantic`/`--fail-on-conflicts` exit 2/3/4/7. `--write-baseline` explicitly records non-security debt. |
+| `explain` | ✅ | ❌ | Explains canonical inheritance and diagnostic scope evidence for one existing or future contained path. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
 | `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
@@ -134,6 +138,7 @@ npx ai-harness-doctor uninstall --agent all
 | `/harness-treat` | Repo path, optional scan/plan output | Builds a merge plan, asks about conflicts, writes/validates canonical `AGENTS.md`, previews stubs. | Until every conflict has an explicit answer. | Which command/path/style/version is canonical. |
 | `/harness-drift` | Repo path | Runs drift checks and explains repairs. | After checks pass or repair advice is given. | Whether to update repo reality or update `AGENTS.md`. |
 | `/harness-eval` | Repo path + task file/results | Runs or compares before/after tasks. | When metrics or a manual protocol are produced. | Task set, runner, and whether the evidence is enough. |
+| `/harness-explain` | Repo path + target path | Shows the canonical chain, diagnostic sources, scoped overrides/conflicts, and limitations. | After presenting read-only scope evidence. | Whether the scoped guidance is intentional; the command makes no edits. |
 
 ## Updating
 
@@ -217,7 +222,7 @@ repos:
 | Cursor | Command adapters for `.cursor/commands/`. |
 | Gemini CLI | TOML custom command adapters for `~/.gemini/commands/harness/`. Google retired Gemini CLI for individual tiers on 2026-06-18; enterprise Gemini Code Assist is unaffected, and these adapters still work for enterprise/existing installs. |
 | Windsurf / Cline / others | Universal mode: point the agent at the installed playbook and say “run phase N”. |
-| MCP clients | `ai-harness-doctor mcp` exposes `harness_scan`/`drift`/`validate`/`plan`/`stubs`/`eval_generate` as MCP tools over stdio. |
+| MCP clients | `ai-harness-doctor mcp` exposes `harness_scan`/`drift`/`validate`/`plan`/`stubs`/`eval_generate`/`explain` as MCP tools over stdio. |
 | Humans & CI | Plain `npx ai-harness-doctor ...`; no agent required. |
 
 Honest note: non-Claude adapters are thin pointers and lightly verified. If a command format changed, please file an issue.
@@ -494,7 +499,7 @@ Dry-run by default. `--apply` requires a clean git tree; `--force` overrides tha
 
 Known tool config files are defined once in `assets/agent-tools.json`, the single registry that `scan`, `stubs`/`canonicalize`, and `drift` all read, so adding a new tool means editing that one file.
 
-In the same spirit, the per-command Codex/Cursor/Gemini adapters under `adapters/` are generated from a single source: `scripts/gen_adapters.py` renders all 15 files (5 commands × 3 flavors) from one command table, `python3 scripts/gen_adapters.py --check` (also `npm run lint:adapters`) fails CI when a committed adapter drifts from that source, and `npm run gen:adapters` regenerates them.
+In the same spirit, the per-command Codex/Cursor/Gemini adapters under `adapters/` are generated from a single source: `scripts/gen_adapters.py` renders all 18 files (6 commands × 3 flavors) from one command table, `python3 scripts/gen_adapters.py --check` (also `npm run lint:adapters`) fails CI when a committed adapter drifts from that source, and `npm run gen:adapters` regenerates them.
 
 </details>
 
@@ -603,6 +608,22 @@ npx ai-harness-doctor eval --trend baselines/history.json                  # ren
 </details>
 
 <details>
+<summary><code>explain</code></summary>
+
+Explains the instruction evidence relevant to one contained file, directory, or future path:
+
+```bash
+npx ai-harness-doctor explain . packages/api/src/handler.ts
+npx ai-harness-doctor explain . packages/api/src/future.ts --json
+```
+
+The schema-version-1 JSON contains `target`, `effective_scope`, root→nearest `canonical_chain`, `diagnostic_sources`, relevant `scope_overrides` / same-scope `conflicts`, and explicit `limitations`. Existing and future paths are accepted; contained absolute paths are normalized to repository-relative paths. Escapes and external-symlink targets fail closed. Targets under `.git`, `node_modules`, `dist`, `build`, or `__pycache__` are marked `excluded_by_scan`, because configs inside those subtrees are not inventoried.
+
+Only canonical files are described as the effective inheritance chain. Cursor, Copilot, Claude, and other recognized configs are **diagnostically associated**, not claimed effective: this command does not infer tool-specific glob/frontmatter/prose applicability, merge instruction text, execute plugins, or modify files.
+
+</details>
+
+<details>
 <summary><code>mcp</code></summary>
 
 Starts an MCP (Model Context Protocol) stdio server so agents can call the doctor's read-only capabilities as tools.
@@ -615,10 +636,10 @@ Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line 
 
 - `initialize` → negotiates stable MCP `2025-11-25` or legacy `2024-11-05` from the client's requested `protocolVersion` and returns `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`; unsupported versions receive the server's latest stable version.
 - `notifications/initialized` → notification, no response.
-- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, `harness_eval_generate`, each with an input schema `{ repo: string (default "."), ... }`.
+- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, `harness_eval_generate`, `harness_explain`, each with a closed input schema.
 - `tools/call` → dispatches to the matching Python script and keeps the human/tool output in `content[0]`; `content[1]` is a compact JSON metadata text block with `{ kind, exitCode, ok, status, report? }`. Under MCP `2025-11-25`, the same metadata is also returned as standard `structuredContent`; under `2024-11-05` it remains text-only.
 
-Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, `harness_eval_generate`. All six tools are read-only; `harness_stubs` never receives `--apply`, and `harness_eval_generate` never receives `-o` or runs an agent/LLM. Each advertised input schema rejects unknown properties and wrong types before Python starts. Modern tools also advertise read-only/non-destructive/idempotent/closed-world annotations and a typed result-envelope `outputSchema`; legacy tools omit fields their protocol does not define. Metadata `status` is `ok`, `findings`, or `error`: explicitly requested valid JSON finding reports remain available with `isError: false`, while invalid targets, runtime failures, timeouts, malformed reports, and conservatively ambiguous non-zero text reports set `isError: true`. For backward compatibility, a client that calls tools before initialize gets the historical 2024 result shape; valid initialize handshakes select the wire version for the connection. Unknown methods/tools and invalid arguments return JSON-RPC error objects. The server remains stdio-only and does not advertise roots, resources, prompts, sampling, or HTTP transport.
+Tool booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, `harness_eval_generate`, `harness_explain` (required `target`, optional `json`). All seven tools are read-only; `harness_stubs` never receives `--apply`, `harness_eval_generate` never receives `-o` or runs an agent/LLM, and `harness_explain` never executes plugins or writes. Each advertised input schema rejects missing required fields, unknown properties, and wrong types before Python starts. Modern tools also advertise read-only/non-destructive/idempotent/closed-world annotations and a typed result-envelope `outputSchema`; legacy tools omit fields their protocol does not define. Metadata `status` is `ok`, `findings`, or `error`: explicitly requested valid JSON finding reports remain available with `isError: false`, while invalid targets, runtime failures, timeouts, malformed reports, and conservatively ambiguous non-zero text reports set `isError: true`. For backward compatibility, a client that calls tools before initialize gets the historical 2024 result shape; valid initialize handshakes select the wire version for the connection. Unknown methods/tools and invalid arguments return JSON-RPC error objects. The server remains stdio-only and does not advertise roots, resources, prompts, sampling, or HTTP transport.
 
 </details>
 
@@ -632,11 +653,11 @@ npx ai-harness-doctor doctor --self-test   # human-readable runtime table
 npx ai-harness-doctor doctor --json        # machine-readable runtime report
 ```
 
-Python is discovered in priority order: `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python`; only a Python **3** interpreter is accepted. When it is missing, every Python-backed subcommand (`scan`, `plan`, `validate`, `stubs`, `drift`, `review`, `eval`) fails with the same clean, actionable message — install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON` — instead of a raw stack trace.
+Python is discovered in priority order: `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python`; only a Python **3** interpreter is accepted. When it is missing, every Python-backed subcommand (`scan`, `explain`, `plan`, `validate`, `stubs`, `drift`, `review`, `eval`) fails with the same clean, actionable message — install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON` — instead of a raw stack trace.
 
 </details>
 
-Slash command quick refs: `/harness-doctor` full pipeline; `/harness-scan` Phase 0; `/harness-treat` Phase 1; `/harness-drift` Phase 2; `/harness-eval` Phase 3.
+Slash command quick refs: `/harness-doctor` full pipeline; `/harness-scan` Phase 0; `/harness-treat` Phase 1; `/harness-drift` Phase 2; `/harness-eval` Phase 3; `/harness-explain` target-path scope evidence.
 
 Environment variables:
 
@@ -711,7 +732,7 @@ As of 2026-07, based on each project's public documentation — see their repos 
 ```text
 SKILL.md                         # Skill playbook and phase stop conditions
 bin/cli.js                       # npm CLI and installer
-bin/mcp-server.js                # MCP stdio server (harness_scan/drift/validate/plan/stubs/eval_generate)
+bin/mcp-server.js                # MCP stdio server (scan/drift/validate/plan/stubs/eval_generate/explain)
 commands/                        # Claude Code slash commands
 adapters/                        # Codex, Cursor, Gemini, universal pointers
 scripts/                         # Python stdlib deterministic mechanics

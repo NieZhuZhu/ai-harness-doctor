@@ -148,6 +148,7 @@ class McpServerTests(unittest.TestCase):
                     "harness_plan",
                     "harness_stubs",
                     "harness_eval_generate",
+                    "harness_explain",
                 },
             )
             for tool in tools:
@@ -297,7 +298,7 @@ class McpServerTests(unittest.TestCase):
                 "status": "ok",
             })
 
-    def test_all_six_tools_return_exit_metadata_on_success(self):
+    def test_all_seven_tools_return_exit_metadata_on_success(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
             self._complete_repo(repo)
@@ -308,6 +309,7 @@ class McpServerTests(unittest.TestCase):
                 ("harness_plan", {"repo": str(repo)}),
                 ("harness_stubs", {"repo": str(repo)}),
                 ("harness_eval_generate", {"repo": str(repo)}),
+                ("harness_explain", {"repo": str(repo), "target": "src/future.py", "json": True}),
             ]
             for name, arguments in calls:
                 with self.subTest(tool=name):
@@ -323,7 +325,7 @@ class McpServerTests(unittest.TestCase):
                     else:
                         self.assertNotIn("report", metadata)
 
-    def test_all_six_tools_reject_a_nonexistent_target_before_spawning(self):
+    def test_all_seven_tools_reject_a_nonexistent_target_before_spawning(self):
         with tempfile.TemporaryDirectory() as td:
             missing = str(Path(td) / "does-not-exist")
             for name in (
@@ -333,9 +335,13 @@ class McpServerTests(unittest.TestCase):
                 "harness_plan",
                 "harness_stubs",
                 "harness_eval_generate",
+                "harness_explain",
             ):
                 with self.subTest(tool=name):
-                    response = self._call(name, {"repo": missing})
+                    arguments = {"repo": missing}
+                    if name == "harness_explain":
+                        arguments["target"] = "src/future.py"
+                    response = self._call(name, arguments)
                     result = response["result"]
                     self.assertTrue(result["isError"])
                     text = result["content"][0]["text"]
@@ -346,6 +352,84 @@ class McpServerTests(unittest.TestCase):
                     self.assertIsNone(metadata["exitCode"])
                     self.assertEqual(metadata["status"], "error")
                     self.assertFalse(metadata["ok"])
+
+    def test_explain_requires_target_and_rejects_bad_arguments(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("Use npm.\n", encoding="utf-8")
+            cases = (
+                {"repo": str(repo)},
+                {"repo": str(repo), "target": 42},
+                {"repo": str(repo), "target": "src/x.py", "unknown": True},
+            )
+            for arguments in cases:
+                with self.subTest(arguments=arguments):
+                    response = self._call("harness_explain", arguments)
+                    self.assertEqual(response["error"]["code"], -32602)
+
+    def test_declarative_positionals_preserve_old_argv_and_order_explain_target(self):
+        script = (
+            "const m=require('./bin/mcp-server.js');"
+            "const byName=new Map(m.TOOLS.map(t=>[t.name,t]));"
+            "console.log(JSON.stringify({"
+            "scan:m.buildScriptArgs(byName.get('harness_scan'),{repo:'/repo',json:true}).argv.slice(1),"
+            "explain:m.buildScriptArgs(byName.get('harness_explain'),"
+            "{repo:'/repo',target:'src/x.py',json:true}).argv.slice(1)"
+            "}));"
+        )
+        proc = subprocess.run(
+            [NODE, "-e", script],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        argv = json.loads(proc.stdout)
+        self.assertEqual(argv["scan"], ["/repo", "--json"])
+        self.assertEqual(argv["explain"], ["/repo", "src/x.py", "--json"])
+
+    def test_explain_returns_same_nested_json_scope_as_cli(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("Use npm.\n", encoding="utf-8")
+            nested = repo / "packages" / "api"
+            nested.mkdir(parents=True)
+            (nested / "AGENTS.md").write_text("Use pnpm.\n", encoding="utf-8")
+            arguments = {
+                "repo": str(repo),
+                "target": "packages/api/src/future.py",
+                "json": True,
+            }
+            response = self._call("harness_explain", arguments)
+            result = response["result"]
+            report = json.loads(result["content"][0]["text"])
+            self.assertEqual(report["schema_version"], 1)
+            self.assertEqual(report["effective_scope"], "packages/api")
+            self.assertFalse(result["isError"])
+            metadata = self._metadata(result)
+            self.assertEqual(metadata["status"], "ok")
+            self.assertEqual(metadata["report"], report)
+
+            direct = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "explain.py"),
+                    str(repo),
+                    arguments["target"],
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self.assertEqual(report, json.loads(direct.stdout))
+
+            markdown = self._call(
+                "harness_explain",
+                {"repo": str(repo), "target": arguments["target"]},
+            )["result"]
+            self.assertIn("Canonical instruction chain", markdown["content"][0]["text"])
+            self.assertFalse(markdown["isError"])
 
     def test_json_drift_findings_are_report_outcomes_not_tool_errors(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1,0 +1,4 @@
+description = "Explain AI Harness Doctor instructions for a path"
+prompt = """
+Read {{PLAYBOOK}}/SKILL.md. Explain the effective canonical instruction chain for one target path on the target repo ({{args}} or cwd), and obey the phase stop condition (scope evidence is presented without modifying files). Scripts live in {{PLAYBOOK}}/scripts/.
+"""

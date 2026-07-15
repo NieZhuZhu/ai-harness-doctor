@@ -5,7 +5,7 @@
 //
 // Transport: newline-delimited JSON. Each JSON-RPC 2.0 message is a single line
 // terminated by "\n" on both stdin (requests) and stdout (responses). The server
-// exposes six read-only Python capabilities as MCP tools.
+// exposes seven read-only Python capabilities as MCP tools.
 
 const fs = require('fs');
 const path = require('path');
@@ -129,6 +129,25 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'harness_explain',
+    description: 'Explain the canonical AGENTS.md inheritance chain, diagnostically associated configs, scoped overrides, and conflicts for one target path. Read-only; does not merge or modify instructions.',
+    script: ['explain.py'],
+    positionals: ['repo', 'target'],
+    booleans: { json: '--json' },
+    readOnly: true,
+    resultPolicy: { reportExitCodes: [0], jsonShape: 'explain', requireRepoDirectory: true },
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['target'],
+      properties: {
+        repo: { type: 'string', description: 'Target repository root.', default: '.' },
+        target: { type: 'string', description: 'Contained file, directory, or future path to explain.' },
+        json: { type: 'boolean', description: 'Emit machine-readable JSON instead of markdown.', default: false },
+      },
+    },
+  },
 ];
 
 const TOOL_BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));
@@ -192,11 +211,17 @@ function isPlainObject(value) {
 }
 
 function validateToolArguments(tool, value) {
-  if (value === undefined) return { ok: true, value: {} };
+  if (value === undefined) value = {};
   if (!isPlainObject(value)) {
     return { ok: false, message: `Arguments for ${tool.name} must be an object.` };
   }
   const properties = tool.inputSchema.properties || {};
+  for (const key of tool.inputSchema.required || []) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)
+        || (typeof value[key] === 'string' && !value[key])) {
+      return { ok: false, message: `Missing required argument for ${tool.name}: ${key}` };
+    }
+  }
   for (const key of Object.keys(value)) {
     if (!Object.prototype.hasOwnProperty.call(properties, key)) {
       return { ok: false, message: `Unknown argument for ${tool.name}: ${key}` };
@@ -209,16 +234,24 @@ function validateToolArguments(tool, value) {
   return { ok: true, value };
 }
 
+// Convert declarative tool positionals + booleans into the Python argv.
+// Existing tools default to the historical single `repo` positional; explain
+// adds `target` without a command-specific dispatcher branch.
 // Build the argv for the Python interpreter from a tool definition + arguments.
 function buildScriptArgs(tool, argsObj) {
   const scriptPath = path.join(PACKAGE_ROOT, 'scripts', tool.script[0]);
   const leading = tool.script.slice(1);
-  const repo = typeof argsObj.repo === 'string' && argsObj.repo.length ? argsObj.repo : '.';
+  const positionals = (tool.positionals || ['repo']).map((prop) => {
+    if (prop === 'repo') {
+      return typeof argsObj.repo === 'string' && argsObj.repo.length ? argsObj.repo : '.';
+    }
+    return argsObj[prop];
+  });
   const flags = [];
   for (const [prop, flag] of Object.entries(tool.booleans)) {
     if (argsObj[prop] === true) flags.push(flag);
   }
-  return { scriptPath, argv: [scriptPath, ...leading, repo, ...flags] };
+  return { scriptPath, argv: [scriptPath, ...leading, ...positionals, ...flags] };
 }
 
 function explicitJsonReport(tool, argsObj, stdout) {
@@ -239,6 +272,14 @@ function hasValidJsonShape(shape, report) {
   }
   if (shape === 'validate') {
     return typeof report.ok === 'boolean' && Array.isArray(report.findings);
+  }
+  if (shape === 'explain') {
+    return report.schema_version === 1
+      && isPlainObject(report.target)
+      && Array.isArray(report.canonical_chain)
+      && Array.isArray(report.diagnostic_sources)
+      && Array.isArray(report.scope_overrides)
+      && Array.isArray(report.conflicts);
   }
   return false;
 }
