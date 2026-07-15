@@ -252,7 +252,7 @@ verification gate, and update its status here.
 | 033 | Derive eval health only from validated stored result records | P0 | M | — | DONE |
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | DONE |
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
-| 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | TODO |
+| 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -430,6 +430,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   preserve inline annotations, and never turn 422 fallback into a second
   summary. If the ownership proof needs broader workflow permissions, stop
   rather than weakening the boundary.
+- Plan 036 implementation PR #192 first head `320bd53` passed all nine required
+  contexts and created marker comment `4986399749` at
+  `2026-07-15T23:51:39Z`. Second head `5673d11` passed the same nine contexts,
+  kept exactly that one marker/ID, and advanced its `updated_at` to
+  `2026-07-15T23:53:22Z`, proving the production GraphQL-identity upsert path.
 
 ## Post-v1.8.1 completion evidence
 

@@ -701,82 +701,334 @@ class PostReviewTests(unittest.TestCase):
     JSON payload are built.
     """
 
-    def _capture(self, payload, **kwargs):
+    def _run_api(self, payload, handler, **kwargs):
         import urllib.request
         from unittest import mock
 
-        captured = {}
+        requests = []
 
         class _Resp:
-            def __enter__(self_inner):
-                return self_inner
+            def __init__(self, data, headers=None):
+                self.data = data
+                self.headers = headers or {}
 
-            def __exit__(self_inner, *exc):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
                 return False
 
-            def read(self_inner):
-                return b'{"html_url": "https://github.com/o/r/pull/7#review"}'
+            def read(self):
+                return json.dumps(self.data).encode("utf-8")
 
         def _fake_urlopen(req, *a, **kw):
-            captured["url"] = req.full_url
-            captured["method"] = req.get_method()
-            captured["data"] = json.loads(req.data.decode("utf-8"))
-            captured["headers"] = dict(req.header_items())
-            return _Resp()
+            request = {
+                "url": req.full_url,
+                "method": req.get_method(),
+                "data": json.loads(req.data.decode("utf-8")) if req.data else None,
+                "headers": dict(req.header_items()),
+            }
+            requests.append(request)
+            response = handler(request, len(requests))
+            if isinstance(response, Exception):
+                raise response
+            data, headers = response if isinstance(response, tuple) else (response, {})
+            return _Resp(data, headers)
 
         with mock.patch.object(urllib.request, "urlopen", _fake_urlopen):
             resp = pr_review.post_review(payload, **kwargs)
-        return captured, resp
+        return requests, resp
 
-    def test_post_with_inline_comments_hits_reviews_endpoint(self):
+    @staticmethod
+    def _http_error(url, code, reason):
+        import urllib.error
+
+        return urllib.error.HTTPError(
+            url,
+            code,
+            reason,
+            hdrs=None,
+            fp=io.BytesIO(json.dumps({"message": reason}).encode("utf-8")),
+        )
+
+    def test_clean_rerun_updates_owned_user_summary_instead_of_posting_another(self):
+        payload = pr_review.build_review({"findings": []})
+        existing = {
+            "id": 41,
+            "body": pr_review.MARKER + "\nold",
+            "created_at": "2026-01-01T00:00:00Z",
+            "user": {"id": 7, "node_id": "U_maintainer", "login": "maintainer"},
+            "html_url": "https://github.com/o/r/pull/9#issuecomment-41",
+        }
+
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if request["url"].endswith("/issues/9/comments?per_page=100&page=1"):
+                return [existing]
+            if request["url"].endswith("/issues/comments/41"):
+                self.assertEqual(request["method"], "PATCH")
+                self.assertEqual(request["data"]["body"], payload["body"])
+                return {**existing, "body": payload["body"]}
+            self.fail(f"unexpected request: {request}")
+
+        requests, response = self._run_api(
+            payload,
+            handler,
+            repo="o/r",
+            pr_number=9,
+            commit_sha="cafe",
+            token="tok",
+        )
+
+        self.assertEqual([request["method"] for request in requests], ["POST", "GET", "PATCH"])
+        self.assertEqual(response["id"], 41)
+
+    def test_first_post_creates_summary_when_no_owned_marker_exists(self):
+        payload = pr_review.build_review({"findings": []})
+        foreign = {
+            "id": 10,
+            "body": pr_review.MARKER + "\nforeign",
+            "created_at": "2026-01-01T00:00:00Z",
+            "user": {"id": 99, "node_id": "U_foreign", "login": "someone-else"},
+        }
+
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if request["url"].endswith("/issues/9/comments?per_page=100&page=1"):
+                return [foreign]
+            if request["url"].endswith("/issues/9/comments"):
+                self.assertEqual(request["method"], "POST")
+                return {
+                    "id": 42,
+                    "body": request["data"]["body"],
+                    "html_url": "https://github.com/o/r/pull/9#issuecomment-42",
+                }
+            self.fail(f"unexpected request: {request}")
+
+        requests, response = self._run_api(
+            payload,
+            handler,
+            repo="o/r",
+            pr_number=9,
+            commit_sha="cafe",
+            token="tok",
+        )
+
+        self.assertEqual([request["method"] for request in requests], ["POST", "GET", "POST"])
+        self.assertEqual(response["id"], 42)
+
+    def test_unknown_identity_creates_without_listing_or_patching(self):
+        payload = pr_review.build_review({"findings": []})
+
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return self._http_error(request["url"], 403, "Forbidden")
+            if request["url"].endswith("/issues/9/comments"):
+                self.assertEqual(request["method"], "POST")
+                return {
+                    "id": 42,
+                    "html_url": "https://github.com/o/r/pull/9#issuecomment-42",
+                }
+            self.fail(f"unexpected request: {request}")
+
+        requests, response = self._run_api(
+            payload,
+            handler,
+            repo="o/r",
+            pr_number=9,
+            commit_sha="cafe",
+            token="tok",
+        )
+
+        self.assertEqual([request["method"] for request in requests], ["POST", "POST"])
+        self.assertEqual(response["id"], 42)
+        self.assertFalse(any(request["method"] == "PATCH" for request in requests))
+
+    def test_app_identity_updates_newest_owned_duplicate_on_later_page(self):
+        payload = pr_review.build_review({"findings": []})
+        fillers = [
+            {
+                "id": index,
+                "body": "ordinary",
+                "created_at": f"2026-01-01T00:00:{index % 60:02d}Z",
+                "user": {
+                    "id": index,
+                    "node_id": f"U_{index}",
+                    "login": f"user-{index}",
+                },
+            }
+            for index in range(100)
+        ]
+        owned_old = {
+            "id": 201,
+            "body": pr_review.MARKER + "\nold duplicate",
+            "created_at": "2026-02-01T00:00:00Z",
+            "user": {
+                "id": 41898282,
+                "node_id": "BOT_actions",
+                "login": "github-actions[bot]",
+            },
+            "performed_via_github_app": {"id": 15368, "slug": "github-actions"},
+        }
+        owned_new = {
+            "id": 202,
+            "body": pr_review.MARKER + "\nnew duplicate",
+            "created_at": "2026-02-02T00:00:00Z",
+            "user": {
+                "id": 41898282,
+                "node_id": "BOT_actions",
+                "login": "github-actions[bot]",
+            },
+            "performed_via_github_app": {"id": 15368, "slug": "github-actions"},
+        }
+
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {
+                    "data": {
+                        "viewer": {
+                            "id": "BOT_actions",
+                            "login": "github-actions[bot]",
+                        }
+                    }
+                }
+            if request["url"].endswith("/comments?per_page=100&page=1"):
+                return (
+                    fillers,
+                    {"Link": '<https://evil.example/steal>; rel="next"'},
+                )
+            if request["url"].endswith("/comments?per_page=100&page=2"):
+                return [owned_old, owned_new]
+            if request["url"].endswith("/issues/comments/202"):
+                self.assertEqual(request["method"], "PATCH")
+                return {**owned_new, "body": request["data"]["body"]}
+            self.fail(f"unexpected request: {request}")
+
+        requests, response = self._run_api(
+            payload,
+            handler,
+            repo="o/r",
+            pr_number=7,
+            commit_sha="deadbeef",
+            token="tok",
+        )
+
+        self.assertEqual(response["id"], 202)
+        self.assertFalse(any("evil.example" in request["url"] for request in requests))
+        self.assertFalse(any(request["url"].endswith("/issues/comments/201") for request in requests))
+
+    def test_comment_scan_fails_closed_after_bounded_pages(self):
+        payload = pr_review.build_review({"findings": []})
+        full_page = [
+            {
+                "id": index,
+                "body": "ordinary",
+                "created_at": "2026-01-01T00:00:00Z",
+                "user": {
+                    "id": index,
+                    "node_id": f"U_{index}",
+                    "login": f"user-{index}",
+                },
+            }
+            for index in range(100)
+        ]
+
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if "/issues/9/comments?per_page=100&page=" in request["url"]:
+                return full_page
+            self.fail(f"unexpected request: {request}")
+
+        with self.assertRaisesRegex(SystemExit, "comment scan exceeded 1000 entries"):
+            self._run_api(
+                payload,
+                handler,
+                repo="o/r",
+                pr_number=9,
+                commit_sha="cafe",
+                token="tok",
+            )
+
+    def test_malformed_comment_list_fails_without_writing(self):
+        payload = pr_review.build_review({"findings": []})
+        requests = []
+
+        def handler(request, _count):
+            requests.append(request)
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if request["url"].endswith("/issues/9/comments?per_page=100&page=1"):
+                return {"unexpected": "object"}
+            self.fail(f"unexpected request: {request}")
+
+        with self.assertRaisesRegex(SystemExit, "non-list comment payload"):
+            self._run_api(
+                payload,
+                handler,
+                repo="o/r",
+                pr_number=9,
+                commit_sha="cafe",
+                token="tok",
+            )
+        self.assertFalse(
+            any(
+                request["method"] in {"POST", "PATCH"}
+                and request["url"] != "https://api.github.com/graphql"
+                for request in requests
+            )
+        )
+
+    def test_post_with_inline_comments_upserts_summary_then_posts_marker_free_review(self):
         report = {
             "findings": [
                 {"check": "D2", "level": "ERROR", "path": "a.md", "line": 3, "message": "m", "suggestion": "s"},
             ],
-            # path-without-line: must be dropped from inline comments so the
-            # review is never 422-rejected.
             "security": [{"level": "HIGH", "category": "secret", "path": "b.md", "message": "leak"}],
         }
         payload = pr_review.build_review(report)
-        captured, resp = self._capture(
-            payload, repo="o/r", pr_number=7, commit_sha="deadbeef", token="tok"
+        summary = {
+            "id": 42,
+            "html_url": "https://github.com/o/r/pull/7#issuecomment-42",
+        }
+
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if request["url"].endswith("/issues/7/comments?per_page=100&page=1"):
+                return []
+            if request["url"].endswith("/issues/7/comments"):
+                return summary
+            if request["url"].endswith("/pulls/7/reviews"):
+                self.assertEqual(request["method"], "POST")
+                self.assertNotIn(pr_review.MARKER, request["data"].get("body", ""))
+                self.assertEqual(len(request["data"]["comments"]), 1)
+                return {"html_url": "https://github.com/o/r/pull/7#review"}
+            self.fail(f"unexpected request: {request}")
+
+        requests, response = self._run_api(
+            payload,
+            handler,
+            repo="o/r",
+            pr_number=7,
+            commit_sha="deadbeef",
+            token="tok",
         )
 
-        self.assertEqual(captured["method"], "POST")
-        self.assertEqual(captured["url"], "https://api.github.com/repos/o/r/pulls/7/reviews")
-        self.assertEqual(captured["data"]["commit_id"], "deadbeef")
-        self.assertEqual(captured["data"]["event"], "COMMENT")
-        # Exactly one inline comment (the located D2); the path-without-line
-        # secret was routed to the summary body, not sent as a comment.
-        self.assertEqual(len(captured["data"]["comments"]), 1)
-        for comment in captured["data"]["comments"]:
+        self.assertEqual(response, summary)
+        review = requests[-1]
+        self.assertEqual(review["data"]["commit_id"], "deadbeef")
+        self.assertEqual(review["data"]["event"], "COMMENT")
+        for comment in review["data"]["comments"]:
             self.assertIn("path", comment)
-            self.assertIn("line", comment)  # 422-avoidance: every comment has a line
+            self.assertIn("line", comment)
             self.assertIsInstance(comment["line"], int)
-        # Auth header carries the bearer token.
-        headers = {k.lower(): v for k, v in captured["headers"].items()}
+        headers = {key.lower(): value for key, value in review["headers"].items()}
         self.assertEqual(headers["authorization"], "Bearer tok")
-        self.assertEqual(resp.get("html_url"), "https://github.com/o/r/pull/7#review")
 
-    def test_post_without_comments_falls_back_to_issue_comment(self):
-        # No located findings -> a single general issue comment carrying the
-        # summary body (never the reviews endpoint, so no 422 risk).
-        report = {"findings": [{"check": "D4", "level": "ERROR", "message": "no location"}]}
-        payload = pr_review.build_review(report)
-        self.assertEqual(payload["comments"], [])
-        captured, _ = self._capture(
-            payload, repo="o/r", pr_number=9, commit_sha="cafe", token="tok"
-        )
-        self.assertEqual(captured["method"], "POST")
-        self.assertEqual(captured["url"], "https://api.github.com/repos/o/r/issues/9/comments")
-        self.assertIn("body", captured["data"])
-        self.assertNotIn("comments", captured["data"])
-
-    def test_inline_review_422_falls_back_to_complete_issue_comment(self):
-        import urllib.error
-        import urllib.request
-        from unittest import mock
-
+    def test_inline_review_422_uses_already_upserted_summary_without_duplicate(self):
         report = {
             "score": 75,
             "grade": "C",
@@ -792,63 +1044,38 @@ class PostReviewTests(unittest.TestCase):
             ],
         }
         payload = pr_review.build_review(report)
-        requests = []
+        summary = {"id": 42, "html_url": "https://github.com/o/r/pull/7#issuecomment-42"}
 
-        class _Resp:
-            def __enter__(self):
-                return self
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if request["url"].endswith("/issues/7/comments?per_page=100&page=1"):
+                return []
+            if request["url"].endswith("/issues/7/comments"):
+                return summary
+            if request["url"].endswith("/pulls/7/reviews"):
+                return self._http_error(request["url"], 422, "Validation Failed")
+            self.fail(f"unexpected request: {request}")
 
-            def __exit__(self, *exc):
-                return False
-
-            def read(self):
-                return b'{"html_url": "https://github.com/o/r/pull/7#issuecomment-1"}'
-
-        def _fake_urlopen(req, *args, **kwargs):
-            requests.append(
-                {
-                    "url": req.full_url,
-                    "data": json.loads(req.data.decode("utf-8")),
-                }
-            )
-            if len(requests) == 1:
-                raise urllib.error.HTTPError(
-                    req.full_url,
-                    422,
-                    "Unprocessable Entity",
-                    hdrs=None,
-                    fp=io.BytesIO(b'{"message":"Validation Failed"}'),
-                )
-            return _Resp()
-
-        with mock.patch.object(urllib.request, "urlopen", _fake_urlopen):
-            response = pr_review.post_review(
-                payload,
-                repo="o/r",
-                pr_number=7,
-                commit_sha="deadbeef",
-                token="tok",
-            )
-
-        self.assertEqual(
-            [request["url"] for request in requests],
-            [
-                "https://api.github.com/repos/o/r/pulls/7/reviews",
-                "https://api.github.com/repos/o/r/issues/7/comments",
-            ],
+        requests, response = self._run_api(
+            payload,
+            handler,
+            repo="o/r",
+            pr_number=7,
+            commit_sha="deadbeef",
+            token="tok",
         )
-        fallback_body = requests[1]["data"]["body"]
-        self.assertIn(pr_review.MARKER, fallback_body)
-        self.assertIn("Referenced path no longer exists", fallback_body)
-        self.assertIn("Update the canonical instruction.", fallback_body)
-        self.assertIn("75/100 (grade C)", fallback_body)
-        self.assertEqual(response["html_url"], "https://github.com/o/r/pull/7#issuecomment-1")
+
+        self.assertEqual(response, summary)
+        summary_writes = [
+            request
+            for request in requests
+            if request["method"] in {"POST", "PATCH"} and "/issues/" in request["url"]
+        ]
+        self.assertEqual(len(summary_writes), 1)
+        self.assertIn("Referenced path no longer exists", summary_writes[0]["data"]["body"])
 
     def test_inline_review_non_422_error_is_not_hidden(self):
-        import urllib.error
-        import urllib.request
-        from unittest import mock
-
         payload = pr_review.build_review(
             {
                 "findings": [
@@ -862,32 +1089,27 @@ class PostReviewTests(unittest.TestCase):
                 ]
             }
         )
-        requests = []
 
-        def _fake_urlopen(req, *args, **kwargs):
-            requests.append(req.full_url)
-            raise urllib.error.HTTPError(
-                req.full_url,
-                403,
-                "Forbidden",
-                hdrs=None,
-                fp=io.BytesIO(b'{"message":"Resource not accessible"}'),
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if request["url"].endswith("/issues/7/comments?per_page=100&page=1"):
+                return []
+            if request["url"].endswith("/issues/7/comments"):
+                return {"id": 42, "html_url": "https://github.com/o/r/pull/7#issuecomment-42"}
+            if request["url"].endswith("/pulls/7/reviews"):
+                return self._http_error(request["url"], 403, "Resource not accessible")
+            self.fail(f"unexpected request: {request}")
+
+        with self.assertRaisesRegex(SystemExit, r"(?s)403 Resource not accessible"):
+            self._run_api(
+                payload,
+                handler,
+                repo="o/r",
+                pr_number=7,
+                commit_sha="deadbeef",
+                token="tok",
             )
-
-        with mock.patch.object(urllib.request, "urlopen", _fake_urlopen):
-            with self.assertRaisesRegex(
-                SystemExit,
-                r"(?s)403 Forbidden.*Resource not accessible",
-            ):
-                pr_review.post_review(
-                    payload,
-                    repo="o/r",
-                    pr_number=7,
-                    commit_sha="deadbeef",
-                    token="tok",
-                )
-
-        self.assertEqual(requests, ["https://api.github.com/repos/o/r/pulls/7/reviews"])
 
 
 if __name__ == "__main__":

@@ -32,7 +32,7 @@ import sys
 from pathlib import PurePosixPath
 
 # Identifying marker embedded in every summary/general comment body so re-runs
-# can recognize (and, if desired, supersede) a prior ai-harness-doctor review.
+# can recognize and update their own prior ai-harness-doctor summary.
 MARKER = "<!-- ai-harness-doctor:pr-review -->"
 
 # GitHub pull-request review "event". COMMENT posts the review without
@@ -834,24 +834,34 @@ class _GitHubAPIError(Exception):
 def post_review(payload, repo, pr_number, commit_sha, token):
     """Post the assembled review to GitHub via the REST API (stdlib only).
 
-    Uses inline comments through the pulls "create review" endpoint when there
-    are any. If GitHub rejects their placement with HTTP 422, retries once as a
-    single general issue comment carrying the complete summary body. Payloads
-    without inline comments use that summary endpoint directly. All network
-    imports happen here so ``--dry-run`` stays fully offline. Returns the parsed
-    JSON response dict.
+    Upserts one complete marker summary owned by the authenticated poster, then
+    uses the pulls "create review" endpoint for any inline annotations. If
+    GitHub rejects inline placement with HTTP 422, the already-upserted summary
+    remains the successful complete delivery. All network imports happen here
+    so ``--dry-run`` stays fully offline. Returns the durable summary response.
     """
     # Import network machinery lazily so importing this module (and running
     # --dry-run) never pulls in urllib/sockets.
     import urllib.error
     import urllib.request
+    from urllib.parse import urlsplit
 
-    def _request(url, data, method):
-        body = json.dumps(data).encode("utf-8")
+    def _request(url, data=None, method="GET"):
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "api.github.com"
+            or parsed.port is not None
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise SystemExit(f"Refusing GitHub API request outside https://api.github.com: {url}")
+        body = None if data is None else json.dumps(data).encode("utf-8")
         req = urllib.request.Request(url, data=body, method=method)
         req.add_header("Authorization", f"Bearer {token}")
         req.add_header("Accept", "application/vnd.github+json")
-        req.add_header("Content-Type", "application/json")
+        if body is not None:
+            req.add_header("Content-Type", "application/json")
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         req.add_header("User-Agent", "ai-harness-doctor")
         try:
@@ -864,34 +874,114 @@ def post_review(payload, repo, pr_number, commit_sha, token):
                 exc.close()
             raise _GitHubAPIError(method, url, exc.code, exc.reason, detail) from None
 
+    def _authenticated_identity():
+        """Return the token's GraphQL actor identity for safe comment PATCH."""
+        query = "query ViewerIdentity { viewer { login id } }"
+        try:
+            response = _request(
+                "https://api.github.com/graphql",
+                {"query": query},
+                "POST",
+            )
+        except _GitHubAPIError as exc:
+            if exc.code in {403, 404}:
+                # Creating is safe; editing an unproven owner is not.
+                return None
+            raise SystemExit(str(exc)) from None
+        data = response.get("data") if isinstance(response, dict) else None
+        viewer = data.get("viewer") if isinstance(data, dict) else None
+        node_id = viewer.get("id") if isinstance(viewer, dict) else None
+        login = viewer.get("login") if isinstance(viewer, dict) else None
+        if isinstance(node_id, str) and node_id and isinstance(login, str) and login:
+            return {"node_id": node_id, "login": login}
+        return None
+
+    def _is_owned_marker(comment, identity):
+        if not isinstance(comment, dict) or not identity:
+            return False
+        body = comment.get("body")
+        if not isinstance(body, str) or not body.startswith(MARKER):
+            return False
+        user = comment.get("user")
+        return (
+            isinstance(user, dict)
+            and user.get("node_id") == identity["node_id"]
+            and user.get("login") == identity["login"]
+        )
+
+    def _owned_marker_comments(identity):
+        if not identity:
+            return []
+        comments = []
+        per_page = 100
+        max_pages = 10
+        for page in range(1, max_pages + 1):
+            url = (
+                f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+                f"?per_page={per_page}&page={page}"
+            )
+            try:
+                batch = _request(url)
+            except _GitHubAPIError as exc:
+                raise SystemExit(str(exc)) from None
+            if not isinstance(batch, list):
+                raise SystemExit(f"GitHub API GET {url} returned a non-list comment payload")
+            comments.extend(
+                comment for comment in batch if _is_owned_marker(comment, identity)
+            )
+            if len(batch) < per_page:
+                return comments
+        raise SystemExit(
+            f"Refusing to upsert PR summary: comment scan exceeded {max_pages * per_page} entries"
+        )
+
+    def _upsert_summary():
+        identity = _authenticated_identity()
+        owned = _owned_marker_comments(identity)
+        existing = max(
+            owned,
+            key=lambda comment: (
+                str(comment.get("created_at") or ""),
+                comment.get("id") if isinstance(comment.get("id"), int) else -1,
+            ),
+            default=None,
+        )
+        data = {"body": payload.get("body", "")}
+        if existing is not None:
+            url = (
+                f"https://api.github.com/repos/{repo}/issues/comments/"
+                f"{existing['id']}"
+            )
+            method = "PATCH"
+        else:
+            url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+            method = "POST"
+        try:
+            return _request(url, data, method)
+        except _GitHubAPIError as exc:
+            raise SystemExit(str(exc)) from None
+
+    summary_response = _upsert_summary()
     comments = payload.get("comments", [])
     if comments:
         url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
         data = {
             "commit_id": commit_sha,
             "event": payload.get("event", REVIEW_EVENT),
-            "body": payload.get("body", ""),
+            "body": (
+                "AI Harness Doctor inline annotations for this head; "
+                "see the marker summary for the complete report."
+            ),
             "comments": comments,
         }
         try:
-            return _request(url, data, "POST")
+            _request(url, data, "POST")
         except _GitHubAPIError as exc:
             if exc.code != 422:
                 raise SystemExit(str(exc)) from None
-            # A source line can exist but still be outside the PR diff. GitHub
-            # then rejects the entire review; preserve all repair guidance by
-            # delivering the already self-contained summary instead.
-            url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-            try:
-                return _request(url, {"body": payload.get("body", "")}, "POST")
-            except _GitHubAPIError as fallback_exc:
-                raise SystemExit(str(fallback_exc)) from None
-    # No inline comments -> a single general issue comment with the summary.
-    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-    try:
-        return _request(url, {"body": payload.get("body", "")}, "POST")
-    except _GitHubAPIError as exc:
-        raise SystemExit(str(exc)) from None
+            # A source line can exist but be outside the PR diff. The complete
+            # summary was already delivered, so 422 needs no duplicate fallback.
+    return summary_response
 
 
 def main(argv=None):
@@ -961,7 +1051,7 @@ def main(argv=None):
 
     response = post_review(payload, repo, args.pr, args.commit, token)
     url = response.get("html_url", "")
-    print(f"posted PR review to {repo}#{args.pr} {url}".rstrip())
+    print(f"posted PR summary to {repo}#{args.pr} {url}".rstrip())
     return 0
 
 
