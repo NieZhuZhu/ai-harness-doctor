@@ -90,7 +90,7 @@ verification gate, and update its status here.
 | 014 | Restore subtree-scoped path parity between scan and drift | P0 | S | — | DONE |
 | 015 | Bind eval results to the evidence they claim to score | P1 | M | — | DONE |
 | 016 | Negotiate modern MCP and expose standard structured results | P1 | M | — | DONE |
-| 017 | Establish a verifiable public-repository trust baseline | P1 | M | 014–016 | IN PROGRESS |
+| 017 | Establish a verifiable public-repository trust baseline | P1 | M | 014–016 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
