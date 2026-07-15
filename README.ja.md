@@ -366,7 +366,7 @@ npx ai-harness-doctor drift . --sarif > drift.sarif
 
 この例では可読性のため major tag を使っています。本番 workflow では外部 Action をレビュー済みの完全な commit SHA に固定し、隣に `owner/action@vN` の major を更新ヒントとして残してください。これにより Dependabot が pin を安全に更新できます。
 
-Action はデフォルトで選択した Action ref に同梱された実装を実行するため、`uses:` で指定したバージョンが実際に動くコードになります。別の npm バージョンまたはタグを意図的に使う場合に限り、任意の `version` input を設定してください。インストールまたは CLI の失敗は workflow にそのまま伝播し、空の SARIF ファイルを残したままジョブが成功扱いになることはありません。
+Action はデフォルトで選択した Action ref に同梱された実装を実行するため、`uses:` で指定したバージョンが実際に動くコードになります。別の npm バージョンまたはタグを意図的に使う場合に限り、任意の `version` input を設定してください。インストールまたは CLI の失敗は workflow にそのまま伝播し、空の SARIF ファイルを残したままジョブが成功扱いになることはありません。この repository の required self-test は current bundled `scan` と `drift` を実行し、その後 public registry から解決した exact stable version で npm install override を検証します。published-package call は compatibility evidence であり、PR source の evidence は bundled call です。stable release は publish 前に両 bundled command を繰り返し、publish 後には floating Action で bundled scan と newly published exact npm drift override を実行します。各 success path は SARIF driver version を検証し、npm install を `RUNNER_TEMP` 内に限定します。
 
 | Flag | Purpose |
 |---|---|

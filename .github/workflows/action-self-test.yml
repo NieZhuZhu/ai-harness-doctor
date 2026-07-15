@@ -22,25 +22,124 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Prepare Action success fixtures
+        id: fixture
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/clean-drift-repo
+        run: |
+          mkdir -p "$FIXTURE_ROOT"
+          cat > "$FIXTURE_ROOT/AGENTS.md" <<'EOF'
+          # Project overview
+
+          Deterministic Action self-test fixture.
+
+          # Build & test
+
+          No build commands are required.
+
+          # Conventions
+
+          Keep this fixture minimal.
+
+          # Testing requirements
+
+          Run the Action smoke test.
+
+          # Safety
+
+          Do not add secrets.
+
+          # Commit & PR
+
+          Use pull requests.
+          EOF
+          checkout_version="$(node -p "require('./package.json').version")"
+          published_version="$(npm view ai-harness-doctor@latest version)"
+          if [[ ! "$published_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected npm latest to resolve to an exact stable version, got: $published_version" >&2
+            exit 1
+          fi
+          echo "checkout_version=$checkout_version" >> "$GITHUB_OUTPUT"
+          echo "published_version=$published_version" >> "$GITHUB_OUTPUT"
+
       # Dogfood the repository-root Action rather than bypassing its composite
       # wrapper with a direct CLI invocation. The default bundled implementation
       # executes the code from this exact Action ref.
-      - name: Run repository Action against itself
-        id: scan
+      - name: Run bundled scan against this checkout
+        id: bundled-scan
         uses: ./
         with:
           command: scan
           path: .
+          sarif-file: bundled-scan.sarif
 
-      - name: Validate SARIF output
+      - name: Run bundled drift against a clean fixture
+        id: bundled-drift
+        uses: ./
+        with:
+          command: drift
+          path: ${{ runner.temp }}/clean-drift-repo
+          sarif-file: ${{ runner.temp }}/bundled-drift.sarif
+
+      # This checks the npm-install override mechanism against the exact package
+      # version already published from main. The bundled calls above, not this
+      # compatibility call, are the evidence for the current PR's source code.
+      - name: Run exact published npm override
+        id: npm-scan
+        uses: ./
+        with:
+          command: scan
+          path: .
+          version: ${{ steps.fixture.outputs.published_version }}
+          sarif-file: ${{ runner.temp }}/npm-scan.sarif
+
+      - name: Validate Action success matrix
         env:
-          SARIF_FILE: ${{ steps.scan.outputs.sarif-file }}
+          BUNDLED_SCAN: ${{ steps.bundled-scan.outputs.sarif-file }}
+          BUNDLED_DRIFT: ${{ steps.bundled-drift.outputs.sarif-file }}
+          NPM_SCAN: ${{ steps.npm-scan.outputs.sarif-file }}
+          BUNDLED_VERSION: ${{ steps.fixture.outputs.checkout_version }}
+          NPM_VERSION: ${{ steps.fixture.outputs.published_version }}
+          INSTALL_DIR: ${{ runner.temp }}/ai-harness-doctor-action
+          RUNNER_TEMP_PATH: ${{ runner.temp }}
         run: |
           node -e '
             const fs = require("node:fs");
-            const sarif = JSON.parse(fs.readFileSync(process.env.SARIF_FILE, "utf8"));
-            if (sarif.version !== "2.1.0" || !Array.isArray(sarif.runs)) {
-              throw new Error("Action output is not a SARIF 2.1.0 document");
+            const path = require("node:path");
+            for (const [label, file, expected] of [
+              ["bundledScan", process.env.BUNDLED_SCAN, process.env.BUNDLED_VERSION],
+              ["bundledDrift", process.env.BUNDLED_DRIFT, process.env.BUNDLED_VERSION],
+              ["npmScan", process.env.NPM_SCAN, process.env.NPM_VERSION],
+            ]) {
+              const sarif = JSON.parse(fs.readFileSync(file, "utf8"));
+              const run = sarif.runs && sarif.runs[0];
+              const driver = run && run.tool && run.tool.driver;
+              if (
+                sarif.version !== "2.1.0"
+                || !run
+                || !Array.isArray(run.results)
+                || !driver
+                || driver.version !== expected
+              ) {
+                throw new Error(
+                  `${label} mismatch: expected SARIF driver ${expected}, ` +
+                  `got ${driver && driver.version}`,
+                );
+              }
+            }
+            const install = fs.realpathSync(process.env.INSTALL_DIR);
+            const temp = fs.realpathSync(process.env.RUNNER_TEMP_PATH);
+            if (path.relative(temp, install).startsWith("..")) {
+              throw new Error(`npm override escaped RUNNER_TEMP: ${install}`);
+            }
+            if (!fs.existsSync(path.join(
+              install,
+              "node_modules",
+              "ai-harness-doctor",
+              "bin",
+              "cli.js",
+            ))) {
+              throw new Error("npm override package was not installed in RUNNER_TEMP");
             }
           '
 

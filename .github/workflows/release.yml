@@ -40,26 +40,84 @@ jobs:
       - name: Check npm package contents
         run: npm pack --dry-run
 
+      - name: Prepare release Action fixture
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/release-drift-repo
+        run: |
+          mkdir -p "$FIXTURE_ROOT"
+          cat > "$FIXTURE_ROOT/AGENTS.md" <<'EOF'
+          # Project overview
+
+          Deterministic release Action fixture.
+
+          # Build & test
+
+          No build commands are required.
+
+          # Conventions
+
+          Keep this fixture minimal.
+
+          # Testing requirements
+
+          Run the Action smoke test.
+
+          # Safety
+
+          Do not add secrets.
+
+          # Commit & PR
+
+          Use pull requests.
+          EOF
+
       # Validate the exact tagged checkout through the composite wrapper before
-      # publishing an immutable npm version.
-      - name: Pre-publish Action self-test
-        id: action
+      # publishing an immutable npm version. Both public command paths must work
+      # through the wrapper; the new npm version cannot be installed until after
+      # publish, so these calls deliberately use the tagged bundled code.
+      - name: Pre-publish bundled scan self-test
+        id: preflight-scan
         uses: ./
         with:
           command: scan
           path: .
-          sarif-file: release-preflight.sarif
+          sarif-file: release-preflight-scan.sarif
+
+      - name: Pre-publish bundled drift self-test
+        id: preflight-drift
+        uses: ./
+        with:
+          command: drift
+          path: ${{ runner.temp }}/release-drift-repo
+          sarif-file: ${{ runner.temp }}/release-preflight-drift.sarif
 
       - name: Validate pre-publish Action SARIF
         env:
-          SARIF_FILE: ${{ steps.action.outputs.sarif-file }}
+          SCAN_SARIF: ${{ steps.preflight-scan.outputs.sarif-file }}
+          DRIFT_SARIF: ${{ steps.preflight-drift.outputs.sarif-file }}
         run: |
           node -e '
             const fs = require("node:fs");
-            const sarif = JSON.parse(fs.readFileSync(process.env.SARIF_FILE, "utf8"));
-            const run = sarif.runs && sarif.runs[0];
-            if (sarif.version !== "2.1.0" || !run || !Array.isArray(run.results)) {
-              throw new Error("Tagged Action did not emit a SARIF 2.1.0 document");
+            const expected = require("./package.json").version;
+            for (const [label, file] of Object.entries({
+              scan: process.env.SCAN_SARIF,
+              drift: process.env.DRIFT_SARIF,
+            })) {
+              const sarif = JSON.parse(fs.readFileSync(file, "utf8"));
+              const run = sarif.runs && sarif.runs[0];
+              const driver = run && run.tool && run.tool.driver;
+              if (
+                sarif.version !== "2.1.0"
+                || !run
+                || !Array.isArray(run.results)
+                || !driver
+                || driver.version !== expected
+              ) {
+                throw new Error(
+                  `Tagged bundled ${label} mismatch: expected ${expected}, ` +
+                  `got ${driver && driver.version}`,
+                );
+              }
             }
           '
 
@@ -87,6 +145,7 @@ jobs:
       floating_tag: ${{ steps.release_meta.outputs.floating_tag }}
       is_prerelease: ${{ steps.release_meta.outputs.is_prerelease }}
       npm_tag: ${{ steps.release_meta.outputs.npm_tag }}
+      package_version: ${{ steps.release_meta.outputs.package_version }}
     permissions:
       contents: write
       id-token: write
@@ -144,6 +203,7 @@ jobs:
             npm_tag="latest"
             floating_tag="v$major"
           fi
+          echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
           echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
           echo "npm_tag=$npm_tag" >> "$GITHUB_OUTPUT"
           echo "floating_tag=$floating_tag" >> "$GITHUB_OUTPUT"
@@ -327,32 +387,134 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare published Action fixture
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/published-drift-repo
+        run: |
+          mkdir -p "$FIXTURE_ROOT"
+          cat > "$FIXTURE_ROOT/AGENTS.md" <<'EOF'
+          # Project overview
+
+          Deterministic published Action fixture.
+
+          # Build & test
+
+          No build commands are required.
+
+          # Conventions
+
+          Keep this fixture minimal.
+
+          # Testing requirements
+
+          Run the Action smoke test.
+
+          # Safety
+
+          Do not add secrets.
+
+          # Commit & PR
+
+          Use pull requests.
+          EOF
+
       # Execute the separately checked-out floating ref. This avoids resolving
       # `@vN` before the publish job has moved it, while still testing the exact
       # remote Action content consumers receive.
-      - name: Verify published floating Action
-        id: action
+      - name: Verify published floating bundled scan
+        id: bundled-scan
         uses: ./published-action
         with:
           command: scan
           path: .
-          sarif-file: published-major.sarif
+          sarif-file: published-major-scan.sarif
 
-      - name: Validate published Action SARIF and version
+      # npm metadata and tarballs can take a short time to become visible after
+      # publish. Bound the wait and verify the exact immutable version rather
+      # than weakening the Action call to a mutable dist-tag.
+      - name: Wait for exact npm package visibility
         env:
-          SARIF_FILE: ${{ steps.action.outputs.sarif-file }}
+          PACKAGE_VERSION: ${{ needs.publish.outputs.package_version }}
+        run: |
+          set -euo pipefail
+          visibility_dir="$RUNNER_TEMP/npm-visibility"
+          rm -rf "$visibility_dir"
+          mkdir -p "$visibility_dir"
+          for attempt in {1..12}; do
+            if npm pack \
+              "ai-harness-doctor@$PACKAGE_VERSION" \
+              --pack-destination "$visibility_dir" \
+              --ignore-scripts \
+              >/dev/null 2>&1; then
+              echo "Verified ai-harness-doctor@$PACKAGE_VERSION is downloadable from npm."
+              rm -rf "$visibility_dir"
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              echo "Waiting for ai-harness-doctor@$PACKAGE_VERSION on npm (attempt $attempt/12)."
+              sleep 10
+            fi
+          done
+          echo "ai-harness-doctor@$PACKAGE_VERSION was not downloadable after 12 attempts." >&2
+          exit 1
+
+      # Now that npm publish is complete, use the floating Action wrapper to
+      # install and execute the exact immutable package from this release.
+      - name: Verify published exact npm drift override
+        id: npm-drift
+        uses: ./published-action
+        with:
+          command: drift
+          path: ${{ runner.temp }}/published-drift-repo
+          version: ${{ needs.publish.outputs.package_version }}
+          sarif-file: ${{ runner.temp }}/published-npm-drift.sarif
+
+      - name: Validate published Action success matrix
+        env:
+          BUNDLED_SCAN: ${{ steps.bundled-scan.outputs.sarif-file }}
+          NPM_DRIFT: ${{ steps.npm-drift.outputs.sarif-file }}
           FLOATING_TAG: ${{ needs.publish.outputs.floating_tag }}
+          EXPECTED_VERSION: ${{ needs.publish.outputs.package_version }}
+          INSTALL_DIR: ${{ runner.temp }}/ai-harness-doctor-action
+          RUNNER_TEMP_PATH: ${{ runner.temp }}
         run: |
           node -e '
             const fs = require("node:fs");
-            const expected = require("./package.json").version;
-            const sarif = JSON.parse(fs.readFileSync(process.env.SARIF_FILE, "utf8"));
-            const driver = sarif.runs && sarif.runs[0] && sarif.runs[0].tool.driver;
-            if (sarif.version !== "2.1.0" || !driver || driver.version !== expected) {
-              throw new Error(
-                `Published ${process.env.FLOATING_TAG} Action mismatch: ` +
-                `expected ${expected}, got ${driver && driver.version}`
-              );
+            const path = require("node:path");
+            const expected = process.env.EXPECTED_VERSION;
+            for (const [label, file] of Object.entries({
+              bundledScan: process.env.BUNDLED_SCAN,
+              npmDrift: process.env.NPM_DRIFT,
+            })) {
+              const sarif = JSON.parse(fs.readFileSync(file, "utf8"));
+              const run = sarif.runs && sarif.runs[0];
+              const driver = run && run.tool && run.tool.driver;
+              if (
+                sarif.version !== "2.1.0"
+                || !run
+                || !Array.isArray(run.results)
+                || !driver
+                || driver.version !== expected
+              ) {
+                throw new Error(
+                  `Published ${process.env.FLOATING_TAG} ${label} mismatch: ` +
+                  `expected ${expected}, got ${driver && driver.version}`,
+                );
+              }
+            }
+            const install = fs.realpathSync(process.env.INSTALL_DIR);
+            const temp = fs.realpathSync(process.env.RUNNER_TEMP_PATH);
+            if (path.relative(temp, install).startsWith("..")) {
+              throw new Error(`Published npm override escaped RUNNER_TEMP: ${install}`);
+            }
+            if (!fs.existsSync(path.join(
+              install,
+              "node_modules",
+              "ai-harness-doctor",
+              "bin",
+              "cli.js",
+            ))) {
+              throw new Error("Published npm override package is missing");
             }
           '
 

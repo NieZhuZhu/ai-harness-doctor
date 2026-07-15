@@ -14,7 +14,8 @@ Releases are tag-driven and published by GitHub Actions.
    ```
 3. The `release` workflow:
    - runs the full release tests;
-   - self-tests the exact tagged checkout through `uses: ./`;
+   - self-tests the exact tagged checkout through bundled `uses: ./` scan and
+     drift calls;
    - verifies the tag version matches `package.json`;
    - verifies the exact tag commit is reachable from `origin/main`;
    - if the version already exists on npm, verifies its `gitHead` and packed
@@ -22,12 +23,20 @@ Releases are tag-driven and published by GitHub Actions.
    - publishes to npm with provenance and an explicit release-channel dist-tag;
    - creates the GitHub Release when it does not already exist;
    - for a stable version, force-updates the matching floating major Action tag
-     to the release commit, checks out that public tag, validates its Action
-     SARIF version, and opens a Marketplace confirmation issue.
+     to the release commit, checks out that public tag, validates its bundled
+     scan and exact newly published npm drift override (including both SARIF
+     driver versions and temp-install containment), and opens a Marketplace
+     confirmation issue.
 
-The npm publish never runs before the tagged Action self-test passes. For stable
-versions, floating-major verification runs after publish so it exercises the
-same ref consumers will use.
+The npm publish never runs before both tagged bundled command paths pass. For
+stable versions, floating-major verification runs after publish so it exercises
+the same ref consumers will use and can install the immutable npm version that
+was just published. Pull-request self-test also runs bundled scan/drift plus an
+exact already-published stable npm version: bundled calls prove the PR source;
+the npm call proves only public install/dispatch compatibility. All npm
+overrides install under `RUNNER_TEMP`, never user HOME or a global prefix. The
+stable verifier allows up to two minutes for npm CDN visibility, probing only
+the exact version; it never falls back to `latest` or treats timeout as success.
 
 Release verification also includes the workflow annotations: current
 full-SHA-pinned Action dependencies must not emit embedded Node runtime
