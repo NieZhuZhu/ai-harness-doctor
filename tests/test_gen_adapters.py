@@ -14,15 +14,15 @@ import gen_adapters  # noqa: E402
 
 
 class GenAdaptersUnitTests(unittest.TestCase):
-    def test_generate_produces_15_files_from_5_commands(self):
+    def test_generate_produces_18_files_from_6_commands(self):
         files = gen_adapters.generate(ROOT)
-        self.assertEqual(len(gen_adapters.ADAPTER_COMMANDS), 5)
-        self.assertEqual(len(files), 15)  # 5 commands x (codex + cursor + gemini)
+        self.assertEqual(len(gen_adapters.ADAPTER_COMMANDS), 6)
+        self.assertEqual(len(files), 18)  # 6 commands x (codex + cursor + gemini)
 
     def test_generated_paths_match_expected_layout(self):
         files = gen_adapters.generate(ROOT)
         rels = {p.relative_to(ROOT).as_posix() for p in files}
-        for name in ("doctor", "scan", "treat", "drift", "eval"):
+        for name in ("doctor", "scan", "treat", "drift", "eval", "explain"):
             self.assertIn(f"adapters/codex/harness-{name}.md", rels)
             self.assertIn(f"adapters/cursor/harness-{name}.md", rels)
             self.assertIn(f"adapters/gemini/harness/{name}.toml", rels)
@@ -74,7 +74,7 @@ class GenAdaptersCliTests(unittest.TestCase):
     def test_check_passes_on_committed_repo(self):
         proc = subprocess.run([sys.executable, str(GEN), str(ROOT), "--check"], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertIn("15 generated adapters match", proc.stdout)
+        self.assertIn("18 generated adapters match", proc.stdout)
 
     def test_check_detects_drift_and_names_the_file(self):
         td, repo = self._copy_repo_adapters()
@@ -108,14 +108,14 @@ class GenAdaptersCliTests(unittest.TestCase):
         check_proc = self._run(repo, "--check")
         self.assertEqual(check_proc.returncode, 0, check_proc.stdout + check_proc.stderr)
 
-    def test_write_from_empty_creates_all_15(self):
+    def test_write_from_empty_creates_all_18(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             (repo / "scripts").mkdir(parents=True)
             shutil.copy2(GEN, repo / "scripts" / "gen_adapters.py")
             proc = self._run(repo)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-            self.assertIn("Wrote 15 adapter(s) of 15 total", proc.stdout)
+            self.assertIn("Wrote 18 adapter(s) of 18 total", proc.stdout)
             self.assertTrue((repo / "adapters" / "gemini" / "harness" / "doctor.toml").is_file())
 
 

@@ -65,7 +65,7 @@ test('parseInstallArgs accepts --agent=<value> and --link', () => {
 test('SCRIPT_COMMANDS maps every Python-backed subcommand to a script', () => {
   assert.deepStrictEqual(
     Object.keys(SCRIPT_COMMANDS).sort(),
-    ['draft', 'drift', 'eval', 'plan', 'review', 'scan', 'stubs', 'validate']
+    ['draft', 'drift', 'eval', 'explain', 'plan', 'review', 'scan', 'stubs', 'validate']
   );
   for (const spec of Object.values(SCRIPT_COMMANDS)) {
     assert.ok(spec[0].endsWith('.py'), `expected a .py script, got ${spec[0]}`);

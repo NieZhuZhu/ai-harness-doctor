@@ -1,0 +1,1 @@
+Read {{PLAYBOOK}}/SKILL.md. Explain the effective canonical instruction chain for one target path on the target repo (argument or cwd), and obey the phase stop condition (stop after presenting the read-only scope evidence). Scripts live in {{PLAYBOOK}}/scripts/.

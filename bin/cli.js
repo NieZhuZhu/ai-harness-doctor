@@ -15,7 +15,14 @@ const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package
 const PACKAGE_VERSION = PACKAGE_JSON.version;
 const SKILL_NAME = 'ai-harness-doctor';
 const AGENTS = ['claude', 'codex', 'cursor', 'gemini'];
-const COMMAND_NAMES = ['harness-doctor', 'harness-scan', 'harness-treat', 'harness-drift', 'harness-eval'];
+const COMMAND_NAMES = [
+  'harness-doctor',
+  'harness-scan',
+  'harness-treat',
+  'harness-drift',
+  'harness-eval',
+  'harness-explain',
+];
 const MANIFEST_DIR = homePath('.ai-harness-doctor');
 const MANIFEST_PATH = path.join(MANIFEST_DIR, 'manifest.json');
 const UPDATE_CHECK_URL = 'https://registry.npmjs.org/ai-harness-doctor/latest';
@@ -29,6 +36,7 @@ Usage:
   ai-harness-doctor uninstall [--agent claude|codex|cursor|gemini|all] [--project]
   ai-harness-doctor update
   ai-harness-doctor scan [...args]
+  ai-harness-doctor explain <repo-root> <target-path> [--json]
   ai-harness-doctor plan [...args]
   ai-harness-doctor draft [...args]
   ai-harness-doctor validate [...args]
@@ -47,6 +55,7 @@ Examples:
   npx ai-harness-doctor@latest update
   npm i -g ai-harness-doctor && ai-harness-doctor install --link
   npx ai-harness-doctor scan .
+  npx ai-harness-doctor explain . packages/api/src/handler.ts
   npx ai-harness-doctor draft . -o AGENTS.md   # fact-derived starter AGENTS.md instead of an empty skeleton
   npx ai-harness-doctor validate .
   npx ai-harness-doctor drift . --strict
@@ -728,7 +737,7 @@ function adapterOutputPaths(agent, project, targetRoot) {
     return new Set(COMMAND_NAMES.map((name) => homePath('.codex', 'prompts', `${name}.md`)));
   }
   if (agent === 'gemini') {
-    return new Set(['doctor', 'scan', 'treat', 'drift', 'eval'].map(
+    return new Set(['doctor', 'scan', 'treat', 'drift', 'eval', 'explain'].map(
       (name) => homePath('.gemini', 'commands', 'harness', `${name}.toml`)
     ));
   }
@@ -1180,6 +1189,7 @@ function updateInstalled() {
 // --self-test` iterate this map so they can never disagree about what exists.
 const SCRIPT_COMMANDS = {
   scan: ['scan.py'],
+  explain: ['explain.py'],
   plan: ['canonicalize.py', '--plan'],
   draft: ['canonicalize.py', '--draft'],
   validate: ['canonicalize.py', '--validate'],

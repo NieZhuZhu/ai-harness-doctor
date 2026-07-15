@@ -99,6 +99,33 @@ class CliInstallerTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["installs"], [])
 
+    def test_explain_cli_and_claude_command_install_lifecycle(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "AGENTS.md").write_text("Use npm.\n", encoding="utf-8")
+            (project / "packages" / "api").mkdir(parents=True)
+            (project / "packages" / "api" / "AGENTS.md").write_text("Use pnpm.\n", encoding="utf-8")
+
+            explain_proc = self.run_cli(
+                ["explain", str(project), "packages/api/src/future.py", "--json"],
+                home,
+                project,
+            )
+            report = json.loads(explain_proc.stdout)
+            self.assertEqual(report["schema_version"], 1)
+            self.assertEqual(report["effective_scope"], "packages/api")
+
+            self.run_cli(["install", "--project"], home, project)
+            command = project / ".claude" / "commands" / "harness-explain.md"
+            self.assertTrue(command.is_file())
+            self.assertIn("read-only", command.read_text(encoding="utf-8"))
+            command.unlink()
+            self.run_cli(["update"], home, project)
+            self.assertTrue(command.is_file())
+            self.run_cli(["uninstall", "--project"], home, project)
+            self.assertFalse(command.exists())
+
     def test_install_refuses_malformed_manifest_without_overwriting_it(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             home = Path(home_dir)

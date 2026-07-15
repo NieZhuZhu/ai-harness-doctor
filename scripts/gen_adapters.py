@@ -3,8 +3,8 @@
 
 The adapters under ``adapters/{codex,cursor,gemini}/`` are near-identical pointer
 prompts that vary only by command (phase / action / stop condition) and by target
-format (Markdown for Codex & Cursor, TOML for Gemini). Hand-maintaining 15 files
-(5 commands x 3 flavors) invites exactly the kind of drift this project guards
+format (Markdown for Codex & Cursor, TOML for Gemini). Hand-maintaining 18 files
+(6 commands x 3 flavors) invites exactly the kind of drift this project guards
 against, so this script renders every one of them from ``ADAPTER_COMMANDS`` below.
 
 Usage:
@@ -26,7 +26,7 @@ from pathlib import Path
 #                   (Codex & Cursor).
 # - ``stop_toml``   the stop condition phrasing used by the Gemini TOML flavor.
 # - ``description`` the Gemini command ``description`` field.
-# Order follows the CLI's COMMAND_NAMES (doctor, scan, treat, drift, eval).
+# Order follows the CLI's COMMAND_NAMES (doctor, scan, treat, drift, eval, explain).
 ADAPTER_COMMANDS = [
     {
         "name": "doctor",
@@ -62,6 +62,13 @@ ADAPTER_COMMANDS = [
         "description": "Run AI Harness Doctor efficacy eval",
         "stop_md": "stop when metrics are produced",
         "stop_toml": "metrics are produced",
+    },
+    {
+        "name": "explain",
+        "action": "Explain the effective canonical instruction chain for one target path",
+        "description": "Explain AI Harness Doctor instructions for a path",
+        "stop_md": "stop after presenting the read-only scope evidence",
+        "stop_toml": "scope evidence is presented without modifying files",
     },
 ]
 

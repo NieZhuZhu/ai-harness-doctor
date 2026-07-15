@@ -383,6 +383,17 @@ python3 scripts/eval_run.py --tasks tasks.json --label nightly --workdir /path/t
 python3 scripts/eval_run.py --stats results-nightly.json --json
 ```
 
+## Explain a target path
+
+Use the same lexical scope model as Phase 0 to answer which canonical instructions apply to one file, directory, or future path:
+
+```bash
+npx ai-harness-doctor explain /path/to/repo packages/api/src/handler.ts
+npx ai-harness-doctor explain /path/to/repo packages/api/src/future.ts --json
+```
+
+Schema version 1 reports the normalized `target`, `effective_scope`, root→nearest `canonical_chain`, `diagnostic_sources`, relevant `scope_overrides` / same-scope `conflicts`, and `limitations`. Existing and future contained paths are accepted; escapes and external symlinks are rejected. Targets under scanner-excluded subtrees are explicitly marked. Canonical files are standards-backed inheritance; other recognized configs are only diagnostically associated because this command does not infer tool-specific globs, frontmatter, or prose scope. It never merges text, executes plugins, or writes files.
+
 ## MCP server
 
 The core read-only capabilities are also exposed as an MCP (Model Context Protocol) stdio server so agents can call them as tools:
@@ -396,14 +407,14 @@ Transport is JSON-RPC 2.0 over newline-delimited JSON (one JSON object per line 
 
 - `initialize` → negotiates stable MCP `2025-11-25` or legacy `2024-11-05` from the requested protocol version (unsupported versions receive the latest stable version), then returns `{ protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version } }`.
 - `notifications/initialized` → notification, no response.
-- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, and `harness_eval_generate`, each with a closed input schema `{ repo: string (default "."), ... }`.
+- `tools/list` → advertises `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, `harness_eval_generate`, and `harness_explain`, each with a closed input schema.
 - `tools/call` → dispatches to the matching Python script, keeps its output in `content[0]`, and returns machine-readable `{ exitCode, ok, status, report? }` metadata as JSON in `content[1]`; modern connections also receive the identical standard `structuredContent`.
 
-Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, and `harness_eval_generate`. All six are read-only. Under `2025-11-25`, tools advertise closed input schemas, read-only/non-destructive/idempotent/closed-world annotations, and an output schema for the typed metadata envelope; under `2024-11-05`, modern-only fields are omitted. Explicitly requested valid JSON finding reports return `status: "findings"` without becoming MCP execution errors; invalid targets, runtime failures, timeouts, malformed reports, and ambiguous non-zero text reports set `isError: true`. Unknown methods/tools and invalid arguments return a JSON-RPC error object. A pre-initialize direct tool call retains the historical 2024 shape for compatibility; a valid handshake selects the connection's wire version. The server remains stdio-only and does not expose mutation or other MCP capability families.
+Tools and their optional booleans: `harness_scan` (`json`), `harness_drift` (`json`, `strict`), `harness_validate` (`json`), `harness_plan`, `harness_stubs`, `harness_eval_generate`, and `harness_explain` (required `target`, optional `json`). All seven are read-only. Under `2025-11-25`, tools advertise closed input schemas, read-only/non-destructive/idempotent/closed-world annotations, and an output schema for the typed metadata envelope; under `2024-11-05`, modern-only fields are omitted. Explicitly requested valid JSON finding reports return `status: "findings"` without becoming MCP execution errors; invalid targets, runtime failures, timeouts, malformed reports, and ambiguous non-zero text reports set `isError: true`. Unknown methods/tools and invalid arguments return a JSON-RPC error object. A pre-initialize direct tool call retains the historical 2024 shape for compatibility; a valid handshake selects the connection's wire version. The server remains stdio-only and does not expose mutation or other MCP capability families.
 
 ## Runtime & self-test
 
-The CLI is a dual Node + Python runtime: the Node entrypoint dispatches every Python-backed subcommand (`scan`, `plan`, `validate`, `stubs`, `drift`, `review`, `eval`) and the MCP server through one shared Python resolver. Python is discovered in priority order — `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python` — and only a Python **3** interpreter is accepted. When no interpreter is found, every subcommand fails with the same clean, actionable message (install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON`) rather than leaking a raw stack trace.
+The CLI is a dual Node + Python runtime: the Node entrypoint dispatches every Python-backed subcommand (`scan`, `explain`, `plan`, `validate`, `stubs`, `drift`, `review`, `eval`) and the MCP server through one shared Python resolver. Python is discovered in priority order — `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python` — and only a Python **3** interpreter is accepted. When no interpreter is found, every subcommand fails with the same clean, actionable message (install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON`) rather than leaking a raw stack trace.
 
 Use `doctor --self-test` to verify the runtime before running the pipeline:
 
@@ -484,4 +495,4 @@ Correction: proceed strictly through Checkup, Treat, Follow-up, and Efficacy, wi
 - `commands/`: Claude Code slash commands routed to this skill by phase.
 - `adapters/`: thin pointer templates for Codex, Cursor, Gemini, and universal agents. The per-command adapters are generated from a single source by `scripts/gen_adapters.py`; run `python3 scripts/gen_adapters.py` to regenerate and `python3 scripts/gen_adapters.py --check` (or `npm run lint:adapters`) to verify they match in CI.
 - `bin/cli.js`: npm CLI, installer, and forwarding entry point for Python scripts.
-- `bin/mcp-server.js`: MCP stdio server exposing `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, and `harness_eval_generate`.
+- `bin/mcp-server.js`: MCP stdio server exposing `harness_scan`, `harness_drift`, `harness_validate`, `harness_plan`, `harness_stubs`, `harness_eval_generate`, and `harness_explain`.

@@ -916,21 +916,38 @@ def instruction_scope_map(files):
         )
     ]
 
-    def effective_scope(path):
-        directory_parts = _path_parts(_scope_path(path))
-        candidates = []
-        for scope in scope_names:
-            if scope == ".":
-                candidates.append(scope)
-                continue
-            scope_parts = _path_parts(scope)
-            if directory_parts[: len(scope_parts)] == scope_parts:
-                candidates.append(scope)
-        return max(candidates, key=lambda candidate: len(_path_parts(candidate)))
-
-    file_scopes = {file_entry["path"]: effective_scope(file_entry["path"]) for file_entry in files}
+    file_scopes = {
+        file_entry["path"]: effective_instruction_scope(file_entry["path"], scope_names)
+        for file_entry in files
+    }
     parent_by_scope = {scope: nearest_parent(scope) for scope in scope_names}
     return rows, file_scopes, parent_by_scope
+
+
+def effective_instruction_scope(path, scope_names, path_is_directory=False):
+    """Return the deepest lexical canonical scope applying to ``path``."""
+    target = str(path) if path_is_directory else _scope_path(path)
+    target_parts = _path_parts(target)
+    candidates = ["."]
+    for scope in scope_names:
+        if scope == ".":
+            continue
+        scope_parts = _path_parts(scope)
+        if target_parts[: len(scope_parts)] == scope_parts:
+            candidates.append(scope)
+    return max(candidates, key=lambda candidate: len(_path_parts(candidate)))
+
+
+def instruction_scope_chain(scope, parent_by_scope):
+    """Return lexical scope names from repository root to ``scope``."""
+    chain = []
+    current = scope
+    while current is not None:
+        chain.append(current)
+        current = parent_by_scope.get(current)
+    if "." not in chain:
+        chain.append(".")
+    return list(reversed(chain))
 
 
 def analyze_scoped_conflicts(files):
@@ -1448,11 +1465,9 @@ def find_gaps(root, surface, conflicts=None, ctx=None):
     )
 
 
-def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=None):
+def collect_instruction_files(repo_root, max_bytes=32768, ctx=None):
+    """Collect recognized instruction configs once for scan/explain consumers."""
     root = Path(repo_root).resolve()
-    # Walk the tree once and share the read/parse cache across every stage below
-    # (PERF-01/PERF-02). In monorepo mode the caller passes a subcontext sliced
-    # from the parent inventory so package subtrees are not re-walked (PERF-03).
     ctx = ctx or ScanContext(root)
     files = []
     warnings = []
@@ -1461,6 +1476,15 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
         warnings.extend(info.pop("warnings"))
         files.append(info)
     result_files = [{k: v for k, v in f.items() if k != "text"} for f in files]
+    return files, result_files, warnings, ctx
+
+
+def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=None):
+    root = Path(repo_root).resolve()
+    # Walk the tree once and share the read/parse cache across every stage below
+    # (PERF-01/PERF-02). In monorepo mode the caller passes a subcontext sliced
+    # from the parent inventory so package subtrees are not re-walked (PERF-03).
+    files, result_files, warnings, ctx = collect_instruction_files(root, max_bytes, ctx)
     mcp = scan_mcp(root, ctx)
     hooks = scan_hooks(root, ctx)
     permissions = scan_permissions(root, ctx)
