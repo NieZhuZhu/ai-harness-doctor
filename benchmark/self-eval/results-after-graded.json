@@ -212,13 +212,34 @@
       "answer": "Report every reachable repository, but any unscanned entry fails with exit 8 after finding exits 2, 3, 4, and 7 take precedence.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "stored-result-health",
+      "stdout": "Offline eval consumers validate stored result records, derive health from those records, and require every cached health field to agree.",
+      "answer": "Offline eval consumers validate stored result records, derive health from those records, and require every cached health field to agree.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "action-success-matrix",
+      "stdout": "PR validation proves bundled scan, bundled drift, and an exact npm override; release repeats both bundled commands before npm and verifies floating bundled code plus the exact new npm version post-publish.",
+      "answer": "PR validation proves bundled scan, bundled drift, and an exact npm override; release repeats both bundled commands before npm and verifies floating bundled code plus the exact new npm version post-publish.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "structured-applicability",
+      "stdout": "Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion.",
+      "answer": "Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 30,
-    "total": 30,
+    "passed": 33,
+    "total": 33,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -226,12 +247,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "a85260ac891f9cdef6d3316e770948d91a9d2a57a309798e35fd3f1bf6cd11a6"
+      "sha256": "39e57eebfc2e7f8e87cc2afa59f19893859bd2eb21f9f26c866fa324f9881c0a"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "99916b841c799f5b53aab869ac6d78d011a1a121d6ea8705f8f620be3e83eb23"
+        "sha256": "858f968f06143e50c412ea01f100d409099d319fc62283a948f8b6ea9ec0acd4"
       }
     ]
   }
