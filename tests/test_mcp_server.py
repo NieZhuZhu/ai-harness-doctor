@@ -367,12 +367,14 @@ class McpServerTests(unittest.TestCase):
                     response = self._call("harness_explain", arguments)
                     self.assertEqual(response["error"]["code"], -32602)
 
-    def test_declarative_positionals_preserve_old_argv_and_order_explain_target(self):
+    def test_declarative_arguments_preserve_old_argv_and_order_targets(self):
         script = (
             "const m=require('./bin/mcp-server.js');"
             "const byName=new Map(m.TOOLS.map(t=>[t.name,t]));"
             "console.log(JSON.stringify({"
             "scan:m.buildScriptArgs(byName.get('harness_scan'),{repo:'/repo',json:true}).argv.slice(1),"
+            "eval:m.buildScriptArgs(byName.get('harness_eval_generate'),"
+            "{repo:'/repo',target:'packages/api/x.py'}).argv.slice(1),"
             "explain:m.buildScriptArgs(byName.get('harness_explain'),"
             "{repo:'/repo',target:'src/x.py',json:true}).argv.slice(1)"
             "}));"
@@ -386,6 +388,10 @@ class McpServerTests(unittest.TestCase):
         )
         argv = json.loads(proc.stdout)
         self.assertEqual(argv["scan"], ["/repo", "--json"])
+        self.assertEqual(
+            argv["eval"],
+            ["--generate", "/repo", "--target", "packages/api/x.py"],
+        )
         self.assertEqual(argv["explain"], ["/repo", "src/x.py", "--json"])
 
     def test_explain_returns_same_nested_json_scope_as_cli(self):
@@ -587,6 +593,53 @@ class McpServerTests(unittest.TestCase):
             self.assertTrue(metadata["ok"])
             # Never writes a file — no -o/--output flag is ever passed over MCP.
             self.assertEqual({p.name for p in repo.iterdir()}, {"AGENTS.md", "package.json"})
+
+    def test_call_eval_generate_target_returns_nested_scope_tasks(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("Use Conventional Commits.\n", encoding="utf-8")
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            package = repo / "packages" / "api"
+            package.mkdir(parents=True)
+            (package / "AGENTS.md").write_text("Use package commands.\n", encoding="utf-8")
+            (package / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {"test:api": "vitest run"},
+                        "devDependencies": {"vitest": "^3"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target = "packages/api/src/future.py"
+            response = self._call(
+                "harness_eval_generate",
+                {"repo": str(repo), "target": target},
+            )
+            result = response["result"]
+            tasks = json.loads(result["content"][0]["text"])
+
+            self.assertFalse(result["isError"])
+            self.assertTrue(tasks)
+            self.assertTrue(all(task["scope"] == "packages/api" for task in tasks))
+            self.assertTrue(all(task["target"] == target for task in tasks))
+            self.assertIn(
+                "scope:packages%2Fapi:test:api",
+                {task["id"] for task in tasks},
+            )
+            self.assertEqual(self._metadata(result)["status"], "ok")
+
+    def test_eval_generate_target_rejects_wrong_types_and_unknown_properties(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("Use npm.\n", encoding="utf-8")
+            for arguments in (
+                {"repo": str(repo), "target": 42},
+                {"repo": str(repo), "target": "src/x.py", "unknown": True},
+            ):
+                with self.subTest(arguments=arguments):
+                    response = self._call("harness_eval_generate", arguments)
+                    self.assertEqual(response["error"]["code"], -32602)
 
     def test_unknown_method_and_tool_produce_errors(self):
         messages = [

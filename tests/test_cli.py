@@ -1208,6 +1208,40 @@ class CliInstallerTests(unittest.TestCase):
             proc = self.run_cli(["help"], home, Path(project_dir))
             self.assertIn("ai-harness-doctor mcp", proc.stdout)
 
+    def test_eval_cli_forwards_target_aware_generation(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            repo = Path(project_dir)
+            package = repo / "packages" / "api"
+            package.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text("Use pnpm.\n", encoding="utf-8")
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            (package / "AGENTS.md").write_text("Use local commands.\n", encoding="utf-8")
+            (package / "package.json").write_text(
+                json.dumps({"scripts": {"test:api": "vitest run"}}),
+                encoding="utf-8",
+            )
+
+            proc = self.run_cli(
+                [
+                    "eval",
+                    "--generate",
+                    str(repo),
+                    "--target",
+                    "packages/api/src/future.py",
+                ],
+                home,
+                repo,
+            )
+            tasks = json.loads(proc.stdout)
+
+            self.assertTrue(tasks)
+            self.assertTrue(all(task["scope"] == "packages/api" for task in tasks))
+            self.assertIn(
+                "scope:packages%2Fapi:test:api",
+                {task["id"] for task in tasks},
+            )
+
     def test_mcp_command_starts_and_responds_to_initialize(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             env = os.environ.copy()

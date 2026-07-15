@@ -14,11 +14,14 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 # semantic.py lives in the same scripts/ dir; reuse its canonical ground-truth
 # extraction so eval task generation and the scan/drift fact engine agree on the
 # same sources (single source of truth) instead of maintaining a divergent copy.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import explain  # noqa: E402  # shared contained target/scope vocabulary
+import facts  # noqa: E402
 import semantic  # noqa: E402
 
 EVIDENCE_SCHEMA_VERSION = 1
@@ -347,6 +350,13 @@ def _load_json_file(path):
         return None
 
 
+def _load_contained_json(path, root):
+    """Load one JSON fact only when its resolved file stays inside root."""
+    if not facts.is_file_within_root(root, path):
+        return None
+    return _load_json_file(path)
+
+
 def detect_package_manager(root):
     """Best-effort package-manager detection from lockfiles / packageManager."""
     for fname, pm in PKG_MANAGER_LOCKFILES:
@@ -362,7 +372,88 @@ def detect_package_manager(root):
     return None
 
 
-def generate_tasks(repo_root):
+def _logical_source(path, root):
+    """Return a repository-relative source path without leaking host paths."""
+    return Path(path).resolve().relative_to(root).as_posix()
+
+
+def _ancestor_dirs(fact_root, repo_root):
+    """Return fact_root, then its lexical ancestors up to repo_root."""
+    current = Path(fact_root).resolve()
+    repo_root = Path(repo_root).resolve()
+    dirs = []
+    while True:
+        dirs.append(current)
+        if current == repo_root:
+            return dirs
+        if repo_root not in current.parents:
+            raise ValueError("effective scope escapes repository")
+        current = current.parent
+
+
+def _scoped_package_manager(fact_root, repo_root):
+    """Return the nearest unambiguous package manager plus evidence paths."""
+    for directory in _ancestor_dirs(fact_root, repo_root):
+        candidates = {}
+        for filename, manager in PKG_MANAGER_LOCKFILES:
+            path = directory / filename
+            if facts.is_file_within_root(repo_root, path):
+                candidates.setdefault(manager, []).append(_logical_source(path, repo_root))
+        package_path = directory / "package.json"
+        package = _load_contained_json(package_path, repo_root)
+        if isinstance(package, dict):
+            field = package.get("packageManager")
+            match = re.match(r"([A-Za-z]+)@", field) if isinstance(field, str) else None
+            if match:
+                candidates.setdefault(match.group(1).lower(), []).append(
+                    _logical_source(package_path, repo_root)
+                )
+        if len(candidates) > 1:
+            return None, []
+        if len(candidates) == 1:
+            manager = next(iter(candidates))
+            return manager, sorted(set(candidates[manager]))
+    return None, []
+
+
+def _scoped_node_version(fact_root, repo_root):
+    """Return the nearest unambiguous Node major plus evidence paths."""
+    for directory in _ancestor_dirs(fact_root, repo_root):
+        candidates = {}
+        nvmrc = directory / ".nvmrc"
+        if facts.is_file_within_root(repo_root, nvmrc):
+            match = re.search(r"(\d+)", nvmrc.read_text(encoding="utf-8", errors="replace"))
+            if match:
+                candidates.setdefault(match.group(1), []).append(_logical_source(nvmrc, repo_root))
+        package_path = directory / "package.json"
+        package = _load_contained_json(package_path, repo_root)
+        engines = package.get("engines") if isinstance(package, dict) else None
+        raw = engines.get("node") if isinstance(engines, dict) else None
+        match = re.search(r"(\d+)", raw) if isinstance(raw, str) else None
+        if match:
+            candidates.setdefault(match.group(1), []).append(_logical_source(package_path, repo_root))
+        if len(candidates) > 1:
+            return None, []
+        if len(candidates) == 1:
+            version = next(iter(candidates))
+            return version, sorted(set(candidates[version]))
+    return None, []
+
+
+def _scoped_python_versions(fact_root, repo_root):
+    """Return nearest unambiguous Python pins plus their containing directory."""
+    for directory in _ancestor_dirs(fact_root, repo_root):
+        grounds = semantic.python_ground_versions(directory)
+        if not grounds:
+            continue
+        values = {value for _source, value in grounds}
+        if len(values) != 1:
+            return [], directory
+        return grounds, directory
+    return [], fact_root
+
+
+def generate_tasks(repo_root, target=None):
     """Derive a deterministic list of eval tasks from repository facts.
 
     Returns a list of task dicts in the same shape ``run_tasks`` consumes:
@@ -371,41 +462,108 @@ def generate_tasks(repo_root):
     truth for every generated check is verifiable without an LLM.
     """
     root = Path(repo_root).resolve()
+    target_context = None
+    scoped = False
+    scope = "."
+    target_path = None
+    fact_root = root
+    canonical_evidence = []
+    if target is not None:
+        target_context = explain.build_target_context(root, target)
+        if target_context["excluded"]:
+            raise ValueError("target is inside a directory excluded from instruction scanning")
+        scope = target_context["effective_scope"]
+        if scope != ".":
+            scoped = True
+            target_path = target_context["target"]["path"]
+            fact_root = root / scope
+            canonical_evidence = [
+                row["path"]
+                for chain_scope in target_context["chain"]
+                for row in target_context["scope_rows"]
+                if row["scope"] == chain_scope
+            ]
     tasks = []
     seen = set()
 
-    def add(tid, prompt, pattern, timeout_s=120):
-        if tid in seen:
+    def add(tid, prompt, pattern, timeout_s=120, evidence=None):
+        public_id = f"scope:{quote(scope, safe='')}:{tid}" if scoped else tid
+        if public_id in seen:
             return
-        seen.add(tid)
-        tasks.append(
-            {
-                "id": tid,
-                "prompt": prompt + _PROMPT_SUFFIX,
-                "timeout_s": timeout_s,
-                "check": {"type": "regex", "value": pattern},
-            }
-        )
+        seen.add(public_id)
+        item = {
+            "id": public_id,
+            "prompt": (
+                f"For instruction scope `{scope}`: {prompt}" if scoped else prompt
+            )
+            + _PROMPT_SUFFIX,
+            "timeout_s": timeout_s,
+            "check": {"type": "regex", "value": pattern},
+        }
+        if scoped:
+            item.update(
+                {
+                    "scope": scope,
+                    "target": target_path,
+                    "evidence": sorted(set(evidence or [])),
+                }
+            )
+        tasks.append(item)
 
-    pkg = _load_json_file(root / "package.json")
-    pm = detect_package_manager(root)
+    package_path = fact_root / "package.json"
+    pkg = _load_contained_json(package_path, root)
+    package_evidence = (
+        [_logical_source(package_path, root)]
+        if facts.is_file_within_root(root, package_path)
+        else []
+    )
+    if scoped:
+        pm, pm_evidence = _scoped_package_manager(fact_root, root)
+    else:
+        pm = detect_package_manager(root)
+        pm_evidence = []
 
     if pm:
-        add("package-manager", "Which package manager does this repository use?", r"(?i)\b" + re.escape(pm) + r"\b")
+        add(
+            "package-manager",
+            "Which package manager does this repository use?",
+            r"(?i)\b" + re.escape(pm) + r"\b",
+            evidence=pm_evidence,
+        )
         if pm in ("pnpm", "npm", "yarn", "bun"):
             add(
                 "install",
                 "What is the exact command to install dependencies in this repo?",
                 r"(?i)\b" + re.escape(pm) + r"\s+(install|i|add)\b",
+                evidence=pm_evidence,
             )
 
     if isinstance(pkg, dict) and isinstance(pkg.get("scripts"), dict):
         scripts = pkg["scripts"]
         runner = pm or "npm"
-        for name, phrase in SCRIPT_PROMPTS:
-            if name in scripts:
-                pattern = r"(?i)\b" + re.escape(runner) + r"\s+(run\s+)?" + re.escape(name) + r"\b"
-                add(name, "What is the exact command to " + phrase + "?", pattern)
+        # A scoped package with ambiguous/no package-manager evidence has no
+        # deterministic command runner. Abstain rather than silently defaulting
+        # package-local scripts to npm. Root generation keeps its historical
+        # npm fallback byte-for-byte.
+        if not scoped or pm:
+            for name, phrase in SCRIPT_PROMPTS:
+                names = [name] if name in scripts else []
+                if scoped:
+                    names.extend(sorted(key for key in scripts if key.startswith(name + ":")))
+                for script_name in names:
+                    pattern = (
+                        r"(?i)\b"
+                        + re.escape(runner)
+                        + r"\s+(run\s+)?"
+                        + re.escape(script_name)
+                        + r"\b"
+                    )
+                    prompt = (
+                        "What is the exact command to " + phrase + "?"
+                        if script_name == name
+                        else f"What is the exact command to run package script `{script_name}`?"
+                    )
+                    add(script_name, prompt, pattern, evidence=package_evidence)
         deps = {}
         for key in ("dependencies", "devDependencies"):
             block = pkg.get(key)
@@ -413,30 +571,50 @@ def generate_tasks(repo_root):
                 deps.update(block)
         for dep, label in TEST_FRAMEWORK_DEPS:
             if dep in deps:
-                add("test-framework", "Which test framework does this repo use?", r"(?i)" + re.escape(label))
+                add(
+                    "test-framework",
+                    "Which test framework does this repo use?",
+                    r"(?i)" + re.escape(label),
+                    evidence=package_evidence,
+                )
                 break
         for dep, label in FORMATTER_DEPS:
             if dep in deps:
-                add("formatter", "Which code formatter/linter does this repo use?", r"(?i)" + re.escape(label))
+                add(
+                    "formatter",
+                    "Which code formatter/linter does this repo use?",
+                    r"(?i)" + re.escape(label),
+                    evidence=package_evidence,
+                )
                 break
 
-    node_major = None
-    nvmrc = root / ".nvmrc"
-    if nvmrc.is_file():
-        m = re.search(r"(\d+)", nvmrc.read_text(encoding="utf-8", errors="replace"))
-        if m:
-            node_major = m.group(1)
-    if node_major is None and isinstance(pkg, dict):
-        engines = pkg.get("engines")
-        if isinstance(engines, dict) and isinstance(engines.get("node"), str):
-            m = re.search(r"(\d+)", engines["node"])
+    if scoped:
+        node_major, node_evidence = _scoped_node_version(fact_root, root)
+    else:
+        node_major = None
+        node_evidence = []
+        nvmrc = root / ".nvmrc"
+        if nvmrc.is_file():
+            m = re.search(r"(\d+)", nvmrc.read_text(encoding="utf-8", errors="replace"))
             if m:
                 node_major = m.group(1)
+        if node_major is None and isinstance(pkg, dict):
+            engines = pkg.get("engines")
+            if isinstance(engines, dict) and isinstance(engines.get("node"), str):
+                m = re.search(r"(\d+)", engines["node"])
+                if m:
+                    node_major = m.group(1)
     if node_major:
-        add("node-version", "Which Node.js major version does this repo target?", r"\b" + re.escape(node_major) + r"\b")
+        add(
+            "node-version",
+            "Which Node.js major version does this repo target?",
+            r"\b" + re.escape(node_major) + r"\b",
+            evidence=node_evidence,
+        )
 
-    gomod = root / "go.mod"
-    if gomod.is_file():
+    gomod = fact_root / "go.mod"
+    if facts.is_file_within_root(root, gomod):
+        go_evidence = [_logical_source(gomod, root)]
         text = gomod.read_text(encoding="utf-8", errors="replace")
         m = re.search(r"^go\s+(\d+\.\d+)", text, re.M)
         if m:
@@ -444,10 +622,16 @@ def generate_tasks(repo_root):
                 "go-version",
                 "Which Go version does this module target (the go directive in go.mod)?",
                 r"\b" + re.escape(m.group(1)) + r"\b",
+                evidence=go_evidence,
             )
         mm = re.search(r"^module\s+(\S+)", text, re.M)
         if mm:
-            add("go-module", "What is the Go module path declared in go.mod?", r"(?i)" + re.escape(mm.group(1)))
+            add(
+                "go-module",
+                "What is the Go module path declared in go.mod?",
+                r"(?i)" + re.escape(mm.group(1)),
+                evidence=go_evidence,
+            )
 
     # Python version: reuse the scan/drift fact engine's ground-truth sources
     # (semantic.python_ground_versions) instead of a private pyproject-first
@@ -458,30 +642,62 @@ def generate_tasks(repo_root):
     # golden-answer task when every pinned source agrees on one version; when
     # they conflict there is no unambiguous ground truth (that inconsistency is
     # exactly what the scanner flags), so abstain rather than bake in one side.
-    py_grounds = semantic.python_ground_versions(root)
+    if scoped:
+        py_grounds, python_fact_root = _scoped_python_versions(fact_root, root)
+    else:
+        py_grounds = semantic.python_ground_versions(fact_root)
+        python_fact_root = fact_root
     py_values = {value for _source, value in py_grounds}
     if len(py_values) == 1:
         major, minor = next(iter(py_values))
+        python_evidence = []
+        for source, _value in py_grounds:
+            filename = source.split()[0]
+            source_path = python_fact_root / filename
+            if facts.is_file_within_root(root, source_path):
+                python_evidence.append(_logical_source(source_path, root))
         add(
             "python-version",
             "Which minimum Python version do this repo's scripts target?",
             r"\b" + re.escape(f"{major}.{minor}") + r"\b",
+            evidence=python_evidence,
         )
 
-    agents = root / "AGENTS.md"
-    agents_text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
+    if scoped and target_context is not None:
+        canonical_set = set(canonical_evidence)
+        agents_text = "\n".join(
+            entry["text"] for entry in target_context["files"] if entry["path"] in canonical_set
+        )
+    else:
+        agents = root / "AGENTS.md"
+        agents_text = agents.read_text(encoding="utf-8", errors="replace") if agents.is_file() else ""
     if agents_text and re.search(r"(?i)conventional commit", agents_text):
-        add("commit-convention", "Does this repo follow a commit message convention? Which one?", r"(?i)conventional")
+        add(
+            "commit-convention",
+            "Does this repo follow a commit message convention? Which one?",
+            r"(?i)conventional",
+            evidence=canonical_evidence,
+        )
 
-    if (root / "src" / "components").is_dir():
-        add("components-dir", "In which directory should a new UI component file be created?", r"src/components")
+    components = fact_root / "src" / "components"
+    if facts.is_dir_within_root(root, components):
+        add(
+            "components-dir",
+            "In which directory should a new UI component file be created?",
+            re.escape(_logical_source(components, root)),
+            evidence=[_logical_source(components, root)],
+        )
 
     return tasks
 
 
 def generate_report(args):
     """Emit an auto-generated tasks.json for the target repo (Phase 3 bootstrap)."""
-    tasks = generate_tasks(args.generate)
+    try:
+        tasks = generate_tasks(args.generate, target=args.target)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     content = json.dumps(tasks, ensure_ascii=False, indent=2)
     if args.output:
         Path(args.output).write_text(content + "\n", encoding="utf-8")
@@ -1667,6 +1883,11 @@ def main(argv=None):
         help="Auto-generate a tasks.json from repository facts (AGENTS.md + code structure) instead of running.",
     )
     parser.add_argument(
+        "--target",
+        metavar="PATH",
+        help="With --generate, derive tasks for the effective instruction scope at PATH.",
+    )
+    parser.add_argument(
         "--judge-llm",
         dest="judge_llm",
         choices=["off", "auto", "openai", "claude"],
@@ -1708,6 +1929,8 @@ def main(argv=None):
     )
     parser.add_argument("--trend", help="Render the trend of an existing --baseline-style history file and exit.")
     args = parser.parse_args(argv)
+    if args.target is not None and not args.generate:
+        parser.error("--target requires --generate")
     if args.require_current_evidence and not (args.score and args.tasks and args.workdir and args.evidence):
         parser.error(
             "--require-current-evidence requires --score, --tasks, --workdir, "

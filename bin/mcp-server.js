@@ -119,6 +119,7 @@ const TOOLS = [
     description: 'Auto-generate a benchmark task set from repository facts (AGENTS.md content plus detected build/test commands) for the Phase 3 — Efficacy eval harness. Read-only: prints the generated tasks as JSON without writing a file or running any agent/LLM calls.',
     script: ['eval_run.py', '--generate'],
     booleans: {},
+    strings: { target: '--target' },
     readOnly: true,
     resultPolicy: { reportExitCodes: [0], requireRepoDirectory: true },
     inputSchema: {
@@ -126,6 +127,7 @@ const TOOLS = [
       additionalProperties: false,
       properties: {
         repo: { type: 'string', description: 'Target repository root.', default: '.' },
+        target: { type: 'string', description: 'Optional contained path whose effective instruction scope supplies facts.' },
       },
     },
   },
@@ -234,7 +236,7 @@ function validateToolArguments(tool, value) {
   return { ok: true, value };
 }
 
-// Convert declarative tool positionals + booleans into the Python argv.
+// Convert declarative tool positionals + boolean/string flags into Python argv.
 // Existing tools default to the historical single `repo` positional; explain
 // adds `target` without a command-specific dispatcher branch.
 // Build the argv for the Python interpreter from a tool definition + arguments.
@@ -250,6 +252,11 @@ function buildScriptArgs(tool, argsObj) {
   const flags = [];
   for (const [prop, flag] of Object.entries(tool.booleans)) {
     if (argsObj[prop] === true) flags.push(flag);
+  }
+  for (const [prop, flag] of Object.entries(tool.strings || {})) {
+    if (typeof argsObj[prop] === 'string' && argsObj[prop].length) {
+      flags.push(flag, argsObj[prop]);
+    }
   }
   return { scriptPath, argv: [scriptPath, ...leading, ...positionals, ...flags] };
 }
