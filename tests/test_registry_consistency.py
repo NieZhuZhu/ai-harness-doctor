@@ -214,6 +214,27 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             # Sanity: the shared classifier's in-repo, existence-failing tokens.
             self.assertEqual(sem_missing, {"docs/missing.md", "go.mod", "Cargo.toml"})
 
+    def test_subtree_path_existence_policy_agrees_across_stages(self):
+        # Candidate extraction was already shared, but Phase 0 and Phase 2 also
+        # need the same existence policy for workspace-relative suffix paths.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "packages" / "app" / "src" / "config").mkdir(parents=True)
+            (root / "packages" / "app" / "Cargo.toml").write_text(
+                "[package]\nname = \"app\"\n",
+                encoding="utf-8",
+            )
+            text = (
+                "Workspace paths: `src/config` and `Cargo.toml`.\n"
+                "Genuine drift: `src/missing-config`."
+            )
+            sem_missing = {f["declared"] for f in semantic.compare_paths(root, text)}
+            d2_missing = {
+                f["message"].split("`")[1] for f in check_drift.d2_path_drift(root, text)
+            }
+            self.assertEqual(sem_missing, {"src/missing-config"})
+            self.assertEqual(d2_missing, sem_missing)
+
     def test_code_expression_tokens_are_not_declared_paths(self):
         # A backtick token carrying code-expression punctuation (attribute
         # macros, function/index calls, quoted-argument literals) is a code

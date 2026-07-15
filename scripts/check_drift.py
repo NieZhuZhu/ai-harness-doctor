@@ -138,6 +138,11 @@ def d2_path_drift(root, text):
                 package_names = facts.all_package_names(root)
             if token.split("/", 1)[0] in package_names:
                 continue
+            # A root AGENTS.md may scope a section to one workspace and then
+            # name paths relative to that subtree. Match Phase 0's existence
+            # policy so scan and drift cannot disagree on the same declaration.
+            if facts.path_resolves_in_subtree(root, token):
+                continue
             findings.append(
                 {
                     "check": "D2",
