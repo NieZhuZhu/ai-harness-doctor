@@ -100,5 +100,23 @@
     "prompt": "Which HOME may installer smoke tests write to? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)isolated.*HOME|HOME.*isolated"}
+  },
+  {
+    "id": "eval-evidence-gate",
+    "prompt": "What must a CI eval gate verify before trusting the stored health score? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)current.*task.*evidence.*before.*health|task.*evidence.*fingerprint.*before.*health"}
+  },
+  {
+    "id": "mcp-version-wire",
+    "prompt": "How must modern and legacy MCP wire contracts be maintained? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)negotiat.*version.*legacy.*modern|legacy.*modern-only|modern-only.*legacy"}
+  },
+  {
+    "id": "repository-operations",
+    "prompt": "What is the GitHub repository security/check baseline, and when may admin bypass be used? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)secret scanning.*push protection.*required.*admin bypass.*self-approval|admin bypass.*self-approval.*never.*red"}
   }
 ]

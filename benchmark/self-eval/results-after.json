@@ -19,6 +19,9 @@
     {"id": "security-baseline", "stdout": "No. HIGH security findings are ineligible for baselines and remain active."},
     {"id": "mcp-policy", "stdout": "MCP tools stay read-only, and findings are not operational failures."},
     {"id": "release-classification", "stdout": "A feature uses a minor version bump; a bugfix-only release uses a patch bump."},
-    {"id": "installer-test-home", "stdout": "Installer smoke tests may write only to an isolated HOME, never the real user HOME."}
+    {"id": "installer-test-home", "stdout": "Installer smoke tests may write only to an isolated HOME, never the real user HOME."},
+    {"id": "eval-evidence-gate", "stdout": "CI must verify current task and evidence fingerprints before trusting health."},
+    {"id": "mcp-version-wire", "stdout": "Synchronize negotiated-version wire shapes, and never send modern-only fields to legacy MCP clients."},
+    {"id": "repository-operations", "stdout": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI."}
   ]
 }

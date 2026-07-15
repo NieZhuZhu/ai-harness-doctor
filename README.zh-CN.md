@@ -725,7 +725,7 @@ RELEASING.md                     # Tag-driven release checklist
 
 ## 贡献
 
-欢迎提交 bug reports 和聚焦的 PR。请保持 scripts 确定性、仅依赖 stdlib，并通过：
+欢迎提交 bug reports 和聚焦的 PR。请使用仓库 issue forms，通过 [`SUPPORT.md`](SUPPORT.md) 选择报告路径，遵守 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)，并按 [`SECURITY.md`](SECURITY.md) 私密报告漏洞——绝不要在公开 issue 中粘贴 secrets、私有仓库内容或 exploit 细节。请保持 scripts 确定性、仅依赖 stdlib，并通过：
 
 ```bash
 python3 -m unittest discover -s tests -v

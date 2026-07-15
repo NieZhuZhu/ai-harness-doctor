@@ -727,7 +727,7 @@ RELEASING.md                     # Tag-driven release checklist
 
 ## Contributing
 
-Bug reports and focused PRs are welcome. Keep scripts deterministic, stdlib-only, and covered by:
+Bug reports and focused PRs are welcome. Use the repository's issue forms, read [`SUPPORT.md`](SUPPORT.md) for routing, follow [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), and report vulnerabilities privately through [`SECURITY.md`](SECURITY.md)—never paste secrets, private repository content, or exploit details into a public issue. Keep scripts deterministic, stdlib-only, and covered by:
 
 ```bash
 python3 -m unittest discover -s tests -v
