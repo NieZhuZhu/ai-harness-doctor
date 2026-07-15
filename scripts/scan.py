@@ -39,6 +39,7 @@ from scan_render import (  # noqa: E402,F401  (re-exported for backward compatib
 )
 
 SKIP_DIRS = registry.SKIP_DIRS
+REPOS_FILE_OPERATIONAL_EXIT = 8
 
 # Scan baselines are an auditable register of known non-security debt. Security
 # findings are deliberately absent from this allow-list so neither a generated
@@ -2120,6 +2121,29 @@ def _apply_section_flags(report, args):
         report.pop("custom", None)
 
 
+def batch_scan_exit_code(summary, reports, args):
+    """Select one deterministic batch exit after every reachable repo is scanned."""
+    if args.fail_on_security and any(
+        any(finding["level"] == "HIGH" for finding in report.get("security", []))
+        for report in reports
+    ):
+        return 2
+    if args.fail_on_gaps and any(
+        any(finding["level"] == "ERROR" for finding in report.get("gaps", []))
+        for report in reports
+    ):
+        return 3
+    if args.fail_on_semantic and any(
+        report.get("semantic", {}).get("findings") for report in reports
+    ):
+        return 4
+    if args.fail_on_conflicts and any(report.get("conflicts") for report in reports):
+        return 7
+    if summary.get("error_count", 0):
+        return REPOS_FILE_OPERATIONAL_EXIT
+    return 0
+
+
 def _run_repos_file(args):
     """``main()``'s ``--repos-file`` branch: scan every listed repo and print
     a cross-repo summary instead of a single repo's report."""
@@ -2143,15 +2167,7 @@ def _run_repos_file(args):
     # single-repo path (CORR-03): decide on the actual findings before the
     # --no-* flags drop any report sections.
     ok_reports = [r["report"] for r in repos if "error" not in r]
-    exit_code = 0
-    if args.fail_on_security and any(any(s["level"] == "HIGH" for s in r.get("security", [])) for r in ok_reports):
-        exit_code = 2
-    elif args.fail_on_gaps and any(any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in ok_reports):
-        exit_code = 3
-    elif args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in ok_reports):
-        exit_code = 4
-    elif args.fail_on_conflicts and any(r.get("conflicts") for r in ok_reports):
-        exit_code = 7
+    exit_code = batch_scan_exit_code(summary, ok_reports, args)
 
     for report in ok_reports:
         _apply_section_flags(report, args)
@@ -2162,6 +2178,13 @@ def _run_repos_file(args):
     else:
         report_path = None if args.no_report_file else write_report_file(payload, args.repos_file)
         print(render_repos_file(summary, repos, report_path), end="")
+    if summary["error_count"]:
+        print(
+            f"batch scan operational error: {summary['error_count']} of "
+            f"{summary['repo_count']} listed repositories were not scanned "
+            f"(exit {REPOS_FILE_OPERATIONAL_EXIT} unless a finding gate took precedence)",
+            file=sys.stderr,
+        )
     return exit_code
 
 
@@ -2253,7 +2276,9 @@ def main(argv=None):
         "summary (an org-wide checkup for the 'Mixed-tool team' / 'OSS maintainer' personas). "
         "Mutually exclusive with the repo_root positional argument. Each repo is scanned at "
         "its own root only — this mode does not expand monorepo packages within a repo, so "
-        "--monorepo/--no-monorepo are ignored alongside it.",
+        "--monorepo/--no-monorepo are ignored alongside it. After all reachable repos are "
+        "reported, exits 8 when any listed entry could not be scanned (finding gates 2/3/4/7 "
+        "take precedence).",
     )
     args = parser.parse_args(argv)
     if args.repos_file:

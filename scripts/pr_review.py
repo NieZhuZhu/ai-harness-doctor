@@ -65,6 +65,7 @@ _RULE_TITLES = {
     "conflict": "Conflicting agent declarations",
     "size": "Instruction size warning",
     "gap": "Harness completeness gap",
+    "batch_scan": "Batch scan coverage failure",
 }
 
 _IMPACT_BY_LABEL = {
@@ -93,6 +94,7 @@ _IMPACT_BY_LABEL = {
     "conflict": "Conflicting declarations can make different AI coding agents follow incompatible guidance.",
     "size": "Oversized agent instructions may be truncated or crowd useful repository context out of the prompt.",
     "gap": "Missing harness infrastructure can leave agents without canonical, enforceable repository guidance.",
+    "batch_scan": "An organization-wide gate passed without checking every listed repository.",
 }
 
 
@@ -351,11 +353,29 @@ def collect_findings(report):
         repos = value.get("repos")
         if isinstance(repos, list):
             for entry in repos:
-                if not isinstance(entry, dict) or not isinstance(entry.get("report"), dict):
+                if not isinstance(entry, dict):
+                    continue
+                repository = _safe_repo_label(entry)
+                if "error" in entry:
+                    append(
+                        {
+                            "category": "batch_scan",
+                            "level": "ERROR",
+                            "message": "Listed repository was not scanned.",
+                            "suggestion": (
+                                "Fix the repository path, checkout, or permissions, "
+                                "then rerun the complete multi-repo scan."
+                            ),
+                        },
+                        repository=repository,
+                        summary_only=True,
+                    )
+                    continue
+                if not isinstance(entry.get("report"), dict):
                     continue
                 walk(
                     entry["report"],
-                    repository=_safe_repo_label(entry),
+                    repository=repository,
                     summary_only=True,
                 )
 

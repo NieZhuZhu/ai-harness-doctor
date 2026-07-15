@@ -427,9 +427,11 @@ class BuildReviewTests(unittest.TestCase):
         payload = pr_review.build_review(report, default_path="AGENTS.md")
 
         self.assertEqual(payload["comments"], [])
-        self.assertEqual(payload["summary_count"], 1)
+        self.assertEqual(payload["summary_count"], 2)
         self.assertIn("- **Repository:** repo-a-package (repo-a)", payload["body"])
+        self.assertIn("- **Repository:** missing", payload["body"])
         self.assertIn("AGENTS.md:9", payload["body"])
+        self.assertIn("Listed repository was not scanned.", payload["body"])
         self.assertNotIn("/private/tmp", payload["body"])
         self.assertNotIn("not a directory", payload["body"])
 

@@ -1249,6 +1249,29 @@ class CliInstallerTests(unittest.TestCase):
                 {task["id"] for task in tasks},
             )
 
+    def test_scan_cli_propagates_batch_operational_exit(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            root = Path(project_dir)
+            repos_file = root / "repos.txt"
+            repos_file.write_text(str(root / "missing-repository") + "\n", encoding="utf-8")
+
+            proc = self.run_cli_raw(
+                [
+                    "scan",
+                    "--repos-file",
+                    str(repos_file),
+                    "--json",
+                ],
+                home,
+                root,
+            )
+
+            self.assertEqual(proc.returncode, 8, proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["summary"]["error_count"], 1)
+            self.assertIn("listed repositories were not scanned", proc.stderr)
+
     def test_mcp_command_starts_and_responds_to_initialize(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             env = os.environ.copy()

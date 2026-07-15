@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import json
 import re
@@ -1750,7 +1751,7 @@ class ReposFileTests(unittest.TestCase):
                 text=True,
                 capture_output=True,
             )
-            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.returncode, scan.REPOS_FILE_OPERATIONAL_EXIT, proc.stderr)
             payload = json.loads(proc.stdout)
             self.assertEqual(payload["summary"]["repo_count"], 3)
             self.assertEqual(payload["summary"]["error_count"], 1)
@@ -1762,6 +1763,7 @@ class ReposFileTests(unittest.TestCase):
             self.assertIn("report", by_path[str(repo_a)])
             self.assertIn("error", by_path[str(missing)])
             self.assertNotIn("report", by_path[str(missing)])
+            self.assertIn("1 of 3 listed repositories were not scanned", proc.stderr)
 
     def test_markdown_mode_lists_repos_and_errored_paths(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1771,12 +1773,43 @@ class ReposFileTests(unittest.TestCase):
             proc = subprocess.run(
                 [sys.executable, str(SCAN), "--repos-file", str(repos_file)], text=True, capture_output=True
             )
-            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.returncode, scan.REPOS_FILE_OPERATIONAL_EXIT, proc.stderr)
             self.assertIn("Multi-repo Checkup Report", proc.stdout)
             self.assertIn(str(repo_a), proc.stdout)
             self.assertIn(str(repo_b), proc.stdout)
             self.assertIn("Repos that could not be scanned", proc.stdout)
             self.assertIn(str(missing), proc.stdout)
+            self.assertIn("listed repositories were not scanned", proc.stderr)
+
+    def test_all_unscanned_repos_fail_closed_after_complete_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            missing_a = Path(td) / "missing-a"
+            missing_b = Path(td) / "missing-b"
+            repos_file = self._write_repos_file(td, [str(missing_a), str(missing_b)])
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    "--repos-file",
+                    str(repos_file),
+                    "--json",
+                    "--fail-on-security",
+                    "--fail-on-gaps",
+                    "--fail-on-semantic",
+                    "--fail-on-conflicts",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, scan.REPOS_FILE_OPERATIONAL_EXIT)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["summary"]["repo_count"], 2)
+            self.assertEqual(payload["summary"]["error_count"], 2)
+            self.assertEqual(len(payload["repos"]), 2)
+            self.assertTrue(all("error" in entry for entry in payload["repos"]))
+            self.assertIn("2 of 2 listed repositories were not scanned", proc.stderr)
 
     def test_fail_on_gaps_considers_every_repo(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1788,6 +1821,27 @@ class ReposFileTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(proc.returncode, 3, proc.stdout)
+
+    def test_finding_gate_precedes_batch_operational_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            _repo_a, repo_b = self._build_two_repos(td)
+            missing = Path(td) / "missing"
+            repos_file = self._write_repos_file(td, [str(repo_b), str(missing)])
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    "--repos-file",
+                    str(repos_file),
+                    "--fail-on-gaps",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+            self.assertIn(str(missing), proc.stdout)
+            self.assertIn("listed repositories were not scanned", proc.stderr)
 
     def test_fail_on_conflicts_considers_every_repo(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1813,6 +1867,27 @@ class ReposFileTests(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertNotIn("Full JSON report", proc.stdout)
+
+    def test_batch_exit_precedence_unit(self):
+        args = argparse.Namespace(
+            fail_on_security=True,
+            fail_on_gaps=True,
+            fail_on_semantic=True,
+            fail_on_conflicts=True,
+        )
+        summary = {"error_count": 1}
+        cases = [
+            ("security", [{"security": [{"level": "HIGH"}]}], 2),
+            ("gaps", [{"gaps": [{"level": "ERROR"}]}], 3),
+            ("semantic", [{"semantic": {"findings": [{}]}}], 4),
+            ("conflicts", [{"conflicts": [{}]}], 7),
+            ("operational", [{}], scan.REPOS_FILE_OPERATIONAL_EXIT),
+            ("clean", [{}], 0),
+        ]
+        for name, reports, expected in cases:
+            with self.subTest(name=name):
+                current_summary = {"error_count": 0 if name == "clean" else summary["error_count"]}
+                self.assertEqual(scan.batch_scan_exit_code(current_summary, reports, args), expected)
 
 
 class DetectPackagesUnitTests(unittest.TestCase):
