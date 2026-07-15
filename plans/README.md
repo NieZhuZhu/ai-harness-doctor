@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across six deep `improve` audit batches:
+Generated and reconciled across seven deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -8,6 +8,7 @@ Generated and reconciled across six deep `improve` audit batches:
 - 2026-07-15 at commit `b638ad7` (plans 011–013).
 - 2026-07-15 at commit `73bd749` (plans 014–017).
 - 2026-07-15 at commit `e4992c8` (plans 018–020).
+- 2026-07-15 at commit `ced1530` (plans 021–023).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -88,6 +89,27 @@ verification gate, and update its status here.
    reproduced a blocking global conflict for valid nearest-file package
    overrides because nested canonical scopes are currently flattened.
 
+### 2026-07-15 post-v1.5.0 premium-project rounds
+
+1. **Core diagnostic and evidence lifecycle** — independently traced every
+   Phase 2 check, baseline identity, strict health calculation, fix rendering,
+   SARIF, and PR-review path from a nested `AGENTS.md`. A synthetic package
+   reproduced a complete false negative: unknown local command, missing local
+   path, and broken local Markdown link all passed strict drift at 100/grade A
+   because D5 inventories nested files without running D1/D2/D6/D7 on them.
+2. **Privileged release and supply-chain safety** — independently audited tag
+   provenance, dispatch inputs, npm credentials, provenance, remote settings,
+   reruns, and Marketplace automation. Isolated shell and Git reproductions
+   confirmed that manual deprecation inputs reach executable script text and
+   that a matching version tag on an unmerged branch passes the current version
+   check despite not being an ancestor of `main`.
+3. **Product explainability and ecosystem direction** — independently mapped
+   the CLI/MCP/adapter surfaces, current nearest-file scope model, zero-config
+   eval generation, and adjacent scope-debugging workflows. The selected
+   direction is a read-only `explain REPO TARGET` projection over existing
+   scope evidence; scope-aware eval generation remains the next follow-up after
+   that target-path vocabulary and public schema are validated.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -112,6 +134,9 @@ verification gate, and update its status here.
 | 018 | Index subtree path resolution once per diagnostic run | P1 | M | — | DONE |
 | 019 | Restore public-registry dependency update automation | P0 | S | — | DONE |
 | 020 | Make conflict diagnostics honor nested AGENTS.md scopes | P1 | L | 018 | DONE |
+| 021 | Enforce drift checks in every nested AGENTS.md scope | P0 | M | — | TODO |
+| 022 | Reject untrusted inputs and off-main tags in privileged npm workflows | P0 | S | — | TODO |
+| 023 | Explain the effective instruction chain for any repository path | P1 | L | 020 (done) | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -158,6 +183,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   scope/override report surfaces and is a backward-compatible feature. A
   combined release after all three is therefore minor under the repository
   policy unless a STOP condition exposes a breaking schema requirement.
+- Plans 021 and 022 are independent P0 repairs and may land in either order,
+  but keep them as separate PRs: one changes consumer drift coverage and one
+  changes privileged repository workflows. Plan 023 builds on the already-DONE
+  Plan 020 scope model; it does not need Plan 021's drift implementation.
+- Execute Plan 023 only after re-reading any scope-model changes introduced
+  while 021 is implemented. Explain must project the single scan scope model,
+  not fork nested scope semantics merely because drift now consumes them too.
+- Keep Plans 021–023 in separate PRs. Plan 022 is patch-level. Plan 021 repairs
+  a false negative but expands a public gate, and Plan 023 adds CLI/MCP/adapter
+  surfaces; the combined release is therefore minor unless a STOP condition
+  exposes a breaking contract.
 
 ## Findings considered and rejected or deferred
 
@@ -265,13 +301,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   public-maintenance repair leaves the operational trust docs truthful;
   generic shipped guards remain optional.
 - **Manual deprecate workflow interpolates dispatch inputs directly in a shell
-  command** — confirmed at `.github/workflows/deprecate.yml:27`; command
-  substitution syntax in the trusted maintainer input can be interpreted by
-  Bash. This is a real hardening opportunity, but the workflow is
-  maintainer-only and Plan 019's already-failing public Dependabot control has
-  much higher leverage. Defer to a separate security PR; when selected, pass
-  both inputs through environment variables and validate the version as exact
-  SemVer.
+  command (previously deferred)** — promoted to Plan 022 after an independent
+  privileged-workflow audit mechanically confirmed both input positions cross
+  into shell evaluation while the job holds the npm credential. The same plan
+  also closes the independently reproduced off-main matching-tag release gap.
 - **Repository permits all third-party Actions and does not enforce server-side
   SHA pinning** — local structural tests already reject every unvetted or
   mutable external `uses:` reference, and all current workflow dependencies are
@@ -301,3 +334,21 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   work improves diagnostic truth, performance, public maintenance, and
   explainable scope evidence, preserving this project's audit/evidence/safety/
   efficacy differentiation.
+- **Scope-aware zero-config eval generation** — high-value and directly
+  reproduced: `eval_run.generate_tasks()` reads only root facts/`AGENTS.md`, so
+  a package-local command and instruction scope produce no efficacy task.
+  Defer one batch rather than designing two public scope APIs simultaneously.
+  After Plan 023 validates target-path vocabulary and schema on real monorepos,
+  generate package-local tasks from that contract and define collision-safe
+  task IDs/evidence before implementation.
+- **Claim every nearby tool config is effective for a target path** — rejected.
+  Cursor/Copilot and other tools have their own frontmatter/glob semantics.
+  Plan 023 may list them only as diagnostically associated sources until the
+  project models and tests those applicability languages explicitly.
+- **npm trusted publishing/OIDC migration** — desirable because it can remove
+  the long-lived publish token, and the workflow already grants
+  `id-token: write`. It still requires npmjs account-side trusted-publisher
+  configuration plus a real publication proof, so a code-only plan cannot
+  honestly mark it complete. Plan 022 hardens the input/ref boundary regardless
+  of credential mechanism; revisit OIDC in a separately confirmed operations
+  loop.
