@@ -16,6 +16,7 @@ Releases are tag-driven and published by GitHub Actions.
    - runs the full release tests;
    - self-tests the exact tagged checkout through `uses: ./`;
    - verifies the tag version matches `package.json`;
+   - verifies the exact tag commit is reachable from `origin/main`;
    - publishes to npm with provenance and an explicit release-channel dist-tag;
    - creates the GitHub Release when it does not already exist;
    - for a stable version, force-updates the matching floating major Action tag
@@ -55,16 +56,26 @@ remain usable by consumers who opt in explicitly.
 
 ## Version guard
 
-The publish job extracts the version from the pushed tag (`v1.2.3` -> `1.2.3`) and compares it to `package.json`. If they differ, publishing stops before npm receives anything.
+The publish job extracts the version from the pushed tag (`v1.2.3` -> `1.2.3`) and compares it to `package.json`. It also peels the exact tag to a commit and requires that commit to be reachable from `origin/main`. A matching version on an unreviewed side branch is not sufficient. Any mismatch, missing ref, Git verification failure, or off-main tag stops before npm receives a network or publish command.
 
 ## Deprecate a version
 
 Use the manual `deprecate` workflow in GitHub Actions. Provide:
 
-- `version`: the published version to deprecate, for example `0.1.0`.
+- `version`: one exact published SemVer to deprecate, for example `0.1.0` or
+  `1.2.0-beta.1` (no leading `v`, range, dist-tag, whitespace, or build
+  metadata).
 - `message`: the npm deprecation message.
 
-The workflow runs `npm deprecate` using the repository npm token.
+The workflow passes both dispatch inputs through environment variables, validates
+the exact version and non-empty message before npm runs, and then supplies both
+as quoted, opaque arguments to `npm deprecate`. Input values never enter the
+generated shell script text.
+
+The repository still uses `NPM_TOKEN`. Moving to npm trusted publishing remains
+a separate operation because it requires npmjs account-side trusted-publisher
+configuration and a real publication proof; do not claim it from workflow code
+alone.
 
 ## Secret rotation
 

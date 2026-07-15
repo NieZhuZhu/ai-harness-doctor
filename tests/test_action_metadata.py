@@ -1,13 +1,19 @@
 import json
+import os
 import re
+import subprocess
+import textwrap
 import unittest
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from tmp_support import ResilientTemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 ACTION = ROOT / "action.yml"
 SELF_TEST = ROOT / ".github" / "workflows" / "action-self-test.yml"
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
+DEPRECATE = ROOT / ".github" / "workflows" / "deprecate.yml"
 RELEASING = ROOT / "RELEASING.md"
 HARNESS_DRIFT = ROOT / ".github" / "workflows" / "harness-drift.yml"
 HARNESS_DRIFT_TEMPLATE = ROOT / "assets" / "guard" / "harness-drift.yml"
@@ -61,6 +67,22 @@ class ActionMetadataTests(unittest.TestCase):
                 break
             body.append(line)
         return "\n".join(body)
+
+    def _named_step_block(self, path, name):
+        text = path.read_text(encoding="utf-8")
+        marker = f"      - name: {name}\n"
+        try:
+            start = text.index(marker)
+        except ValueError:
+            self.fail(f"{path} must define step {name!r}")
+        end = text.find("\n      - ", start + len(marker))
+        return text[start : end if end != -1 else len(text)]
+
+    def _run_script(self, path, name):
+        block = self._named_step_block(path, name)
+        match = re.search(r"(?ms)^        run: \|\n(?P<body>.*)$", block)
+        self.assertIsNotNone(match, f"{path} step {name!r} must use a run block")
+        return textwrap.dedent(match.group("body"))
 
     def test_marketplace_metadata_is_complete_and_product_focused(self):
         text = ACTION.read_text(encoding="utf-8")
@@ -286,6 +308,108 @@ class ActionMetadataTests(unittest.TestCase):
         text = RELEASE.read_text(encoding="utf-8")
         self.assertIn('- "v*.*.*"', text)
         self.assertNotIn('- "v*"\n', text)
+
+    def test_deprecate_inputs_are_env_only_and_exact_semver_is_validated(self):
+        block = self._named_step_block(DEPRECATE, "Deprecate npm version")
+        script = self._run_script(DEPRECATE, "Deprecate npm version")
+        self.assertIn("VERSION: ${{ inputs.version }}", block)
+        self.assertIn("MESSAGE: ${{ inputs.message }}", block)
+        self.assertNotIn("${{ inputs.", script)
+        self.assertIn('npm deprecate "ai-harness-doctor@$VERSION" "$MESSAGE"', script)
+        self.assertIn("set -euo pipefail", script)
+        self.assertIn("exact SemVer", script)
+        self.assertIn("message.trim()", script)
+
+        node_match = re.search(r"(?ms)^node <<'NODE'\n(?P<script>.*?)^NODE$", script)
+        self.assertIsNotNone(node_match, "deprecate validation must be an extractable Node heredoc")
+        validator = node_match.group("script")
+
+        valid = ("0.0.0", "1.2.3", "1.2.3-0", "1.2.3-beta.1", "10.20.30-rc-1")
+        invalid = ("", "v1.2.3", "1.2", "1.2.3+build", "01.2.3", "1.02.3", "1.2.3-", "1.x", "^1.2.3")
+        for version in valid:
+            with self.subTest(version=version, expected="valid"):
+                proc = subprocess.run(
+                    ["node"],
+                    input=validator,
+                    text=True,
+                    capture_output=True,
+                    env={**os.environ, "VERSION": version, "MESSAGE": "Use a supported release."},
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+        for version in invalid:
+            with self.subTest(version=version, expected="invalid"):
+                proc = subprocess.run(
+                    ["node"],
+                    input=validator,
+                    text=True,
+                    capture_output=True,
+                    env={**os.environ, "VERSION": version, "MESSAGE": "Use a supported release."},
+                )
+                self.assertNotEqual(proc.returncode, 0)
+
+        empty_message = subprocess.run(
+            ["node"],
+            input=validator,
+            text=True,
+            capture_output=True,
+            env={**os.environ, "VERSION": "1.2.3", "MESSAGE": "   "},
+        )
+        self.assertNotEqual(empty_message.returncode, 0)
+
+    def test_release_tag_must_be_reachable_from_main_before_npm_access(self):
+        text = RELEASE.read_text(encoding="utf-8")
+        step_name = "Verify release tag is reachable from main"
+        script = self._run_script(RELEASE, step_name)
+        ancestry = text.index(step_name)
+        npm_lookup = text.index("Check whether this version is already on npm")
+        publish = text.index("Publish to npm")
+        self.assertLess(ancestry, npm_lookup)
+        self.assertLess(ancestry, publish)
+        self.assertIn('git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"', script)
+        self.assertIn('git rev-parse --verify "$GITHUB_REF_NAME^{commit}"', script)
+        self.assertIn('git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main', script)
+        self.assertNotIn("continue-on-error", self._named_step_block(RELEASE, step_name))
+        self.assertNotIn("|| true", script)
+
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            remote = base / "remote.git"
+            repo = base / "repo"
+            subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+            subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+            (repo / "package.json").write_text('{"version":"1.0.0"}\n', encoding="utf-8")
+            subprocess.run(["git", "add", "package.json"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "main release"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "tag", "v1.0.0"], cwd=repo, check=True)
+            subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+            subprocess.run(["git", "push", "-u", "origin", "main"], cwd=repo, check=True, capture_output=True)
+
+            good = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", script],
+                cwd=repo,
+                env={**os.environ, "GITHUB_REF_NAME": "v1.0.0"},
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(good.returncode, 0, good.stdout + good.stderr)
+
+            subprocess.run(["git", "switch", "-c", "unreviewed"], cwd=repo, check=True, capture_output=True)
+            (repo / "package.json").write_text('{"version":"1.0.1"}\n', encoding="utf-8")
+            subprocess.run(["git", "add", "package.json"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "unreviewed release"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "tag", "v1.0.1"], cwd=repo, check=True)
+
+            rejected = subprocess.run(
+                ["bash", "-euo", "pipefail", "-c", script],
+                cwd=repo,
+                env={**os.environ, "GITHUB_REF_NAME": "v1.0.1"},
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(rejected.returncode, 1)
+            self.assertIn("not reachable from origin/main", rejected.stderr)
 
     def test_release_self_tests_before_publish_and_after_floating_tag(self):
         text = RELEASE.read_text(encoding="utf-8")
