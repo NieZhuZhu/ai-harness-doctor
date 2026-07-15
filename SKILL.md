@@ -208,7 +208,7 @@ The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (
 - `codebase` → portable `.harness-ci/harness-guard.sh` + wiring `README.md` for internal Codebase / Bits / any runner
 Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cleans up all providers' CI files); Claude hooks are not integrated.
 
-> **Self-bootstrap:** this repository dogfoods its own guard. `.github/workflows/harness-drift.yml` and `harness-checkup.yml` are installed here too, adapted from the `assets/guard/` templates to run the repo's **local** CLI/scripts (`node bin/cli.js drift . --strict`) instead of the published `npx -y ai-harness-doctor`, so a change to `scripts/` is gated by the very code being changed. The eval gate stays soft (only active when a committed results JSON exists) and the PR-review step tolerates a missing/limited token, keeping this repo's CI green.
+> **Self-bootstrap:** this repository dogfoods its own guard. `.github/workflows/harness-drift.yml` and `harness-checkup.yml` are adapted from the templates to run the repo's **local** scan/drift implementations instead of the published package, so a change to `scripts/` is gated by the code being changed. The committed scan baseline records five benchmark/test-fixture conflicts; new scan debt or drift fails the PR gate. The eval gate stays soft, and only PR-review posting tolerates a missing/limited token.
 
 #### PR review comments and CI eval gate
 

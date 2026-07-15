@@ -9,6 +9,8 @@ RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 RELEASING = ROOT / "RELEASING.md"
 HARNESS_DRIFT = ROOT / ".github" / "workflows" / "harness-drift.yml"
 HARNESS_DRIFT_TEMPLATE = ROOT / "assets" / "guard" / "harness-drift.yml"
+HARNESS_CHECKUP = ROOT / ".github" / "workflows" / "harness-checkup.yml"
+SCAN_BASELINE = ROOT / ".ai-harness-doctor" / "scan-baseline.json"
 GUARD_ASSETS = ROOT / "assets" / "guard"
 TEST_WORKFLOW = ROOT / ".github" / "workflows" / "test.yml"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
@@ -88,6 +90,26 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertNotIn("scripts/pr_review.py", combined)
         self.assertIn("ai-harness-doctor@latest review", combined)
         self.assertIn("ai-harness-doctor@latest eval --score", combined)
+
+    def test_repository_dogfoods_local_scan_baseline_and_drift(self):
+        drift = HARNESS_DRIFT.read_text(encoding="utf-8")
+        checkup = HARNESS_CHECKUP.read_text(encoding="utf-8")
+        combined = drift + checkup
+        self.assertTrue(SCAN_BASELINE.is_file())
+        self.assertIn("node bin/cli.js scan .", drift)
+        self.assertIn("--baseline .ai-harness-doctor/scan-baseline.json", combined)
+        for gate in (
+            "--fail-on-security",
+            "--fail-on-gaps",
+            "--fail-on-semantic",
+            "--fail-on-conflicts",
+        ):
+            self.assertIn(gate, combined)
+        self.assertIn("- .ai-harness-doctor/scan-baseline.json", drift)
+        self.assertIn("if: ${{ always() }}\n        run: node bin/cli.js drift . --strict", drift)
+        self.assertIn("steps.scan.outputs.status", checkup)
+        self.assertIn("🩺 Harness checkup: issues detected", checkup)
+        self.assertNotIn("--write-baseline", combined)
 
     def test_external_actions_are_immutable_current_major_pins(self):
         external_pattern = re.compile(
