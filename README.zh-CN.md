@@ -18,6 +18,8 @@ npx ai-harness-doctor scan .
 ```
 
 > **仓库边界：**只读扫描器不会跟随仓库派生的配置、manifest、workspace、语义事实或默认插件 symlink 去读取被审计仓库之外的内容。仓库内的文件 symlink 继续受支持，并保留其词法仓库相对报告路径；显式传入的 `--rules DIR` 路径仍是有意保留的主动选择。
+>
+> **变更边界：**具备写能力的 `stubs --apply`、`drift --fix --apply` 以及 `guard --apply` / `--remove --apply`，会拒绝文件本身或已有父目录是 symlink 的仓库派生目标。它们绝不会通过 symlink 重写或删除内容；`draft -o`、baseline 输出文件等显式输出路径仍属于用户主动选择的目标。
 
 ## 为什么
 

@@ -234,6 +234,71 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("manual-merge", proc.stdout)
             self.assertEqual(drift.read_text(encoding="utf-8"), edited)
 
+    def test_guard_apply_refuses_symlinked_agents_file(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            base = Path(parent_dir)
+            repo = self.make_git_repo(base, with_agents=False)
+            outside = base / "outside-agents.md"
+            outside.write_text("# Outside\n", encoding="utf-8")
+            try:
+                (repo / "AGENTS.md").symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported on this platform")
+            before = outside.read_bytes()
+
+            proc = self.run_cli_raw(["guard", str(repo), "--apply"], home, repo)
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("symlink", proc.stderr.lower())
+            self.assertEqual(outside.read_bytes(), before)
+            self.assertFalse((repo / ".github" / "workflows" / "harness-drift.yml").exists())
+
+    def test_guard_apply_refuses_symlinked_managed_workflow(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            base = Path(parent_dir)
+            repo = self.make_git_repo(base)
+            workflow = repo / ".github" / "workflows" / "harness-drift.yml"
+            workflow.parent.mkdir(parents=True)
+            outside = base / "outside-workflow.yml"
+            outside.write_text("# ai-harness-doctor:guard\noutside\n", encoding="utf-8")
+            try:
+                workflow.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported on this platform")
+            before = outside.read_bytes()
+
+            proc = self.run_cli_raw(["guard", str(repo), "--apply"], home, repo)
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("symlink", proc.stderr.lower())
+            self.assertEqual(outside.read_bytes(), before)
+            self.assertTrue(workflow.is_symlink())
+
+    def test_guard_remove_refuses_symlinked_managed_workflow(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            base = Path(parent_dir)
+            repo = self.make_git_repo(base)
+            self.run_cli(["guard", str(repo), "--apply"], home, repo)
+            workflow = repo / ".github" / "workflows" / "harness-drift.yml"
+            installed = workflow.read_bytes()
+            workflow.unlink()
+            outside = base / "outside-workflow.yml"
+            outside.write_bytes(installed)
+            try:
+                workflow.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported on this platform")
+
+            proc = self.run_cli_raw(["guard", str(repo), "--remove", "--apply"], home, repo)
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("symlink", proc.stderr.lower())
+            self.assertEqual(outside.read_bytes(), installed)
+            self.assertTrue(workflow.is_symlink())
+
     def test_guard_provider_gitlab_installs_gitlab_ci(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)

@@ -18,6 +18,8 @@ npx ai-harness-doctor scan .
 ```
 
 > **Repository boundary:** the read-only scanner never follows a repository-derived config, manifest, workspace, semantic-fact, or default-plugin symlink outside the audited repository. In-repo file symlinks remain supported and keep their lexical repo-relative report path; explicitly supplied `--rules DIR` paths remain an intentional opt-in.
+>
+> **Mutation boundary:** write-capable `stubs --apply`, `drift --fix --apply`, and `guard --apply` / `--remove --apply` refuse repository-derived targets whose file or existing parent directory is a symlink. They never rewrite or delete through a symlink; explicit output paths such as `draft -o` and baseline output files remain deliberate user-selected destinations.
 
 ## Why
 

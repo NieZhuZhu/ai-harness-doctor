@@ -18,6 +18,8 @@ npx ai-harness-doctor scan .
 ```
 
 > **Repository boundary:** read-only scanner は、repository 由来の config、manifest、workspace、semantic fact、default plugin の symlink が audited repository の外を指す場合、そのリンクをたどりません。repository 内の file symlink は引き続きサポートされ、lexical repo-relative report path を保持します。明示的に指定した `--rules DIR` path は、意図された opt-in として引き続き利用できます。
+>
+> **Mutation boundary:** write-capable な `stubs --apply`、`drift --fix --apply`、`guard --apply` / `--remove --apply` は、file 自体または既存の parent directory が symlink である repository 由来の target を拒否します。symlink を通じて rewrite や delete を行うことはありません。`draft -o` や baseline output file などの明示的な output path は、引き続き user が意図して選択する destination です。
 
 ## Why
 
