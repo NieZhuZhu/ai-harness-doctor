@@ -37,6 +37,7 @@ node bin/cli.js help
 - `bin/cli.js` must use Node >=16 standard library only; do not add npm runtime dependencies.
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
+- Keep nested instruction scope deterministic and lexical: same-scope differences are conflicts; ancestor→descendant differences are visible non-blocking overrides. Preserve this split across Markdown, Treat, baselines, SARIF, and PR review; never infer prose/glob scopes.
 - Baselines are visible debt registers: HIGH security is ineligible; identities are deterministic, root/package-aware, and line-independent. Shrink repaired debt. Every finding family needs PR-review/SARIF traversal; preserve package paths, keep batch findings summary-only, and never post baselined debt as active.
 - Eval gates over committed results must verify current task/evidence fingerprints before health; any `AGENTS.md` or evidence-bound task change refreshes the manual/real result honestly in the same PR.
 - MCP tools stay read-only. Sync negotiated-version wire shapes, closed input/output schemas, exit policies, stdio tests, and README/SKILL entries; findings are not operational failures, and legacy clients must not receive modern-only fields.

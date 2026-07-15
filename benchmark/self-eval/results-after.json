@@ -23,6 +23,7 @@
     {"id": "eval-evidence-gate", "stdout": "CI must verify current task and evidence fingerprints before trusting health."},
     {"id": "mcp-version-wire", "stdout": "Synchronize negotiated-version wire shapes, and never send modern-only fields to legacy MCP clients."},
     {"id": "repository-operations", "stdout": "The baseline includes secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution. Admin bypass is only for sole-maintainer self-approval deadlock and never for red CI."},
-    {"id": "public-dependency-source", "stdout": "registry.npmjs.org"}
+    {"id": "public-dependency-source", "stdout": "registry.npmjs.org"},
+    {"id": "nested-instruction-scope", "stdout": "Same-scope differences are conflicts; ancestor-to-descendant differences are visible non-blocking overrides."}
   ]
 }

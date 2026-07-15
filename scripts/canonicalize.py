@@ -90,13 +90,29 @@ def render_plan(report, root=None):
     lines.extend(["", "## Conflict list"])
     if report["conflicts"]:
         for c in report["conflicts"]:
-            lines.append(f"- **{c['signal']}**")
+            scope = f" (scope `{c['scope']}`)" if c.get("scope") else ""
+            lines.append(f"- **{c['signal']}**{scope}")
             for value, entries in c["values"].items():
                 lines.append(f"  - `{value}`")
                 for e in entries:
                     lines.append(f"    - {e['path']}:{e['line']} `{e['evidence']}`")
     else:
         lines.append("- No obvious conflict candidates.")
+    lines.extend(["", "## Declared scope overrides (preserve; non-blocking)"])
+    if report.get("scope_overrides"):
+        lines.append(
+            "Nested canonical files are intentional nearest-file scopes. Preserve these "
+            "parent → child differences unless the repository owner explicitly removes a scope:"
+        )
+        for override in report["scope_overrides"]:
+            parent_values = ", ".join(f"`{value}`" for value in override["parent_values"])
+            values = ", ".join(f"`{value}`" for value in override["values"])
+            lines.append(
+                f"- **{override['signal']}**: `{override['parent_scope']}` ({parent_values}) "
+                f"→ `{override['scope']}` ({values})"
+            )
+    else:
+        lines.append("- No parent → child canonical overrides detected.")
     lines.extend(
         [
             "",
@@ -208,6 +224,11 @@ def render_merge_suggestions(report, root=None):
     prefers repository facts (lockfile, .nvmrc/engines.node) over vote counts.
     """
     lines = ["", "## Merge suggestions (semi-automatic)", "Canonical file: `AGENTS.md` (single source of truth)."]
+    nested_canonical_paths = {
+        row["path"]
+        for row in report.get("instruction_scopes", [])
+        if row.get("scope") not in (None, "", ".")
+    }
 
     lines.append("")
     lines.append("### Overlap consolidation")
@@ -218,7 +239,13 @@ def render_merge_suggestions(report, root=None):
                 f"keep the shared content in `AGENTS.md` and reduce these files to stubs:"
             )
             for path in (o["a"], o["b"]):
-                lines.append(f"  - [ ] reduce `{path}` to an import stub pointing at `AGENTS.md`")
+                if path in nested_canonical_paths:
+                    lines.append(
+                        f"  - [ ] preserve nested canonical `{path}` and remove only redundant shared content; "
+                        "do not replace this scope with a root import stub"
+                    )
+                else:
+                    lines.append(f"  - [ ] reduce `{path}` to an import stub pointing at `AGENTS.md`")
     else:
         lines.append("- No overlap clusters above the threshold; nothing to consolidate.")
 
@@ -237,13 +264,26 @@ def render_merge_suggestions(report, root=None):
                 ev = ", ".join(f"`{_evidence_ref(e)}`" for e in values[value])
                 others.append(f"`{value}` ({ev})")
             other_text = "; ".join(others) if others else "none"
+            scope = f" in scope `{c['scope']}`" if c.get("scope") else ""
             lines.append(
-                f"- [ ] **{c['signal']}** \u2192 recommend `{recommended}` "
+                f"- [ ] **{c['signal']}**{scope} \u2192 recommend `{recommended}` "
                 f"(evidence: {rec_evidence}; rationale: {rationale}); record it in `AGENTS.md` and drop conflicting "
                 f"lines from the other files. Other candidates: {other_text}."
             )
     else:
         lines.append("- No conflict signals detected; no adjudication needed.")
+
+    lines.append("")
+    lines.append("### Nested canonical scopes to preserve")
+    if report.get("scope_overrides"):
+        for override in report["scope_overrides"]:
+            lines.append(
+                f"- [ ] Preserve `{override['scope']}` as a nested canonical scope overriding "
+                f"`{override['parent_scope']}` for **{override['signal']}**; "
+                "do not collapse it into a root stub."
+            )
+    else:
+        lines.append("- No nested override layers need preservation.")
 
     return lines
 

@@ -111,7 +111,7 @@ verification gate, and update its status here.
 | 017 | Establish a verifiable public-repository trust baseline | P1 | M | 014–016 | DONE |
 | 018 | Index subtree path resolution once per diagnostic run | P1 | M | — | DONE |
 | 019 | Restore public-registry dependency update automation | P0 | S | — | DONE |
-| 020 | Make conflict diagnostics honor nested AGENTS.md scopes | P1 | L | 018 | TODO |
+| 020 | Make conflict diagnostics honor nested AGENTS.md scopes | P1 | L | 018 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

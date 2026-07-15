@@ -61,6 +61,86 @@ class CanonicalizeTests(unittest.TestCase):
         self.assertIn("**package_manager** → recommend `npm`", out)
         self.assertIn("`.cursorrules:4`", out)
 
+    def test_plan_preserves_nested_scope_overrides(self):
+        report = {
+            "files": [
+                {"path": "AGENTS.md", "tool": "AGENTS.md", "bytes": 10, "lines": 1},
+                {
+                    "path": "packages/api/AGENTS.md",
+                    "tool": "AGENTS.md",
+                    "bytes": 10,
+                    "lines": 1,
+                },
+            ],
+            "overlaps": [
+                {
+                    "a": "AGENTS.md",
+                    "b": "packages/api/AGENTS.md",
+                    "percent": 80.0,
+                }
+            ],
+            "conflicts": [],
+            "instruction_scopes": [
+                {"path": "AGENTS.md", "scope": ".", "parent": None},
+                {
+                    "path": "packages/api/AGENTS.md",
+                    "scope": "packages/api",
+                    "parent": ".",
+                },
+            ],
+            "scope_overrides": [
+                {
+                    "signal": "package_manager",
+                    "parent_scope": ".",
+                    "scope": "packages/api",
+                    "parent_values": ["npm"],
+                    "values": ["pnpm"],
+                    "evidence": [],
+                }
+            ],
+        }
+        output = canonicalize.render_plan(report)
+        self.assertIn("## Declared scope overrides (preserve; non-blocking)", output)
+        self.assertIn("Preserve `packages/api` as a nested canonical scope", output)
+        self.assertIn("do not collapse it into a root stub", output)
+        self.assertIn("preserve nested canonical `packages/api/AGENTS.md`", output)
+        self.assertNotIn(
+            "reduce `packages/api/AGENTS.md` to an import stub",
+            output,
+        )
+
+    def test_plan_labels_true_nested_conflict_scope(self):
+        report = {
+            "files": [],
+            "overlaps": [],
+            "instruction_scopes": [],
+            "scope_overrides": [],
+            "conflicts": [
+                {
+                    "signal": "package_manager",
+                    "scope": "packages/api",
+                    "values": {
+                        "pnpm": [
+                            {
+                                "path": "packages/api/AGENTS.md",
+                                "line": 2,
+                                "evidence": "Use pnpm.",
+                            }
+                        ],
+                        "yarn": [
+                            {
+                                "path": "packages/api/CLAUDE.md",
+                                "line": 3,
+                                "evidence": "Use yarn.",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        output = canonicalize.render_plan(report)
+        self.assertIn("**package_manager** (scope `packages/api`)", output)
+
     def test_write_stubs_dry_run_prints_diff_and_writes_nothing(self):
         with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"

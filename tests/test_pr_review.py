@@ -215,6 +215,7 @@ class BuildReviewTests(unittest.TestCase):
                         "pnpm": [{"path": "AGENTS.md", "line": 4}],
                         "npm": [{"path": "CLAUDE.md", "line": 2}],
                     },
+                    "scope": "packages/api",
                 }
             ],
             "baselined": [
@@ -235,13 +236,29 @@ class BuildReviewTests(unittest.TestCase):
         self.assertEqual(findings[0]["values"], ["npm", "pnpm"])
         self.assertEqual(
             findings[0]["message"],
-            "Conflicting package_manager declarations: npm, pnpm",
+            "Conflicting package_manager declarations: npm, pnpm (scope: packages/api)",
         )
+        self.assertEqual(findings[0]["scope"], "packages/api")
         self.assertEqual(
             findings[0]["evidence"],
             ["npm: CLAUDE.md:2", "pnpm: AGENTS.md:4"],
         )
         self.assertNotIn("old accepted debt", json.dumps(findings))
+
+    def test_scope_overrides_are_not_pr_findings(self):
+        report = {
+            "scope_overrides": [
+                {
+                    "signal": "package_manager",
+                    "parent_scope": ".",
+                    "scope": "packages/api",
+                    "parent_values": ["npm"],
+                    "values": ["pnpm"],
+                    "evidence": [],
+                }
+            ]
+        }
+        self.assertEqual(pr_review.collect_findings(report), [])
 
     def test_monorepo_findings_are_prefixed_and_attributed(self):
         report = {

@@ -192,16 +192,20 @@ def _normalize_conflict(
         values = sorted(str(value) for value in raw_values)
     else:
         values = [str(raw_values)] if raw_values not in (None, "") else []
+    scope = str(conflict.get("scope", ""))
+    scope_suffix = f" (scope: {scope})" if scope not in ("", ".") else ""
     finding = {
         "category": f"conflict/{signal}",
         "level": "WARN",
-        "message": f"Conflicting {signal} declarations: " + ", ".join(values),
+        "message": f"Conflicting {signal} declarations: " + ", ".join(values) + scope_suffix,
         "values": values,
         "suggestion": (
-            "Choose one canonical declaration in AGENTS.md and reduce tool-specific "
-            "files to compatible pointers."
+            "Choose one canonical declaration inside this diagnostic scope and "
+            "keep tool-specific files compatible with its nearest AGENTS.md."
         ),
     }
+    if scope not in ("", "."):
+        finding["scope"] = scope
     evidence = _conflict_evidence(raw_values, prefix=prefix, repository=repository)
     if evidence:
         finding["evidence"] = evidence

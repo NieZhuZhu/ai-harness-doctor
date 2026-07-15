@@ -149,13 +149,20 @@
       "answer": "registry.npmjs.org",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "nested-instruction-scope",
+      "stdout": "Same-scope differences are conflicts; ancestor-to-descendant differences are visible non-blocking overrides.",
+      "answer": "Same-scope differences are conflicts; ancestor-to-descendant differences are visible non-blocking overrides.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 21,
-    "total": 21,
+    "passed": 22,
+    "total": 22,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -163,12 +170,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "e66da93f683c521aff8369e5a07349ef5d7973effc3b1f057736b4fc7f3e031d"
+      "sha256": "e155f299f93fc61f64eaea4823f008678fe11d8fba392c87bbd02185b860c23b"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "572fab05310392b4c8504ae21ec9b16d7b3e65279b735d60fd6f87e101bf822f"
+        "sha256": "e980a8278c61c6f9b24bf6bd822ec85a588b9b0db63f4020a55d7c36b53615f3"
       }
     ]
   }
