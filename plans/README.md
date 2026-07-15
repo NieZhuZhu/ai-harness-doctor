@@ -212,7 +212,7 @@ verification gate, and update its status here.
 | 027 | Confine every fact-derived generator to repository truth | P0 | M | — | DONE |
 | 028 | Make lint CI install the committed npm lockfile exactly | P1 | S | — | DONE |
 | 029 | Bind generated task evidence into eval freshness automatically | P1 | M | 027 | DONE |
-| 030 | Validate every eval task before any runner or judge executes | P0 | M | — | TODO |
+| 030 | Validate every eval task before any runner or judge executes | P0 | M | — | IN PROGRESS |
 | 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | TODO |
 | 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | TODO |
 
