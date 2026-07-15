@@ -103,9 +103,9 @@
   },
   {
     "id": "eval-evidence-gate",
-    "prompt": "What must a CI eval gate verify before trusting the stored health score? Answer briefly.",
+    "prompt": "How are task-declared and explicit eval evidence freshness-bound before trusting a stored health score? Answer briefly.",
     "timeout_s": 120,
-    "check": {"type": "regex", "value": "(?i)current.*task.*evidence.*before.*health|task.*evidence.*fingerprint.*before.*health"}
+    "check": {"type": "regex", "value": "(?i)task.?declared.*automatic.*explicit.*compos.*file.*hash.*director.*type.*before.*health|before.*health.*task.?declared.*explicit.*director"}
   },
   {
     "id": "mcp-version-wire",

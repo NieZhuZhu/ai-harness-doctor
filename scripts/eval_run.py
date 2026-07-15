@@ -108,37 +108,100 @@ def _logical_path(path, workdir, allow_external=False):
     outside it, so that case uses the caller-supplied basename rather than
     leaking an absolute host path into committed results.
     """
+    resolved_workdir = Path(workdir).resolve()
     resolved = path.resolve()
     try:
-        return resolved.relative_to(workdir).as_posix()
+        # Evidence reports preserve the lexical repository path for safe
+        # in-repo aliases; containment is proven separately via ``resolved``.
+        resolved.relative_to(resolved_workdir)
+        lexical = Path(os.path.abspath(str(path)))
+        try:
+            return lexical.relative_to(resolved_workdir).as_posix()
+        except ValueError:
+            # macOS may spell the same contained temp path as /var/... and
+            # /private/var/...; fall back to its resolved in-root spelling.
+            return resolved.relative_to(resolved_workdir).as_posix()
     except ValueError:
         if allow_external:
             return path.name
         raise ValueError(f"evidence path escapes workdir: {path}") from None
 
 
-def build_evidence_manifest(tasks_path, evidence_paths, workdir):
-    """Fingerprint the task definition and explicit repository evidence."""
+def _task_evidence_paths(tasks):
+    """Return validated repository evidence from already-parsed tasks."""
+    if not isinstance(tasks, list):
+        raise ValueError("tasks file must contain a JSON array")
+    evidence = []
+    for index, task in enumerate(tasks):
+        if not isinstance(task, dict):
+            raise ValueError(f"task {index} must be an object")
+        declared = task.get("evidence")
+        if declared is None:
+            continue
+        if not isinstance(declared, list):
+            raise ValueError(f"task {index} evidence must be an array")
+        for item in declared:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"task {index} evidence entries must be non-empty strings")
+            evidence.append(item)
+    return evidence
+
+
+def task_evidence_paths(tasks_path):
+    """Return validated repository evidence declared by a task file."""
+    try:
+        tasks = json.loads(Path(tasks_path).read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"tasks file is not valid JSON: {Path(tasks_path).name}") from exc
+    return _task_evidence_paths(tasks)
+
+
+def _evidence_input_label(raw):
+    """Return a concise caller-facing label without leaking an absolute host path."""
+    path = Path(raw)
+    return path.name if path.is_absolute() else path.as_posix()
+
+
+def _build_evidence_manifest(
+    tasks_path,
+    evidence_paths,
+    workdir,
+    task_evidence_bound=False,
+):
+    """Build a manifest from an already-resolved effective evidence list."""
     workdir = Path(workdir).resolve()
     tasks_path = Path(tasks_path)
     if not tasks_path.is_file():
-        raise ValueError(f"tasks file does not exist: {tasks_path}")
+        raise ValueError(f"tasks file does not exist: {tasks_path.name}")
     files = []
     seen = set()
-    for raw in evidence_paths or []:
+    for raw in evidence_paths:
         candidate = Path(raw)
         if not candidate.is_absolute():
             candidate = workdir / candidate
         resolved = candidate.resolve()
-        logical = _logical_path(candidate, workdir)
+        try:
+            logical = _logical_path(candidate, workdir)
+        except ValueError:
+            raise ValueError(
+                f"evidence path escapes workdir: {_evidence_input_label(raw)}"
+            ) from None
         if logical in seen:
             continue
-        if not resolved.is_file():
-            raise ValueError(f"evidence file does not exist: {raw}")
+        if resolved.is_file():
+            entry = {"path": logical, "sha256": _sha256_file(resolved)}
+        elif resolved.is_dir():
+            # Bind directory evidence to existence/type only. Recursively hashing
+            # a source tree would make unrelated child edits stale and unbounded.
+            entry = {"path": logical, "kind": "directory"}
+        else:
+            raise ValueError(
+                f"evidence path does not exist: {_evidence_input_label(raw)}"
+            )
         seen.add(logical)
-        files.append({"path": logical, "sha256": _sha256_file(resolved)})
+        files.append(entry)
     files.sort(key=lambda item: item["path"])
-    return {
+    manifest = {
         "schemaVersion": EVIDENCE_SCHEMA_VERSION,
         "tasks": {
             "path": _logical_path(tasks_path, workdir, allow_external=True),
@@ -146,15 +209,48 @@ def build_evidence_manifest(tasks_path, evidence_paths, workdir):
         },
         "files": files,
     }
+    if task_evidence_bound:
+        # Additive schema-v1 marker: its absence identifies historical
+        # explicit-only manifests, which remain verifiable with their original
+        # command line instead of silently acquiring new task sources.
+        manifest["taskEvidence"] = True
+    return manifest
 
 
-def attach_evidence_manifest(result, args, tasks_path, workdir):
-    """Attach evidence metadata only when the caller explicitly requested it."""
-    if getattr(args, "evidence", None):
-        try:
-            result["evidence"] = build_evidence_manifest(tasks_path, args.evidence, workdir)
-        except ValueError as exc:
-            raise SystemExit(f"evidence error: {exc}") from None
+def build_evidence_manifest(tasks_path, evidence_paths, workdir):
+    """Fingerprint task definitions and their effective repository evidence."""
+    tasks_path = Path(tasks_path)
+    if not tasks_path.is_file():
+        raise ValueError(f"tasks file does not exist: {tasks_path}")
+    declared = task_evidence_paths(tasks_path)
+    effective = list(evidence_paths or []) + declared
+    return _build_evidence_manifest(
+        tasks_path,
+        effective,
+        workdir,
+        task_evidence_bound=bool(declared),
+    )
+
+
+def prepare_evidence_manifest(args, tasks_path, workdir, tasks=None):
+    """Validate and build effective evidence before any runner is invoked."""
+    try:
+        declared = (
+            _task_evidence_paths(tasks)
+            if tasks is not None
+            else task_evidence_paths(tasks_path)
+        )
+        effective = list(getattr(args, "evidence", None) or []) + declared
+        if not effective:
+            return None
+        return _build_evidence_manifest(
+            tasks_path,
+            effective,
+            workdir,
+            task_evidence_bound=bool(declared),
+        )
+    except ValueError as exc:
+        raise SystemExit(f"evidence error: {exc}") from None
 
 
 def verify_current_evidence(result, args):
@@ -162,15 +258,29 @@ def verify_current_evidence(result, args):
     stored = result.get("evidence") if isinstance(result, dict) else None
     if not isinstance(stored, dict):
         return ["result has no evidence manifest"]
-    try:
-        current = build_evidence_manifest(args.tasks, args.evidence, args.workdir)
-    except ValueError as exc:
-        return [str(exc)]
     mismatches = []
     if stored.get("schemaVersion") != EVIDENCE_SCHEMA_VERSION:
         mismatches.append(
             f"unsupported evidence schema: {stored.get('schemaVersion')!r}"
         )
+    task_binding = stored.get("taskEvidence")
+    try:
+        if task_binding is True:
+            current = build_evidence_manifest(args.tasks, args.evidence, args.workdir)
+        elif "taskEvidence" not in stored:
+            # Compatibility path for pre-feature schema-v1 manifests: verify
+            # the exact explicit set they originally stamped. Newly produced
+            # task-bound manifests always carry the marker above.
+            current = _build_evidence_manifest(
+                Path(args.tasks),
+                args.evidence,
+                args.workdir,
+            )
+        else:
+            mismatches.append("malformed task evidence binding marker")
+            current = build_evidence_manifest(args.tasks, args.evidence, args.workdir)
+    except ValueError as exc:
+        return mismatches + [str(exc)]
     stored_tasks_value = stored.get("tasks")
     stored_tasks = stored_tasks_value if isinstance(stored_tasks_value, dict) else {}
     if not isinstance(stored_tasks_value, dict):
@@ -185,19 +295,27 @@ def verify_current_evidence(result, args):
         stored_items = []
     stored_files = {}
     for item in stored_items:
-        if (
-            not isinstance(item, dict)
-            or not isinstance(item.get("path"), str)
-            or not isinstance(item.get("sha256"), str)
-        ):
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
             mismatches.append("malformed evidence file entry")
             continue
         path = item["path"]
         if path in stored_files:
             mismatches.append(f"duplicate evidence entry: {path}")
             continue
-        stored_files[path] = item["sha256"]
-    current_files = {item["path"]: item["sha256"] for item in current["files"]}
+        kind = item.get("kind", "file")
+        if kind == "file" and isinstance(item.get("sha256"), str):
+            stored_files[path] = ("file", item["sha256"])
+        elif kind == "directory" and "sha256" not in item:
+            stored_files[path] = ("directory", None)
+        else:
+            mismatches.append("malformed evidence file entry")
+    current_files = {
+        item["path"]: (
+            item.get("kind", "file"),
+            item.get("sha256"),
+        )
+        for item in current["files"]
+    }
     for path in sorted(set(stored_files) | set(current_files)):
         if path not in stored_files:
             mismatches.append(f"evidence added: {path}")
@@ -1260,18 +1378,25 @@ def _run_round(tasks, args, workdir):
 def run_tasks(args):
     tasks_path = Path(args.tasks)
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    workdir = Path(args.workdir).resolve()
+    evidence_manifest = prepare_evidence_manifest(
+        args,
+        tasks_path,
+        workdir,
+        tasks=tasks,
+    )
     binary = runner_binary(args.runner)
     if binary and shutil.which(binary) is None:
         print(manual_protocol(binary, args.tasks), file=sys.stderr)
         return 127
-    workdir = Path(args.workdir).resolve()
     rounds = args.rounds if args.rounds and args.rounds > 1 else 1
 
     if rounds == 1:
         # Single-round default: byte-compatible with the previous output shape.
         results = {"label": args.label, "workdir": str(workdir), "tasks": _run_round(tasks, args, workdir)}
         results["health"] = compute_health(results)
-        attach_evidence_manifest(results, args, tasks_path, workdir)
+        if evidence_manifest is not None:
+            results["evidence"] = evidence_manifest
         output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
         output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"wrote {output}")
@@ -1305,7 +1430,8 @@ def run_tasks(args):
     # Overall health = pass rate across every task record from every round.
     all_records = {"tasks": [rec for rr in round_results for rec in rr["tasks"]]}
     results["health"] = compute_health(all_records)
-    attach_evidence_manifest(results, args, tasks_path, workdir)
+    if evidence_manifest is not None:
+        results["evidence"] = evidence_manifest
     output = Path(args.output) if args.output else Path(f"results-{args.label}.json")
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
@@ -1342,6 +1468,19 @@ def render_stats_summary(stats, overall_health=None):
 def regrade(args):
     tasks_path = Path(args.tasks)
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+    declared_evidence = _task_evidence_paths(tasks)
+    evidence_manifest = None
+    if args.evidence or declared_evidence:
+        if not args.workdir:
+            raise SystemExit(
+                "evidence error: --workdir is required for task-declared evidence"
+            )
+        evidence_manifest = prepare_evidence_manifest(
+            args,
+            tasks_path,
+            Path(args.workdir).resolve(),
+            tasks=tasks,
+        )
     task_map = {task["id"]: task for task in tasks}
     results = json.loads(Path(args.regrade).read_text(encoding="utf-8"))
     for record in results.get("tasks", []):
@@ -1359,9 +1498,9 @@ def regrade(args):
             record["regraded"] = False
         else:
             record["regraded"] = False
-    if args.evidence:
+    if evidence_manifest is not None:
         results["health"] = compute_health(results)
-        attach_evidence_manifest(results, args, tasks_path, Path(args.workdir).resolve())
+        results["evidence"] = evidence_manifest
     output = Path(args.output) if args.output else Path(args.regrade)
     output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"wrote {output}")
@@ -1510,6 +1649,12 @@ def run_matrix(args, runners):
     tasks_path = Path(args.tasks)
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
     workdir = Path(args.workdir).resolve()
+    evidence_manifest = prepare_evidence_manifest(
+        args,
+        tasks_path,
+        workdir,
+        tasks=tasks,
+    )
     agent_records = {}
     for name, runner in runners.items():
         binary = runner_binary(runner)
@@ -1541,7 +1686,8 @@ def run_matrix(args, runners):
         "summary": summary,
     }
     matrix["health"] = compute_health(matrix)
-    attach_evidence_manifest(matrix, args, tasks_path, workdir)
+    if evidence_manifest is not None:
+        matrix["evidence"] = evidence_manifest
     json_out = Path(args.matrix_json) if args.matrix_json else Path("matrix-results.json")
     json_out.write_text(json.dumps(matrix, ensure_ascii=False, indent=2), encoding="utf-8")
     report_out = (
@@ -1809,13 +1955,13 @@ def main(argv=None):
         "--evidence",
         action="append",
         default=[],
-        metavar="FILE",
-        help="Repeatable repository-relative evidence file to fingerprint in results.",
+        metavar="PATH",
+        help="Repeatable repository-relative evidence file/directory to bind in results.",
     )
     parser.add_argument(
         "--require-current-evidence",
         action="store_true",
-        help="With --score, exit 7 unless stored task/evidence digests match current files.",
+        help="With --score, exit 7 unless stored task/effective-evidence digests match current files.",
     )
     parser.add_argument("--runner", default="claude -p {prompt} --output-format json")
     parser.add_argument("-o", "--output")
@@ -1917,10 +2063,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.target is not None and not args.generate:
         parser.error("--target requires --generate")
-    if args.require_current_evidence and not (args.score and args.tasks and args.workdir and args.evidence):
+    if args.require_current_evidence and not (args.score and args.tasks and args.workdir):
         parser.error(
-            "--require-current-evidence requires --score, --tasks, --workdir, "
-            "and at least one --evidence FILE"
+            "--require-current-evidence requires --score, --tasks, and --workdir"
         )
     if args.evidence and not args.workdir:
         parser.error("--evidence requires --workdir")

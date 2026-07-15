@@ -812,6 +812,255 @@ class EvidenceFingerprintTests(unittest.TestCase):
             self.assertRegex(first["tasks"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertNotIn(str(Path(td).resolve()), json.dumps(first))
 
+    def test_task_declared_and_explicit_evidence_are_unioned_automatically(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            (workdir / "AGENTS.md").write_text("instructions\n", encoding="utf-8")
+            (workdir / "package.json").write_text('{"scripts":{"test":"ok"}}\n', encoding="utf-8")
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "test",
+                            "prompt": "test",
+                            "check": {"type": "regex", "value": "ok"},
+                            "evidence": ["package.json", "package.json"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            manifest = eval_run.build_evidence_manifest(
+                tasks,
+                ["AGENTS.md"],
+                workdir,
+            )
+
+            self.assertTrue(manifest["taskEvidence"])
+            self.assertEqual(
+                [item["path"] for item in manifest["files"]],
+                ["AGENTS.md", "package.json"],
+            )
+
+    def test_task_evidence_rejects_malformed_escape_and_external_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            workdir = base / "repo"
+            workdir.mkdir()
+            outside = base / "outside.txt"
+            outside.write_text("outside\n", encoding="utf-8")
+            linked = workdir / "linked.txt"
+            try:
+                linked.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported")
+
+            bad_values = [
+                "not-a-list",
+                [""],
+                [42],
+                ["../outside.txt"],
+                ["linked.txt"],
+            ]
+            for declared in bad_values:
+                with self.subTest(declared=declared):
+                    tasks = base / "tasks.json"
+                    tasks.write_text(
+                        json.dumps(
+                            [
+                                {
+                                    "id": "bad",
+                                    "prompt": "bad",
+                                    "check": {"type": "regex", "value": "x"},
+                                    "evidence": declared,
+                                }
+                            ]
+                        ),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaises(ValueError) as caught:
+                        eval_run.build_evidence_manifest(tasks, [], workdir)
+                    message = str(caught.exception)
+                    self.assertNotIn(str(base.resolve()), message)
+                    if declared == ["../outside.txt"]:
+                        self.assertIn("../outside.txt", message)
+                    elif declared == ["linked.txt"]:
+                        self.assertIn("linked.txt", message)
+
+    def test_invalid_task_evidence_fails_before_runner_executes(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            marker = Path(td) / "runner-executed"
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "bad",
+                            "prompt": "bad",
+                            "check": {"type": "regex", "value": "ok"},
+                            "evidence": ["../outside.txt"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            runner = (
+                f"{sys.executable} -c "
+                f"\"from pathlib import Path; Path({str(marker)!r}).write_text('ran')\""
+            )
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "preflight",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("evidence path escapes workdir: ../outside.txt", proc.stderr)
+            self.assertFalse(marker.exists())
+
+    def test_directory_evidence_binds_type_not_recursive_contents(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            components = workdir / "src" / "components"
+            components.mkdir(parents=True)
+            child = components / "Button.tsx"
+            child.write_text("v1\n", encoding="utf-8")
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "components",
+                            "prompt": "where",
+                            "check": {"type": "regex", "value": "src/components"},
+                            "evidence": ["src/components"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            first = eval_run.build_evidence_manifest(tasks, [], workdir)
+            child.write_text("v2\n", encoding="utf-8")
+            second = eval_run.build_evidence_manifest(tasks, [], workdir)
+            self.assertEqual(first, second)
+            self.assertEqual(
+                first["files"],
+                [{"path": "src/components", "kind": "directory"}],
+            )
+
+            child.unlink()
+            components.rmdir()
+            (workdir / "src" / "components").write_text("now a file\n", encoding="utf-8")
+            changed = eval_run.build_evidence_manifest(tasks, [], workdir)
+            self.assertNotEqual(first["files"], changed["files"])
+
+    def test_directory_evidence_strict_score_detects_missing_and_type_change(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            components = workdir / "src" / "components"
+            components.mkdir(parents=True)
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "components",
+                            "prompt": "where",
+                            "check": {"type": "regex", "value": "src/components"},
+                            "evidence": ["src/components"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            result = Path(td) / "result.json"
+            result.write_text(
+                json.dumps(
+                    {
+                        "tasks": [{"id": "components", "passed": True}],
+                        "health": {
+                            "score": 100,
+                            "grade": "A",
+                            "passed": 1,
+                            "total": 1,
+                            "timed_out": 0,
+                        },
+                        "evidence": eval_run.build_evidence_manifest(tasks, [], workdir),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            command = [
+                sys.executable,
+                str(EVAL),
+                "--score",
+                str(result),
+                "--tasks",
+                str(tasks),
+                "--workdir",
+                str(workdir),
+                "--require-current-evidence",
+            ]
+            current = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(current.returncode, 0, current.stderr)
+
+            components.rmdir()
+            missing = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(missing.returncode, eval_run.EVIDENCE_STALE_EXIT)
+            self.assertIn("evidence path does not exist: src/components", missing.stderr)
+
+            components.write_text("now a file\n", encoding="utf-8")
+            changed = subprocess.run(command, text=True, capture_output=True)
+            self.assertEqual(changed.returncode, eval_run.EVIDENCE_STALE_EXIT)
+            self.assertIn("evidence changed: src/components", changed.stderr)
+
+    def test_contained_symlink_evidence_keeps_lexical_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            shared = workdir / "shared"
+            shared.mkdir(parents=True)
+            (shared / "package.json").write_text("{}\n", encoding="utf-8")
+            try:
+                (workdir / "package.json").symlink_to(shared / "package.json")
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported")
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "package",
+                            "prompt": "package",
+                            "check": {"type": "regex", "value": "x"},
+                            "evidence": ["package.json"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            manifest = eval_run.build_evidence_manifest(tasks, [], workdir)
+
+            self.assertEqual(manifest["files"][0]["path"], "package.json")
+
     def test_run_result_is_stamped_only_when_explicitly_requested(self):
         with tempfile.TemporaryDirectory() as td:
             workdir, _agents, tasks, runner = self._fixture(td)
@@ -875,6 +1124,174 @@ class EvidenceFingerprintTests(unittest.TestCase):
             changed_tasks = subprocess.run(command, text=True, capture_output=True)
             self.assertEqual(changed_tasks.returncode, eval_run.EVIDENCE_STALE_EXIT)
             self.assertIn("tasks changed: tasks.json", changed_tasks.stderr)
+
+    def test_legacy_schema_v1_manifest_keeps_explicit_only_verification(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            agents = workdir / "AGENTS.md"
+            agents.write_text("instructions\n", encoding="utf-8")
+            (workdir / "package.json").write_text("{}\n", encoding="utf-8")
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "legacy",
+                            "prompt": "legacy",
+                            "check": {"type": "regex", "value": "ok"},
+                            "evidence": ["package.json"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            # Simulate a schema-v1 result stamped before task-level evidence
+            # became executable. The historical manifest contains only the
+            # explicit AGENTS.md source and has no additive taskEvidence marker.
+            legacy_manifest = eval_run._build_evidence_manifest(
+                tasks,
+                ["AGENTS.md"],
+                workdir,
+            )
+            result = Path(td) / "result.json"
+            result.write_text(
+                json.dumps(
+                    {
+                        "tasks": [{"id": "legacy", "passed": True}],
+                        "health": {
+                            "score": 100,
+                            "grade": "A",
+                            "passed": 1,
+                            "total": 1,
+                            "timed_out": 0,
+                        },
+                        "evidence": legacy_manifest,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--score",
+                    str(result),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--evidence",
+                    "AGENTS.md",
+                    "--require-current-evidence",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_generated_task_fact_change_exits_seven_without_repeating_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            package = repo / "packages" / "api"
+            package.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text("Use pnpm.\n", encoding="utf-8")
+            (repo / "pnpm-lock.yaml").write_text("lockfileVersion: 9\n", encoding="utf-8")
+            (package / "AGENTS.md").write_text("Use API commands.\n", encoding="utf-8")
+            manifest = package / "package.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "scripts": {"test:api": "vitest run"},
+                        "devDependencies": {"vitest": "1"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            tasks = Path(td) / "tasks.json"
+            generated = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--generate",
+                    str(repo),
+                    "--target",
+                    "packages/api/src/x.py",
+                    "-o",
+                    str(tasks),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            task_rows = json.loads(tasks.read_text(encoding="utf-8"))
+            raw = Path(td) / "raw.json"
+            raw.write_text(
+                json.dumps(
+                    {
+                        "label": "manual",
+                        "tasks": [
+                            {"id": task["id"], "stdout": "pnpm"}
+                            for task in task_rows
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = Path(td) / "result.json"
+            regraded = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--regrade",
+                    str(raw),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(repo),
+                    "-o",
+                    str(result),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(regraded.returncode, 0, regraded.stderr)
+            stored = json.loads(result.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [item["path"] for item in stored["evidence"]["files"]],
+                [
+                    "packages/api/package.json",
+                    "pnpm-lock.yaml",
+                ],
+            )
+            score = [
+                sys.executable,
+                str(EVAL),
+                "--score",
+                str(result),
+                "--tasks",
+                str(tasks),
+                "--workdir",
+                str(repo),
+                "--require-current-evidence",
+            ]
+            current = subprocess.run(score, text=True, capture_output=True)
+            self.assertEqual(current.returncode, 0, current.stderr)
+
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "scripts": {"test:api": "jest"},
+                        "devDependencies": {"jest": "1"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stale = subprocess.run(score, text=True, capture_output=True)
+            self.assertEqual(stale.returncode, eval_run.EVIDENCE_STALE_EXIT)
+            self.assertIn("evidence changed: packages/api/package.json", stale.stderr)
 
     def test_strict_mode_rejects_unstamped_legacy_result(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1044,6 +1461,147 @@ class EvidenceFingerprintTests(unittest.TestCase):
             data = json.loads(raw.read_text(encoding="utf-8"))
             self.assertTrue(data["tasks"][0]["passed"])
             self.assertIn("evidence", data)
+
+    def test_generated_task_evidence_stamps_single_multi_matrix_and_regrade(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            (workdir / "fact.txt").write_text("ok\n", encoding="utf-8")
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "answer",
+                            "prompt": "answer",
+                            "check": {"type": "regex", "value": "^ok$"},
+                            "timeout_s": 10,
+                            "evidence": ["fact.txt"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            runner = f"{sys.executable} -c \"print('ok')\""
+            single = Path(td) / "single.json"
+            multi = Path(td) / "multi.json"
+            for extra, output in (([], single), (["--rounds", "2"], multi)):
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(EVAL),
+                        "--tasks",
+                        str(tasks),
+                        "--label",
+                        "generated",
+                        "--workdir",
+                        str(workdir),
+                        "--runner",
+                        runner,
+                        *extra,
+                        "-o",
+                        str(output),
+                    ],
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            matrix = Path(td) / "matrix.json"
+            report = Path(td) / "matrix.md"
+            matrix_proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--runner-cmd",
+                    f"one={runner}",
+                    "--matrix-json",
+                    str(matrix),
+                    "--matrix-report",
+                    str(report),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(matrix_proc.returncode, 0, matrix_proc.stderr)
+
+            raw = Path(td) / "raw.json"
+            raw.write_text(
+                json.dumps({"tasks": [{"id": "answer", "stdout": "ok"}]}),
+                encoding="utf-8",
+            )
+            regraded = Path(td) / "regraded.json"
+            regrade_proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--regrade",
+                    str(raw),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "-o",
+                    str(regraded),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(regrade_proc.returncode, 0, regrade_proc.stderr)
+
+            for output in (single, multi, matrix, regraded):
+                with self.subTest(output=output):
+                    manifest = json.loads(output.read_text(encoding="utf-8"))["evidence"]
+                    self.assertEqual(
+                        [item["path"] for item in manifest["files"]],
+                        ["fact.txt"],
+                    )
+
+    def test_regrade_task_evidence_requires_workdir_with_clear_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "answer",
+                            "prompt": "answer",
+                            "check": {"type": "regex", "value": "^ok$"},
+                            "evidence": ["fact.txt"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            raw = Path(td) / "raw.json"
+            raw.write_text(
+                json.dumps({"tasks": [{"id": "answer", "stdout": "ok"}]}),
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--regrade",
+                    str(raw),
+                    "--tasks",
+                    str(tasks),
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn(
+                "evidence error: --workdir is required for task-declared evidence",
+                proc.stderr,
+            )
+            self.assertNotIn("Traceback", proc.stderr)
 
 
 class MultiRoundStatsTests(unittest.TestCase):
