@@ -340,7 +340,93 @@ def all_package_names(root):
 _MANIFEST_BASENAMES = registry.KNOWN_ROOT_FILES
 
 
-def path_resolves_in_subtree(root, token):
+def is_subtree_path_candidate(token):
+    """Whether ``token`` is eligible for conservative subtree resolution."""
+    return "/" in token or token in _MANIFEST_BASENAMES
+
+
+class SubtreePathIndex:
+    """Immutable per-run index for workspace-relative path lookups.
+
+    ``suffixes`` contains lexical trailing paths below at least one repository
+    directory (the root itself is deliberately omitted because callers already
+    check it). ``manifest_basenames`` records only known build/config files in a
+    subtree. Directory-symlink aliases need a narrow compatibility fallback:
+    ``os.walk(..., followlinks=False)`` does not enumerate their descendants,
+    while the historical resolver could still probe ``D/token`` through a safe
+    in-repository alias.
+    """
+
+    __slots__ = ("suffixes", "manifest_basenames", "search_roots", "has_safe_dir_alias")
+
+    def __init__(self, suffixes, manifest_basenames, search_roots, has_safe_dir_alias):
+        self.suffixes = frozenset(suffixes)
+        self.manifest_basenames = frozenset(manifest_basenames)
+        self.search_roots = tuple(search_roots)
+        self.has_safe_dir_alias = bool(has_safe_dir_alias)
+
+    def resolves(self, root, token):
+        is_manifest = "/" not in token and token in _MANIFEST_BASENAMES
+        is_multiseg = "/" in token
+        if not (is_manifest or is_multiseg):
+            return False
+
+        normalized = Path(os.path.normpath(token)).as_posix()
+        if is_manifest:
+            if normalized in self.manifest_basenames:
+                return True
+        elif normalized in self.suffixes:
+            return True
+
+        # Preserve the old resolver's behavior for safe directory symlinks
+        # without following them during index construction (or risking cycles).
+        if self.has_safe_dir_alias:
+            return any(exists_within_root(root, current / token) for current in self.search_roots)
+        return False
+
+
+def build_subtree_path_index(root):
+    """Build one pruned, containment-safe subtree path index for ``root``."""
+    rootp = Path(root).resolve()
+    entries = set()
+    manifests = set()
+    search_roots = []
+    has_safe_dir_alias = False
+
+    for dirpath, dirnames, filenames in os.walk(rootp, followlinks=False):
+        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
+        current = Path(dirpath)
+        if current != rootp:
+            search_roots.append(current)
+
+        for name in dirnames:
+            path = current / name
+            if path.is_symlink():
+                if not exists_within_root(rootp, path):
+                    continue
+                has_safe_dir_alias = True
+            entries.add(path.relative_to(rootp).as_posix())
+
+        for name in filenames:
+            path = current / name
+            if path.is_symlink() and not exists_within_root(rootp, path):
+                continue
+            entries.add(path.relative_to(rootp).as_posix())
+
+    suffixes = set()
+    for entry in entries:
+        parts = entry.split("/")
+        # The old resolver skipped the repo root, so a path only resolves as a
+        # subtree suffix after removing at least one leading directory.
+        for index in range(1, len(parts)):
+            suffixes.add("/".join(parts[index:]))
+        if len(parts) > 1 and parts[-1] in _MANIFEST_BASENAMES:
+            manifests.add(parts[-1])
+
+    return SubtreePathIndex(suffixes, manifests, search_roots, has_safe_dir_alias)
+
+
+def path_resolves_in_subtree(root, token, index=None):
     """True when a backtick path that is missing at the repo root still resolves
     against a subdirectory of the repo.
 
@@ -362,24 +448,13 @@ def path_resolves_in_subtree(root, token):
       manifest/config basename (``_MANIFEST_BASENAMES``) and any such file
       exists anywhere in the repo.
 
-    ``os.walk`` with ``SKIP_DIRS`` pruning keeps this from traversing vendored
-    trees; it is called lazily (only on an otherwise-MISSING token) so the
-    common case never pays for a walk.
+    ``index`` may be reused across many tokens in one diagnostic call. Omitting
+    it preserves the historical single-call API and builds one temporary index.
     """
-    is_manifest = "/" not in token and token in _MANIFEST_BASENAMES
-    is_multiseg = "/" in token
-    if not (is_manifest or is_multiseg):
+    if not is_subtree_path_candidate(token):
         return False
-    rootp = Path(root)
-    for dirpath, dirnames, _filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
-        current = Path(dirpath)
-        if current == rootp:
-            # The repo root was already checked by the caller.
-            continue
-        if exists_within_root(root, current / token):
-            return True
-    return False
+    index = index or build_subtree_path_index(root)
+    return index.resolves(Path(root).resolve(), token)
 
 
 def package_dependency_names(root):

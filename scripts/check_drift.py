@@ -122,6 +122,7 @@ def d2_path_drift(root, text):
     # semantic.compare_paths so the common case (path exists) never pays for a
     # repo walk.
     package_names = "not computed"
+    subtree_index = None
     for decl in registry.declared_paths(text):
         token, lineno = decl["path"], decl["line"]
         # Never probe outside the repo root: an absolute or `../`-escaping token
@@ -141,7 +142,10 @@ def d2_path_drift(root, text):
             # A root AGENTS.md may scope a section to one workspace and then
             # name paths relative to that subtree. Match Phase 0's existence
             # policy so scan and drift cannot disagree on the same declaration.
-            if facts.path_resolves_in_subtree(root, token):
+            # Build one lazy index and reuse it across every missing token.
+            if facts.is_subtree_path_candidate(token) and subtree_index is None:
+                subtree_index = facts.build_subtree_path_index(root)
+            if subtree_index is not None and facts.path_resolves_in_subtree(root, token, subtree_index):
                 continue
             findings.append(
                 {

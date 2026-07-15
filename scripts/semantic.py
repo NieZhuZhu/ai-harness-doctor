@@ -794,6 +794,7 @@ def compare_paths(root, text):
     # compare_commands's all_scripts laziness so the common case (path
     # exists) never pays for a repo walk.
     package_names = "not computed"
+    subtree_index = None
     for decl in declared_paths(text):
         token, line = decl["path"], decl["line"]
         if not _within_root(root, token):
@@ -806,8 +807,11 @@ def compare_paths(root, text):
             # A root AGENTS.md section scoped to a subdirectory (codex-rs's
             # Rust section, opencode's packages/opencode section) documents
             # paths relative to that subdir; resolve them against the subtree
-            # before flagging. Lazy walk, only reached on a would-be MISSING.
-            if facts.path_resolves_in_subtree(root, token):
+            # before flagging. Build the pruned suffix index only for the first
+            # eligible would-be MISSING token, then reuse it for every later one.
+            if facts.is_subtree_path_candidate(token) and subtree_index is None:
+                subtree_index = facts.build_subtree_path_index(root)
+            if subtree_index is not None and facts.path_resolves_in_subtree(root, token, subtree_index):
                 continue
             findings.append(
                 _finding(

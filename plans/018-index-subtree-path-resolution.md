@@ -228,16 +228,38 @@ changed, inspect `git diff --stat`, and mark Plan 018 DONE.
 
 ## Done criteria
 
-- [ ] Subtree resolution walks the repository at most once per
+- [x] Subtree resolution walks the repository at most once per
   `compare_paths()` / `d2_path_drift()` call.
-- [ ] The 1,200-directory / 20-token reproduction drops from 21 total walks to
+- [x] The 1,200-directory / 20-token reproduction drops from 21 total walks to
   at most two while returning the same findings.
-- [ ] Calls with no eligible missing path pay no subtree-index walk.
-- [ ] Containment, skip-directory, manifest, suffix, and symlink semantics are
+- [x] Calls with no eligible missing path pay no subtree-index walk.
+- [x] Containment, skip-directory, manifest, suffix, and symlink semantics are
   unchanged.
-- [ ] Phase 0 and Phase 2 path parity tests pass.
-- [ ] `npm run check` passes and strict self-drift remains Grade A.
-- [ ] Only in-scope files are modified.
+- [x] Phase 0 and Phase 2 path parity tests pass.
+- [x] `npm run check` passes and strict self-drift remains Grade A.
+- [x] Only in-scope files are modified.
+
+## Completion evidence (2026-07-15)
+
+- Added a per-call `SubtreePathIndex` in `scripts/facts.py`. It records safe
+  lexical suffixes and known subtree manifest basenames from one pruned
+  `os.walk`, uses immutable sets/tuples, and has no process-global cache.
+- `semantic.compare_paths()` and `check_drift.d2_path_drift()` lazily build the
+  index only after a root existence and package-self-import miss, then reuse it
+  for all later eligible tokens.
+- Deterministic tests prove 20 missing tokens trigger exactly two total
+  `facts.os.walk` calls per engine: one package-name scan and one subtree index.
+  Root-valid/ineligible paths trigger no subtree-index build.
+- The 1,200-directory reproduction returned the same 20 findings:
+  - Phase 0: 21 → 2 walks; approximately 25.80s → 0.80s;
+  - Phase 2: 21 → 2 walks; approximately 24.90s → 0.94s.
+  Timings are supporting local evidence; traversal counts are the regression
+  contract.
+- Tests preserve skipped-directory behavior, known manifest/suffix resolution,
+  safe in-repository file/directory aliases, external-symlink rejection, and
+  Phase 0/Phase 2 missing-token parity.
+- Full gate at implementation time: 540 Python tests + 26 Node tests, all
+  lint/docs/adapter checks, self scan, and strict Grade A drift.
 
 ## STOP conditions
 
