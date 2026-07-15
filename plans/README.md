@@ -1,10 +1,11 @@
 # Implementation Plans
 
-Generated and reconciled across three sets of three deep `improve` audits:
+Generated and reconciled across four deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
 - 2026-07-15 at commit `b3dd9e3` (plans 008–010).
+- 2026-07-15 at commit `b638ad7` (plans 011–013).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -43,6 +44,18 @@ verification gate, and update its status here.
    traversal, PR feedback, SARIF/MCP/CLI surface symmetry, external-validation
    evidence, benchmark honesty, high-complexity modules, and roadmap options.
 
+### 2026-07-15 post-v1.3.0 rounds
+
+1. **Core state safety and test trust** — independently audited installer
+   ownership state, HOME containment, malformed-state behavior, atomic writes,
+   plugin isolation, subprocesses, and high-risk test gaps.
+2. **GitHub-native output completeness** — independently audited every active
+   scan/drift report family across JSON, Markdown, PR review, SARIF, monorepo
+   attribution, baselines, the composite Action, and released package contents.
+3. **MCP/API and consumer DX** — independently audited all six MCP tools,
+   JSON-RPC/input schemas, subprocess exit semantics, error signaling,
+   read-only guarantees, timeout hygiene, and documentation/API symmetry.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -57,6 +70,9 @@ verification gate, and update its status here.
 | 008 | Make every installer mutation ownership-aware and preserve repository state | P0 | M | — | DONE |
 | 009 | Make PR guard triggers cover every security and semantic scan input | P0 | M | — | DONE |
 | 010 | Deliver every active scan finding as attributed PR feedback | P1 | M | 009 | DONE |
+| 011 | Make installer manifest state fail closed and write atomically | P0 | M | — | TODO |
+| 012 | Emit every active scan finding family in SARIF | P1 | S | — | TODO |
+| 013 | Make MCP tool failures machine-visible and keep its contract current | P1 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -78,6 +94,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Plan 008 is a bugfix unless its manifest migration changes public behavior in
   a breaking way (a STOP condition). Plans 009–010 improve guard behavior and
   together make the next combined release at least minor.
+- Execute 011 first because manifest state authorizes later installer
+  mutations; keep it isolated from output/API changes. Plans 012 and 013 are
+  independent and may land in either order as separate PRs.
+- Plans 011–013 are bugfixes under the current contracts unless a STOP condition
+  forces a breaking schema/protocol change. A combined release is patch-only if
+  every implementation remains backward-compatible.
 
 ## Findings considered and rejected or deferred
 
@@ -127,9 +149,8 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   than product behavior; keep separate from plans 008–010.
 - **MCP surface/documentation symmetry** — README correctly lists six tools,
   while two `SKILL.md` passages still list only four. This is real docs drift
-  but lower impact than lost repository state or missing PR findings; correct
-  it opportunistically with a future MCP-focused PR rather than widening the
-  selected fixes.
+  and is now included in plan 013 alongside the higher-impact MCP result
+  semantics bug, rather than as a standalone docs-only change.
 - **Action `args` shell word splitting** — still a real structured-argument
   limitation. No current documented Action flag needs a single whitespace-
   bearing value, so the earlier defer remains valid.
@@ -137,3 +158,17 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   are large, but the third audit found concrete seams and substantial coverage;
   line count alone still does not justify a risky refactor. Extract only behind
   an implemented behavior such as plan 010's report traversal.
+- **Scan overlaps / inventory / snapshots in SARIF** — these are evidence and
+  discovery data, not actionable findings. Plan 012 intentionally maps active
+  warnings/custom findings but does not flood Code Scanning with inventory.
+- **Treat every non-zero MCP exit as an MCP transport error** — rejected because
+  scan/drift/validate deliberately use non-zero codes for valid finding reports.
+  Plan 013 instead defines per-tool report-vs-operational policies and preserves
+  finding content with structured status.
+- **MCP mutation parity with the full CLI** — rejected for safety. Guard apply,
+  installer, baseline writes, and agent/eval execution stay outside the
+  read-only MCP surface.
+- **Structured Action `args` in this batch** — still deferred. The latest audit
+  found no documented Action use case requiring a whitespace-bearing single
+  argument; installer state, SARIF omissions, and MCP false-success signals have
+  direct reproductions and higher leverage.
