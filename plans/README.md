@@ -430,6 +430,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   preserve inline annotations, and never turn 422 fallback into a second
   summary. If the ownership proof needs broader workflow permissions, stop
   rather than weakening the boundary.
+- Plan 036 implementation PR #192 first head `320bd53` passed all nine required
+  contexts and created marker comment `4986399749` at
+  `2026-07-15T23:51:39Z`. A second workflow execution must update that same ID
+  and keep the marker count at one before the plan can move from IN PROGRESS to
+  DONE.
 
 ## Post-v1.8.1 completion evidence
 

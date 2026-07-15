@@ -23,6 +23,15 @@
 - **Planned at**: commit `43366d9`, 2026-07-16
 - **Implementation**: in progress on `fix/036-pr-review-summary-upsert`
 
+## Implementation evidence
+
+- Implementation PR: [#192](https://github.com/NieZhuZhu/ai-harness-doctor/pull/192).
+- First head `320bd53` passed all nine required contexts and created exactly
+  one `github-actions[bot]` marker comment:
+  `id=4986399749`, `created_at=updated_at=2026-07-15T23:51:39Z`.
+- The next evidence-only commit must leave that ID unchanged, advance only
+  `updated_at`, and keep the marker count at one before this plan is DONE.
+
 ## Why this matters
 
 The public `review --post` path gives every summary a stable
