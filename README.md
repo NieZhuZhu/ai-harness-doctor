@@ -88,7 +88,7 @@ Three ways to write `AGENTS.md`:
 
 - Target must be a git repo.
 - Node >=16 for the `ai-harness-doctor` CLI.
-- Python >=3.9, stdlib-only, for deterministic scan/plan/validate/stubs/drift/eval scripts.
+- Python >=3.9, stdlib-only, for deterministic scan/plan/validate/stubs/drift/review/eval scripts.
 - Run `ai-harness-doctor doctor --self-test` to verify the Node + Python runtime; set `AI_HARNESS_DOCTOR_PYTHON` to pin a specific interpreter.
 - `AGENTS.md` must exist before `stubs` or `guard` writes anything.
 
@@ -114,6 +114,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `stubs` | ✅ | With `--apply` | Requires clean tree unless `--force`. |
 | `guard` | ✅ | With `--apply` | Requires git repo and existing `AGENTS.md`. |
 | `drift` | ✅ | ❌ | Fails on blocking drift; `--strict` promotes notices. |
+| `review` | ✅ | Only with `--post` | Converts scan/drift JSON into rich GitHub PR feedback; dry-run JSON by default. |
 
 ### Uninstall & rollback
 
@@ -166,7 +167,7 @@ npx ai-harness-doctor guard . --apply
 
 The CI gate is provider-aware: pass `--provider github|gitlab|codebase` (default `auto`) to install the matching CI files. See the [`guard`](#command-reference) command reference for the per-provider file layout.
 
-On a pull request, the GitHub guard template does two more things. First, it surfaces drift findings as **actionable PR review feedback**: `scripts/pr_review.py` reads a `check_drift.py --json` (or `scan.py --json`) report and attempts one review. Located findings become inline comments with the rule, severity, finding, AI-agent impact, available evidence, and suggested fix. The final summary includes health score/grade, severity distribution, inline-vs-summary delivery counts, a complete findings index, collapsible full details for every finding, and prioritized next steps; it carries a stable `<!-- ai-harness-doctor:pr-review -->` marker. If GitHub rejects an inline placement with HTTP 422, the tool preserves all guidance by posting that complete summary as a general PR comment instead; permission, network, rate-limit, and server errors remain visible. A clean report instead explains the covered checks and confirms that no action is required. It is dry-run by default (prints the JSON payload, never touches the network) and only posts with `--post` using `GITHUB_TOKEN`. Second, it runs an **eval health-score gate** — `python3 scripts/eval_run.py --score <committed results.json> --fail-under <N>` — so CI fails (exit 5) when the eval health score drops below the threshold. PR review feedback is GitHub-only; the GitLab/Codebase templates gain just the eval gate.
+On a pull request, the GitHub guard template does two more things. First, it surfaces drift findings as **actionable PR review feedback**: the public `ai-harness-doctor review` command reads a `drift --json` (or `scan --json`) report and attempts one review. Located findings become inline comments with the rule, severity, finding, AI-agent impact, available evidence, and suggested fix. The final summary includes health score/grade, severity distribution, inline-vs-summary delivery counts, a complete findings index, collapsible full details for every finding, and prioritized next steps; it carries a stable `<!-- ai-harness-doctor:pr-review -->` marker. If GitHub rejects an inline placement with HTTP 422, the tool preserves all guidance by posting that complete summary as a general PR comment instead; permission, network, rate-limit, and server errors remain visible. A clean report instead explains the covered checks and confirms that no action is required. It is dry-run by default (prints the JSON payload, never touches the network) and only posts with `--post` using `GITHUB_TOKEN`. Second, it runs an **eval health-score gate** through `ai-harness-doctor eval --score <committed results.json> --fail-under <N>`, so CI fails (exit 5) when the eval health score drops below the threshold. Every shipped guard command runs through the packaged CLI and works in a fresh consumer repository with no copied `scripts/` tree. PR review feedback is GitHub-only; the GitLab/Codebase templates gain just the eval gate.
 
 Defense in depth, strongest to weakest:
 
@@ -592,7 +593,7 @@ npx ai-harness-doctor doctor --self-test   # human-readable runtime table
 npx ai-harness-doctor doctor --json        # machine-readable runtime report
 ```
 
-Python is discovered in priority order: `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python`; only a Python **3** interpreter is accepted. When it is missing, every Python-backed subcommand (`scan`, `plan`, `validate`, `stubs`, `drift`, `eval`) fails with the same clean, actionable message — install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON` — instead of a raw stack trace.
+Python is discovered in priority order: `AI_HARNESS_DOCTOR_PYTHON`, then `PYTHON`, then `python3`, then `python`; only a Python **3** interpreter is accepted. When it is missing, every Python-backed subcommand (`scan`, `plan`, `validate`, `stubs`, `drift`, `review`, `eval`) fails with the same clean, actionable message — install Python 3 or set `AI_HARNESS_DOCTOR_PYTHON` — instead of a raw stack trace.
 
 </details>
 

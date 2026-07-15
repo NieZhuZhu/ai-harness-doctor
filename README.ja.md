@@ -88,7 +88,7 @@ npx ai-harness-doctor guard . --apply
 
 - 対象は git repo である必要があります。
 - `ai-harness-doctor` CLI には Node >=16 が必要です。
-- 決定的な scan/plan/validate/stubs/drift/eval scripts には Python >=3.9 が必要です。stdlib-only です。
+- 決定的な scan/plan/validate/stubs/drift/review/eval scripts には Python >=3.9 が必要です。stdlib-only です。
 - `ai-harness-doctor doctor --self-test` を実行して Node + Python ランタイムを検証できます。`AI_HARNESS_DOCTOR_PYTHON` で特定のインタプリタを固定できます。
 - `stubs` または `guard` が何かを書き込む前に、`AGENTS.md` が存在している必要があります。
 
@@ -114,6 +114,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `stubs` | ✅ | With `--apply` | `--force` がない限り clean tree が必要です。 |
 | `guard` | ✅ | With `--apply` | git repo と既存の `AGENTS.md` が必要です。 |
 | `drift` | ✅ | ❌ | blocking drift で失敗します。`--strict` は notices を昇格します。 |
+| `review` | ✅ | `--post` 使用時のみ | scan/drift JSON を rich な GitHub PR feedback に変換します。デフォルトは dry-run JSON です。 |
 
 ### Uninstall & rollback
 
@@ -166,7 +167,7 @@ npx ai-harness-doctor guard . --apply
 
 CI gate は provider-aware です。`--provider github|gitlab|codebase`（デフォルト `auto`）を渡すと、対応する CI files をインストールします。provider ごとの file layout は [`guard`](#command-reference) の command reference を参照してください。
 
-pull request では、GitHub guard テンプレートはさらに 2 つのことを行います。1 つ目は、drift の検出結果を**実行可能な PR review feedback**として表示することです。`scripts/pr_review.py` は `check_drift.py --json`（または `scan.py --json`）のレポートを読み取り、1 つの review の投稿を試みます。位置を特定できる検出結果は、rule、severity、finding、AI agent への影響、利用可能な evidence、suggested fix を含む inline comment になります。最終 summary には health score/grade、severity distribution、inline と summary の件数、全 findings の index、各 finding の折りたたみ可能な完全な詳細、優先順位付き next steps が含まれ、安定した `<!-- ai-harness-doctor:pr-review -->` marker が付きます。GitHub が無効な inline 位置を HTTP 422 で拒否した場合、すべての修正ガイダンスを維持するため、この完全な summary を通常の PR comment として投稿します。permission、network、rate-limit、server error は引き続き明示されます。clean report の場合は、対象となった checks と action 不要であることを明示します。デフォルトは dry-run（JSON payload を出力し、ネットワークには一切触れません）で、`--post` 時のみ `GITHUB_TOKEN` を使って投稿します。2 つ目は、**eval health-score gate** の実行です。`python3 scripts/eval_run.py --score <コミット済み results.json> --fail-under <N>` により、eval health score が閾値を下回ると CI を失敗（exit 5）させます。PR review feedback は GitHub 限定で、GitLab/Codebase テンプレートは eval gate のみを得ます。
+pull request では、GitHub guard テンプレートはさらに 2 つのことを行います。1 つ目は、drift の検出結果を**実行可能な PR review feedback**として表示することです。public command の `ai-harness-doctor review` は `drift --json`（または `scan --json`）のレポートを読み取り、1 つの review の投稿を試みます。位置を特定できる検出結果は、rule、severity、finding、AI agent への影響、利用可能な evidence、suggested fix を含む inline comment になります。最終 summary には health score/grade、severity distribution、inline と summary の件数、全 findings の index、各 finding の折りたたみ可能な完全な詳細、優先順位付き next steps が含まれ、安定した `<!-- ai-harness-doctor:pr-review -->` marker が付きます。GitHub が無効な inline 位置を HTTP 422 で拒否した場合、すべての修正ガイダンスを維持するため、この完全な summary を通常の PR comment として投稿します。permission、network、rate-limit、server error は引き続き明示されます。clean report の場合は、対象となった checks と action 不要であることを明示します。デフォルトは dry-run（JSON payload を出力し、ネットワークには一切触れません）で、`--post` 時のみ `GITHUB_TOKEN` を使って投稿します。2 つ目は、`ai-harness-doctor eval --score <コミット済み results.json> --fail-under <N>` による **eval health-score gate** です。eval health score が閾値を下回ると CI を失敗（exit 5）させます。shipped guard command はすべて packaged CLI を通るため、`scripts/` tree をコピーしていない fresh consumer repository でも動作します。PR review feedback は GitHub 限定で、GitLab/Codebase テンプレートは eval gate のみを得ます。
 
 Defense in depth、強い順です。
 
@@ -592,7 +593,7 @@ npx ai-harness-doctor doctor --self-test   # human-readable runtime table
 npx ai-harness-doctor doctor --json        # machine-readable runtime report
 ```
 
-Python は優先順位順に検出されます: `AI_HARNESS_DOCTOR_PYTHON`、次に `PYTHON`、次に `python3`、次に `python`。Python **3** インタプリタのみが受け入れられます。存在しない場合、すべての Python 子コマンド（`scan`、`plan`、`validate`、`stubs`、`drift`、`eval`）は、raw stack trace ではなく同じ明確で実行可能なメッセージ（Python 3 をインストールするか `AI_HARNESS_DOCTOR_PYTHON` を設定する）で失敗します。
+Python は優先順位順に検出されます: `AI_HARNESS_DOCTOR_PYTHON`、次に `PYTHON`、次に `python3`、次に `python`。Python **3** インタプリタのみが受け入れられます。存在しない場合、すべての Python 子コマンド（`scan`、`plan`、`validate`、`stubs`、`drift`、`review`、`eval`）は、raw stack trace ではなく同じ明確で実行可能なメッセージ（Python 3 をインストールするか `AI_HARNESS_DOCTOR_PYTHON` を設定する）で失敗します。
 
 </details>
 

@@ -65,7 +65,7 @@ test('parseInstallArgs accepts --agent=<value> and --link', () => {
 test('SCRIPT_COMMANDS maps every Python-backed subcommand to a script', () => {
   assert.deepStrictEqual(
     Object.keys(SCRIPT_COMMANDS).sort(),
-    ['draft', 'drift', 'eval', 'plan', 'scan', 'stubs', 'validate']
+    ['draft', 'drift', 'eval', 'plan', 'review', 'scan', 'stubs', 'validate']
   );
   for (const spec of Object.values(SCRIPT_COMMANDS)) {
     assert.ok(spec[0].endsWith('.py'), `expected a .py script, got ${spec[0]}`);
@@ -141,6 +141,35 @@ test('draft dispatches to canonicalize.py --draft instead of "Unknown command"',
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('review dispatches to pr_review.py and prints a dry-run payload', () => {
+  const result = childProcess.spawnSync(process.execPath, [CLI, 'review', '--default-path', 'AGENTS.md'], {
+    encoding: 'utf8',
+    input: JSON.stringify({ score: 100, grade: 'A', findings: [] }),
+    env: { ...process.env, AI_HARNESS_DOCTOR_NO_UPDATE_CHECK: '1' },
+  });
+  assert.strictEqual(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.strictEqual(payload.inline_count, 0);
+  assert.strictEqual(payload.summary_count, 0);
+  assert.match(payload.body, /Harness checks passed/);
+});
+
+test('review --post preserves pr_review argument validation', () => {
+  const result = childProcess.spawnSync(process.execPath, [CLI, 'review', '--post'], {
+    encoding: 'utf8',
+    input: JSON.stringify({ findings: [] }),
+    env: {
+      ...process.env,
+      AI_HARNESS_DOCTOR_NO_UPDATE_CHECK: '1',
+      GITHUB_TOKEN: '',
+      GITHUB_REPOSITORY: '',
+    },
+  });
+  assert.strictEqual(result.status, 2);
+  assert.match(result.stderr, /--post requires GITHUB_TOKEN/);
+  assert.doesNotMatch(result.stderr, /Unknown command/);
 });
 
 test('doctor --self-test exits non-zero when Python is missing', () => {

@@ -18,7 +18,7 @@ run() {
   if command -v ai-harness-doctor >/dev/null 2>&1; then
     ai-harness-doctor "$@"
   else
-    npx -y ai-harness-doctor "$@"
+    npx -y ai-harness-doctor@latest "$@"
   fi
 }
 
@@ -31,7 +31,7 @@ case "$MODE" in
     # the committed eval results drop under the threshold; skipped when absent.
     RESULTS="benchmark/self-eval/results-after-graded.json"
     if [ -f "$RESULTS" ]; then
-      python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
+      run eval --score "$RESULTS" --fail-under 80
     else
       echo "No committed eval results at $RESULTS; skipping eval gate."
     fi

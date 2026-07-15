@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Check AI harness drift
-        run: npx -y ai-harness-doctor drift . --strict
+        run: npx -y ai-harness-doctor@latest drift . --strict
       # On a pull request, surface drift findings as inline PR review comments.
       # check_drift.py --json emits a machine-readable report; pr_review.py turns
       # located findings into inline comments and posts a single review. It runs
@@ -51,8 +51,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          python3 scripts/check_drift.py . --json > drift-report.json || true
-          python3 scripts/pr_review.py \
+          npx -y ai-harness-doctor@latest drift . --json > drift-report.json || true
+          npx -y ai-harness-doctor@latest review \
             --report drift-report.json \
             --default-path AGENTS.md \
             --post \
@@ -72,7 +72,7 @@ jobs:
         run: |
           RESULTS="benchmark/self-eval/results-after-graded.json"
           if [ -f "$RESULTS" ]; then
-            python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
+            npx -y ai-harness-doctor@latest eval --score "$RESULTS" --fail-under 80
           else
             echo "No committed eval results at $RESULTS; skipping eval gate."
             echo "Commit an eval results JSON and set --fail-under to enable it."

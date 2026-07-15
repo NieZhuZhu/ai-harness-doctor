@@ -19,13 +19,13 @@ jobs:
         with:
           node-version: "20"
       - name: Scan harness
-        run: npx -y ai-harness-doctor scan . > harness-scan-report.md
+        run: npx -y ai-harness-doctor@latest scan . > harness-scan-report.md
       - name: Check drift
         id: drift
         shell: bash
         run: |
           set +e
-          npx -y ai-harness-doctor drift . --strict > harness-drift-report.md 2>&1
+          npx -y ai-harness-doctor@latest drift . --strict > harness-drift-report.md 2>&1
           status=$?
           {
             echo "# Harness checkup"

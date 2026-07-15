@@ -21,11 +21,11 @@ harness-drift:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
   script:
-    - npx -y ai-harness-doctor drift . --strict
+    - npx -y ai-harness-doctor@latest drift . --strict
     - |
       RESULTS="benchmark/self-eval/results-after-graded.json"
       if [ -f "$RESULTS" ]; then
-        python3 scripts/eval_run.py --score "$RESULTS" --fail-under 80
+        npx -y ai-harness-doctor@latest eval --score "$RESULTS" --fail-under 80
       else
         echo "No committed eval results at $RESULTS; skipping eval gate."
       fi
@@ -36,8 +36,8 @@ harness-checkup:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
   script:
-    - npx -y ai-harness-doctor scan . > harness-scan-report.md
-    - set +e; npx -y ai-harness-doctor drift . --strict > harness-drift-report.md 2>&1; echo "drift exit=$?"
+    - npx -y ai-harness-doctor@latest scan . > harness-scan-report.md
+    - set +e; npx -y ai-harness-doctor@latest drift . --strict > harness-drift-report.md 2>&1; echo "drift exit=$?"
     - cat harness-scan-report.md harness-drift-report.md
   artifacts:
     when: always
