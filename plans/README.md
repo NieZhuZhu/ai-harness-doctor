@@ -237,7 +237,7 @@ verification gate, and update its status here.
 | 030 | Validate every eval task before any runner or judge executes | P0 | M | — | DONE |
 | 031 | Close the weekly harness issue when the repository recovers | P1 | S | — | DONE |
 | 032 | Fail multi-repo CI when any listed repository was not scanned | P0 | S | — | DONE |
-| 033 | Derive eval health only from validated stored result records | P0 | M | — | TODO |
+| 033 | Derive eval health only from validated stored result records | P0 | M | — | IN PROGRESS |
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | TODO |
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | TODO |
 

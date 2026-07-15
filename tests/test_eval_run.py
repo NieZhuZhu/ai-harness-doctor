@@ -232,7 +232,10 @@ class TaskSchemaPreflightTests(unittest.TestCase):
                 encoding="utf-8",
             )
             result = root / "result.json"
-            result.write_text(json.dumps({"tasks": [{"passed": True}]}), encoding="utf-8")
+            result.write_text(
+                json.dumps({"tasks": [{"id": "broken", "passed": True}]}),
+                encoding="utf-8",
+            )
 
             strict = subprocess.run(
                 [
@@ -994,7 +997,17 @@ class HealthScoreTests(unittest.TestCase):
     def test_score_subcommand_reads_existing_file(self):
         with tempfile.TemporaryDirectory() as td:
             results = Path(td) / "r.json"
-            results.write_text(json.dumps({"tasks": [{"passed": True}, {"passed": True}]}), encoding="utf-8")
+            results.write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {"id": "one", "passed": True},
+                            {"id": "two", "passed": True},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
             proc = subprocess.run(
                 [sys.executable, str(EVAL), "--score", str(results), "--json"], text=True, capture_output=True
             )
@@ -1006,6 +1019,396 @@ class HealthScoreTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(gated.returncode, 0)
+
+
+class StoredResultIntegrityTests(unittest.TestCase):
+    def _run_score(self, path, *extra):
+        return subprocess.run(
+            [
+                sys.executable,
+                str(EVAL),
+                "--score",
+                str(path),
+                *extra,
+            ],
+            text=True,
+            capture_output=True,
+        )
+
+    def test_forged_health_cannot_pass_threshold_or_mutate_baseline(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            result = root / "forged.json"
+            result.write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {
+                                "id": "failed",
+                                "passed": False,
+                                "timed_out": False,
+                            }
+                        ],
+                        "health": {
+                            "score": 100,
+                            "grade": "A",
+                            "passed": 1,
+                            "total": 1,
+                            "timed_out": 0,
+                            "pass_rate": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            baseline = root / "baseline.json"
+
+            proc = self._run_score(
+                result,
+                "--fail-under",
+                "80",
+                "--json",
+                "--baseline",
+                str(baseline),
+                "--save-baseline",
+            )
+
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn(
+                "result error: result health field `score` does not match",
+                proc.stderr,
+            )
+            self.assertEqual(proc.stdout, "")
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertFalse(baseline.exists())
+
+    def test_malformed_tasks_fail_with_or_without_forged_health(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name, health in (
+                ("with-health", {"score": 100}),
+                ("without-health", None),
+            ):
+                with self.subTest(name=name):
+                    result = root / f"{name}.json"
+                    payload = {"tasks": "not-a-list"}
+                    if health is not None:
+                        payload["health"] = health
+                    result.write_text(json.dumps(payload), encoding="utf-8")
+
+                    proc = self._run_score(result, "--json")
+
+                    self.assertEqual(proc.returncode, 2)
+                    self.assertIn("result error: tasks must be an array", proc.stderr)
+                    self.assertEqual(proc.stdout, "")
+                    self.assertNotIn("Traceback", proc.stderr)
+
+    def test_result_record_schema_and_ambiguity_fail_closed(self):
+        cases = [
+            ("root", [], "result file must contain a JSON object"),
+            ("missing-family", {}, "exactly one primary result family"),
+            (
+                "ambiguous",
+                {"tasks": [], "agents": {}},
+                "exactly one primary result family",
+            ),
+            ("record-object", {"tasks": [1]}, "record 0 must be an object"),
+            (
+                "id",
+                {"tasks": [{"id": "", "passed": True}]},
+                "field `id` must be a non-empty string",
+            ),
+            (
+                "duplicate",
+                {
+                    "tasks": [
+                        {"id": "same", "passed": True},
+                        {"id": "same", "passed": False},
+                    ]
+                },
+                "field `id` must be unique",
+            ),
+            (
+                "passed",
+                {"tasks": [{"id": "x", "passed": 1}]},
+                "field `passed` must be a boolean",
+            ),
+            (
+                "timed-out",
+                {"tasks": [{"id": "x", "passed": False, "timed_out": 0}]},
+                "field `timed_out` must be a boolean",
+            ),
+            (
+                "rounds",
+                {"round_results": "bad"},
+                "round_results must be an array",
+            ),
+            (
+                "round-object",
+                {"round_results": [1]},
+                "round_results entry 0 must be an object",
+            ),
+            (
+                "round-tasks",
+                {"round_results": [{}]},
+                "must contain `tasks`",
+            ),
+            ("agents", {"agents": []}, "agents must be an object"),
+            (
+                "agent-object",
+                {"agents": {"one": []}},
+                "agents entry 0 must be an object",
+            ),
+            (
+                "agent-tasks",
+                {"agents": {"one": {}}},
+                "must contain `tasks`",
+            ),
+            (
+                "health-object",
+                {
+                    "tasks": [{"id": "x", "passed": True}],
+                    "health": "great",
+                },
+                "health must be an object",
+            ),
+            (
+                "health-grade",
+                {
+                    "tasks": [{"id": "x", "passed": True}],
+                    "health": {"score": 100, "grade": "F"},
+                },
+                "health field `grade` does not match",
+            ),
+        ]
+        for name, payload, expected in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(eval_run.ResultFileError) as caught:
+                    eval_run.validate_result(payload)
+                self.assertIn(expected, str(caught.exception))
+
+    def test_historical_partial_health_and_additive_fields_are_compatible(self):
+        data = {
+            "label": "historical",
+            "tasks": [
+                {"id": "one", "passed": True, "future": {"x": 1}},
+                {"id": "two", "passed": False},
+            ],
+            "health": {
+                "score": 50,
+                "grade": "F",
+                "passed": 1,
+                "total": 2,
+                "legacy": "preserved",
+            },
+        }
+
+        result = eval_run.validate_result(data)
+
+        self.assertIs(result["data"], data)
+        self.assertEqual(result["health"]["score"], 50)
+        self.assertEqual(result["health"]["timed_out"], 0)
+        self.assertEqual(data["health"]["legacy"], "preserved")
+
+    def test_multi_round_and_matrix_health_is_derived_from_all_records(self):
+        multi = {
+            "round_results": [
+                {
+                    "round": 1,
+                    "tasks": [{"id": "x", "passed": True}],
+                    "health": {"score": 100, "grade": "A"},
+                },
+                {
+                    "round": 2,
+                    "tasks": [{"id": "x", "passed": False}],
+                    "health": {"score": 0, "grade": "F"},
+                },
+            ],
+            "health": {"score": 50, "passed": 1, "total": 2},
+        }
+        matrix = {
+            "agents": {
+                "one": {"tasks": [{"id": "x", "passed": True}]},
+                "two": {"tasks": [{"id": "x", "passed": False}]},
+            },
+            "health": {"score": 50, "passed": 1, "total": 2},
+        }
+
+        self.assertEqual(eval_run.validate_result(multi)["health"]["score"], 50)
+        self.assertEqual(eval_run.validate_result(matrix)["health"]["score"], 50)
+
+        multi["round_results"][1]["health"]["score"] = 100
+        with self.assertRaises(eval_run.ResultFileError) as caught:
+            eval_run.validate_result(multi)
+        self.assertIn("round_results entry 1 health field `score`", str(caught.exception))
+
+    def test_ids_repeat_across_rounds_and_agents_but_not_within_one_array(self):
+        multi = {
+            "round_results": [
+                {"tasks": [{"id": "same", "passed": True}]},
+                {"tasks": [{"id": "same", "passed": False}]},
+            ]
+        }
+        matrix = {
+            "agents": {
+                "one": {"tasks": [{"id": "same", "passed": True}]},
+                "two": {"tasks": [{"id": "same", "passed": False}]},
+            }
+        }
+
+        self.assertEqual(eval_run.validate_result(multi)["health"]["total"], 2)
+        self.assertEqual(eval_run.validate_result(matrix)["health"]["total"], 2)
+
+    def test_stats_keeps_legacy_bare_round_list_compatibility(self):
+        with tempfile.TemporaryDirectory() as td:
+            rounds = Path(td) / "rounds.json"
+            rounds.write_text(
+                json.dumps(
+                    [
+                        {"tasks": [{"id": "x", "passed": True}]},
+                        {"tasks": [{"id": "x", "passed": False}]},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--stats",
+                    str(rounds),
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(json.loads(proc.stdout)["health"]["score"], 50)
+
+    def test_invalid_compare_and_regrade_do_not_write_outputs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            invalid = root / "invalid.json"
+            invalid.write_text(
+                json.dumps({"tasks": [{"id": "x", "passed": "yes"}]}),
+                encoding="utf-8",
+            )
+            valid = root / "valid.json"
+            valid.write_text(
+                json.dumps({"tasks": [{"id": "x", "passed": True}]}),
+                encoding="utf-8",
+            )
+            report = root / "compare.md"
+            compare = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--compare",
+                    str(invalid),
+                    str(valid),
+                    "-o",
+                    str(report),
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            tasks = root / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "x",
+                            "prompt": "x",
+                            "check": {"type": "regex", "value": "x"},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            regraded = root / "regraded.json"
+            regrade = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--regrade",
+                    str(invalid),
+                    "--tasks",
+                    str(tasks),
+                    "-o",
+                    str(regraded),
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            for proc in (compare, regrade):
+                self.assertEqual(proc.returncode, 2)
+                self.assertIn("result error:", proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+            self.assertFalse(report.exists())
+            self.assertFalse(regraded.exists())
+
+    def test_regrade_validates_result_before_evidence_hash_or_output(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            invalid = root / "invalid.json"
+            invalid.write_text(
+                json.dumps({"tasks": [{"id": "x", "passed": "yes"}]}),
+                encoding="utf-8",
+            )
+            tasks = root / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "x",
+                            "prompt": "x",
+                            "check": {"type": "regex", "value": "x"},
+                            "evidence": ["missing-secret-evidence.txt"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            output = root / "output.json"
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--regrade",
+                    str(invalid),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(root),
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("result error:", proc.stderr)
+            self.assertNotIn("missing-secret-evidence", proc.stderr)
+            self.assertFalse(output.exists())
+
+    def test_result_file_error_hides_absolute_path_and_content(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "secret-result-name.json"
+            path.write_text("{private-content", encoding="utf-8")
+
+            with self.assertRaises(eval_run.ResultFileError) as caught:
+                eval_run.load_result_file(path)
+
+            message = str(caught.exception)
+            self.assertIn(path.name, message)
+            self.assertNotIn(str(Path(td).resolve()), message)
+            self.assertNotIn("private-content", message)
 
 
 class EvidenceFingerprintTests(unittest.TestCase):
@@ -1559,7 +1962,10 @@ class EvidenceFingerprintTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             workdir, _agents, tasks, _runner = self._fixture(td)
             result = Path(td) / "legacy.json"
-            result.write_text(json.dumps({"tasks": [{"passed": True}]}), encoding="utf-8")
+            result.write_text(
+                json.dumps({"tasks": [{"id": "answer", "passed": True}]}),
+                encoding="utf-8",
+            )
             strict = subprocess.run(
                 [
                     sys.executable,
@@ -1594,7 +2000,7 @@ class EvidenceFingerprintTests(unittest.TestCase):
             result.write_text(
                 json.dumps(
                     {
-                        "tasks": [{"passed": True}],
+                        "tasks": [{"id": "answer", "passed": True}],
                         "evidence": {
                             "schemaVersion": 1,
                             "tasks": "not-an-object",
