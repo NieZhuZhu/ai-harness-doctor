@@ -200,7 +200,7 @@ Already standardized on [pre-commit](https://pre-commit.com)? Add the drift and 
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/NieZhuZhu/ai-harness-doctor
-    rev: v1.2.0
+    rev: v1.3.0
     hooks:
       - id: ai-harness-doctor-drift
       - id: ai-harness-doctor-scan
