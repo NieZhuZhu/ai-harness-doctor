@@ -530,7 +530,7 @@ verification gate, and update its status here.
 | 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | DONE |
 | 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | DONE |
 | 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | DONE |
-| 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | TODO |
+| 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
