@@ -285,7 +285,12 @@ function readInstallerLock() {
   if (!ownerStat.isFile() || ownerStat.isSymbolicLink()) {
     throw new Error(`unsafe installer lock owner: ${ownerPath}`);
   }
-  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  let owner;
+  try {
+    owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`malformed installer lock owner: ${ownerPath}`, { cause: error });
+  }
   if (
     !owner ||
     !Number.isInteger(owner.pid) ||

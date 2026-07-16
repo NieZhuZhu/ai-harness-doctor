@@ -649,6 +649,52 @@ class CliInstallerTests(unittest.TestCase):
             self.assertFalse((home / ".ai-harness-doctor" / "installer.lock").exists())
             self.assertFalse((home / ".ai-harness-doctor" / "transactions").exists())
 
+    def test_installer_refuses_malformed_or_symlinked_lock_state(self):
+        cases = ("malformed", "symlink")
+        for case in cases:
+            with (
+                self.subTest(case=case),
+                ResilientTemporaryDirectory() as home_dir,
+                ResilientTemporaryDirectory() as project_dir,
+                ResilientTemporaryDirectory() as outside_dir,
+            ):
+                home = Path(home_dir)
+                project = Path(project_dir)
+                outside = Path(outside_dir)
+                (project / "package.json").write_text("{}\n", encoding="utf-8")
+                state = home / ".ai-harness-doctor"
+                state.mkdir()
+                lock = state / "installer.lock"
+                if case == "malformed":
+                    lock.mkdir()
+                    owner = lock / "owner.json"
+                    owner.write_text("{broken\n", encoding="utf-8")
+                    evidence = owner
+                else:
+                    outside_lock = outside / "lock"
+                    outside_lock.mkdir()
+                    (outside_lock / "owner.json").write_text(
+                        json.dumps({"pid": 99999999, "token": "outside"}) + "\n",
+                        encoding="utf-8",
+                    )
+                    try:
+                        lock.symlink_to(outside_lock, target_is_directory=True)
+                    except (OSError, NotImplementedError):
+                        self.skipTest("directory symlinks unsupported on this platform")
+                    evidence = outside_lock / "owner.json"
+                before = evidence.read_bytes()
+
+                proc = self.run_cli_raw(
+                    ["install", "--agent", "cursor", "--project"],
+                    home,
+                    project,
+                )
+
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("lock", proc.stderr.lower())
+                self.assertEqual(evidence.read_bytes(), before)
+                self.assertFalse((project / ".cursor").exists())
+
     def test_project_adapter_install_preserves_repository_harness_state(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
             home = Path(home_dir)

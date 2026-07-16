@@ -458,6 +458,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   tests, including 56 installer lifecycle cases for caught failure,
   interruption recovery, concurrency locks, journal/backup tampering,
   containment, mode preservation, and update-nudge ledger isolation.
+- Plan 037 implementation PR #194 first head `225ff9f` passed all nine required
+  contexts. The final evidence head adds malformed/symlinked lock-state refusal
+  and must repeat the full matrix before merge.
 
 ## Post-v1.8.1 completion evidence
 

@@ -38,6 +38,10 @@
 - Final local baseline before PR: 689 Python tests, 26 Node tests, 56 installer
   lifecycle tests, self-eval 33/33, strict drift 100/A, and synchronized
   trilingual docs.
+- Implementation PR: [#194](https://github.com/NieZhuZhu/ai-harness-doctor/pull/194).
+  First head `225ff9f` passed all nine required contexts. A final evidence/test
+  head adds malformed/symlinked lock-state refusal and must repeat the same
+  matrix before DONE.
 
 ## Why this matters
 
