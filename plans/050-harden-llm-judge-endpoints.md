@@ -17,7 +17,8 @@
 - **Depends on**: Plan 043 (DONE)
 - **Category**: security / credential transport
 - **Planned at**: commit `60dd32f`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #228 (plan) / PR #229 (impl), squash-merged to
+  `main` as `2f9784d`; all nine required contexts green.
 
 ## Why this matters
 
