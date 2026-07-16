@@ -104,7 +104,30 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("set -euo pipefail", text)
         self.assertIn("scan|drift)", text)
         self.assertIn('run_args=("$INPUT_COMMAND" "$INPUT_PATH" "--sarif")', text)
+        self.assertIn('cli_status=$?', text)
+        self.assertIn('report_status=$?', text)
+        self.assertIn(
+            'node "$ACTION_PATH/bin/action-report.js" "$INPUT_SARIF_FILE" "$INPUT_COMMAND"',
+            text,
+        )
+        self.assertIn('exit "$cli_status"', text)
         self.assertNotIn("|| true", text)
+
+    def test_action_exposes_composable_quality_outputs(self):
+        text = ACTION.read_text(encoding="utf-8")
+        for output in (
+            "sarif-file",
+            "status",
+            "finding-count",
+            "error-count",
+            "warning-count",
+            "note-count",
+            "health-score",
+            "health-grade",
+        ):
+            self.assertIn(f"  {output}:\n", text)
+            self.assertIn(f"steps.run.outputs.{output}", text)
+        self.assertIn("GITHUB_STEP_SUMMARY", (ROOT / "bin" / "action-report.js").read_text())
 
     def test_repository_dogfoods_the_composite_action(self):
         text = SELF_TEST.read_text(encoding="utf-8")
@@ -125,6 +148,10 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn('.claude/rules/future.md', text)
         self.assertIn('paths:', text)
         self.assertIn('item.ruleId === "applicability/no-current-match"', text)
+        self.assertIn("BUNDLED_DRIFT_SCORE", text)
+        self.assertIn("BUNDLED_DRIFT_GRADE", text)
+        self.assertIn("Expected findings output before failure", text)
+        self.assertIn("finding-count output mismatch", text)
         for name in (
             "Run bundled scan against this checkout",
             "Run bundled drift against a clean fixture",

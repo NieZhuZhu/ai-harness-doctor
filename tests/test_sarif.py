@@ -756,5 +756,99 @@ class AlertLifecycleTests(unittest.TestCase):
         self.assertNotIn("automationDetails", run)
 
 
+class ActionReportMetadataTests(unittest.TestCase):
+    """Plan 046: deterministic SARIF metadata for Action consumers."""
+
+    def test_scan_metadata_counts_final_root_and_package_results(self):
+        report = {
+            "security": [
+                {
+                    "level": "HIGH",
+                    "category": "secret",
+                    "path": "AGENTS.md",
+                    "message": "secret",
+                }
+            ],
+            "gaps": [{"check": "G1", "level": "NOTICE", "message": "gap"}],
+            "semantic": {
+                "findings": [
+                    {
+                        "category": "command",
+                        "level": "INFO",
+                        "message": "semantic",
+                    }
+                ]
+            },
+            "packages": [
+                {
+                    "path": "packages/app",
+                    "report": {
+                        "custom": [
+                            {
+                                "rule": "policy",
+                                "level": "WARN",
+                                "message": "custom",
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+
+        metadata = sarif.scan_report_to_sarif(report)["runs"][0]["properties"][
+            "aiHarnessDoctor"
+        ]
+
+        self.assertEqual(
+            metadata,
+            {
+                "command": "scan",
+                "findingCount": 4,
+                "errorCount": 1,
+                "warningCount": 2,
+                "noteCount": 1,
+            },
+        )
+
+    def test_drift_metadata_includes_health_and_custom_counts(self):
+        report = {
+            "ok": False,
+            "score": 82,
+            "grade": "B",
+            "findings": [
+                {"check": "D1", "level": "ERROR", "message": "bad command"},
+                {"check": "D4", "level": "NOTICE", "message": "large"},
+            ],
+            "custom": [{"level": "WARN", "message": "custom"}],
+        }
+
+        metadata = sarif.drift_report_to_sarif(report)["runs"][0]["properties"][
+            "aiHarnessDoctor"
+        ]
+
+        self.assertEqual(
+            metadata,
+            {
+                "command": "drift",
+                "findingCount": 3,
+                "errorCount": 1,
+                "warningCount": 2,
+                "noteCount": 0,
+                "ok": False,
+                "score": 82,
+                "grade": "B",
+            },
+        )
+
+    def test_empty_scan_metadata_has_zero_counts(self):
+        metadata = sarif.scan_report_to_sarif({})["runs"][0]["properties"][
+            "aiHarnessDoctor"
+        ]
+        self.assertEqual(metadata["findingCount"], 0)
+        self.assertEqual(metadata["errorCount"], 0)
+        self.assertEqual(metadata["warningCount"], 0)
+        self.assertEqual(metadata["noteCount"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
