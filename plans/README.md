@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across twelve deep `improve` audit batches:
+Generated and reconciled across thirteen deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -14,6 +14,7 @@ Generated and reconciled across twelve deep `improve` audit batches:
 - 2026-07-16 at commit `704806e` (plans 030–032).
 - 2026-07-16 at commit `777f962` (plans 033–035).
 - 2026-07-16 at commit `43366d9` (plan 036).
+- 2026-07-16 at commit `660977e` (plan 037).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -213,6 +214,18 @@ verification gate, and update its status here.
    The selected repair makes one owned marker comment the durable current
    summary while preserving inline findings and visible API failures.
 
+### 2026-07-16 post-v1.9.0 improve round 2
+
+1. **Installer lifecycle and failure recovery** — independently re-audited
+   copy/link install, update, uninstall, shared payloads, manifest ownership,
+   cross-platform paths, update checks, mutation ordering, and fault injection.
+   Existing ownership and atomic-manifest controls remain strong, but they are
+   not one transaction: injected final manifest failure leaves first-install
+   files without a manifest and removes uninstall files while preserving the
+   old manifest. The selected repair is a durable contained rollback journal
+   with expected next-manifest digest recovery, not a writeability preflight or
+   memory-only catch block.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -253,6 +266,7 @@ verification gate, and update its status here.
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | DONE |
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
 | 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
+| 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -435,6 +449,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   `2026-07-15T23:51:39Z`. Second head `5673d11` passed the same nine contexts,
   kept exactly that one marker/ID, and advanced its `updated_at` to
   `2026-07-15T23:53:22Z`, proving the production GraphQL-identity upsert path.
+- Plan 037 depends on the already-DONE ownership and atomic-manifest contracts
+  from Plans 008/011. Keep manifest schema 2 and use a sidecar journal. Snapshot
+  before every mutation; persist the exact next-manifest digest before atomic
+  replacement so startup can distinguish rollback from committed cleanup.
 
 ## Post-v1.8.1 completion evidence
 
@@ -733,3 +751,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   again in round 1. The audit found no new behavior or testability failure that
   justifies a broad rewrite; Plan 036 has direct production evidence and a
   narrow verification seam.
+- **Record `lastUpdateCheck` only after a successful registry response** —
+  confirmed as a minor DX flaw, but a transient miss merely delays another
+  best-effort nudge and never affects commands or installed state. Defer behind
+  Plan 037's reproduced ownership inconsistency.
+- **Treat atomic `manifest.json` replacement as an atomic installer command** —
+  rejected. Plan 011 protects old ledger bytes but cannot roll back adapters and
+  payloads already written/deleted. Plan 037 explicitly spans both surfaces.
+- **Use only a preflight manifest writeability check** — rejected. Permissions,
+  disk state, and process failure can change after preflight; it does not close
+  the reproduced final-replacement or interruption windows.
