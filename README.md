@@ -184,6 +184,7 @@ Non-Claude adapters are intentionally thin. Broad rules distribution belongs to 
 - Scan is read-only and excludes repository-derived external symlinks.
 - Write paths refuse symlinked files or existing parent directories.
 - Plugins are disabled unless `--allow-plugins` is supplied.
+- Secret findings name type/path without reproducing values; risky hook snippets are redacted in JSON, Markdown, SARIF, and PR feedback.
 - Installer mutations are lock-serialized, journaled, ownership-aware, and recoverable.
 - MCP tools remain read-only; findings are not transport failures.
 - External judges and real LLM grading are opt-in. Malformed LLM output falls back to the deterministic judge.

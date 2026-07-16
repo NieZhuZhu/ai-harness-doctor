@@ -1412,6 +1412,38 @@ def secret_hits(text):
     return hits
 
 
+def redact_secret_values(text):
+    """Replace complete high-confidence secret spans with stable markers.
+
+    Risk/security detection continues to run on the original bytes. This helper
+    is for PUBLIC report fields only, so a scanner never republishes a detected
+    credential through JSON, Markdown, SARIF, or PR feedback.
+    """
+    redacted = str(text)
+    for label, pattern in SECRET_PATTERNS:
+        redacted = pattern.sub(
+            lambda match: (
+                match.group(0)
+                if _SECRET_PLACEHOLDER_RE.search(match.group(0))
+                else f"<redacted:{label}>"
+            ),
+            redacted,
+        )
+    return redacted
+
+
+def public_hooks(hooks):
+    """Return report-safe hook inventory while retaining diagnostic shape."""
+    return [
+        {
+            **hook,
+            "event": _md_safe(hook.get("event", "")),
+            "command": redact_secret_values(hook.get("command", "")),
+        }
+        for hook in hooks
+    ]
+
+
 def _md_safe(value):
     """Neutralize Markdown-breakout characters in a value read from attacker-
     controlled JSON (MCP server/env names, permission rules, hook event/command
@@ -1552,12 +1584,13 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
     for h in hooks:
         for label, pattern in RISKY_COMMAND_RES:
             if pattern.search(h["command"]):
+                snippet = _md_safe(redact_secret_values(h["command"])[:160])
                 findings.append(
                     {
                         "level": "HIGH",
                         "category": "hook",
                         "path": h["config"],
-                        "message": f"{_md_safe(h['event'])} hook contains {label}: `{_md_safe(h['command'][:80])}`",
+                        "message": f"{_md_safe(h['event'])} hook contains {label}: `{snippet}`",
                     }
                 )
     # 5) Risky flags recommended inside instruction files.
@@ -1880,12 +1913,13 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
     files, result_files, warnings, ctx = collect_instruction_files(root, max_bytes, ctx)
     mcp = scan_mcp(root, ctx)
     hooks = scan_hooks(root, ctx)
+    safe_hooks = public_hooks(hooks)
     permissions = scan_permissions(root, ctx)
     surface = {
         "mcp_servers": mcp,
         "subagents": scan_subagents(root, ctx),
         "commands": scan_commands(root, ctx),
-        "hooks": hooks,
+        "hooks": safe_hooks,
         "permissions": permissions,
     }
     agents_text = next((entry["text"] for entry in files if entry["path"] == "AGENTS.md"), "")
