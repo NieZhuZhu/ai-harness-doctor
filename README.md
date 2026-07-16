@@ -195,7 +195,7 @@ Defense in depth, strongest to weakest:
 
 Why detection over regeneration? Silently “fixing” drift removes human awareness. AI Harness Doctor surfaces drift instead, because the important part is not rewriting files; it is making the team notice that repo truth and agent truth diverged. See [Positioning & Non-goals & Comparison](#positioning--non-goals--comparison).
 
-Adopting the gate on a repo that already drifted? `drift --write-baseline FILE` records today's findings once, then `drift --baseline FILE` suppresses exactly those so CI fails only on new drift — the same on-ramp ruff, mypy, and detekt offer. Baseline fingerprints ignore line numbers, suppressed findings stay visible under a `baselined` array, and the health score counts only new drift, so a fully baselined repo still reads grade A.
+Adopting the gate on a repo that already drifted? `drift --write-baseline FILE` records today's findings once, then `drift --baseline FILE` classifies debt as new, known (`baselined`), or repaired (`resolved_baseline`) so CI gates only new drift. Baseline fingerprints ignore line numbers and known/repaired debt never affects health, so a fully baselined repo still reads grade A. Use `--check-baseline` to fail with exit `9` when repaired entries need cleanup, then `--prune-baseline` to atomically remove only those entries without absorbing new debt.
 
 ### Pre-commit framework
 
@@ -333,7 +333,7 @@ npx ai-harness-doctor scan . --baseline .ai-harness-doctor/scan-baseline.json \
   --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts
 ```
 
-The versioned baseline is deterministic, timestamp-free, and uses structured identities containing the finding family/rule, root-or-package scope, path/evidence, and message while treating line numbers as evidence rather than identity. Suppressed debt stays visible in the top-level `baselined` array and a Markdown baseline summary, but it is excluded from fail-on decisions and SARIF. HIGH security findings never enter the baseline and always remain active; a crafted security-shaped entry is ignored. Missing or malformed baseline files suppress nothing. Monorepo root/package identities are distinct. `--repos-file` is intentionally incompatible with scan baselines because each unrelated repository must own its own debt register. Review baseline changes like code and shrink the file as debt is repaired; it is not a regex ignore list.
+The versioned baseline is deterministic, timestamp-free, and uses structured identities containing the finding family/rule, root-or-package scope, path/evidence, and message while treating line numbers as evidence rather than identity. Current debt is classified as new (active arrays), known (`baselined`), or repaired (`resolved_baseline`); known/resolved counts also appear in the Markdown summary. All baseline debt stays out of fail-on decisions and SARIF. `--check-baseline` exits `9` when repaired entries should be removed (active finding exits 2/3/4/7 still take precedence), while `--prune-baseline` atomically deletes only repaired entries and never absorbs new debt. HIGH security findings never enter the baseline and always remain active; a crafted security-shaped entry is ignored. Missing or malformed baselines suppress nothing in ordinary scans, while explicit check/prune fails closed without writing. Monorepo root/package identities are distinct. `--repos-file` is intentionally incompatible with every baseline mode because each unrelated repository must own its own debt register. Review baseline changes like code; it is not a regex ignore list.
 
 **Full JSON report for agents.** In markdown mode `scan` writes the complete machine-readable report (files, surface, security, `project_snapshot`, `semantic`, and `gaps`) to a stable temp file — `${TMPDIR}/harness-scan-<hash>.json`, where `<hash>` is derived from the resolved repo path — and appends a `## Full JSON report` section pointing to it. An agent driving the workflow can read that file to reason over the snapshot and gaps and plan fixes, without re-parsing the markdown. The `--json` mode already prints the full report to stdout, so no temp file is written there. Use `--no-report-file` to skip writing it.
 
@@ -383,6 +383,8 @@ By default, the Action runs the implementation bundled with the selected Action 
 | `--fail-on-conflicts` | Exit `7` when any conflicting harness declaration is present. |
 | `--baseline FILE` | Suppress only gap/semantic/conflict debt recorded in `FILE`; security is never suppressible. |
 | `--write-baseline FILE` | Write the current non-security scan debt to a deterministic baseline and exit `0`. |
+| `--check-baseline` | With `--baseline FILE`, exit `9` when repaired/stale entries are ready to remove (finding gates take precedence). |
+| `--prune-baseline` | With `--baseline FILE`, atomically remove only repaired entries; never baseline new findings. |
 | `--no-snapshot` | Skip the project snapshot (drops the `project_snapshot` key). |
 | `--no-report-file` | Do not write the full JSON report to a temp file (markdown mode only). |
 | `--monorepo` | Force monorepo mode: scan each package subdir even without a workspace config (falls back to nested `package.json` / `AGENTS.md` subtrees). |

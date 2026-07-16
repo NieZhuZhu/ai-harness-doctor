@@ -576,6 +576,11 @@ def health_score(findings):
 # detekt, ktlint). It is opt-in and additive — with no --baseline flag the
 # engine behaves exactly as before.
 BASELINE_VERSION = 1
+BASELINE_MAINTENANCE_EXIT = scan.BASELINE_MAINTENANCE_EXIT
+
+
+class BaselineFileError(ValueError):
+    """A safe, caller-facing baseline maintenance error."""
 
 
 def finding_fingerprint(finding):
@@ -596,16 +601,69 @@ def load_baseline(path):
     so the guard fails safe (every finding counts as new) rather than crashing
     CI on a bad baseline.
     """
+    return load_baseline_store(path)["fingerprints"]
+
+
+def parse_baseline(data, path="", strict=False):
+    valid = (
+        isinstance(data, dict)
+        and data.get("version") == BASELINE_VERSION
+        and isinstance(data.get("findings"), list)
+    )
+    entries = []
+    if valid:
+        for entry in data["findings"]:
+            entry_valid = (
+                isinstance(entry, dict)
+                and isinstance(entry.get("check"), str)
+                and isinstance(entry.get("message"), str)
+                and (
+                    entry.get("path") is None
+                    or isinstance(entry.get("path"), str)
+                )
+            )
+            if not entry_valid:
+                if strict:
+                    valid = False
+                    break
+                continue
+            entries.append(
+                {
+                    "check": entry.get("check", ""),
+                    "message": entry.get("message", ""),
+                    "path": entry.get("path"),
+                }
+            )
+    if not valid:
+        if strict:
+            raise BaselineFileError("baseline must be a version-1 drift baseline")
+        entries = []
+    unique = {finding_fingerprint(entry): entry for entry in entries}
+    ordered = sorted(
+        unique.values(),
+        key=lambda entry: (
+            entry["check"] or "",
+            entry["message"] or "",
+            entry["path"] or "",
+        ),
+    )
+    return {
+        "path": str(path),
+        "valid": valid,
+        "entries": ordered,
+        "fingerprints": set(unique),
+        "by_fingerprint": {finding_fingerprint(entry): entry for entry in ordered},
+    }
+
+
+def load_baseline_store(path, strict=False):
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return set()
-    entries = data.get("findings", []) if isinstance(data, dict) else []
-    return {
-        (e.get("check", ""), e.get("message", ""), e.get("path") or "")
-        for e in entries
-        if isinstance(e, dict)
-    }
+        if strict:
+            raise BaselineFileError("baseline file is missing or invalid JSON")
+        data = None
+    return parse_baseline(data, path=path, strict=strict)
 
 
 def baseline_payload(findings):
@@ -662,10 +720,20 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
     # failures. Fingerprints ignore line numbers, so re-runs stay stable.
     baselined = []
     if baseline:
+        baseline_fps = baseline["fingerprints"] if isinstance(baseline, dict) else baseline
+        baseline_entries = baseline["entries"] if isinstance(baseline, dict) else []
+        current_fps = {finding_fingerprint(f) for f in findings}
         kept = []
         for f in findings:
-            (baselined if finding_fingerprint(f) in baseline else kept).append(f)
+            (baselined if finding_fingerprint(f) in baseline_fps else kept).append(f)
         findings = kept
+        resolved_baseline = [
+            entry
+            for entry in baseline_entries
+            if finding_fingerprint(entry) not in current_fps
+        ]
+    else:
+        resolved_baseline = []
     info = [
         {
             "check": "D5",
@@ -696,15 +764,23 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
                 f["level"] = "ERROR"
     failures = [f for f in findings if f.get("level") == "ERROR"]
     score, grade = health_score(findings)
-    return {
+    report = {
         "ok": not failures,
         "findings": findings,
         "info": info,
         "custom": custom,
         "baselined": baselined,
+        "resolved_baseline": resolved_baseline,
         "score": score,
         "grade": grade,
     }
+    if isinstance(baseline, dict):
+        report["baseline"] = {
+            "path": baseline.get("path", ""),
+            "known": len(baselined),
+            "resolved": len(resolved_baseline),
+        }
+    return report
 
 
 def render(report):
@@ -743,6 +819,16 @@ def render(report):
                 "## Baseline",
                 f"{len(baselined)} pre-existing finding(s) suppressed by the baseline "
                 "(not counted as failures).",
+            ]
+        )
+    resolved = report.get("resolved_baseline", [])
+    if resolved:
+        lines.extend(
+            [
+                "",
+                "## Resolved baseline debt",
+                f"{len(resolved)} baseline finding(s) are no longer present and ready to prune "
+                "with `--baseline FILE --prune-baseline`.",
             ]
         )
     lines.extend(["", "## Health score", f"Score: {report['score']}/100 (grade {report['grade']})"])
@@ -916,7 +1002,32 @@ def main(argv=None):
         help="Record the current findings to FILE as a baseline and exit 0 "
         "(adopt the drift gate on a repo with pre-existing drift). Deterministic; no timestamp.",
     )
+    parser.add_argument(
+        "--check-baseline",
+        action="store_true",
+        help=f"Exit {BASELINE_MAINTENANCE_EXIT} when FILE contains resolved/stale debt. Requires --baseline.",
+    )
+    parser.add_argument(
+        "--prune-baseline",
+        action="store_true",
+        help="Atomically remove only resolved/stale entries from --baseline FILE and exit 0.",
+    )
     args = parser.parse_args(argv)
+    if (args.check_baseline or args.prune_baseline) and not args.baseline:
+        print("error: --check-baseline/--prune-baseline requires --baseline FILE", file=sys.stderr)
+        return 1
+    if args.write_baseline and (args.baseline or args.check_baseline or args.prune_baseline):
+        print(
+            "error: --write-baseline cannot be combined with --baseline maintenance modes",
+            file=sys.stderr,
+        )
+        return 1
+    if args.check_baseline and args.prune_baseline:
+        print("error: --check-baseline and --prune-baseline are mutually exclusive", file=sys.stderr)
+        return 1
+    if (args.check_baseline or args.prune_baseline) and args.fix:
+        print("error: baseline maintenance modes cannot be combined with --fix", file=sys.stderr)
+        return 1
     root = Path(args.repo_root).resolve()
     if not root.is_dir():
         message = f"error: not a directory: {args.repo_root}"
@@ -939,12 +1050,21 @@ def main(argv=None):
     if args.write_baseline:
         report = run_checks(root, args.max_bytes, strict=False, rules_dirs=args.rules, allow_plugins=args.allow_plugins)
         payload = baseline_payload(report["findings"])
-        Path(args.write_baseline).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        scan.write_json_atomic(args.write_baseline, payload)
         print(f"Wrote baseline with {len(payload['findings'])} finding(s) to {args.write_baseline}")
         return 0
-    baseline = load_baseline(args.baseline) if args.baseline else None
+    try:
+        baseline = (
+            load_baseline_store(
+                args.baseline,
+                strict=args.check_baseline or args.prune_baseline,
+            )
+            if args.baseline
+            else None
+        )
+    except BaselineFileError as exc:
+        print(f"baseline error: {exc}", file=sys.stderr)
+        return 1
     if args.fix:
         text, code = run_fix(
             root,
@@ -960,9 +1080,27 @@ def main(argv=None):
     report = run_checks(
         root, args.max_bytes, args.strict, args.rules, allow_plugins=args.allow_plugins, baseline=baseline
     )
+    if args.prune_baseline:
+        known_fps = {finding_fingerprint(finding) for finding in report["baselined"]}
+        kept = [
+            entry
+            for entry in baseline["entries"]
+            if finding_fingerprint(entry) in known_fps
+        ]
+        scan.write_json_atomic(
+            args.baseline,
+            {"version": BASELINE_VERSION, "findings": kept},
+        )
+        print(
+            f"Pruned {len(report['resolved_baseline'])} resolved drift baseline finding(s); "
+            f"{len(kept)} known finding(s) remain."
+        )
+        return 0
     exit_code = 0 if report["ok"] else 1
     if args.min_score is not None and report["score"] < args.min_score:
         exit_code = exit_code or 2
+    if exit_code == 0 and args.check_baseline and report["resolved_baseline"]:
+        exit_code = BASELINE_MAINTENANCE_EXIT
     # SARIF takes precedence over --json/markdown but preserves the same exit
     # semantics (--strict / --min-score) as the normal path.
     if args.sarif:
