@@ -113,7 +113,7 @@ python3 scripts/canonicalize.py /path/to/repo --draft                 # print to
 python3 scripts/canonicalize.py /path/to/repo --draft -o AGENTS.md    # write (refuses to overwrite without --force)
 ```
 
-The draft fills every canonical section with deterministic, fact-derived starter content reused from `scan.py` / `semantic.py` — detected tech stack, build/test commands from `package.json` scripts and `Makefile` targets, the lockfile-backed package manager, detected CI/lint/type-check tooling, and default resolutions for every reported conflict. Inferred lines are tagged `(inferred — confirm)` and safe conventions `(suggested default)`; a banner reminds the human to review and edit every line before committing. The draft is a starting point, **not** a substitute for the human authoring step below.
+The draft fills every canonical section with deterministic, fact-derived starter content reused from `scan.py` / `semantic.py` — detected tech stack, build/test commands from `package.json` scripts and `Makefile` targets, the lockfile-backed package manager, detected CI/lint/type-check tooling, and default resolutions for every reported conflict. Inferred lines are tagged `(inferred — confirm)` and safe conventions `(suggested default)`; a banner reminds the human to review and edit every line before committing. These exact product-owned provisional markers intentionally fail canonical readiness until they are reviewed and removed. The draft is a starting point, **not** a substitute for the human authoring step below.
 
 Then the agent manually writes (or reviews and edits the draft into) the root `AGENTS.md`. The scripts do not perform semantic merging.
 
@@ -124,7 +124,7 @@ python3 scripts/canonicalize.py --write-stubs /path/to/repo
 python3 scripts/canonicalize.py --write-stubs /path/to/repo --apply
 ```
 
-Writes are dry-run by default. Before `--apply`, the target must be a git repository with a clean worktree; use `--force` only when the user explicitly accepts that override.
+Writes are dry-run by default. Before `--apply`, the canonical file must pass path/size/section/draft-review readiness and the target must be a git repository with a clean worktree. Full pre-migration tool files are expected inputs, not blockers. `--force` may accept only dirty-worktree risk; it never bypasses canonical readiness.
 
 Finally validate:
 
@@ -133,7 +133,7 @@ python3 scripts/canonicalize.py --validate /path/to/repo
 python3 scripts/canonicalize.py --validate /path/to/repo --json
 ```
 
-`--validate` requires the `Project overview`, `Build & test`, and `Conventions` headings by default. Override the required set with `--require-sections` (comma-separated); a missing heading is reported as a `SECTION` finding (ERROR, or WARN for a library/reference doc):
+`--validate` requires the `Project overview`, `Build & test`, and `Conventions` headings by default and reports exact unresolved generated markers as `DRAFT_REVIEW` errors. Removing those markers records explicit maintainer review but does not let the script claim reviewer identity or semantic correctness. Override the required set with `--require-sections` (comma-separated); a missing heading is reported as a `SECTION` finding (ERROR, or WARN for a library/reference doc):
 
 ```bash
 python3 scripts/canonicalize.py --validate /path/to/repo --require-sections "Project overview,Build & test,Security"

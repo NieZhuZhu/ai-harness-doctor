@@ -30,7 +30,20 @@
 - **Depends on**: Plans 004, 008, 011, and 037 (DONE)
 - **Category**: correctness / safety
 - **Planned at**: commit `26b07b0`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: IN PROGRESS on `fix/040-reviewed-canonical-readiness`
+
+## Implementation progress
+
+- Added one shared canonical-readiness helper for validation and stub apply.
+- Exact product-owned provenance/TODO/inference/default markers now produce
+  deterministic `DRAFT_REVIEW` errors; arbitrary user TODO/prose remains valid.
+- Apply preflights readiness before clean-tree handling or mutation; `--force`
+  cannot bypass it, while dry-run remains a byte-preserving preview.
+- Regression coverage includes byte-exact source preservation, no Cursor
+  pointer creation, symlinked canonical refusal, valid migration compatibility,
+  and modern MCP `status:"findings"` / `isError:false`.
+- Local focused suites and 34/34 evidence-bound self-eval are green. Final full
+  gate, PR, CI, and merge evidence are pending.
 
 ## Why this matters
 
