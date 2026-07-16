@@ -382,6 +382,16 @@ verification gate, and update its status here.
    real `uses: ./` maintenance-failure self-test, while keeping resolved debt
    outside Code Scanning results and preserving the exact exit code.
 
+### 2026-07-16 improve loop round 4 (secret-safe diagnostics)
+
+1. **Risky hook findings republish detected credentials** — traced one generated
+   credential sentinel from `.claude/settings.json` through `scan_hooks`,
+   `surface.hooks`, security finding messages, Markdown/full JSON, SARIF, and PR
+   review. The scanner emits a safe type/path secret finding but separately
+   copies the credential-bearing hook command into every report surface. Plan
+   049 keeps detection on raw commands while exposing only deterministic
+   redacted snippets, and pins the guarantee end-to-end across all artifacts.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -434,6 +444,7 @@ verification gate, and update its status here.
 | 046 | Make the GitHub Action emit composable quality outputs and a Job Summary | P1 | M | 012, 034, 042 | DONE |
 | 047 | Make repaired baseline debt visible, checkable, and prunable | P1 | L | 007, 021 | DONE |
 | 048 | Report baseline maintenance failures truthfully through SARIF and the Action | P1 | M | 046, 047 | DONE |
+| 049 | Redact hook-command secrets from every report surface | P0 | M | 024, 042 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
