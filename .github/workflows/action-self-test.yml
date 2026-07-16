@@ -124,6 +124,11 @@ jobs:
           node -e '
             const fs = require("node:fs");
             const path = require("node:path");
+            const CATEGORY = {
+              bundledScan: "ai-harness-doctor/scan/",
+              bundledDrift: "ai-harness-doctor/drift/",
+              claudeRuleScan: "ai-harness-doctor/scan/",
+            };
             for (const [label, file, expected] of [
               ["bundledScan", process.env.BUNDLED_SCAN, process.env.BUNDLED_VERSION],
               ["bundledDrift", process.env.BUNDLED_DRIFT, process.env.BUNDLED_VERSION],
@@ -144,6 +149,28 @@ jobs:
                   `${label} mismatch: expected SARIF driver ${expected}, ` +
                   `got ${driver && driver.version}`,
                 );
+              }
+              // Alert-lifecycle contract (Plan 042): each command run is keyed to
+              // its own code-scanning category so uploading scan + drift for one
+              // commit does not let the second close the first alerts, and every
+              // result carries a stable partialFingerprints entry so alerts
+              // survive unrelated edits. Only the bundled runs execute this
+              // checkout code; the npm override runs the already-published
+              // version, which may predate this contract, so it is exempt.
+              if (label !== "npmScan") {
+                const category = run.automationDetails && run.automationDetails.id;
+                if (category !== CATEGORY[label]) {
+                  throw new Error(
+                    `${label} category mismatch: expected ${CATEGORY[label]}, got ${category}`,
+                  );
+                }
+                for (const result of run.results) {
+                  const fp = result.partialFingerprints
+                    && result.partialFingerprints.aiHarnessDoctorIdentity;
+                  if (!fp || typeof fp !== "string") {
+                    throw new Error(`${label} result missing partialFingerprints`);
+                  }
+                }
               }
               if (
                 label === "claudeRuleScan"

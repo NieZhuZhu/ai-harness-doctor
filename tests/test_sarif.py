@@ -12,6 +12,7 @@ DRIFT = ROOT / "scripts" / "check_drift.py"
 
 sys.path.insert(0, str(ROOT / "scripts"))
 import sarif  # noqa: E402
+import scan  # noqa: E402
 
 
 class LevelMappingTests(unittest.TestCase):
@@ -559,6 +560,200 @@ class CliSmokeTests(unittest.TestCase):
             rule_ids = [result["ruleId"] for result in results]
             self.assertIn("security/secret", rule_ids)
             self.assertNotIn("semantic/command", rule_ids)
+
+
+class AlertLifecycleTests(unittest.TestCase):
+    """automationDetails category + partialFingerprints (Plan 042)."""
+
+    def _scan_report(self):
+        return {
+            "warnings": [
+                {"level": "NOTICE", "path": "AGENTS.md", "message": "oversized"}
+            ],
+            "security": [
+                {
+                    "level": "HIGH",
+                    "category": "secret",
+                    "path": "src/config.js",
+                    "line": 12,
+                    "message": "AWS key in src/config.js:12",
+                }
+            ],
+            "gaps": [{"check": "G1", "level": "ERROR", "message": "No canonical AGENTS.md"}],
+            "semantic": {
+                "findings": [
+                    {
+                        "category": "command",
+                        "level": "MISMATCH",
+                        "message": "npm run missing does not exist",
+                        "line": 5,
+                    }
+                ]
+            },
+            "conflicts": [
+                {"signal": "package_manager", "values": {"pnpm": [], "npm": []}}
+            ],
+        }
+
+    def test_scan_run_has_scan_category(self):
+        run = sarif.scan_report_to_sarif(self._scan_report())["runs"][0]
+        self.assertEqual(run["automationDetails"]["id"], "ai-harness-doctor/scan/")
+        self.assertEqual(sarif.SCAN_CATEGORY, "ai-harness-doctor/scan/")
+
+    def test_drift_run_has_drift_category(self):
+        report = {"findings": [{"check": "D2", "level": "ERROR", "message": "x"}]}
+        run = sarif.drift_report_to_sarif(report)["runs"][0]
+        self.assertEqual(run["automationDetails"]["id"], "ai-harness-doctor/drift/")
+        self.assertEqual(sarif.DRIFT_CATEGORY, "ai-harness-doctor/drift/")
+        self.assertNotEqual(sarif.SCAN_CATEGORY, sarif.DRIFT_CATEGORY)
+
+    def test_every_scan_result_has_a_nonempty_fingerprint(self):
+        results = sarif.scan_report_to_sarif(self._scan_report())["runs"][0]["results"]
+        self.assertTrue(results)
+        for result in results:
+            fp = result["partialFingerprints"][sarif.FINGERPRINT_KEY]
+            self.assertIsInstance(fp, str)
+            self.assertEqual(len(fp), 32)
+            self.assertTrue(fp)
+
+    def test_unlocated_conflict_still_gets_a_fingerprint(self):
+        # A conflict has no location; it must still be fingerprinted, not crash.
+        results = sarif.scan_report_to_sarif(self._scan_report())["runs"][0]["results"]
+        conflict = next(r for r in results if r["ruleId"] == "conflict/package_manager")
+        self.assertEqual(conflict["locations"], [])
+        self.assertTrue(conflict["partialFingerprints"][sarif.FINGERPRINT_KEY])
+
+    def test_every_drift_result_has_a_fingerprint(self):
+        report = {
+            "findings": [{"check": "D2", "level": "ERROR", "path": "AGENTS.md", "message": "y"}],
+            "custom": [{"level": "WARN", "message": "custom"}],
+        }
+        for result in sarif.drift_report_to_sarif(report)["runs"][0]["results"]:
+            self.assertTrue(result["partialFingerprints"][sarif.FINGERPRINT_KEY])
+
+    def test_same_finding_different_file_differs(self):
+        base = {"security": [{"level": "HIGH", "category": "secret", "path": "a.js", "line": 1, "message": "s"}]}
+        other = {"security": [{"level": "HIGH", "category": "secret", "path": "b.js", "line": 1, "message": "s"}]}
+        fa = sarif.scan_report_to_sarif(base)["runs"][0]["results"][0]
+        fb = sarif.scan_report_to_sarif(other)["runs"][0]["results"][0]
+        self.assertNotEqual(
+            fa["partialFingerprints"][sarif.FINGERPRINT_KEY],
+            fb["partialFingerprints"][sarif.FINGERPRINT_KEY],
+        )
+
+    def test_same_finding_different_line_is_identical(self):
+        def report(line):
+            return {
+                "semantic": {
+                    "findings": [
+                        {
+                            "category": "command",
+                            "level": "MISMATCH",
+                            "message": "npm run x missing",
+                            "line": line,
+                        }
+                    ]
+                }
+            }
+
+        fa = sarif.scan_report_to_sarif(report(5))["runs"][0]["results"][0]
+        fb = sarif.scan_report_to_sarif(report(900))["runs"][0]["results"][0]
+        self.assertEqual(
+            fa["partialFingerprints"][sarif.FINGERPRINT_KEY],
+            fb["partialFingerprints"][sarif.FINGERPRINT_KEY],
+        )
+
+    def test_monorepo_package_finding_differs_from_root(self):
+        secret = {
+            "level": "HIGH",
+            "category": "secret",
+            "path": "index.js",
+            "line": 1,
+            "message": "s",
+        }
+        report = {
+            "security": [dict(secret)],
+            "packages": [
+                {
+                    "path": "packages/api",
+                    "report": {"security": [dict(secret)]},
+                }
+            ],
+        }
+        results = sarif.scan_report_to_sarif(report)["runs"][0]["results"]
+        self.assertEqual(len(results), 2)
+        self.assertNotEqual(
+            results[0]["partialFingerprints"][sarif.FINGERPRINT_KEY],
+            results[1]["partialFingerprints"][sarif.FINGERPRINT_KEY],
+        )
+
+    def test_identity_parity_with_scan_baseline_families(self):
+        # The SARIF identity for the three baseline families must equal
+        # scan._baseline_entry so baseline suppression and SARIF alert identity
+        # never drift apart.
+        gap = {"check": "G1", "message": "No canonical AGENTS.md", "item": "AGENTS.md"}
+        self.assertEqual(
+            sarif._gap_identity(gap, "pkg"),
+            scan._baseline_entry(
+                {
+                    "family": "gap",
+                    "rule": "G1",
+                    "package": "pkg",
+                    "path": "",
+                    "message": "No canonical AGENTS.md",
+                    "item": "AGENTS.md",
+                }
+            ),
+        )
+        semantic = {
+            "category": "command",
+            "message": "npm run x missing",
+            "declared": "x",
+            "actual": "",
+        }
+        self.assertEqual(
+            sarif._semantic_identity(semantic, ""),
+            scan._baseline_entry(
+                {
+                    "family": "semantic",
+                    "rule": "command",
+                    "package": "",
+                    "path": "AGENTS.md",
+                    "message": "npm run x missing",
+                    "declared": "x",
+                    "actual": "",
+                }
+            ),
+        )
+        conflict = {
+            "signal": "package_manager",
+            "values": {"pnpm": [], "npm": []},
+            "scope": "packages/api",
+        }
+        self.assertEqual(
+            sarif._conflict_identity(conflict, ""),
+            scan._baseline_entry(
+                {
+                    "family": "conflict",
+                    "rule": "package_manager",
+                    "package": "",
+                    "path": "",
+                    "message": "Conflicting package_manager declarations: npm, pnpm",
+                    "values": ["npm", "pnpm"],
+                    "scope": "packages/api",
+                }
+            ),
+        )
+
+    def test_document_is_byte_deterministic(self):
+        report = self._scan_report()
+        first = json.dumps(sarif.scan_report_to_sarif(report, version="1.0.0"))
+        second = json.dumps(sarif.scan_report_to_sarif(report, version="1.0.0"))
+        self.assertEqual(first, second)
+
+    def test_build_document_without_category_omits_automation_details(self):
+        run = sarif.build_document([], [], version="1.0.0")["runs"][0]
+        self.assertNotIn("automationDetails", run)
 
 
 if __name__ == "__main__":
