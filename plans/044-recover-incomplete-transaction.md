@@ -28,7 +28,8 @@
 - **Depends on**: Plan 011 (DONE), Plan 037 (DONE)
 - **Category**: bug (correctness — installer crash recovery robustness)
 - **Planned at**: commit `21c99a8`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #213 (plan) / PR #214 (impl), squash-merged to
+  `main` as `731d9e7`; all nine required contexts green.
 
 ## Why this matters
 
