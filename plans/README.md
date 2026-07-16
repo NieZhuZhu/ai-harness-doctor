@@ -23,6 +23,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-17 at commit `ffcfe32` (plan 053).
 - 2026-07-17 at commit `eac8426` (plan 054).
 - 2026-07-17 at commit `5d96c95` (plan 055).
+- 2026-07-17 at commit `725128d` (plan 056).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -472,6 +473,20 @@ verification gate, and update its status here.
    pagination, summary-first delivery, HTTP-422 fallback, and caller-owned
    workflow fatality.
 
+### 2026-07-17 post-v1.11.0 improve round 2 (current pre-commit install)
+
+1. **The public pre-commit example pins new users to `v1.3.0`** —
+   independently re-audited all nine categories after Plan 055, including
+   formatter write scope, public examples, CLI/MCP/Action parity, issue intake,
+   distribution identity, process/network bounds, dependency posture, and test
+   gaps. All seven READMEs still use immutable `rev: v1.3.0` while package/npm/
+   GitHub stable is `v1.11.0`. Pre-commit officially caches `rev` as an immutable
+   tag/SHA; `v1` is not a supported floating substitute. Although hook metadata
+   is unchanged, the selected old runtime predates 7,013 lines of security,
+   containment, nested-scope, baseline, and installer changes. Plan 056 updates
+   every language to the current exact tag and derives a future-staleness test
+   from `package.json`.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -531,6 +546,7 @@ verification gate, and update its status here.
 | 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | DONE |
 | 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | DONE |
 | 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | DONE |
+| 056 | Keep the pre-commit example on the current stable release | P1 | S | 003, 005, 019 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -798,6 +814,27 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 
 ## Findings considered and rejected or deferred
 
+- **Treat the broad `npm run format` write set as Plan 056** — rejected after
+  fresh isolation. The command successfully rewrites 106 tracked files plus a
+  worktree-local symlink, including historical evidence and fixtures; however,
+  choosing the intended formatting authority would require a separate
+  policy/migration decision. It does not explain or repair the concrete public
+  `rev: v1.3.0` consumer pin. Keep it as an independently scoped DX candidate.
+- **Use floating `rev: v1` in the pre-commit snippet** — rejected by the
+  consumer's official contract. Pre-commit assumes `rev` is immutable and
+  caches it; branch/moving-tag behavior is unsupported. Plan 056 keeps an exact
+  stable tag and makes release bumps update it explicitly.
+- **Rely only on `pre-commit autoupdate` instead of fixing the example** —
+  rejected. Autoupdate helps existing consumers who run it, but every new user
+  copying the repository's primary example should start on the current stable
+  release rather than an eight-minor-old runtime.
+- **Change `.pre-commit-hooks.yaml` because its hash is old** — no finding. Its
+  bytes are intentionally identical at `v1.3.0` and `v1.11.0`; the defect is
+  the runtime ref selected by the README, not hook metadata.
+- **Fix generic backtick-file \"stale refs\" from the docs sweep** — rejected as
+  false leads. The reported names are examples, generated consumer paths, or
+  basenames whose owning directory is explained in prose; no current broken
+  public command/link was established.
 - **Make `npm run format` safe in the same Plan 055 change** — rejected as a
   separate DX contract. Current `prettier --check .` reports 105 files and the
   write command can touch generated adapters, guard-template/self-copy pairs,
