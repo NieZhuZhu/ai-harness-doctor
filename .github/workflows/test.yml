@@ -25,6 +25,8 @@ jobs:
         run: pip install "ruff==0.15.20"
       - name: Lint (eslint + ruff + docs + adapters)
         run: npm run lint
+      - name: Verify packed npm candidate
+        run: npm run check:package
   unittest:
     runs-on: ubuntu-latest
     strategy:
@@ -59,5 +61,3 @@ jobs:
         run: node bin/cli.js help
       - name: Run node --test suite
         run: node --test bin/*.test.js
-      - name: Check npm package contents
-        run: npm pack --dry-run
