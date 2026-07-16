@@ -77,6 +77,22 @@ class RegistryConsistencyTests(unittest.TestCase):
                 self.assertIn(pattern, tool["scan_patterns"])
                 self.assertIn(kind, applicability.SUPPORTED_FORMATS)
 
+    def test_claude_rules_are_scan_only_not_mutation_targets(self):
+        claude = next(tool for tool in self.tools if tool["id"] == "claude")
+        pattern = ".claude/rules/**/*.md"
+
+        self.assertIn(pattern, claude["scan_patterns"])
+        self.assertEqual(
+            claude["applicability"][pattern],
+            "claude-rules",
+        )
+        self.assertNotIn(pattern, claude["stub_paths"])
+        self.assertEqual(
+            claude["stub_paths"],
+            ["CLAUDE.md", ".claude/CLAUDE.md"],
+        )
+        self.assertNotIn(pattern, check_drift.STUB_FILES)
+
     def test_canonicalizable_tools_are_handled_by_canonicalize_and_drift(self):
         """A migrated tool must have stub_paths wired into BOTH canonicalize and drift."""
         for tool in self.tools:

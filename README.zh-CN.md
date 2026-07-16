@@ -307,7 +307,7 @@ Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。复制 paylo
 
 对于超限指令文件，`--max-bytes` 只限制为重叠、冲突、覆盖和声明分析保留的语义文本。清单中的 SHA/行数及高置信密钥/权限绕过检查仍会覆盖每个字节，且不会把整个文件保留在内存中。JSON 会公开 `analyzed_bytes`、`truncated`、`security_scanned_bytes` 和顶层 `analysis_limits`；Markdown 会标记仅基于前缀的重叠证据。语义分析受限时，无发现绝不会被表述为未见尾部也没有问题的证明。
 
-**结构化规则适用域。** Scan 会递归发现 Cursor `.cursor/rules/**/*.mdc` 与 Copilot/VS Code `.github/instructions/**/*.instructions.md`。一个有边界的标准库 parser 会建模 Cursor 的 `alwaysApply`/`globs`/`description` 与 Copilot 的 `applyTo`（引号/非引号 scalar、boolean、逗号列表和 brace alternatives；不是通用 YAML）。只有不同值的自动作用域在当前仓库内至少一个 contained path 上重叠时，才会形成 blocking conflict。互不相交的 path rules 不冲突；always-on/canonical rules 与重叠 path rules 仍会冲突。conditional/semantic、manual、被 Cursor 忽略的 `.md`、malformed、truncated 和当前无匹配规则会继续在 `applicability` / `applicability_warnings` 中可见，但不会成为 blocking conflict。诊断会进入 Markdown、SARIF 和 PR review。安全、identity 与 overlap 仍检查原始文件，不受 applicability 影响；递归发现绝不会授权 Treat 递归删除。
+**结构化规则适用域。** Scan 会递归发现 Claude Code `.claude/rules/**/*.md`、Cursor `.cursor/rules/**/*.mdc` 与 Copilot/VS Code `.github/instructions/**/*.instructions.md`。一个有边界的标准库 parser 会建模 Claude 的 `paths` block/inline 字符串列表（无 frontmatter 即 always-on）、Cursor 的 `alwaysApply`/`globs`/`description` 与 Copilot 的 `applyTo`。它支持各格式所需的、有边界的文档化 glob 形式，包括 brace alternatives 和 Claude character classes；但它不是通用 YAML parser。只有不同值的自动作用域在当前仓库内至少一个 contained path 上重叠时，才会形成 blocking conflict。互不相交的 path rules 不冲突；always-on/canonical rules 与重叠 path rules 仍会冲突。conditional/semantic、manual、被 Cursor 忽略的 `.md`、malformed、truncated 和当前无匹配规则会继续在 `applicability` / `applicability_warnings` 中可见，但不会成为 blocking conflict。诊断会进入 Markdown、SARIF 和 PR review。安全、identity 与 overlap 仍检查原始文件，不受 applicability 影响；递归发现绝不会授权 Treat 递归删除或重写 Claude rule 文件。即使 Claude Code 自身支持共享规则，外部 rule symlink 仍会被仓库审计边界排除。
 
 默认以 0 退出。加上 `--fail-on-security` 后，只要存在任意 HIGH 级发现就以 `2` 退出，很适合作为 CI 卡点。
 
@@ -487,7 +487,7 @@ python3 scripts/canonicalize.py --validate . --require-sections "Project overvie
 
 | Tool | Downgrade strategy |
 |---|---|
-| Claude | `CLAUDE.md` / `.claude/CLAUDE.md` import `@AGENTS.md`. |
+| Claude | `CLAUDE.md` / `.claude/CLAUDE.md` import `@AGENTS.md`；递归发现的 `.claude/rules/**/*.md` 保持不变。 |
 | Cursor | `.cursorrules` points to `AGENTS.md`; `.cursor/rules` becomes one always-apply pointer. |
 | Windsurf | `.windsurfrules` becomes a pointer. |
 | Copilot | `.github/copilot-instructions.md` becomes a pointer. |
@@ -622,7 +622,7 @@ npx ai-harness-doctor explain . packages/api/src/future.ts --json
 
 schema-version-1 JSON 包含 `target`、`effective_scope`、从 root 到 nearest 的 `canonical_chain`、`diagnostic_sources`、`source_applicability`、相关 `scope_overrides` / same-scope `conflicts`，以及明确的 `limitations`。已存在与未来路径都可使用；contained absolute path 会规范化为仓库相对路径。escape 与 external-symlink target 会 fail closed。位于 `.git`、`node_modules`、`dist`、`build` 或 `__pycache__` 下的目标会标记为 `excluded_by_scan`，因为这些子树中的 config 不会进入 inventory。
 
-只有 canonical file 会被描述为 inheritance chain。对于 Cursor `.mdc` 与 Copilot `.instructions.md`，`source_applicability` 会使用上述结构化字段，确定性地把一个具体的已存在或未来 target 标记为 automatic/non-matching/conditional/manual/ignored/invalid。基于 description 的语义选择、malformed metadata、其他工具与 prose scope 仍只会被标记为**诊断关联**，绝不会声称 effective。该命令不会 merge instruction text、执行 plugin 或修改文件。
+只有 canonical file 会被描述为 inheritance chain。对于 Claude `.claude/rules/**/*.md`、Cursor `.mdc` 与 Copilot `.instructions.md`，`source_applicability` 会使用上述结构化字段，确定性地把一个具体的已存在或未来 target 标记为 automatic/non-matching/conditional/manual/ignored/invalid。基于 description 的语义选择、malformed metadata、其他工具与 prose scope 仍只会被标记为**诊断关联**，绝不会声称 effective。该命令不会 merge instruction text、执行 plugin 或修改文件。
 
 </details>
 

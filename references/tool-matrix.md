@@ -4,11 +4,12 @@ Use this table during Phase 1 — Treat to decide which files should be downgrad
 
 ## Claude Code
 
-- Read files: commonly repository `CLAUDE.md`, and possibly user-level or parent-level configuration; this skill handles root `CLAUDE.md` and `.claude/CLAUDE.md`.
+- Read files: repository `CLAUDE.md`, `.claude/CLAUDE.md`, and recursively discovered `.claude/rules/**/*.md`; user-level or parent-level configuration stays outside the audited repository.
 - Import/reference: supports `@path` file references.
 - Priority/merge order: follow the official Claude Code resolution order.
 - Size limits: follow official documentation.
-- Downgrade strategy: put `@AGENTS.md` on the first line of `CLAUDE.md`, followed by a minimal comment; do not copy the body.
+- Structured rules: no-frontmatter project rules are always-on; `paths` block/inline string lists select project-relative glob targets. External shared-rule symlinks remain outside the audit boundary.
+- Downgrade strategy: put `@AGENTS.md` on the first line of `CLAUDE.md`, followed by a minimal comment; do not copy the body or rewrite recursively discovered `.claude/rules/`.
 
 ## Codex
 

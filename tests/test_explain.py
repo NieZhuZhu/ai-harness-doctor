@@ -246,6 +246,53 @@ class ExplainTests(unittest.TestCase):
             self.assertIn("`non-matching`", markdown)
             self.assertIn("description", js["limitations"][0].lower())
 
+    def test_claude_rules_apply_to_matching_existing_and_future_targets(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "AGENTS.md", "Use pnpm.\n")
+            write(td, "scripts/check.py", "pass\n")
+            write(
+                td,
+                ".claude/rules/python.md",
+                "---\n"
+                "paths:\n"
+                '  - "scripts/**/*.py"\n'
+                "---\n"
+                "Use `uv run pytest`.\n",
+            )
+
+            existing = explain.build_explanation(td, "scripts/check.py")
+            future = explain.build_explanation(td, "scripts/future.py")
+            unrelated = explain.build_explanation(td, "src/future.ts")
+
+            for report in (existing, future):
+                statuses = {
+                    item["path"]: item["status"]
+                    for item in report["source_applicability"]
+                }
+                self.assertEqual(
+                    statuses[".claude/rules/python.md"],
+                    "automatic",
+                )
+                self.assertEqual(
+                    {
+                        value
+                        for conflict in report["conflicts"]
+                        if conflict["signal"] == "package_manager"
+                        for value in conflict["values"]
+                    },
+                    {"pnpm", "uv"},
+                )
+
+            statuses = {
+                item["path"]: item["status"]
+                for item in unrelated["source_applicability"]
+            }
+            self.assertEqual(
+                statuses[".claude/rules/python.md"],
+                "non-matching",
+            )
+            self.assertEqual(unrelated["conflicts"], [])
+
     def test_explain_reports_only_conflicts_applicable_to_target(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "src/app.js", "x\n")

@@ -210,6 +210,66 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertFalse(top.exists())
             self.assertTrue((rules / "agents-md.mdc").is_file())
 
+    def test_claude_rule_discovery_does_not_authorize_rule_mutation(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            (repo / "CLAUDE.md").write_text(
+                "Legacy project instructions.\n",
+                encoding="utf-8",
+            )
+            rule = repo / ".claude" / "rules" / "team" / "python.md"
+            rule.parent.mkdir(parents=True)
+            rule.write_text(
+                "---\npaths: [\"**/*.py\"]\n---\nUse `uv run pytest`.\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "init"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            before = rule.read_bytes()
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--write-stubs",
+                    str(repo),
+                    "--apply",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertEqual(rule.read_bytes(), before)
+            self.assertTrue(rule.is_file())
+
     @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
     def test_write_stubs_apply_refuses_external_file_symlink(self):
         with ResilientTemporaryDirectory() as td:

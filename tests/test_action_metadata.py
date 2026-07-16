@@ -108,9 +108,10 @@ class ActionMetadataTests(unittest.TestCase):
 
     def test_repository_dogfoods_the_composite_action(self):
         text = SELF_TEST.read_text(encoding="utf-8")
-        self.assertGreaterEqual(text.count("uses: ./"), 5)
+        self.assertGreaterEqual(text.count("uses: ./"), 6)
         self.assertIn("Run bundled scan against this checkout", text)
         self.assertIn("Run bundled drift against a clean fixture", text)
+        self.assertIn("Run bundled scan against a Claude rule fixture", text)
         self.assertIn("Run exact published npm override", text)
         self.assertIn("Validate Action success matrix", text)
         self.assertIn("checkout_version=", text)
@@ -121,9 +122,13 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("driver.version !== expected", text)
         self.assertIn('path.relative(temp, install).startsWith("..")', text)
         self.assertIn('"node_modules",', text)
+        self.assertIn('.claude/rules/future.md', text)
+        self.assertIn('paths:', text)
+        self.assertIn('item.ruleId === "applicability/no-current-match"', text)
         for name in (
             "Run bundled scan against this checkout",
             "Run bundled drift against a clean fixture",
+            "Run bundled scan against a Claude rule fixture",
             "Run exact published npm override",
         ):
             self.assertNotIn(

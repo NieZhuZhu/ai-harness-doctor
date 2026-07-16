@@ -8,7 +8,10 @@
     {
       "id": "claude",
       "label": "Claude Code",
-      "scan_patterns": ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md", "**/CLAUDE.md"],
+      "scan_patterns": ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md", "**/CLAUDE.md", ".claude/rules/**/*.md"],
+      "applicability": {
+        ".claude/rules/**/*.md": "claude-rules"
+      },
       "stub_paths": ["CLAUDE.md", ".claude/CLAUDE.md"],
       "stub_kind": "import",
       "stub_content": "@AGENTS.md\n<!-- Canonical instructions live in AGENTS.md. Keep this file as an import stub only. -->\n",
