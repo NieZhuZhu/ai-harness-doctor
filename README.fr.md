@@ -187,7 +187,7 @@ Les adapters non Claude sont volontairement légers. La distribution massive app
 - Les findings de secrets indiquent type/chemin sans reproduire la valeur ; les hooks dangereux sont expurgés dans JSON, Markdown, SARIF et les retours PR.
 - L’installateur utilise lock, journal, propriété et récupération.
 - Les outils MCP restent en lecture seule ; un finding n’est pas une erreur de transport.
-- Les juges externes et LLM réels sont opt-in ; une sortie malformée revient au juge déterministe.
+- Les juges externes et LLM réels sont opt-in. Les endpoints distants exigent HTTPS, HTTP est réservé au loopback, les redirections sont refusées et les échecs reviennent au juge déterministe.
 - Aucune télémétrie. Désactivez le contrôle npm avec `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1`.
 
 ## Preuves et benchmark

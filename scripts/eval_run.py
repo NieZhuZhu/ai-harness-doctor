@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -15,7 +16,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 # semantic.py lives in the same scripts/ dir; reuse its canonical ground-truth
 # extraction so eval task generation and the scan/drift fact engine agree on the
@@ -32,6 +33,10 @@ EVIDENCE_STALE_EXIT = 7
 
 class TaskFileError(ValueError):
     """A safe, caller-facing task-file validation failure."""
+
+
+class JudgeRedirectError(RuntimeError):
+    """Authenticated judge requests never follow redirects."""
 
 
 class ResultFileError(ValueError):
@@ -1486,15 +1491,57 @@ def _judge_user_prompt(answer, rubric):
     )
 
 
-def _http_post_json(url, headers, payload, timeout):
-    """POST ``payload`` as JSON and return the parsed JSON response (stdlib)."""
+def _validate_judge_base_url(base, provider):
+    """Return a safe normalized authenticated judge endpoint base.
+
+    Remote credentials require HTTPS. Plain HTTP is accepted only for explicit
+    loopback development servers. Diagnostics name the provider, never the
+    rejected URL (which may contain userinfo).
+    """
+    try:
+        parts = urlsplit(str(base))
+        host = parts.hostname
+    except (TypeError, ValueError):
+        raise ValueError(f"{provider} judge base URL is invalid") from None
+    is_loopback = host == "localhost"
+    if host is not None and not is_loopback:
+        try:
+            is_loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_loopback = False
+    if (
+        not host
+        or parts.scheme not in ("http", "https")
+        or parts.username is not None
+        or parts.password is not None
+        or parts.query
+        or parts.fragment
+        or parts.scheme == "http"
+        and not is_loopback
+    ):
+        raise ValueError(
+            f"{provider} judge base URL must use HTTPS "
+            "(HTTP is allowed only for loopback development)"
+        )
+    # Preserve an explicit port and IPv6 brackets through urlunsplit.
+    return urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
+
+
+def _http_post_json(url, headers, payload, timeout, opener=None):
+    """POST JSON without following redirects and return the decoded response."""
     import urllib.request
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, response_headers, newurl):
+            fp.close()
+            raise JudgeRedirectError("judge endpoint redirects are not allowed")
 
     body = json.dumps(payload).encode("utf-8")
     merged = {"Content-Type": "application/json"}
     merged.update(headers or {})
     req = urllib.request.Request(url, data=body, headers=merged, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    client = opener or urllib.request.build_opener(NoRedirect())
+    with client.open(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -1526,7 +1573,10 @@ def llm_judge(answer, rubric, provider="auto", timeout=60, model=None):
             key = os.environ.get("OPENAI_API_KEY")
             if not key:
                 return None
-            base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+            base = _validate_judge_base_url(
+                os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                "openai",
+            )
             used_model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
             data = _http_post_json(
                 base + "/chat/completions",
@@ -1552,7 +1602,10 @@ def llm_judge(answer, rubric, provider="auto", timeout=60, model=None):
             key = os.environ.get("ANTHROPIC_API_KEY")
             if not key:
                 return None
-            base = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+            base = _validate_judge_base_url(
+                os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com"),
+                "claude",
+            )
             used_model = model or os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
             data = _http_post_json(
                 base + "/v1/messages",

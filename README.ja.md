@@ -187,7 +187,7 @@ Non-Claude adapter は意図的に薄い設計です。広範な rule distributi
 - Secret finding は type/path のみを示し値を再掲しません。危険な hook snippet は JSON、Markdown、SARIF、PR feedback で redacted になります。
 - Installer mutation は lock、journal、ownership、recovery を使用します。
 - MCP tools は read-only。Finding は transport failure ではありません。
-- External judge と real LLM grading は opt-in。Malformed LLM output は deterministic judge に fallback します。
+- External judge と real LLM grading は opt-in。Remote endpoint は HTTPS 必須、loopback HTTP は明示的に許可し、redirect は拒否され、失敗時は deterministic judge に fallback します。
 - Telemetry はありません。任意の npm update check は `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1` で無効化できます。
 
 ## エビデンスとベンチマーク
