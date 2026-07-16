@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across thirteen deep `improve` audit batches:
+Generated and reconciled across fourteen deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -15,6 +15,7 @@ Generated and reconciled across thirteen deep `improve` audit batches:
 - 2026-07-16 at commit `777f962` (plans 033–035).
 - 2026-07-16 at commit `43366d9` (plan 036).
 - 2026-07-16 at commit `660977e` (plan 037).
+- 2026-07-16 at commit `a2a7227` (plan 038).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -226,6 +227,18 @@ verification gate, and update its status here.
    with expected next-manifest digest recovery, not a writeability preflight or
    memory-only catch block.
 
+### 2026-07-16 post-v1.9.0 improve round 3
+
+1. **Eval runner, judge, cost, and protocol truth** — independently audited
+   single/multi-round/matrix execution, shell-template boundaries, process-group
+   timeout, task command checks, external/LLM/builtin judges, health, usage,
+   output persistence, and MCP exposure. Shell templates remain an explicit
+   operator interface and task substitutions are quoted; MCP does not expose
+   paid execution. The reproduced defect is operational false success: a
+   runner that prints a matching answer then exits 9 and an external judge that
+   prints a passing verdict then exits 7 both produce passing records and
+   100/A health. Plan 038 makes exit success authoritative across all modes.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -267,6 +280,7 @@ verification gate, and update its status here.
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
 | 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
 | 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | DONE |
+| 038 | Prevent failed runners and judges from producing passing eval records | P0 | M | 030, 033 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -464,6 +478,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   manifest schema 2 and adds durable fsync journal recovery, idempotent
   rollback, process serialization/dead-lock claims, managed-path allow-list,
   backup/mode integrity, and a separate non-authoritative update-nudge cache.
+- Plan 038 depends on task/result validation from Plans 030/033 but addresses a
+  different producer boundary: process exit status must dominate stdout content.
+  Preserve diagnostic records and matrix continuation; do not change overall
+  eval exit semantics or remove explicit shell-template support.
 
 ## Post-v1.8.1 completion evidence
 
@@ -772,3 +790,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - **Use only a preflight manifest writeability check** — rejected. Permissions,
   disk state, and process failure can change after preflight; it does not close
   the reproduced final-replacement or interruption windows.
+- **Treat operator runner/judge shell templates as task-data command injection**
+  — rejected. These commands are explicitly supplied by the operator; prompt,
+  answer, rubric, and temp-input substitutions are shell-quoted. Plan 038 keeps
+  this interface and fixes exit-status truth.
+- **Add automatic all-scope/task/round/cost caps in round 3** — deferred again.
+  Task preflight prevents malformed paid execution and explicit target
+  generation controls scope, but no measured default budget supports a
+  non-breaking cap. The selected false-success bug directly invalidates health.
+- **Expose paid eval execution over MCP** — rejected for safety. MCP remains
+  read-only and offers task generation only; no runner, judge, API key, or
+  output-write surface should be added.
