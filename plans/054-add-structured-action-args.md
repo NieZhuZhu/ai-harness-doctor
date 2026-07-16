@@ -29,9 +29,8 @@
 - **Depends on**: Plans 022, 034, 046, and 048 (DONE)
 - **Category**: direction / GitHub Action DX and safety
 - **Planned at**: commit `eac8426`, 2026-07-17
-- **Implementation**: IN PROGRESS — PR #239 (plan) / PR #240 (impl);
-  implementation branch `feat/054-structured-action-args`, full local gates
-  and actionlint green, awaiting required CI and merge.
+- **Implementation**: DONE — PR #239 (plan) / PR #240 (impl),
+  squash-merged to `main` as `7c03b39`; all nine required contexts green.
 
 ## Why this matters
 
@@ -433,7 +432,7 @@ squash merge.
 
 ## Done criteria
 
-- [ ] `args-json` preserves a baseline/rules path containing spaces as one argv
+- [x] `args-json` preserves a baseline/rules path containing spaces as one argv
       item through a real `uses: ./` invocation.
 - [x] Legacy `args` remains byte-compatible and documented as whitespace-only.
 - [x] Both inputs and every malformed/oversized structured input fail before
@@ -444,7 +443,7 @@ squash merge.
 - [x] Helper is shipped and release pre/post Action proof remains current.
 - [x] Seven READMEs, `SKILL.md`, maintenance/release docs are synchronized.
 - [x] `actionlint` and local gates pass.
-- [ ] All nine PR checks pass; implementation is
+- [x] All nine PR checks pass; implementation is
       squash-merged.
 
 ## STOP conditions
