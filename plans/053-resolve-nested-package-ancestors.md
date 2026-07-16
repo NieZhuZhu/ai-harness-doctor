@@ -28,9 +28,9 @@
 - **Depends on**: Plans 018, 021, 045, and 052 (DONE)
 - **Category**: correctness / monorepo scope truth
 - **Planned at**: commit `ffcfe32`, 2026-07-17
-- **Implementation**: IN PROGRESS — PR #236 (plan); implementation branch
-  `fix/053-resolve-nested-package-ancestors`, full local gates and pinned Dify
-  validation green, awaiting implementation PR and required CI.
+- **Implementation**: IN PROGRESS — PR #236 (plan) / PR #237 (impl);
+  implementation branch `fix/053-resolve-nested-package-ancestors`, full local
+  gates and pinned Dify validation green, awaiting required CI and merge.
 
 ## Why this matters
 
