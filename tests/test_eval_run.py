@@ -1,11 +1,15 @@
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from argparse import Namespace
+from contextlib import redirect_stderr
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from shlex import quote as shlex_quote
 
@@ -3412,6 +3416,144 @@ class LlmJudgeTests(unittest.TestCase):
         finally:
             eval_run._http_post_json = original
         self.assertEqual(captured["payload"].get("max_tokens"), 512)
+
+    def test_judge_base_url_validation(self):
+        self.assertEqual(
+            eval_run._validate_judge_base_url(
+                "https://compatible.example/v1/",
+                "openai",
+            ),
+            "https://compatible.example/v1",
+        )
+        for base in (
+            "http://localhost:11434/v1",
+            "http://127.0.0.2:8080/v1",
+            "http://[::1]:8080/v1",
+        ):
+            with self.subTest(base=base):
+                self.assertEqual(
+                    eval_run._validate_judge_base_url(base, "openai"),
+                    base,
+                )
+        for base in (
+            "http://remote.example/v1",
+            "ftp://remote.example/v1",
+            "https://user:password@remote.example/v1",
+            "https://remote.example/v1?token=x",
+            "https://remote.example/v1#fragment",
+            "/relative",
+        ):
+            with self.subTest(base=base):
+                with self.assertRaises(ValueError):
+                    eval_run._validate_judge_base_url(base, "openai")
+
+    def test_remote_http_is_rejected_before_key_is_sent_or_logged(self):
+        calls = []
+
+        def fake_post(*args, **kwargs):
+            calls.append((args, kwargs))
+            raise AssertionError("HTTP helper must not run")
+
+        original = eval_run._http_post_json
+        eval_run._http_post_json = fake_post
+        stderr = io.StringIO()
+        try:
+            with (
+                _EnvGuard(
+                    OPENAI_API_KEY="generated-key-sentinel",
+                    OPENAI_BASE_URL="http://remote.example/v1",
+                ),
+                redirect_stderr(stderr),
+            ):
+                verdict = eval_run.llm_judge("answer", "rubric", "openai")
+        finally:
+            eval_run._http_post_json = original
+        self.assertIsNone(verdict)
+        self.assertEqual(calls, [])
+        self.assertNotIn("generated-key-sentinel", stderr.getvalue())
+        self.assertNotIn("remote.example", stderr.getvalue())
+
+    def test_authenticated_post_refuses_redirect_without_forwarding_headers(self):
+        seen = {}
+
+        class Sink(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen["authorization"] = self.headers.get("Authorization")
+                seen["x-api-key"] = self.headers.get("x-api-key")
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        sink = ThreadingHTTPServer(("127.0.0.1", 0), Sink)
+
+        class Redirect(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(302)
+                self.send_header(
+                    "Location",
+                    f"http://127.0.0.1:{sink.server_port}/capture",
+                )
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        redirect = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+        threads = [
+            threading.Thread(target=server.serve_forever, daemon=True)
+            for server in (sink, redirect)
+        ]
+        for thread in threads:
+            thread.start()
+        try:
+            with self.assertRaises(eval_run.JudgeRedirectError):
+                eval_run._http_post_json(
+                    f"http://127.0.0.1:{redirect.server_port}/judge",
+                    {
+                        "Authorization": "Bearer generated-sentinel",
+                        "x-api-key": "generated-sentinel-2",
+                    },
+                    {"x": 1},
+                    5,
+                )
+            self.assertEqual(seen, {})
+        finally:
+            redirect.shutdown()
+            sink.shutdown()
+            redirect.server_close()
+            sink.server_close()
+
+    def test_direct_loopback_http_post_still_works(self):
+        class Direct(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Direct)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            result = eval_run._http_post_json(
+                f"http://127.0.0.1:{server.server_port}/judge",
+                {"Authorization": "Bearer generated-sentinel"},
+                {"x": 1},
+                5,
+            )
+            self.assertEqual(result, {"ok": True})
+        finally:
+            server.shutdown()
+            server.server_close()
 
     def test_claude_success_parsed(self):
         def fake_post(url, headers, payload, timeout):
