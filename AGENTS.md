@@ -66,7 +66,7 @@ node bin/cli.js help
 # Safety
 
 - The installer must never write into the real `~/.claude`, `~/.codex`, or other user config directories; always target an isolated `HOME` during tests.
-- Installer state is authorization evidence: parse manifests fail-closed, reject symlinked state, replace atomically, preserve user edits/collisions, and test only with isolated HOME.
+- Installer state is authorization evidence: serialize commands with an owned lock; journal each contained mutation before changing it; atomically replace the exact next manifest; recover by digest; fail closed on ambiguous/external edits; preserve user content; test only with isolated HOME.
 - Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
 - Repository-derived reads/probes/mutations use `scripts/facts.py` or the matching `bin/cli.js` guard helper. External symlinks neither affect output nor receive writes; mutations refuse symlinked files/parents. Only documented explicit inputs/outputs may be external.
 - Never commit secrets, tokens, or credentials.

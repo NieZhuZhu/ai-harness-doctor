@@ -266,7 +266,7 @@ verification gate, and update its status here.
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | DONE |
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
 | 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
-| 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | TODO |
+| 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | IN PROGRESS |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -453,6 +453,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   from Plans 008/011. Keep manifest schema 2 and use a sidecar journal. Snapshot
   before every mutation; persist the exact next-manifest digest before atomic
   replacement so startup can distinguish rollback from committed cleanup.
+- Plan 037 implementation is in progress on
+  `fix/037-transactional-installer`. The local gate is 689 Python + 26 Node
+  tests, including 56 installer lifecycle cases for caught failure,
+  interruption recovery, concurrency locks, journal/backup tampering,
+  containment, mode preservation, and update-nudge ledger isolation.
 
 ## Post-v1.8.1 completion evidence
 

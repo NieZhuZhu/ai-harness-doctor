@@ -25,8 +25,13 @@ const COMMAND_NAMES = [
 ];
 const MANIFEST_DIR = homePath('.ai-harness-doctor');
 const MANIFEST_PATH = path.join(MANIFEST_DIR, 'manifest.json');
+const TRANSACTIONS_DIR = path.join(MANIFEST_DIR, 'transactions');
+const INSTALLER_LOCK_DIR = path.join(MANIFEST_DIR, 'installer.lock');
+const UPDATE_CHECK_PATH = path.join(MANIFEST_DIR, 'update-check.json');
 const UPDATE_CHECK_URL = 'https://registry.npmjs.org/ai-harness-doctor/latest';
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let ACTIVE_INSTALLER_TRANSACTION = null;
+let ACTIVE_INSTALLER_LOCK = null;
 
 function usage() {
   console.log(`AI Harness Doctor
@@ -95,6 +100,12 @@ function parseInstallArgs(argv) {
 }
 
 function fail(message, code = 1) {
+  if (ACTIVE_INSTALLER_TRANSACTION) {
+    const error = new Error(message);
+    error.exitCode = code;
+    error.isCliFailure = true;
+    throw error;
+  }
   console.error(`ai-harness-doctor: ${message}`);
   process.exit(code);
 }
@@ -114,10 +125,12 @@ function targetPath(project, ...parts) {
 }
 
 function ensureDir(dir) {
+  if (ACTIVE_INSTALLER_TRANSACTION) return transactionalEnsureDir(dir);
   fs.mkdirSync(dir, { recursive: true });
 }
 
 function removePath(target) {
+  if (ACTIVE_INSTALLER_TRANSACTION) return transactionalRemovePath(target);
   fs.rmSync(target, { recursive: true, force: true });
 }
 
@@ -134,6 +147,1004 @@ function fileDigest(file) {
     if (error.code === 'ENOENT') return null;
     throw error;
   }
+}
+
+function sameFingerprint(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function pathFingerprint(target) {
+  let stat;
+  try {
+    stat = fs.lstatSync(target);
+  } catch (error) {
+    if (error.code === 'ENOENT') return { kind: 'absent' };
+    throw error;
+  }
+  if (stat.isSymbolicLink()) {
+    const raw = fs.readlinkSync(target);
+    return {
+      kind: 'link',
+      target: path.resolve(path.dirname(target), raw),
+    };
+  }
+  if (stat.isFile()) {
+    return {
+      kind: 'file',
+      digest: fileDigest(target),
+      mode: stat.mode & 0o777,
+    };
+  }
+  if (stat.isDirectory()) {
+    const entries = [];
+    for (const entry of fs.readdirSync(target, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      entries.push({
+        name: entry.name,
+        value: pathFingerprint(path.join(target, entry.name)),
+      });
+    }
+    return {
+      kind: 'directory',
+      mode: stat.mode & 0o777,
+      entries,
+    };
+  }
+  return { kind: 'other' };
+}
+
+function rawEnsureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function rawRemovePath(target) {
+  fs.rmSync(target, { recursive: true, force: true });
+}
+
+function fsyncFile(file) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function fsyncDirectory(directory) {
+  let fd;
+  try {
+    fd = fs.openSync(directory, 'r');
+    fs.fsyncSync(fd);
+  } catch (error) {
+    if (process.platform !== 'win32') throw error;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function rawWriteAtomic(file, content, mode = 0o600) {
+  rawEnsureDir(path.dirname(file));
+  const temp = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`
+  );
+  try {
+    fs.writeFileSync(temp, content, { encoding: 'utf8', flag: 'wx', mode });
+    fsyncFile(temp);
+    fs.renameSync(temp, file);
+    fsyncDirectory(path.dirname(file));
+  } catch (error) {
+    try {
+      fs.unlinkSync(temp);
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') throw cleanupError;
+    }
+    throw error;
+  }
+}
+
+function rawCopyTree(src, dest) {
+  const stat = fs.lstatSync(src);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`refusing to snapshot symlink inside managed directory: ${src}`);
+  }
+  if (stat.isFile()) {
+    rawEnsureDir(path.dirname(dest));
+    fs.copyFileSync(src, dest);
+    fs.chmodSync(dest, stat.mode & 0o777);
+    fsyncFile(dest);
+    return;
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`refusing to snapshot unsupported installer path: ${src}`);
+  }
+  fs.mkdirSync(dest, { mode: stat.mode & 0o777 });
+  for (const entry of fs.readdirSync(src).sort()) {
+    rawCopyTree(path.join(src, entry), path.join(dest, entry));
+  }
+  fs.chmodSync(dest, stat.mode & 0o777);
+  fsyncDirectory(dest);
+}
+
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
+
+function readInstallerLock() {
+  const stat = fs.lstatSync(INSTALLER_LOCK_DIR);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`unsafe installer lock path: ${INSTALLER_LOCK_DIR}`);
+  }
+  const ownerPath = path.join(INSTALLER_LOCK_DIR, 'owner.json');
+  const ownerStat = fs.lstatSync(ownerPath);
+  if (!ownerStat.isFile() || ownerStat.isSymbolicLink()) {
+    throw new Error(`unsafe installer lock owner: ${ownerPath}`);
+  }
+  const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  if (
+    !owner ||
+    !Number.isInteger(owner.pid) ||
+    typeof owner.token !== 'string' ||
+    !owner.token
+  ) {
+    throw new Error(`malformed installer lock owner: ${ownerPath}`);
+  }
+  return owner;
+}
+
+function reclaimDeadInstallerLock(observedOwner) {
+  const recoveryPath = path.join(INSTALLER_LOCK_DIR, 'recovery.json');
+  const recovery = {
+    pid: process.pid,
+    token: crypto.randomBytes(16).toString('hex'),
+    observedToken: observedOwner.token,
+  };
+  try {
+    fs.writeFileSync(recoveryPath, `${JSON.stringify(recovery)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+      mode: 0o600,
+    });
+  } catch (error) {
+    if (error.code === 'EEXIST') {
+      throw new Error('another process is recovering the installer lock', { cause: error });
+    }
+    throw error;
+  }
+  const removeOwnClaim = () => {
+    try {
+      const current = JSON.parse(fs.readFileSync(recoveryPath, 'utf8'));
+      if (current.pid === recovery.pid && current.token === recovery.token) {
+        fs.unlinkSync(recoveryPath);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  };
+  let currentOwner;
+  try {
+    currentOwner = readInstallerLock();
+  } catch (error) {
+    removeOwnClaim();
+    throw error;
+  }
+  if (
+    currentOwner.pid !== observedOwner.pid ||
+    currentOwner.token !== observedOwner.token ||
+    processIsAlive(currentOwner.pid)
+  ) {
+    removeOwnClaim();
+    return false;
+  }
+  rawRemovePath(INSTALLER_LOCK_DIR);
+  return true;
+}
+
+function acquireInstallerLock() {
+  ensureManifestPath(false);
+  rawEnsureDir(MANIFEST_DIR);
+  const violation = mutationPathViolation(homePath(), INSTALLER_LOCK_DIR);
+  if (violation) throw new Error(violation);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const token = crypto.randomBytes(16).toString('hex');
+    const candidate = path.join(
+      MANIFEST_DIR,
+      `.installer-lock-${process.pid}-${token}.tmp`
+    );
+    fs.mkdirSync(candidate, { mode: 0o700 });
+    fs.writeFileSync(
+      path.join(candidate, 'owner.json'),
+      `${JSON.stringify({ pid: process.pid, token })}\n`,
+      { flag: 'wx', mode: 0o600 }
+    );
+    fsyncFile(path.join(candidate, 'owner.json'));
+    fsyncDirectory(candidate);
+    try {
+      fs.renameSync(candidate, INSTALLER_LOCK_DIR);
+      fsyncDirectory(MANIFEST_DIR);
+      ACTIVE_INSTALLER_LOCK = { pid: process.pid, token };
+      return ACTIVE_INSTALLER_LOCK;
+    } catch (error) {
+      rawRemovePath(candidate);
+      if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error;
+    }
+    const owner = readInstallerLock();
+    if (processIsAlive(owner.pid)) {
+      throw new Error(`another installer command is active (pid ${owner.pid})`);
+    }
+    if (!reclaimDeadInstallerLock(owner)) {
+      throw new Error('installer lock changed while attempting recovery');
+    }
+  }
+  throw new Error('could not acquire installer lock');
+}
+
+function releaseInstallerLock(lock) {
+  const owner = readInstallerLock();
+  if (owner.pid !== lock.pid || owner.token !== lock.token) {
+    throw new Error('refusing to release installer lock owned by another process');
+  }
+  rawRemovePath(INSTALLER_LOCK_DIR);
+  ACTIVE_INSTALLER_LOCK = null;
+}
+
+process.on('exit', () => {
+  if (!ACTIVE_INSTALLER_LOCK) return;
+  try {
+    const owner = readInstallerLock();
+    if (
+      owner.pid === ACTIVE_INSTALLER_LOCK.pid &&
+      owner.token === ACTIVE_INSTALLER_LOCK.token
+    ) {
+      rawRemovePath(INSTALLER_LOCK_DIR);
+    }
+  } catch (_) {
+    // Best-effort exit cleanup. A later process handles a dead or malformed lock.
+  }
+});
+
+function transactionJournalPath(transaction) {
+  return path.join(transaction.dir, 'journal.json');
+}
+
+function writeTransactionJournal(transaction) {
+  const serializable = {
+    schemaVersion: 1,
+    id: transaction.id,
+    command: transaction.command,
+    roots: transaction.roots,
+    originalManifest: transaction.originalManifest,
+    nextManifestDigest: transaction.nextManifestDigest || null,
+    snapshots: transaction.snapshots,
+  };
+  rawWriteAtomic(
+    transactionJournalPath(transaction),
+    `${JSON.stringify(serializable, null, 2)}\n`
+  );
+}
+
+function addManagedPathAndParents(paths, target, boundary) {
+  const stop = path.resolve(boundary);
+  let current = path.resolve(target);
+  while (current !== stop && pathIsWithin(current, stop)) {
+    paths.add(current);
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+}
+
+function currentPayloadTargets(dest) {
+  return payloadSources().map(([, rel]) => path.join(dest, rel));
+}
+
+function managedTransactionPaths(roots, manifest) {
+  const paths = new Set();
+  const home = homePath();
+  const addPayload = (dest, boundary) => {
+    addManagedPathAndParents(paths, dest, boundary);
+    for (const target of currentPayloadTargets(dest)) {
+      addManagedPathAndParents(paths, target, boundary);
+    }
+  };
+  const addClaude = (root) => {
+    const skill = root === home
+      ? homePath('.claude', 'skills', SKILL_NAME)
+      : path.join(root, '.claude', 'skills', SKILL_NAME);
+    addPayload(skill, root);
+    const commandDir = root === home
+      ? homePath('.claude', 'commands')
+      : path.join(root, '.claude', 'commands');
+    for (const name of COMMAND_NAMES) {
+      addManagedPathAndParents(paths, path.join(commandDir, `${name}.md`), root);
+    }
+  };
+  const addProject = (root) => {
+    const state = root === home ? MANIFEST_DIR : path.join(root, '.ai-harness-doctor');
+    addPayload(path.join(state, 'payload'), root);
+    // Legacy schema-v1 payload locations remain valid cleanup/recovery targets.
+    for (const [src, rel] of payloadSources()) {
+      void src;
+      addManagedPathAndParents(paths, path.join(state, rel), root);
+    }
+    addClaude(root);
+    for (const name of COMMAND_NAMES) {
+      addManagedPathAndParents(
+        paths,
+        path.join(root, '.cursor', 'commands', `${name}.md`),
+        root
+      );
+    }
+  };
+
+  for (const root of roots) addProject(root);
+  for (const name of COMMAND_NAMES) {
+    addManagedPathAndParents(
+      paths,
+      homePath('.codex', 'prompts', `${name}.md`),
+      home
+    );
+  }
+  for (const name of ['doctor', 'scan', 'treat', 'drift', 'eval', 'explain']) {
+    addManagedPathAndParents(
+      paths,
+      homePath('.gemini', 'commands', 'harness', `${name}.toml`),
+      home
+    );
+  }
+  for (const record of (manifest?.installs || []).map(recordWithOutputs)) {
+    for (const output of record.outputs || []) {
+      if (!outputAllowedForRecord(record, output)) continue;
+      const root = mutationRootForRecord(record, output);
+      if (!root) continue;
+      addManagedPathAndParents(paths, output.path, root);
+    }
+  }
+  return paths;
+}
+
+function containedTransactionRoot(transaction, target) {
+  const absolute = path.resolve(target);
+  const candidates = transaction.roots
+    .filter((root) => pathIsWithin(absolute, root))
+    .sort((a, b) => b.length - a.length);
+  if (!candidates.length) {
+    throw new Error(`refusing transactional mutation outside authorized roots: ${absolute}`);
+  }
+  const root = candidates[0];
+  if (transaction.allowedPaths && !transaction.allowedPaths.has(absolute)) {
+    throw new Error(`refusing transaction path outside managed surfaces: ${absolute}`);
+  }
+  const violation = mutationPathViolation(root, path.dirname(absolute));
+  if (violation) throw new Error(violation);
+  return root;
+}
+
+function snapshotBackupName(transaction) {
+  return `backup-${String(transaction.snapshots.length).padStart(6, '0')}`;
+}
+
+function snapshotPath(transaction, target) {
+  const absolute = path.resolve(target);
+  const snapshot = transaction.snapshots.find((item) => item.path === absolute);
+  if (snapshot) return snapshot;
+  const root = containedTransactionRoot(transaction, absolute);
+  const prior = pathFingerprint(absolute);
+  const created = {
+    path: absolute,
+    root,
+    prior,
+    expected: prior,
+    pendingFrom: null,
+  };
+  if (prior.kind !== 'absent') {
+    created.mode = fs.lstatSync(absolute).mode & 0o777;
+    if (prior.kind === 'link') {
+      created.linkTarget = fs.readlinkSync(absolute);
+    } else {
+      created.backup = snapshotBackupName(transaction);
+      rawCopyTree(absolute, path.join(transaction.dir, created.backup));
+    }
+  }
+  transaction.snapshots.push(created);
+  writeTransactionJournal(transaction);
+  return created;
+}
+
+function prepareTransactionMutation(target, expected) {
+  const transaction = ACTIVE_INSTALLER_TRANSACTION;
+  if (!transaction) return null;
+  const absolute = path.resolve(target);
+  const snapshot = snapshotPath(transaction, absolute);
+  snapshot.pendingFrom = pathFingerprint(snapshot.path);
+  snapshot.pendingTarget = absolute;
+  if (snapshot.path === absolute) snapshot.expected = expected;
+  writeTransactionJournal(transaction);
+  return snapshot;
+}
+
+function completeTransactionMutation(snapshot) {
+  if (!snapshot) return;
+  const actual = pathFingerprint(snapshot.path);
+  if (snapshot.pendingTarget === snapshot.path && !sameFingerprint(actual, snapshot.expected)) {
+    throw new Error(`installer mutation did not reach its journaled state: ${snapshot.path}`);
+  }
+  snapshot.expected = actual;
+  delete snapshot.pendingTarget;
+  snapshot.pendingFrom = null;
+  writeTransactionJournal(ACTIVE_INSTALLER_TRANSACTION);
+  ACTIVE_INSTALLER_TRANSACTION.mutationCount += 1;
+  if (
+    process.env.AI_HARNESS_DOCTOR_TEST_TRANSACTION_CRASH === 'after-mutation' &&
+    ACTIVE_INSTALLER_TRANSACTION.mutationCount === 1
+  ) {
+    process.exit(86);
+  }
+  if (
+    process.env.AI_HARNESS_DOCTOR_TEST_TRANSACTION_PAUSE === 'after-mutation' &&
+    ACTIVE_INSTALLER_TRANSACTION.mutationCount === 1
+  ) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30000);
+  }
+}
+
+function transactionalEnsureDir(dir) {
+  const absolute = path.resolve(dir);
+  const missing = [];
+  let current = absolute;
+  while (true) {
+    try {
+      const stat = fs.lstatSync(current);
+      if (!stat.isDirectory()) throw new Error(`expected directory: ${current}`);
+      break;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      missing.push(current);
+      const parent = path.dirname(current);
+      if (parent === current) {
+        throw new Error(`cannot create installer directory: ${absolute}`, { cause: error });
+      }
+      current = parent;
+    }
+  }
+  for (const target of missing.reverse()) {
+    const snapshot = prepareTransactionMutation(
+      target,
+      {
+        kind: 'directory',
+        mode: 0o777 & ~process.umask(),
+        entries: [],
+      }
+    );
+    fs.mkdirSync(target);
+    completeTransactionMutation(snapshot);
+  }
+}
+
+function transactionalWriteFile(file, content, options) {
+  transactionalEnsureDir(path.dirname(file));
+  const before = pathFingerprint(file);
+  const requestedMode = typeof options === 'object' && options?.mode !== undefined
+    ? options.mode
+    : 0o666;
+  const expected = {
+    kind: 'file',
+    digest: contentDigest(Buffer.isBuffer(content) ? content : Buffer.from(content, options?.encoding || 'utf8')),
+    mode: before.kind === 'file' ? before.mode : requestedMode & ~process.umask(),
+  };
+  const snapshot = prepareTransactionMutation(file, expected);
+  fs.writeFileSync(file, content, options);
+  completeTransactionMutation(snapshot);
+}
+
+function transactionalUnlink(target) {
+  const snapshot = prepareTransactionMutation(target, { kind: 'absent' });
+  fs.unlinkSync(target);
+  completeTransactionMutation(snapshot);
+}
+
+function transactionalRemovePath(target) {
+  const current = pathFingerprint(target);
+  if (current.kind === 'absent') return;
+  const snapshot = prepareTransactionMutation(target, { kind: 'absent' });
+  fs.rmSync(target, { recursive: true, force: true });
+  completeTransactionMutation(snapshot);
+}
+
+function transactionalRmdir(target) {
+  if (fs.readdirSync(target).length) {
+    const error = new Error(`directory not empty: ${target}`);
+    error.code = 'ENOTEMPTY';
+    throw error;
+  }
+  const snapshot = prepareTransactionMutation(target, { kind: 'absent' });
+  try {
+    fs.rmdirSync(target);
+  } catch (error) {
+    snapshot.expected = snapshot.pendingFrom;
+    snapshot.pendingFrom = null;
+    delete snapshot.pendingTarget;
+    writeTransactionJournal(ACTIVE_INSTALLER_TRANSACTION);
+    throw error;
+  }
+  completeTransactionMutation(snapshot);
+}
+
+function transactionalSymlinkDirectory(src, dest) {
+  transactionalEnsureDir(path.dirname(dest));
+  const snapshot = prepareTransactionMutation(
+    dest,
+    { kind: 'link', target: path.resolve(src) }
+  );
+  fs.symlinkSync(src, dest, process.platform === 'win32' ? 'junction' : 'dir');
+  completeTransactionMutation(snapshot);
+}
+
+function manifestState() {
+  try {
+    const stat = fs.lstatSync(MANIFEST_PATH);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`installer manifest is not an owned regular file: ${MANIFEST_PATH}`);
+    }
+    const content = fs.readFileSync(MANIFEST_PATH);
+    return { kind: 'file', digest: contentDigest(content), content };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { kind: 'absent' };
+    throw error;
+  }
+}
+
+function manifestRootsFromContent(content) {
+  const roots = [];
+  try {
+    const parsed = JSON.parse(content.toString('utf8'));
+    for (const record of Array.isArray(parsed.installs) ? parsed.installs : []) {
+      if (typeof record.project === 'string' && record.project) roots.push(record.project);
+      if (typeof record.targetRoot === 'string' && record.targetRoot) roots.push(record.targetRoot);
+    }
+  } catch (_) {
+    // Strict manifest parsing will report the malformed state after recovery.
+  }
+  return roots;
+}
+
+function authorizedRecoveryRoots(extraRoots = []) {
+  const roots = [homePath(), process.cwd(), ...extraRoots];
+  const current = manifestState();
+  if (current.kind === 'file') roots.push(...manifestRootsFromContent(current.content));
+  return [...new Set(roots.map((root) => {
+    try {
+      return fs.realpathSync(root);
+    } catch (_) {
+      return path.resolve(root);
+    }
+  }))];
+}
+
+function transactionRootAllowed(root, allowedRoots) {
+  const absolute = path.resolve(root);
+  return allowedRoots.some((allowed) => absolute === allowed);
+}
+
+function validFingerprint(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (value.kind === 'absent') return Object.keys(value).length === 1;
+  if (value.kind === 'file') {
+    return (
+      typeof value.digest === 'string' &&
+      /^[0-9a-f]{64}$/.test(value.digest) &&
+      Number.isInteger(value.mode) &&
+      value.mode >= 0 &&
+      value.mode <= 0o777
+    );
+  }
+  if (value.kind === 'link') {
+    return typeof value.target === 'string' && path.isAbsolute(value.target);
+  }
+  if (value.kind === 'directory') {
+    return (
+      Array.isArray(value.entries) &&
+      Number.isInteger(value.mode) &&
+      value.mode >= 0 &&
+      value.mode <= 0o777 &&
+      value.entries.every(
+        (entry) =>
+          entry &&
+          typeof entry.name === 'string' &&
+          entry.name &&
+          entry.name !== '.' &&
+          entry.name !== '..' &&
+          !entry.name.includes('/') &&
+          !entry.name.includes('\\') &&
+          validFingerprint(entry.value)
+      )
+    );
+  }
+  return false;
+}
+
+function safeBackupPath(transactionDir, name) {
+  if (
+    typeof name !== 'string' ||
+    !/^backup-[0-9]{6}$/.test(name)
+  ) {
+    return null;
+  }
+  const backup = path.join(transactionDir, name);
+  return path.dirname(backup) === transactionDir ? backup : null;
+}
+
+function readTransactionDirectory(dir, allowedRoots, manifest) {
+  const id = path.basename(dir);
+  const stat = fs.lstatSync(dir);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`unsafe installer transaction directory: ${dir}`);
+  }
+  const journalPath = path.join(dir, 'journal.json');
+  const journalStat = fs.lstatSync(journalPath);
+  if (!journalStat.isFile() || journalStat.isSymbolicLink()) {
+    throw new Error(`unsafe installer transaction journal: ${journalPath}`);
+  }
+  const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+  if (
+    !journal ||
+    journal.schemaVersion !== 1 ||
+    journal.id !== id ||
+    !Array.isArray(journal.roots) ||
+    !Array.isArray(journal.snapshots) ||
+    !journal.originalManifest
+  ) {
+    throw new Error(`malformed installer transaction journal: ${journalPath}`);
+  }
+  journal.dir = dir;
+  journal.mutationCount = 0;
+  if (!journal.roots.every((root) => typeof root === 'string' && path.isAbsolute(root))) {
+    throw new Error(`installer transaction journal contains a relative root: ${journalPath}`);
+  }
+  journal.roots = journal.roots.map((root) => path.resolve(root));
+  if (!journal.roots.every((root) => transactionRootAllowed(root, allowedRoots))) {
+    throw new Error(`installer transaction journal contains an unauthorized root: ${journalPath}`);
+  }
+  journal.allowedPaths = managedTransactionPaths(journal.roots, manifest);
+  if (
+    journal.nextManifestDigest !== null &&
+    (
+      typeof journal.nextManifestDigest !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(journal.nextManifestDigest)
+    )
+  ) {
+    throw new Error(`installer transaction journal has an invalid next manifest digest: ${journalPath}`);
+  }
+  if (
+    !['absent', 'file'].includes(journal.originalManifest.kind) ||
+    (
+      journal.originalManifest.kind === 'file' &&
+      (
+        typeof journal.originalManifest.digest !== 'string' ||
+        !/^[0-9a-f]{64}$/.test(journal.originalManifest.digest) ||
+        journal.originalManifest.backup !== 'manifest-original.json'
+      )
+    )
+  ) {
+    throw new Error(`installer transaction journal has invalid manifest state: ${journalPath}`);
+  }
+  if (journal.originalManifest.kind === 'file') {
+    const backup = path.join(dir, 'manifest-original.json');
+    const backupStat = fs.lstatSync(backup);
+    if (!backupStat.isFile() || backupStat.isSymbolicLink()) {
+      throw new Error(`installer transaction manifest backup is unsafe: ${journalPath}`);
+    }
+  }
+  const snapshotPaths = new Set();
+  for (const snapshot of journal.snapshots) {
+    if (
+      !snapshot ||
+      typeof snapshot.path !== 'string' ||
+      !path.isAbsolute(snapshot.path) ||
+      !validFingerprint(snapshot.prior) ||
+      !validFingerprint(snapshot.expected) ||
+      (snapshot.pendingFrom !== null && !validFingerprint(snapshot.pendingFrom)) ||
+      (
+        snapshot.pendingTarget !== undefined &&
+        (
+          typeof snapshot.pendingTarget !== 'string' ||
+          !path.isAbsolute(snapshot.pendingTarget)
+        )
+      ) ||
+      !journal.roots.some((root) => pathIsWithin(snapshot.path, root))
+    ) {
+      throw new Error(`installer transaction journal contains an unsafe snapshot: ${journalPath}`);
+    }
+    const absolute = path.resolve(snapshot.path);
+    if (
+      snapshotPaths.has(absolute) ||
+      absolute === path.resolve(MANIFEST_PATH) ||
+      pathIsWithin(absolute, TRANSACTIONS_DIR) ||
+      pathIsWithin(absolute, INSTALLER_LOCK_DIR)
+    ) {
+      throw new Error(`installer transaction journal contains a reserved snapshot: ${journalPath}`);
+    }
+    snapshotPaths.add(absolute);
+    containedTransactionRoot(journal, snapshot.path);
+    if (['file', 'directory'].includes(snapshot.prior.kind)) {
+      const backup = safeBackupPath(dir, snapshot.backup);
+      if (!backup || !fs.existsSync(backup)) {
+        throw new Error(`installer transaction backup is missing or unsafe: ${journalPath}`);
+      }
+      const backupStat = fs.lstatSync(backup);
+      if (
+        backupStat.isSymbolicLink() ||
+        (snapshot.prior.kind === 'file' && !backupStat.isFile()) ||
+        (snapshot.prior.kind === 'directory' && !backupStat.isDirectory())
+      ) {
+        throw new Error(`installer transaction backup has the wrong type: ${journalPath}`);
+      }
+      if (!sameFingerprint(pathFingerprint(backup), snapshot.prior)) {
+        throw new Error(`installer transaction backup digest does not match: ${journalPath}`);
+      }
+    } else if (snapshot.backup !== undefined) {
+      throw new Error(`installer transaction journal has an unexpected backup: ${journalPath}`);
+    }
+    if (
+      snapshot.prior.kind === 'link' &&
+      typeof snapshot.linkTarget !== 'string'
+    ) {
+      throw new Error(`installer transaction journal has an invalid link backup: ${journalPath}`);
+    }
+  }
+  return journal;
+}
+
+function restoreSnapshot(transaction, snapshot) {
+  containedTransactionRoot(transaction, snapshot.path);
+  const current = pathFingerprint(snapshot.path);
+  const allowedCurrent = [snapshot.expected, snapshot.pendingFrom].filter(Boolean);
+  if (!allowedCurrent.some((state) => sameFingerprint(current, state))) {
+    throw new Error(`refusing rollback over externally modified path: ${snapshot.path}`);
+  }
+  snapshot.pendingFrom = current;
+  snapshot.pendingTarget = snapshot.path;
+  snapshot.expected = snapshot.prior;
+  writeTransactionJournal(transaction);
+  rawRemovePath(snapshot.path);
+  if (snapshot.prior.kind !== 'absent') {
+    rawEnsureDir(path.dirname(snapshot.path));
+    if (snapshot.prior.kind === 'link') {
+      fs.symlinkSync(
+        snapshot.linkTarget,
+        snapshot.path,
+        process.platform === 'win32' ? 'junction' : undefined
+      );
+    } else {
+      rawCopyTree(path.join(transaction.dir, snapshot.backup), snapshot.path);
+      if (snapshot.mode !== undefined) fs.chmodSync(snapshot.path, snapshot.mode);
+    }
+  }
+  const restored = pathFingerprint(snapshot.path);
+  if (!sameFingerprint(restored, snapshot.prior)) {
+    throw new Error(`installer rollback did not restore its journaled state: ${snapshot.path}`);
+  }
+  snapshot.pendingFrom = null;
+  delete snapshot.pendingTarget;
+  snapshot.expected = snapshot.prior;
+  writeTransactionJournal(transaction);
+}
+
+function restoreOriginalManifest(transaction) {
+  const original = transaction.originalManifest;
+  if (original.kind === 'absent') {
+    return;
+  }
+  const current = manifestState();
+  if (current.kind !== 'file' || current.digest !== original.digest) {
+    throw new Error('installer manifest changed before rollback completion');
+  }
+}
+
+function cleanupTransaction(transaction) {
+  rawRemovePath(transaction.dir);
+  try {
+    fs.rmdirSync(TRANSACTIONS_DIR);
+  } catch (error) {
+    if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
+  }
+}
+
+function rollbackTransaction(transaction) {
+  const currentManifest = manifestState();
+  const original = transaction.originalManifest;
+  const manifestStillOriginal = (
+    (original.kind === 'absent' && currentManifest.kind === 'absent') ||
+    (
+      original.kind === 'file' &&
+      currentManifest.kind === 'file' &&
+      currentManifest.digest === original.digest
+    )
+  );
+  if (!manifestStillOriginal) {
+    throw new Error('refusing rollback because installer manifest changed unexpectedly');
+  }
+  for (const snapshot of [...transaction.snapshots].reverse()) {
+    restoreSnapshot(transaction, snapshot);
+  }
+  restoreOriginalManifest(transaction);
+  cleanupTransaction(transaction);
+}
+
+function recoverInstallerTransactions(extraRoots = []) {
+  let entries;
+  try {
+    const stat = fs.lstatSync(TRANSACTIONS_DIR);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error(`unsafe installer transactions path: ${TRANSACTIONS_DIR}`);
+    }
+    entries = fs.readdirSync(TRANSACTIONS_DIR, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  const allowedRoots = authorizedRecoveryRoots(extraRoots);
+  const manifestForPaths = readManifest({ bestEffort: true }) || emptyManifest();
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      throw new Error(`unsafe installer transaction entry: ${entry.name}`);
+    }
+    const transaction = readTransactionDirectory(
+      path.join(TRANSACTIONS_DIR, entry.name),
+      allowedRoots,
+      manifestForPaths
+    );
+    const currentManifestState = manifestState();
+    if (
+      transaction.nextManifestDigest &&
+      currentManifestState.kind === 'file' &&
+      currentManifestState.digest === transaction.nextManifestDigest
+    ) {
+      cleanupTransaction(transaction);
+      continue;
+    }
+    rollbackTransaction(transaction);
+  }
+}
+
+function beginInstallerTransaction(command, manifest, extraRoots = []) {
+  ensureManifestPath(false);
+  rawEnsureDir(MANIFEST_DIR);
+  const violation = mutationPathViolation(homePath(), TRANSACTIONS_DIR);
+  if (violation) throw new Error(violation);
+  rawEnsureDir(TRANSACTIONS_DIR);
+  const id = `${Date.now()}-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+  const dir = path.join(TRANSACTIONS_DIR, id);
+  fs.mkdirSync(dir, { mode: 0o700 });
+  const original = manifestState();
+  const roots = [homePath(), ...extraRoots, ...manifestRootsFromContent(Buffer.from(JSON.stringify(manifest)))]
+    .map((root) => {
+      try {
+        return fs.realpathSync(root);
+      } catch (_) {
+        return path.resolve(root);
+      }
+    });
+  const transaction = {
+    id,
+    dir,
+    command,
+    roots: [...new Set(roots)],
+    originalManifest: original.kind === 'absent'
+      ? { kind: 'absent' }
+      : { kind: 'file', digest: original.digest, backup: 'manifest-original.json' },
+    nextManifestDigest: null,
+    snapshots: [],
+    mutationCount: 0,
+  };
+  transaction.allowedPaths = managedTransactionPaths(transaction.roots, manifest);
+  if (original.kind === 'file') {
+    fs.writeFileSync(path.join(dir, 'manifest-original.json'), original.content, {
+      flag: 'wx',
+      mode: 0o600,
+    });
+    fsyncFile(path.join(dir, 'manifest-original.json'));
+  }
+  fsyncDirectory(dir);
+  writeTransactionJournal(transaction);
+  ACTIVE_INSTALLER_TRANSACTION = transaction;
+  return transaction;
+}
+
+function serializeManifest(manifest) {
+  manifest.schemaVersion = 2;
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+function commitInstallerTransaction(transaction, manifest) {
+  const content = serializeManifest(manifest);
+  transaction.nextManifestDigest = contentDigest(Buffer.from(content, 'utf8'));
+  writeTransactionJournal(transaction);
+  if (process.env.AI_HARNESS_DOCTOR_TEST_TRANSACTION_CRASH === 'before-manifest') {
+    process.exit(86);
+  }
+  writeManifest(manifest, content);
+  if (process.env.AI_HARNESS_DOCTOR_TEST_TRANSACTION_CRASH === 'after-manifest') {
+    process.exit(86);
+  }
+  cleanupTransaction(transaction);
+  ACTIVE_INSTALLER_TRANSACTION = null;
+}
+
+function abortInstallerTransaction(transaction, error) {
+  ACTIVE_INSTALLER_TRANSACTION = null;
+  try {
+    rollbackTransaction(transaction);
+  } catch (rollbackError) {
+    const combined = new Error(
+      `${error.message}. Rollback failed: ${rollbackError.message}. ` +
+      `Recovery evidence remains at ${transaction.dir}.`
+    );
+    combined.exitCode = error.exitCode || 1;
+    throw combined;
+  }
+  const rolledBack = new Error(`${error.message}. Installer changes were rolled back.`);
+  rolledBack.exitCode = error.exitCode || 1;
+  throw rolledBack;
+}
+
+function withInstallerTransaction(command, extraRoots, operation, options = {}) {
+  let lock;
+  try {
+    lock = acquireInstallerLock();
+    recoverInstallerTransactions(extraRoots);
+  } catch (error) {
+    if (lock) {
+      try {
+        releaseInstallerLock(lock);
+      } catch (_) {
+        // The recovery error remains primary.
+      }
+    }
+    fail(`Cannot start installer transaction: ${error.message}`);
+  }
+  let manifest;
+  try {
+    manifest = readManifest();
+  } catch (error) {
+    releaseInstallerLock(lock);
+    throw error;
+  }
+  if (options.skipWhen && options.skipWhen(manifest)) {
+    releaseInstallerLock(lock);
+    return options.onSkip ? options.onSkip(manifest) : undefined;
+  }
+  let transaction;
+  try {
+    transaction = beginInstallerTransaction(command, manifest, extraRoots);
+    const result = operation(manifest);
+    manifest.version = PACKAGE_VERSION;
+    commitInstallerTransaction(transaction, manifest);
+    releaseInstallerLock(lock);
+    return result;
+  } catch (error) {
+    let finalError = error;
+    if (transaction) {
+      try {
+        abortInstallerTransaction(transaction, error);
+      } catch (rollbackResult) {
+        finalError = rollbackResult;
+      }
+    }
+    try {
+      releaseInstallerLock(lock);
+    } catch (lockError) {
+      finalError = new Error(`${finalError.message}. Lock cleanup failed: ${lockError.message}`);
+      finalError.exitCode = error.exitCode || 1;
+    }
+    fail(finalError.message, finalError.exitCode || 1);
+  }
+  return null;
 }
 
 function outputMap(outputs) {
@@ -168,7 +1179,10 @@ function writeOwnedFile(src, dest, previous, playbook, mutationRoot) {
     return { path: dest, status: prior ? 'modified-preserved' : 'manual-merge', managed: prior || null };
   }
   ensureDir(path.dirname(dest));
-  if (currentDigest !== desiredDigest) fs.writeFileSync(dest, content);
+  if (currentDigest !== desiredDigest) {
+    if (ACTIVE_INSTALLER_TRANSACTION) transactionalWriteFile(dest, content);
+    else fs.writeFileSync(dest, content);
+  }
   return {
     path: dest,
     status: currentDigest === desiredDigest ? 'unchanged' : (currentDigest === null ? 'created' : 'updated'),
@@ -198,7 +1212,8 @@ function removeEmptyParents(start, stop) {
   while (current.startsWith(`${boundary}${path.sep}`) || current === boundary) {
     if (current === boundary) break;
     try {
-      fs.rmdirSync(current);
+      if (ACTIVE_INSTALLER_TRANSACTION) transactionalRmdir(current);
+      else fs.rmdirSync(current);
     } catch (_) {
       break;
     }
@@ -221,7 +1236,8 @@ function syncPayload(dest, previousOutputs, mutationRoot) {
       if (!prior || prior.kind !== 'link' || prior.target !== currentTarget) {
         fail(`Refusing to replace unowned payload link: ${dest}`);
       }
-      fs.unlinkSync(dest);
+      if (ACTIVE_INSTALLER_TRANSACTION) transactionalUnlink(dest);
+      else fs.unlinkSync(dest);
       rows.push({ path: dest, status: 'link-retired' });
     } else if (!stat.isDirectory()) {
       fail(`Refusing to replace non-directory payload path: ${dest}`);
@@ -240,7 +1256,8 @@ function syncPayload(dest, previousOutputs, mutationRoot) {
   for (const prior of previous.values()) {
     if (prior.kind !== 'file' || desired.has(prior.path) || !prior.path.startsWith(`${dest}${path.sep}`)) continue;
     if (fileDigest(prior.path) === prior.digest) {
-      fs.unlinkSync(prior.path);
+      if (ACTIVE_INSTALLER_TRANSACTION) transactionalUnlink(prior.path);
+      else fs.unlinkSync(prior.path);
       removeEmptyParents(prior.path, dest);
       rows.push({ path: prior.path, status: 'removed-stale' });
     } else {
@@ -335,22 +1352,27 @@ function readManifest(options = {}) {
   return parsed;
 }
 
-function writeManifest(manifest) {
+function writeManifest(manifest, serializedContent) {
   ensureManifestPath(false);
   ensureDir(MANIFEST_DIR);
   ensureManifestPath(false);
-  manifest.schemaVersion = 2;
-  const content = `${JSON.stringify(manifest, null, 2)}\n`;
-  const tempPath = path.join(
-    MANIFEST_DIR,
-    `.manifest-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`
-  );
+  const content = serializedContent === undefined
+    ? serializeManifest(manifest)
+    : serializedContent;
+  const tempPath = ACTIVE_INSTALLER_TRANSACTION
+    ? path.join(ACTIVE_INSTALLER_TRANSACTION.dir, 'manifest-next.tmp')
+    : path.join(
+      MANIFEST_DIR,
+      `.manifest-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`
+    );
   try {
     fs.writeFileSync(tempPath, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    fsyncFile(tempPath);
     if (process.env.AI_HARNESS_DOCTOR_TEST_MANIFEST_WRITE_FAILURE === '1') {
       throw new Error('injected manifest replacement failure');
     }
     fs.renameSync(tempPath, MANIFEST_PATH);
+    fsyncDirectory(MANIFEST_DIR);
   } catch (error) {
     try {
       fs.unlinkSync(tempPath);
@@ -366,25 +1388,6 @@ function writeManifest(manifest) {
   }
 }
 
-function sameInstall(a, b) {
-  return (
-    a.agent === b.agent &&
-    (a.project || null) === (b.project || null) &&
-    (a.agent !== 'cursor' || (a.targetRoot || null) === (b.targetRoot || null))
-  );
-}
-
-function recordInstalls(records, manifest) {
-  manifest = manifest || readManifest();
-  for (const record of records) {
-    const idx = manifest.installs.findIndex((item) => sameInstall(item, record));
-    if (idx >= 0) manifest.installs[idx] = record;
-    else manifest.installs.push(record);
-  }
-  manifest.version = PACKAGE_VERSION;
-  writeManifest(manifest);
-}
-
 function ensureLinkAllowed() {
   const marker = `${path.sep}_npx${path.sep}`;
   const normalized = `${PACKAGE_ROOT}${path.sep}`;
@@ -394,8 +1397,12 @@ function ensureLinkAllowed() {
 }
 
 function symlinkDirectory(src, dest) {
-  ensureDir(path.dirname(dest));
-  fs.symlinkSync(src, dest, process.platform === 'win32' ? 'junction' : 'dir');
+  if (ACTIVE_INSTALLER_TRANSACTION) {
+    transactionalSymlinkDirectory(src, dest);
+  } else {
+    ensureDir(path.dirname(dest));
+    fs.symlinkSync(src, dest, process.platform === 'win32' ? 'junction' : 'dir');
+  }
 }
 
 function compareIdentifiers(a, b) {
@@ -477,12 +1484,32 @@ function maybeCheckForUpdate() {
     // Internal testability hook: bypass only the TTY and 24h throttle gates.
     const force = process.env.AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK === '1';
     if (!force && !process.stderr.isTTY) return;
+    if (fs.existsSync(INSTALLER_LOCK_DIR) || fs.existsSync(TRANSACTIONS_DIR)) return;
     const manifest = readManifest({ bestEffort: true });
     if (!manifest) return;
     const now = Date.now();
-    if (!force && now - manifest.lastUpdateCheck < UPDATE_CHECK_INTERVAL_MS) return;
-    manifest.lastUpdateCheck = now;
-    writeManifest(manifest);
+    let lastUpdateCheck = manifest.lastUpdateCheck;
+    try {
+      const stat = fs.lstatSync(UPDATE_CHECK_PATH);
+      if (!stat.isFile() || stat.isSymbolicLink()) return;
+      const cache = JSON.parse(fs.readFileSync(UPDATE_CHECK_PATH, 'utf8'));
+      if (
+        !cache ||
+        typeof cache !== 'object' ||
+        Array.isArray(cache) ||
+        typeof cache.lastUpdateCheck !== 'number'
+      ) return;
+      lastUpdateCheck = cache.lastUpdateCheck;
+    } catch (error) {
+      if (error.code !== 'ENOENT') return;
+    }
+    if (!force && now - lastUpdateCheck < UPDATE_CHECK_INTERVAL_MS) return;
+    const violation = mutationPathViolation(homePath(), UPDATE_CHECK_PATH);
+    if (violation) return;
+    rawWriteAtomic(
+      UPDATE_CHECK_PATH,
+      `${JSON.stringify({ lastUpdateCheck: now }, null, 2)}\n`
+    );
 
     // Internal testability hook: override the registry base URL used for checks.
     const updateUrl = process.env.AI_HARNESS_DOCTOR_REGISTRY
@@ -804,7 +1831,8 @@ function removeOwnedOutput(record, output) {
       throw error;
     }
     if (readSymlinkTarget(output.path) === output.target) {
-      fs.unlinkSync(output.path);
+      if (ACTIVE_INSTALLER_TRANSACTION) transactionalUnlink(output.path);
+      else fs.unlinkSync(output.path);
       return 'removed';
     }
     return 'modified-preserved';
@@ -817,7 +1845,8 @@ function removeOwnedOutput(record, output) {
     throw error;
   }
   if (output.kind === 'file' && fileDigest(output.path) === output.digest) {
-    fs.unlinkSync(output.path);
+    if (ACTIVE_INSTALLER_TRANSACTION) transactionalUnlink(output.path);
+    else fs.unlinkSync(output.path);
     return 'removed';
   }
   return 'modified-preserved';
@@ -900,7 +1929,10 @@ function syncOwnedLink(dest, target, previousOutputs, mutationRoot) {
       };
     }
   }
-  if (currentTarget) fs.unlinkSync(dest);
+  if (currentTarget) {
+    if (ACTIVE_INSTALLER_TRANSACTION) transactionalUnlink(dest);
+    else fs.unlinkSync(dest);
+  }
   assertSafeMutationPath(root, dest);
   symlinkDirectory(target, dest);
   return { rows: [{ path: dest, status: 'linked' }], outputs: [{ path: dest, kind: 'link', target }] };
@@ -951,11 +1983,14 @@ function install(argv) {
   const { agents } = parsed;
   const { project, link } = parsed;
   if (link) ensureLinkAllowed();
-  const manifest = readManifest();
-  const previousRecords = manifest.installs.map(recordWithOutputs);
   const cursorTargetRoot = agents.includes('cursor')
     ? fs.realpathSync(project || process.cwd())
     : null;
+  return withInstallerTransaction(
+    'install',
+    [project, cursorTargetRoot].filter(Boolean),
+    (manifest) => {
+  const previousRecords = manifest.installs.map(recordWithOutputs);
   const matchesRequest = (record, agent, targetRoot) => {
     if (record.agent !== agent || (record.project || null) !== (project || null)) return false;
     if (agent !== 'cursor') return true;
@@ -1041,18 +2076,22 @@ function install(argv) {
     rows.push({ agent: 'cleanup', ...row });
   }
   manifest.installs = nextRecords;
-  recordInstalls([], manifest);
   printSummary('Install', rows);
   if (link) console.log('\nLinked install: run `npm update -g ai-harness-doctor` to update the payload everywhere.');
+    }
+  );
 }
 
 function uninstall(argv) {
   const { agents, project } = parseInstallArgs(argv);
-  const manifest = readManifest();
-  const previousRecords = manifest.installs.map(recordWithOutputs);
   const cursorTargetRoot = agents.includes('cursor')
     ? fs.realpathSync(project || process.cwd())
     : null;
+  return withInstallerTransaction(
+    'uninstall',
+    [project, cursorTargetRoot].filter(Boolean),
+    (manifest) => {
+  const previousRecords = manifest.installs.map(recordWithOutputs);
   const matchesRequest = (record, agent) => {
     if (record.agent !== agent || (record.project || null) !== (project || null)) return false;
     if (agent !== 'cursor') return true;
@@ -1086,17 +2125,13 @@ function uninstall(argv) {
     }
   }
   manifest.installs = [...remainingRecords, ...preservedRecords];
-  manifest.version = PACKAGE_VERSION;
-  writeManifest(manifest);
   printSummary('Uninstall', rows);
+    }
+  );
 }
 
 function updateInstalled() {
-  const manifest = readManifest();
-  if (!manifest.installs.length) {
-    console.log('No ai-harness-doctor installs found. Run `ai-harness-doctor install` first.');
-    return;
-  }
+  return withInstallerTransaction('update', [], (manifest) => {
   console.log(`Deploying ai-harness-doctor ${PACKAGE_VERSION}`);
   const previousRecords = manifest.installs.map(recordWithOutputs);
   const rows = [];
@@ -1179,9 +2214,13 @@ function updateInstalled() {
   }
   rows.push(...cleanupUnreferencedOutputs(previousRecords, nextRecords).map((row) => ({ agent: 'cleanup', ...row })));
   manifest.installs = nextRecords;
-  manifest.version = PACKAGE_VERSION;
-  writeManifest(manifest);
   printSummary('Update', rows);
+  }, {
+    skipWhen: (manifest) => !manifest.installs.length,
+    onSkip: () => {
+      console.log('No ai-harness-doctor installs found. Run `ai-harness-doctor install` first.');
+    },
+  });
 }
 
 // Single source of truth for the Python-backed subcommands: command name -> the
