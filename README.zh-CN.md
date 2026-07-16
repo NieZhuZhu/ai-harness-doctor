@@ -600,7 +600,7 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --roun
 npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
 ```
 
-**基线、趋势与回归。** 将每次运行的健康分作为只追加的基线历史落库（`--baseline FILE` + `--save-baseline`），记录时间戳、label、分数/等级、通过计数，以及目标仓库的 git commit/branch。`--check-regression` 会把当前分数与最近一次历史快照对比，当下降至少 `--regression-threshold` 分（默认 `5`）时以退出码 `6` 退出；`--trend FILE` 会把历史渲染为带逐快照增量和回归标记的 Markdown 表格。它可与任意运行模式以及 `--score` 组合使用。
+**基线、趋势与回归。** 将每次运行的健康分作为只追加的基线历史落库（`--baseline FILE` + `--save-baseline`），记录时间戳、label、分数/等级、通过计数，以及目标仓库的 git commit/branch。`--check-regression` 会把当前分数与最近一次历史快照对比，当下降至少 `--regression-threshold` 分（默认 `5`）时以退出码 `6` 退出；`--trend FILE` 会把历史渲染为带逐快照增量和回归标记的 Markdown 表格。它可与任意运行模式以及 `--score` 组合使用。该历史存储会像其它已存结果一样被校验：结构性损坏的历史（不是快照 JSON 数组，或某个快照的 `score` 非数值）会在任何读取、比较或追加之前以简洁的 `result error` 退出码 `2` 失败——绝不抛 traceback，也绝不写出被部分追加的文件。缺失或为 `null` 分数的快照仍是有效但不可比较的条目。
 
 ```bash
 npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after -o results.json \

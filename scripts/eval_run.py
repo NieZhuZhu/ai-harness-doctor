@@ -2150,20 +2150,52 @@ def git_meta(workdir):
     return meta
 
 
+def validate_baseline_store(data, location):
+    """Return the validated snapshot list from decoded baseline-history JSON.
+
+    Raises :class:`ResultFileError` on *structural* corruption so history
+    consumers (``--trend``/``--check-regression``/``--save-baseline``) fail
+    closed with a concise ``result error`` instead of an ``AttributeError``
+    traceback. A merely absent/``null`` score stays a valid, non-comparable
+    snapshot (matching how partial and first snapshots already render), so it is
+    NOT an error — only wrong-typed structure is.
+    """
+    if isinstance(data, dict) and isinstance(data.get("baselines"), list):
+        entries = data["baselines"]
+    elif isinstance(data, list):
+        entries = data
+    else:
+        raise ResultFileError(
+            f"{location}: baseline history must be a JSON array of snapshots"
+        )
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ResultFileError(
+                f"{location}: baseline snapshot {index} must be a JSON object"
+            )
+        score = entry.get("score")
+        if score is not None and (isinstance(score, bool) or not isinstance(score, (int, float))):
+            raise ResultFileError(
+                f"{location}: baseline snapshot {index} `score` must be a number or null"
+            )
+    return entries
+
+
 def load_baseline_store(path):
-    """Load a baseline history file into a list; empty list if absent/invalid."""
+    """Load a baseline history file into a validated snapshot list.
+
+    A missing file or an undecodable file suppresses nothing (empty history), so
+    a first ``--save-baseline`` still works. Decodable but structurally invalid
+    content raises :class:`ResultFileError` so history consumers fail closed.
+    """
     p = Path(path)
     if not p.is_file():
         return []
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return []
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and isinstance(data.get("baselines"), list):
-        return data["baselines"]
-    return []
+    return validate_baseline_store(data, str(path))
 
 
 def save_baseline_store(path, store):
@@ -2186,17 +2218,32 @@ def make_baseline_entry(label, health, workdir=None):
     return entry
 
 
+def _snapshot_score(entry):
+    """Return a comparable numeric score for a snapshot, else ``None``.
+
+    Defensive so the derivation helpers never call ``.get`` on a non-dict or do
+    arithmetic on a non-number even if reached directly; ``validate_baseline_store``
+    is the primary gate for CLI paths.
+    """
+    if not isinstance(entry, dict):
+        return None
+    score = entry.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)):
+        return None
+    return score
+
+
 def detect_regression(store, current_score, threshold):
     """Compare ``current_score`` to the most recent prior snapshot in the store.
 
     Returns ``None`` when there is no comparable prior score, otherwise a dict
     describing the delta and whether it is a regression (drop >= threshold).
     """
-    prior = [e for e in store if isinstance(e.get("score"), (int, float))]
+    prior = [e for e in store if _snapshot_score(e) is not None]
     if not prior:
         return None
     prev = prior[-1]
-    prev_score = prev["score"]
+    prev_score = _snapshot_score(prev)
     delta = round(current_score - prev_score, 2)
     return {
         "prev_score": prev_score,
@@ -2229,8 +2276,10 @@ def render_trend(store):
     lines.append("|---:|---|---|---:|---|---:|---|---|")
     prev_score = None
     for i, e in enumerate(store, 1):
-        score = e.get("score")
-        if isinstance(score, (int, float)) and isinstance(prev_score, (int, float)):
+        if not isinstance(e, dict):
+            continue
+        score = _snapshot_score(e)
+        if score is not None and isinstance(prev_score, (int, float)):
             delta = round(score - prev_score, 2)
             delta_str = f"{delta:+g}"
             regressed = "⚠️" if delta < 0 else ""
@@ -2243,9 +2292,10 @@ def render_trend(store):
             f"{score if score is not None else '—'} | {e.get('grade', '—')} | "
             f"{delta_str} | `{commit}` | {regressed} |"
         )
-        if isinstance(score, (int, float)):
+        if score is not None:
             prev_score = score
-    scores = [e.get("score") for e in store if isinstance(e.get("score"), (int, float))]
+    scores = [_snapshot_score(e) for e in store]
+    scores = [s for s in scores if s is not None]
     if scores:
         lines.extend(["", f"Snapshots: {len(store)}; latest score {scores[-1]}; min {min(scores)}, max {max(scores)}."])
     return "\n".join(lines) + "\n"

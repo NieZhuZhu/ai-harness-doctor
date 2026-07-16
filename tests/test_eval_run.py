@@ -3622,5 +3622,114 @@ class BaselineTests(unittest.TestCase):
             self.assertIn("REGRESSION", proc.stdout)
 
 
+class BaselineHistoryValidationTests(unittest.TestCase):
+    def _result(self, td):
+        res = Path(td) / "res.json"
+        res.write_text(
+            json.dumps({"label": "cur", "tasks": [{"id": "x", "passed": True, "timed_out": False}]}),
+            encoding="utf-8",
+        )
+        return res
+
+    def test_malformed_history_trend_fails_closed_without_traceback(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = Path(td) / "history.json"
+            store.write_text('[1, 2, "x"]', encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--trend", str(store)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("result error", proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+
+    def test_malformed_history_check_regression_fails_closed_and_does_not_append(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = Path(td) / "history.json"
+            store.write_text('[{"label": "a", "score": 90}, "corrupt"]', encoding="utf-8")
+            before = store.read_bytes()
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--score",
+                    str(self._result(td)),
+                    "--baseline",
+                    str(store),
+                    "--check-regression",
+                    "--save-baseline",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("result error", proc.stderr)
+            self.assertNotIn("Traceback", proc.stderr)
+            # No snapshot may be appended onto a structurally corrupt history.
+            self.assertEqual(store.read_bytes(), before)
+
+    def test_top_level_scalar_history_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = Path(td) / "history.json"
+            store.write_text("42", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(EVAL), "--trend", str(store)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("result error", proc.stderr)
+
+    def test_valid_and_partial_snapshot_histories_still_work(self):
+        with tempfile.TemporaryDirectory() as td:
+            # A legitimately partial first snapshot (no score) plus a numeric one.
+            store = Path(td) / "history.json"
+            store.write_text(
+                json.dumps([{"label": "seed"}, {"label": "run1", "score": 100, "grade": "A"}]),
+                encoding="utf-8",
+            )
+            trend = subprocess.run(
+                [sys.executable, str(EVAL), "--trend", str(store)],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(trend.returncode, 0, trend.stderr)
+            self.assertIn("Eval baseline trend", trend.stdout)
+
+            # The `{"baselines": [...]}` wrapper shape also remains valid.
+            wrapped = Path(td) / "wrapped.json"
+            wrapped.write_text(
+                json.dumps({"baselines": [{"label": "run1", "score": 100, "grade": "A"}]}),
+                encoding="utf-8",
+            )
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--score",
+                    str(self._result(td)),
+                    "--baseline",
+                    str(wrapped),
+                    "--check-regression",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_detect_regression_and_trend_over_mixed_numeric_and_absent_scores(self):
+        store = [
+            {"label": "seed"},
+            {"label": "a", "score": 90},
+            {"label": "b", "score": "not-a-number"} if False else {"label": "b", "score": 88},
+        ]
+        reg = eval_run.detect_regression(store, 80, 5)
+        self.assertTrue(reg["regressed"])
+        self.assertEqual(reg["prev_score"], 88)
+        rendered = eval_run.render_trend(store)
+        self.assertIn("Eval baseline trend", rendered)
+
+
 if __name__ == "__main__":
     unittest.main()

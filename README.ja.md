@@ -600,7 +600,7 @@ npx ai-harness-doctor eval --tasks tasks.json --workdir . --label nightly --roun
 npx ai-harness-doctor eval --stats results-nightly.json --json                         # re-analyze an existing multi-round file
 ```
 
-**ベースライン、トレンドと回帰。** 各実行の health score を追記専用のベースライン履歴として保存します（`--baseline FILE` + `--save-baseline`）。タイムスタンプ、label、スコア/グレード、pass 数、および対象リポジトリの git commit/branch を記録します。`--check-regression` は現在のスコアを直近の履歴スナップショットと比較し、`--regression-threshold` 分（デフォルト `5`）以上低下したとき exit code `6` で終了します。`--trend FILE` は履歴をスナップショットごとの差分と回帰フラグ付きの Markdown 表として表示します。任意の実行モードおよび `--score` と組み合わせられます。
+**ベースライン、トレンドと回帰。** 各実行の health score を追記専用のベースライン履歴として保存します（`--baseline FILE` + `--save-baseline`）。タイムスタンプ、label、スコア/グレード、pass 数、および対象リポジトリの git commit/branch を記録します。`--check-regression` は現在のスコアを直近の履歴スナップショットと比較し、`--regression-threshold` 分（デフォルト `5`）以上低下したとき exit code `6` で終了します。`--trend FILE` は履歴をスナップショットごとの差分と回帰フラグ付きの Markdown 表として表示します。任意の実行モードおよび `--score` と組み合わせられます。履歴ストアは他の保存済み result と同様に検証されます。構造的に不正な履歴（スナップショットの JSON 配列でない、またはスナップショットの `score` が数値でない）は、read・compare・append の前に簡潔な `result error` と exit code `2` で失敗します——traceback を出さず、部分的に append されたファイルも残しません。score が欠落または `null` のスナップショットは、有効だが比較対象外のエントリとして扱われます。
 
 ```bash
 npx ai-harness-doctor eval --tasks tasks.json --workdir . --label after -o results.json \
