@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-16 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-17 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
   "tasks": [
     {
       "id": "test-suite",
@@ -240,13 +240,41 @@
       "answer": "Product-owned draft markers, unsafe paths, size, and required-section failures block destructive stub consolidation; --force may bypass only dirty-tree risk.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "gitignored-path-truth",
+      "stdout": "Missing paths covered by contained .gitignore rules are deliberate; synthetic Git metadata excludes host state and fails closed.",
+      "answer": "Missing paths covered by contained .gitignore rules are deliberate; synthetic Git metadata excludes host state and fails closed.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "nested-drift-ancestors",
+      "stdout": "Nested D1/D2/D6 use facts.ancestor_dirs nearest-first with no sibling leakage; D7 remains file-relative.",
+      "answer": "Nested D1/D2/D6 use facts.ancestor_dirs nearest-first with no sibling leakage; D7 remains file-relative.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "action-argv-contract",
+      "stdout": "action-run.js owns bounded args-json and legacy argv with shell:false; action-report.js alone owns SARIF outputs.",
+      "answer": "action-run.js owns bounded args-json and legacy argv with shell:false; action-report.js alone owns SARIF outputs.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "deep-improve-loop",
+      "stdout": "Independently audit all nine categories on current main; land plan-only, wait for nine green contexts, implement test-first, run Standards/Spec review plus real evidence, wait for nine green, squash/delete, close out the plan in a green docs PR, and revalidate every candidate each round.",
+      "answer": "Independently audit all nine categories on current main; land plan-only, wait for nine green contexts, implement test-first, run Standards/Spec review plus real evidence, wait for nine green, squash/delete, close out the plan in a green docs PR, and revalidate every candidate each round.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 34,
-    "total": 34,
+    "passed": 38,
+    "total": 38,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -254,12 +282,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "c03a06d81bb27d2e38f9e9c299103039bfe985bba79060391c9f595b89e5c3cf"
+      "sha256": "ef681a4831d784394bd401e32bf68397d09a08761371f4de08a7f3116ad49140"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "fa235d5d37fc978b55ebf5fc35ac30e6b496515ec7f883f4727838a461c81be0"
+        "sha256": "120e648e83c7e61d59ac758b5e8e9a91c785e1d3e90d525a2d7760cf9d18869a"
       }
     ]
   }

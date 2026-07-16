@@ -202,5 +202,29 @@
     "prompt": "What must block destructive stub consolidation, and what may --force bypass? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)draft.*marker.*unsafe.*path.*size.*required.*section.*block.*force.*dirty|force.*dirty.*draft.*marker.*block"}
+  },
+  {
+    "id": "gitignored-path-truth",
+    "prompt": "How must missing paths covered by repository .gitignore rules be classified without trusting host Git state? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)(?=.*gitignore)(?=.*(?:deliberate|intentional|ignored))(?=.*synthetic)(?=.*host)(?=.*fail(?:s|ed)?[ -]?closed)"}
+  },
+  {
+    "id": "nested-drift-ancestors",
+    "prompt": "How do nested D1/D2/D6 checks resolve package facts, and how does D7 differ? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)ancestor.*nearest.*no.*sibling.*D7.*file.?relative|D7.*file.?relative.*ancestor.*sibling"}
+  },
+  {
+    "id": "action-argv-contract",
+    "prompt": "Which helpers own GitHub Action argv execution and reporting, and what are the args-json/legacy/no-shell rules? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)action-run.*args-json.*legacy.*shell.?false.*action-report|action-report.*action-run.*args-json.*no.?shell"}
+  },
+  {
+    "id": "deep-improve-loop",
+    "prompt": "What is the required deep improve round workflow from audit through plan, implementation, CI, review/evidence, and closeout? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)(?=.*audit.*nine.*categor)(?=.*plan.?only)(?=.*nine.*green)(?=.*test.?first)(?=.*Standards/Spec)(?=.*real.*evidence)(?=.*squash)(?=.*close.*plan)(?=.*revalid)"}
   }
 ]

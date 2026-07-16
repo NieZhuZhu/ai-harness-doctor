@@ -16,7 +16,7 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
   - `eval_run.py` — Phase 3 Efficacy: before/after + matrix eval runner and LLM-as-judge grading.
   - `pr_review.py` — Phase 2/3 CI helper: combines active scan+drift JSON (root/package/batch) into one attributed GitHub review; `--dry-run` prints it, `--post` uses the stdlib REST client.
   - `gen_adapters.py` — repo-maintenance tool (not shipped in the npm package): regenerates the per-command `adapters/` from a single source; `--check` gates re-divergence in CI.
-- `bin/cli.js` — npm CLI/installer/forwarder; `bin/mcp-server.js` — MCP stdio server; `bin/runtime.js` — shared Python resolver; `bin/action-report.js` — SARIF→Action outputs/Job Summary.
+- `bin/cli.js` — npm CLI/installer/forwarder; `bin/mcp-server.js` — MCP stdio; `bin/runtime.js` — Python resolver; `bin/action-run.js` / `bin/action-report.js` — Action argv and SARIF reporting.
 - `assets/` — templates: `assets/AGENTS.template.md` and the `assets/guard/` suite; `references/` — progressive-disclosure docs.
 - `commands/`, `adapters/` — Claude/Codex/Cursor/Gemini/universal command pointers. Edit `scripts/gen_adapters.py`, then regenerate; do not hand-edit generated adapter flavors.
 - `tests/` — Python unittest + Node CLI smoke tests; `benchmark/` — self-benchmark and efficacy eval fixtures.
@@ -42,8 +42,9 @@ node bin/cli.js help
 - `--max-bytes` bounds semantic text only; full-file SHA/line/security stays bounded-memory. Mark prefix-only evidence; never call a prefix digest a file SHA or claim unseen tails clean.
 - Instruction scope is lexical: same-scope differences conflict; descendant differences are non-blocking overrides. Structured applicability stays registry-sourced, bounded/fail-closed, and full-byte security scanned; conditional/manual/invalid/ignored stays diagnostic. Never infer prose scopes or grant mutation authority from recursive discovery.
 - Explain reuses scan scope/containment: canonical files form the chain; modeled rules may apply automatically, while unmodeled sources stay diagnostic. Keep CLI/MCP/adapter contracts synchronized.
+- Path truth is repository-owned: contained `.gitignore` rules may explain absence; synthetic Git metadata excludes host state and fails closed. Nested D1/D2/D6 use `facts.ancestor_dirs` nearest-first without sibling leakage; D7 stays file-relative.
 - Baselines are visible debt registers, not ignores: HIGH security is ineligible; identity is line-independent; classify new/known/resolved debt; exit 9 checks repaired entries; prune only subtracts resolved entries. See `references/maintenance-contract.md`.
-- SARIF/Action reporting is single-run and self-describing. Preserve fingerprints/categories, `findings > maintenance > ok`, exact CLI exits, and real `uses: ./` tests. See `references/maintenance-contract.md`.
+- SARIF/Action is single-run and self-describing. Preserve fingerprints/categories, `findings > maintenance > ok`, exact exits, and real `uses: ./` tests. `action-run.js` owns bounded no-shell argv; `action-report.js` owns outputs. See `references/maintenance-contract.md`.
 - PR/batch feedback and GitHub guard lifecycle follow `references/maintenance-contract.md`; never leak host-resolved paths or post baselined debt as active.
 - Eval validates tasks/results before side effects; runner and explicit judge exit 0 are prerequisites for a passing record; failed runner output is never judged. Derive health from records, require cached agreement, then verify evidence freshness before gates. Refresh committed results honestly.
 - Validate the complete eval task pack before any runner, judge, evidence hash, or write. Task-declared evidence joins explicit evidence automatically: files bind exact hashes, directories bind existence/type, all before trusting health.
@@ -77,11 +78,12 @@ node bin/cli.js help
 
 # Operational workflows
 
-Three repeatable loops let another agent reproduce how this repo is maintained; all three land changes through the same gate and release scheme.
+Four repeatable loops reproduce repository maintenance through one gate/release scheme.
 
 - **External validation** — run the dev checkout read-only against varied real OSS repos and log repo/commit, date, scope, evidence boundary, result, clean worktree, and fixing PR in `EXTERNAL_VALIDATION.md`. Non-adoption alone is clean, not a bug.
 - **Incremental quality-check (bugfix) loop** — baseline on latest `main` (green `npm run check` + self-checkup at grade A), then find ONE high-value real issue (a `--fail-on-security` or `drift --strict` false positive, or a cross-engine inconsistency), reproduce it, and fix it with a matching regression test. No finding → no release.
-- **Premium-upgrade (feature) loop** — research the tool's gaps and the ecosystem (AGENTS.md standard, adjacent linters, premium surfaces: SARIF, GitHub Actions, pre-commit, config/ignore files, autofix, baselines), score candidates by impact × feasibility, pick 1–3 stdlib-only items, and ship them as one themed PR with tests + all published-language docs.
+- **Premium-upgrade (feature) loop** — research ecosystem/product gaps, score impact × feasibility, then ship 1–3 stdlib-only items with tests and every public README.
+- **Deep improve loop** — independently audit all nine categories on current `main`, reconcile prior plans, and mechanically reproduce one top item. Land plan-only → nine green contexts → test-first implementation → Standards/Spec + real evidence → nine green → squash/delete → green plan closeout. Revalidate every candidate each round.
 
 **Shared gate & release.** One smallest stdlib-only PR; update every published-language README and `SKILL.md` for public behavior. Require lint, Python 3.9–3.12, Node 16–22, self-drift, and eval evidence green; squash/delete. From current main: feature=minor, fix=patch, breaking=major. Verify npm provenance/Release; stable moves `latest`/`vN` and opens one Marketplace reminder, prerelease uses `next` only.
 
