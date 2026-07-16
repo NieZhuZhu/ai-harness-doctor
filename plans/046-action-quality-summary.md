@@ -21,7 +21,8 @@
 - **Depends on**: Plans 012, 034, 042 (DONE)
 - **Category**: feature (GitHub-native consumer DX)
 - **Planned at**: commit `f434c64`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #218 (plan) / PR #219 (impl), squash-merged to
+  `main` as `836ac78`; all nine required contexts green.
 
 ## Why this matters
 

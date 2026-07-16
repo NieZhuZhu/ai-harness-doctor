@@ -359,6 +359,18 @@ verification gate, and update its status here.
    Action status/count/health outputs, and `$GITHUB_STEP_SUMMARY`, while running
    the doctor once and restoring the exact CLI exit code after reporting.
 
+### 2026-07-16 premium-project loop 3 round 2 (baseline debt lifecycle)
+
+1. **Resolved baseline debt is invisible and cannot be pruned safely** —
+   researched the existing scan/drift debt registers against mature baseline
+   systems that distinguish new, unchanged, and resolved problems. Both engines
+   currently discard baseline payloads into fingerprint sets; once a finding is
+   repaired, its stale baseline entry disappears from all reports and no command
+   can check or remove it. Plan 047 adds explicit `resolved_baseline`, a shared
+   maintenance check exit, and deterministic subtractive pruning for both
+   version-1 schemas. It deliberately does not introduce an opaque ignore
+   language or auto-baseline new debt.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -408,7 +420,8 @@ verification gate, and update its status here.
 | 043 | Fall back to the deterministic judge when an LLM returns unparseable output | P1 | S | — | DONE |
 | 044 | Recover from an incomplete installer transaction directory instead of bricking | P1 | S | 011, 037 | DONE |
 | 045 | Make scoped eval use the shared lockfile registry | P1 | S | 027, 029 | DONE |
-| 046 | Make the GitHub Action emit composable quality outputs and a Job Summary | P1 | M | 012, 034, 042 | TODO |
+| 046 | Make the GitHub Action emit composable quality outputs and a Job Summary | P1 | M | 012, 034, 042 | DONE |
+| 047 | Make repaired baseline debt visible, checkable, and prunable | P1 | L | 007, 021 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
