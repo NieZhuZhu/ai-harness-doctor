@@ -515,7 +515,7 @@ verification gate, and update its status here.
 | 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | DONE |
 | 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | DONE |
 | 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | DONE |
-| 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | IN PROGRESS |
+| 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
