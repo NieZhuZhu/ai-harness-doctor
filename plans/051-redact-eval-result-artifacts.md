@@ -18,9 +18,8 @@
 - **Depends on**: Plans 049 and 050 (DONE)
 - **Category**: security / persisted artifact minimization
 - **Planned at**: commit `2f9784d`, 2026-07-16
-- **Implementation**: IN PROGRESS — PR #230 (plan) / PR #231 (impl);
-  implementation branch `fix/051-redact-eval-artifacts`, full local gates
-  green, awaiting nine required CI contexts and merge.
+- **Implementation**: DONE — PR #230 (plan) / PR #231 (impl),
+  squash-merged to `main` as `69d7aac`; all nine required contexts green.
 
 ## Why this matters
 
@@ -214,7 +213,7 @@ is a backward-compatible security **patch**.
 - [x] Placeholder examples remain unredacted/non-findings.
 - [x] Plan 049 scan report tests remain green.
 - [x] Seven-language docs and full local gates pass.
-- [ ] Nine required CI contexts pass; PR squash-merged.
+- [x] Nine required CI contexts pass; PR squash-merged.
 
 ## STOP conditions
 
