@@ -149,13 +149,28 @@ class SharedConstantConsistencyTests(unittest.TestCase):
         self.assertEqual(registry.STUB_POINTER_MAX_BYTES, 800)
 
     def test_lockfile_managers_single_sourced_and_include_bun(self):
-        # All three modules must expose the same map (TD-01), and it must include
-        # bun so the drift gate is no longer blind to bun repos.
+        # All engines must reuse the same map (TD-01), and it must include bun
+        # so drift/eval are no longer blind to bun repos. Target-aware eval
+        # reads the registry directly rather than maintaining a private list.
         self.assertEqual(semantic.LOCKFILE_MANAGERS, registry.LOCKFILE_MANAGERS)
         self.assertEqual(check_drift.LOCKFILE_MANAGERS, registry.LOCKFILE_MANAGERS)
         self.assertEqual(canonicalize.LOCKFILE_MANAGERS, registry.LOCKFILE_MANAGERS)
+        self.assertFalse(hasattr(eval_run, "PKG_MANAGER_LOCKFILES"))
         for lockfile in ("bun.lockb", "bun.lock"):
             self.assertEqual(registry.LOCKFILE_MANAGERS.get(lockfile), "bun")
+
+    def test_scoped_eval_recognizes_every_registered_lockfile(self):
+        for lockfile, expected in registry.LOCKFILE_MANAGERS.items():
+            with self.subTest(lockfile=lockfile), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                package = root / "packages" / "app"
+                package.mkdir(parents=True)
+                (package / lockfile).write_text("{}\n", encoding="utf-8")
+
+                manager, evidence = eval_run._scoped_package_manager(package, root)
+
+                self.assertEqual(manager, expected)
+                self.assertEqual(evidence, [f"packages/app/{lockfile}"])
 
     def test_phase0_and_phase2_agree_on_competing_node_lockfiles(self):
         # TD-01 single-sourced the lockfile->manager map, but semantic.py's Node

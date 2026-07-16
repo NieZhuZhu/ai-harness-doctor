@@ -3198,6 +3198,57 @@ class GenerateTasksTests(unittest.TestCase):
             self.assertNotIn(prefix + "test:api", ambiguous_ids)
             self.assertIn(prefix + "test-framework", ambiguous_ids)
 
+    def test_target_package_manager_uses_shared_lockfile_vocabulary(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_scoped_repo(td)
+            package = repo / "packages" / "api"
+            target = "packages/api/src/future.py"
+            prefix = "scope:packages%2Fapi:"
+            # Isolate the filename vocabulary under test: the shared fixture
+            # normally provides a valid root pnpm lock + packageManager field,
+            # which target-aware eval should legitimately inherit.
+            (repo / "pnpm-lock.yaml").unlink()
+            root_package = json.loads((repo / "package.json").read_text())
+            root_package.pop("packageManager")
+            (repo / "package.json").write_text(
+                json.dumps(root_package),
+                encoding="utf-8",
+            )
+
+            # pnpm's standard lockfile is .yaml. The old target-only private map
+            # also accepted .yml, so root and scoped eval disagreed on the same
+            # package and target generation manufactured a pnpm fact.
+            (package / "pnpm-lock.yml").write_text(
+                "lockfileVersion: 9\n",
+                encoding="utf-8",
+            )
+            nonstandard = {
+                task["id"]: task
+                for task in eval_run.generate_tasks(repo, target=target)
+            }
+            self.assertNotIn(prefix + "package-manager", nonstandard)
+            self.assertNotIn(prefix + "install", nonstandard)
+
+            (package / "pnpm-lock.yml").unlink()
+            (package / "pnpm-lock.yaml").write_text(
+                "lockfileVersion: 9\n",
+                encoding="utf-8",
+            )
+            standard = {
+                task["id"]: task
+                for task in eval_run.generate_tasks(repo, target=target)
+            }
+            self.assertTrue(
+                eval_run.regex_passes(
+                    standard[prefix + "package-manager"]["check"]["value"],
+                    "pnpm",
+                )
+            )
+            self.assertEqual(
+                standard[prefix + "package-manager"]["evidence"],
+                ["packages/api/pnpm-lock.yaml"],
+            )
+
     def test_root_effective_target_preserves_legacy_generation_exactly(self):
         with tempfile.TemporaryDirectory() as td:
             repo = self._make_repo(td)
