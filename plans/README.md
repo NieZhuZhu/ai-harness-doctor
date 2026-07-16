@@ -348,6 +348,17 @@ verification gate, and update its status here.
    registry, and extends the consistency gate so scope can change fact
    precedence but never the vocabulary of valid facts.
 
+### 2026-07-16 premium-project loop 3 round 1 (Action consumer contract)
+
+1. **Composable GitHub Action quality report** — researched the repository-root
+   composite Action against the current SARIF and GitHub environment-file
+   workflow. The Action exposes only `sarif-file`, writes no Job Summary, and
+   runs under `set -e`; a valid `--fail-on-*` / `drift --strict` SARIF therefore
+   exits before the Action can publish structured context. Plan 046 adds
+   deterministic SARIF producer metadata, a shipped Node 16 stdlib report helper,
+   Action status/count/health outputs, and `$GITHUB_STEP_SUMMARY`, while running
+   the doctor once and restoring the exact CLI exit code after reporting.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -397,6 +408,7 @@ verification gate, and update its status here.
 | 043 | Fall back to the deterministic judge when an LLM returns unparseable output | P1 | S | — | DONE |
 | 044 | Recover from an incomplete installer transaction directory instead of bricking | P1 | S | 011, 037 | DONE |
 | 045 | Make scoped eval use the shared lockfile registry | P1 | S | 027, 029 | DONE |
+| 046 | Make the GitHub Action emit composable quality outputs and a Job Summary | P1 | M | 012, 034, 042 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
