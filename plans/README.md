@@ -344,7 +344,7 @@ verification gate, and update its status here.
 | 039 | Model Claude Code project rules and their path applicability | P1 | L | 020, 023, 035 | DONE |
 | 040 | Prevent provisional AGENTS drafts from authorizing stub destruction | P1 | M | 004, 008, 011, 037 | DONE |
 | 041 | Validate the eval baseline-history store before trend/regression reads | P1 | S | 033 | DONE |
-| 042 | Make SARIF alert identity survive edits and coexist per command | P1 | M | 012, 024 | TODO |
+| 042 | Make SARIF alert identity survive edits and coexist per command | P1 | M | 012, 024 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

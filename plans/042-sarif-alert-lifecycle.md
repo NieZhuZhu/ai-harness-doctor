@@ -28,7 +28,11 @@
 - **Depends on**: Plan 012 (DONE), Plan 024 (DONE)
 - **Category**: feature (premium GitHub-native output)
 - **Planned at**: commit `e25d421`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #203 (plan) / PR #207 (impl), squash-merged to
+  `main` as `8f0164a`; all nine required contexts green (a first self-test run
+  failed only because an added node-comment apostrophe closed the single-quoted
+  shell string, fixed in the same PR; a 3.9 `test_cli` concurrent-installer
+  flake cleared on rerun).
 
 ## Why this matters
 
