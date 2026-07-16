@@ -467,7 +467,7 @@ verification gate, and update its status here.
 | 048 | Report baseline maintenance failures truthfully through SARIF and the Action | P1 | M | 046, 047 | DONE |
 | 049 | Redact hook-command secrets from every report surface | P0 | M | 024, 042 | DONE |
 | 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | DONE |
-| 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | IN PROGRESS |
+| 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
