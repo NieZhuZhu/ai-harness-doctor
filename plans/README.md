@@ -19,6 +19,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-16 at commit `c141268` (plan 039).
 - 2026-07-16 at commit `26b07b0` (plan 040).
 - 2026-07-16 at commit `e25d421` (plans 041 landed; plan 042).
+- 2026-07-17 at commit `7e03467` (plan 052).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -413,6 +414,20 @@ verification gate, and update its status here.
    for grading/usage in memory, and redacts every persisted result shape before
    serialization.
 
+### 2026-07-17 premium-project loop 4 round 1 (ignored runtime paths)
+
+1. **Repository-gitignored runtime paths fail accurate harness guidance** —
+   independently re-audited all nine categories after Plans 001–051, then
+   rechecked current AGENTS.md hierarchy guidance, Qwen Code, Dify, dependency
+   posture, remote repository protection, and every deferred path class. At
+   current Qwen Code commit `f8e6e893`, `.gitignore` positively ignores five
+   `.qwen/*` runtime scratch directories that root `AGENTS.md` accurately
+   documents; the doctor reports each as both semantic `MISSING` and `D2`.
+   Plan 052 delegates nested/negated matching to Git in one contained batch,
+   isolates global and `.git/info/exclude` state, and fails closed when Git
+   evidence is unavailable. Package-root-relative nested paths and image/RPC
+   identifiers remain independent follow-ups rather than prose heuristics.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -468,6 +483,7 @@ verification gate, and update its status here.
 | 049 | Redact hook-command secrets from every report surface | P0 | M | 024, 042 | DONE |
 | 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | DONE |
 | 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | DONE |
+| 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
