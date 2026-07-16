@@ -608,18 +608,7 @@ def _logical_source(path, root):
     return lexical.relative_to(Path(root).resolve()).as_posix()
 
 
-def _ancestor_dirs(fact_root, repo_root):
-    """Return fact_root, then its lexical ancestors up to repo_root."""
-    current = Path(fact_root).resolve()
-    repo_root = Path(repo_root).resolve()
-    dirs = []
-    while True:
-        dirs.append(current)
-        if current == repo_root:
-            return dirs
-        if repo_root not in current.parents:
-            raise ValueError("effective scope escapes repository")
-        current = current.parent
+_ancestor_dirs = facts.ancestor_dirs
 
 
 def _scoped_package_manager(fact_root, repo_root):

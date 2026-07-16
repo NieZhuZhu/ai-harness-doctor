@@ -183,6 +183,7 @@ Non-Claude adapters are intentionally thin. Broad rules distribution belongs to 
 
 - Scan is read-only and excludes repository-derived external symlinks.
 - Missing paths ignored by repository `.gitignore` files are treated as deliberate runtime paths; synthetic Git metadata excludes local/global rules, and Git failure preserves findings.
+- Nested drift resolves commands, paths, and runtime/package-manager facts through lexical package ancestors without searching sibling packages; Markdown links remain file-relative.
 - Write paths refuse symlinked files or existing parent directories.
 - Plugins are disabled unless `--allow-plugins` is supplied.
 - Secret findings name type/path without reproducing values; risky hook snippets are redacted in JSON, Markdown, SARIF, and PR feedback.

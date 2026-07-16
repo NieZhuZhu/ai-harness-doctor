@@ -58,6 +58,284 @@ class DriftTests(unittest.TestCase):
         shutil.copytree(FIXTURE, repo)
         return td, repo
 
+    def test_nested_scope_uses_package_ancestors_for_commands_paths_and_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {"root:build": "echo root"},
+                        "engines": {"node": ">=18"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (repo / ".nvmrc").write_text("18\n", encoding="utf-8")
+            (repo / "package-lock.json").write_text(
+                '{"lockfileVersion": 3}\n',
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+
+            package = repo / "cli"
+            (package / "src" / "commands").mkdir(parents=True)
+            (package / "src" / "auth").mkdir()
+            (package / "src" / "commands" / "tree.ts").write_text(
+                "export {};\n",
+                encoding="utf-8",
+            )
+            (package / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {"tree:gen": "node generate.js"},
+                        "engines": {"node": ">=20"},
+                        "devDependencies": {"mastra": "1.0.0"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (package / "Makefile").write_text(
+                "generate:\n\t@echo generate\n",
+                encoding="utf-8",
+            )
+            (package / ".nvmrc").write_text("20\n", encoding="utf-8")
+            (package / "pnpm-lock.yaml").write_text(
+                "lockfileVersion: 9\n",
+                encoding="utf-8",
+            )
+            (package / "src" / "commands" / "AGENTS.md").write_text(
+                "# CLI commands\n"
+                "Use Node 20 and `pnpm` in this package.\n"
+                "Run `pnpm run tree:gen`, `pnpm run root:build`, and "
+                "`pnpm run missing-script`.\n"
+                "Also run `pnpm mastra dev` and `make generate`.\n"
+                "Registry: `src/commands/tree.ts`; missing: `src/missing.ts`.\n"
+                "See [package auth](src/auth/) and "
+                "[local auth](../auth/).\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, 32768)
+            findings = [
+                finding
+                for finding in report["findings"]
+                if finding.get("path") == "cli/src/commands/AGENTS.md"
+            ]
+            messages = {
+                finding["check"]: finding["message"]
+                for finding in findings
+            }
+
+            self.assertEqual(
+                {
+                    (finding["check"], finding["message"].split("`")[1])
+                    for finding in findings
+                    if finding["check"] in {"D1", "D2", "D7"}
+                },
+                {
+                    ("D1", "missing-script"),
+                    ("D2", "src/missing.ts"),
+                    # Markdown links stay relative to the AGENTS.md directory:
+                    # the package-root spelling is broken, while ../auth/ works.
+                    ("D7", "src/auth/"),
+                },
+            )
+            self.assertNotIn("D6", messages)
+
+    def test_nested_scope_does_not_use_sibling_package_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            package = repo / "packages" / "api"
+            nested = package / "src" / "feature"
+            nested.mkdir(parents=True)
+            (package / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {},
+                        "engines": {"node": ">=20"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (package / ".nvmrc").write_text("20\n", encoding="utf-8")
+            (package / "pnpm-lock.yaml").write_text(
+                "lockfileVersion: 9\n",
+                encoding="utf-8",
+            )
+            sibling = repo / "packages" / "web"
+            (sibling / "src").mkdir(parents=True)
+            (sibling / "src" / "only.ts").write_text(
+                "export {};\n",
+                encoding="utf-8",
+            )
+            (sibling / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {"sibling:build": "echo sibling"},
+                        "engines": {"node": ">=22"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (sibling / ".nvmrc").write_text("22\n", encoding="utf-8")
+            (nested / "AGENTS.md").write_text(
+                "# API feature\n"
+                "Use Node 22 and `npm`.\n"
+                "Run `npm run sibling:build`.\n"
+                "Edit `src/only.ts`.\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, 32768)
+            findings = [
+                finding
+                for finding in report["findings"]
+                if finding.get("path") == "packages/api/src/feature/AGENTS.md"
+            ]
+
+            self.assertEqual(
+                {finding["check"] for finding in findings},
+                {"D1", "D2", "D6"},
+            )
+            messages = " ".join(finding["message"] for finding in findings)
+            self.assertIn("sibling:build", messages)
+            self.assertIn("src/only.ts", messages)
+            self.assertIn("Node 22", messages)
+            self.assertIn("Node 20", messages)
+            self.assertIn("pnpm-lock.yaml", messages)
+
+    def test_nested_scope_package_ignore_still_applies_through_ancestors(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            package = repo / "cli"
+            nested = package / "src" / "commands"
+            nested.mkdir(parents=True)
+            (package / ".gitignore").write_text(
+                ".runtime/*\n",
+                encoding="utf-8",
+            )
+            (nested / "AGENTS.md").write_text(
+                "Runtime cache: `.runtime/cache/`; missing: `src/missing.ts`.\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, 32768)
+            d2 = [
+                finding
+                for finding in report["findings"]
+                if finding.get("path") == "cli/src/commands/AGENTS.md"
+                and finding["check"] == "D2"
+            ]
+
+            self.assertEqual(len(d2), 1)
+            self.assertIn("src/missing.ts", d2[0]["message"])
+
+    def test_nested_scope_retains_own_descendant_suffix_without_sibling_search(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            scope = repo / "packages" / "api" / "src" / "feature"
+            (scope / "handlers" / "_strategies").mkdir(parents=True)
+            (scope / "AGENTS.md").write_text(
+                "Strategy directories use `_strategies/`; "
+                "missing source is `src/missing.ts`.\n",
+                encoding="utf-8",
+            )
+            sibling = repo / "packages" / "web"
+            (sibling / "src").mkdir(parents=True)
+            (sibling / "src" / "only.ts").write_text(
+                "export {};\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, 32768)
+            d2 = [
+                finding
+                for finding in report["findings"]
+                if finding.get("path") == "packages/api/src/feature/AGENTS.md"
+                and finding["check"] == "D2"
+            ]
+
+            self.assertEqual(len(d2), 1)
+            self.assertIn("src/missing.ts", d2[0]["message"])
+
+    def test_nearest_ambiguous_package_manager_does_not_fall_back_to_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package-lock.json").write_text(
+                '{"lockfileVersion": 3}\n',
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            package = repo / "cli"
+            nested = package / "src"
+            nested.mkdir(parents=True)
+            (package / "package-lock.json").write_text(
+                '{"lockfileVersion": 3}\n',
+                encoding="utf-8",
+            )
+            (package / "pnpm-lock.yaml").write_text(
+                "lockfileVersion: 9\n",
+                encoding="utf-8",
+            )
+            (nested / "AGENTS.md").write_text(
+                "Use `pnpm` in this scope.\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, 32768)
+            d6 = [
+                finding
+                for finding in report["findings"]
+                if finding.get("path") == "cli/src/AGENTS.md"
+                and finding["check"] == "D6"
+            ]
+
+            self.assertEqual(d6, [])
+
+    def test_run_checks_computes_one_ancestor_chain_per_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            for path in ("packages/api/AGENTS.md", "packages/web/AGENTS.md"):
+                target = repo / path
+                target.parent.mkdir(parents=True)
+                target.write_text("# Package\n", encoding="utf-8")
+
+            with mock.patch.object(
+                facts,
+                "ancestor_dirs",
+                wraps=facts.ancestor_dirs,
+            ) as ancestor_dirs:
+                check_drift.run_checks(repo, 32768)
+
+            self.assertEqual(ancestor_dirs.call_count, 2)
+
+    def test_explicit_ancestor_chain_cannot_escape_or_skip_scope_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            scope = repo / "cli" / "src"
+            scope.mkdir(parents=True)
+            outside = base / "outside"
+            outside.mkdir()
+
+            for ancestors in (
+                [scope, outside, repo],
+                [repo],
+                [scope, repo, repo],
+            ):
+                with self.subTest(ancestors=ancestors):
+                    with self.assertRaises(ValueError):
+                        check_drift.d1_command_drift(
+                            scope,
+                            "Run `npm run test`.",
+                            fallback_root=repo,
+                            ancestors=ancestors,
+                        )
+
     def test_nested_agents_use_repository_gitignore_and_keep_attribution(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)

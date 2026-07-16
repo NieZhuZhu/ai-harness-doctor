@@ -22,6 +22,7 @@ import applicability  # noqa: E402
 import canonicalize  # noqa: E402
 import check_drift  # noqa: E402
 import eval_run  # noqa: E402
+import facts  # noqa: E402
 import registry  # noqa: E402
 import scan  # noqa: E402
 import semantic  # noqa: E402
@@ -147,6 +148,34 @@ class SharedConstantConsistencyTests(unittest.TestCase):
         # published value is consistent and sane (CORR-06).
         self.assertEqual(scan.STUB_POINTER_MAX_BYTES, registry.STUB_POINTER_MAX_BYTES)
         self.assertEqual(registry.STUB_POINTER_MAX_BYTES, 800)
+
+    def test_eval_and_drift_share_contained_ancestor_order(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "repo"
+            scope = root / "cli" / "src" / "commands"
+            scope.mkdir(parents=True)
+
+            expected = [
+                scope.resolve(),
+                (root / "cli" / "src").resolve(),
+                (root / "cli").resolve(),
+                root.resolve(),
+            ]
+            self.assertEqual(facts.ancestor_dirs(scope, root), expected)
+            self.assertIs(eval_run._ancestor_dirs, facts.ancestor_dirs)
+
+            outside = Path(td) / "outside"
+            outside.mkdir()
+            with self.assertRaises(ValueError):
+                facts.ancestor_dirs(outside, root)
+
+            alias = root / "external"
+            try:
+                alias.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                return
+            with self.assertRaises(ValueError):
+                facts.ancestor_dirs(alias, root)
 
     def test_lockfile_managers_single_sourced_and_include_bun(self):
         # All engines must reuse the same map (TD-01), and it must include bun
