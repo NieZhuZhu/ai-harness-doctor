@@ -19,7 +19,8 @@
 - **Depends on**: Plans 007, 021 (DONE)
 - **Category**: feature (baseline lifecycle / debt governance)
 - **Planned at**: commit `836ac78`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #220 (plan) / PR #221 (impl), squash-merged to
+  `main` as `775c31e`; all nine required contexts green.
 
 ## Why this matters
 
