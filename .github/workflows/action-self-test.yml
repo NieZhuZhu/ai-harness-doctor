@@ -152,11 +152,11 @@ jobs:
               }
               // Alert-lifecycle contract (Plan 042): each command run is keyed to
               // its own code-scanning category so uploading scan + drift for one
-              // commit does not close each other's alerts, and every result
-              // carries a stable partialFingerprints entry so alerts survive
-              // unrelated edits. Only the bundled runs execute this checkout's
-              // code; the npm override runs the already-published version, which
-              // may predate this contract, so it is exempt.
+              // commit does not let the second close the first alerts, and every
+              // result carries a stable partialFingerprints entry so alerts
+              // survive unrelated edits. Only the bundled runs execute this
+              // checkout code; the npm override runs the already-published
+              // version, which may predate this contract, so it is exempt.
               if (label !== "npmScan") {
                 const category = run.automationDetails && run.automationDetails.id;
                 if (category !== CATEGORY[label]) {
