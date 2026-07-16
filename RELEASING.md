@@ -14,6 +14,9 @@ Releases are tag-driven and published by GitHub Actions.
    ```
 3. The `release` workflow:
    - runs the full release tests;
+   - packs the exact local npm candidate, validates its public inventory,
+     installs that tarball with lifecycle scripts disabled under an isolated
+     temporary HOME/prefix, and requires installed `doctor --self-test` to pass;
    - self-tests the exact tagged checkout through bundled `uses: ./` scan and
      drift calls;
    - verifies the tag version matches `package.json`;
@@ -28,15 +31,18 @@ Releases are tag-driven and published by GitHub Actions.
      driver versions and temp-install containment), and opens a Marketplace
      confirmation issue.
 
-The npm publish never runs before both tagged bundled command paths pass. For
+The npm publish never runs before the local tarball candidate and both tagged
+bundled command paths pass. Candidate verification is offline package-
+construction evidence; it does not claim registry identity or provenance. For
 stable versions, floating-major verification runs after publish so it exercises
 the same ref consumers will use and can install the immutable npm version that
 was just published. Pull-request self-test also runs bundled scan/drift plus an
 exact already-published stable npm version: bundled calls prove the PR source;
 the npm call proves only public install/dispatch compatibility. All npm
-overrides install under `RUNNER_TEMP`, never user HOME or a global prefix. The
-stable verifier allows up to two minutes for npm CDN visibility, probing only
-the exact version; it never falls back to `latest` or treats timeout as success.
+overrides and candidate installs use isolated temporary HOME/prefix paths,
+never user HOME or a global prefix. The stable verifier allows up to two minutes
+for npm CDN visibility, probing only the exact version; it never falls back to
+`latest` or treats timeout as success.
 The packaged `bin/action-run.js` owns bounded `args-json` parsing and
 `shell:false` execution for both bundled and npm-override paths; tagged and
 floating `uses: ./` verification therefore exercises the same adapter consumers

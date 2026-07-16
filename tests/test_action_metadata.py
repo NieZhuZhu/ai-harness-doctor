@@ -426,6 +426,24 @@ class ActionMetadataTests(unittest.TestCase):
             self.assertEqual(parsed.scheme, "https", name)
             self.assertEqual(parsed.hostname, "registry.npmjs.org", name)
 
+    def test_required_ci_verifies_the_packed_candidate_once(self):
+        text = TEST_WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(text.count("Verify packed npm candidate"), 1)
+        block = self._named_step_block(
+            TEST_WORKFLOW,
+            "Verify packed npm candidate",
+        )
+        self.assertIn("run: npm run check:package", block)
+        self.assertNotIn("npm pack --dry-run", text)
+
+        package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            package["scripts"].get("check:package"),
+            "python3 scripts/check_package_candidate.py",
+        )
+        self.assertEqual(package["scripts"]["check"], "npm run lint && npm test")
+        self.assertIn("!scripts/check_package_candidate.py", package["files"])
+
     def test_dependabot_updates_github_action_pins_weekly(self):
         text = DEPENDABOT.read_text(encoding="utf-8")
         self.assertIn('package-ecosystem: "github-actions"', text)
@@ -832,6 +850,7 @@ class ActionMetadataTests(unittest.TestCase):
 
     def test_release_self_tests_before_publish_and_after_floating_tag(self):
         text = RELEASE.read_text(encoding="utf-8")
+        candidate = text.index("Verify packed npm candidate")
         preflight_scan = text.index("Pre-publish bundled scan self-test")
         preflight_drift = text.index("Pre-publish bundled drift self-test")
         publish = text.index("Publish to npm")
@@ -841,6 +860,7 @@ class ActionMetadataTests(unittest.TestCase):
         public_npm = text.index("Verify published exact npm drift override")
         public_matrix = text.index("Validate published Action success matrix")
         reminder = text.index("Create Marketplace confirmation reminder")
+        self.assertLess(candidate, preflight_scan)
         self.assertLess(preflight_scan, publish)
         self.assertLess(preflight_drift, publish)
         self.assertLess(publish, floating)
@@ -898,6 +918,14 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("driver.version !== expected", text)
         self.assertIn('path.relative(temp, install).startsWith("..")', text)
         self.assertIn("needs: [publish, verify-action]", text)
+        candidate_block = self._named_step_block(
+            RELEASE,
+            "Verify packed npm candidate",
+        )
+        self.assertIn("run: npm run check:package", candidate_block)
+        self.assertNotIn("npm pack --dry-run", candidate_block)
+        self.assertIn("Wait for exact npm package visibility", text)
+        self.assertIn("Verify published exact npm drift override", text)
 
     def test_release_updates_dynamic_major_tag_without_recursively_triggering_publish(self):
         text = RELEASE.read_text(encoding="utf-8")
