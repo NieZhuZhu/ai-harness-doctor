@@ -184,6 +184,7 @@ Los adapters no Claude son deliberadamente finos. La distribución masiva corres
 - Scan es de solo lectura y excluye symlinks externos derivados del repositorio.
 - Las rutas de escritura rechazan archivos o padres symlinked.
 - Los plugins solo se activan con `--allow-plugins`.
+- Los hallazgos de secretos indican tipo/ruta sin repetir valores; los hooks peligrosos se redactan en JSON, Markdown, SARIF y feedback de PR.
 - El instalador usa lock, journal, propiedad y recuperación.
 - Las herramientas MCP son de solo lectura; un finding no es un fallo de transporte.
 - Jueces externos y LLM reales son opt-in; una respuesta malformada vuelve al juez determinista.

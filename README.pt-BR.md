@@ -184,6 +184,7 @@ Adapters não Claude são deliberadamente finos. Distribuição ampla cabe ao Ru
 - Scan é somente leitura e exclui symlinks externos derivados do repositório.
 - Caminhos de escrita rejeitam arquivos ou pais symlinked.
 - Plugins só são ativados com `--allow-plugins`.
+- Achados de segredo informam tipo/caminho sem repetir valores; hooks perigosos são redigidos em JSON, Markdown, SARIF e feedback de PR.
 - O instalador usa lock, journal, propriedade e recuperação.
 - Ferramentas MCP são somente leitura; finding não é falha de transporte.
 - Juízes externos e LLM reais são opt-in; saída malformada volta ao juiz determinístico.

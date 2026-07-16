@@ -184,6 +184,7 @@ Non-Claude adapter は意図的に薄い設計です。広範な rule distributi
 - Scan は read-only で、repository-derived external symlink を除外します。
 - Write path は symlinked file または既存 parent directory を拒否します。
 - Plugin は `--allow-plugins` を明示した場合だけ有効です。
+- Secret finding は type/path のみを示し値を再掲しません。危険な hook snippet は JSON、Markdown、SARIF、PR feedback で redacted になります。
 - Installer mutation は lock、journal、ownership、recovery を使用します。
 - MCP tools は read-only。Finding は transport failure ではありません。
 - External judge と real LLM grading は opt-in。Malformed LLM output は deterministic judge に fallback します。
