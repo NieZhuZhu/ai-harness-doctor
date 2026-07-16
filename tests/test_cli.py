@@ -516,6 +516,39 @@ class CliInstallerTests(unittest.TestCase):
                 self.assertFalse((project / ".cursor").exists())
                 self.assertFalse((project / ".ai-harness-doctor").exists())
 
+    def test_recovery_cleans_up_journal_less_transaction_directory(self):
+        # Plan 044: a process killed between beginInstallerTransaction's
+        # fs.mkdirSync(dir) and writeTransactionJournal leaves a transaction
+        # directory with no journal.json. Recovery runs before every installer
+        # command, so it must treat that as an abandoned artifact and clean it
+        # up rather than throwing ENOENT and bricking install/update/uninstall.
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as project_dir,
+        ):
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            transactions = home / ".ai-harness-doctor" / "transactions"
+            stray = transactions / "1700000000000-123-abcdef"
+            stray.mkdir(parents=True)
+            # A stray manifest backup with still no journal.json — exactly the
+            # shape of a crash between mkdir and journal write.
+            (stray / "manifest-original.json").write_text("{}\n", encoding="utf-8")
+
+            result = self.run_cli(
+                ["install", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+
+            self.assertIn("Install summary", result.stdout)
+            self.assertTrue((project / ".cursor" / "commands" / "harness-scan.md").is_file())
+            # The journal-less directory was cleaned up; the completed install
+            # also retires its own transaction, so the dir is empty or gone.
+            self.assertFalse(stray.exists())
+            self.assertFalse((home / ".ai-harness-doctor" / "installer.lock").exists())
+
     def test_recovery_refuses_symlinked_transaction_directory(self):
         with (
             ResilientTemporaryDirectory() as home_dir,
