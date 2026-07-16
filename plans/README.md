@@ -280,7 +280,7 @@ verification gate, and update its status here.
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
 | 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
 | 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | DONE |
-| 038 | Prevent failed runners and judges from producing passing eval records | P0 | M | 030, 033 | IN PROGRESS |
+| 038 | Prevent failed runners and judges from producing passing eval records | P0 | M | 030, 033 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -487,6 +487,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   including 113 eval tests for single/round/matrix non-zero runners, judge
   failures/no fallback, output bounds, process-group timeout, and historical
   result/evidence compatibility.
+- Plan 038 implementation PR #196 head `8a63c43` passed all nine required
+  contexts. Single/round/matrix now share one operational gate; runner/judge
+  exit failures cannot pass, outputs are bounded, and overall CLI failure
+  remains controlled by existing health/regression flags.
 
 ## Post-v1.8.1 completion evidence
 

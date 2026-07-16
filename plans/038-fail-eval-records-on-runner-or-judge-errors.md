@@ -18,7 +18,8 @@
 - **Depends on**: Plans 030 and 033 (DONE)
 - **Category**: bug
 - **Planned at**: commit `a2a7227`, 2026-07-16
-- **Implementation**: in progress on `fix/038-eval-runner-judge-exits`
+- **Implementation**: DONE in PR
+  [#196](https://github.com/NieZhuZhu/ai-harness-doctor/pull/196)
 
 ## Implementation evidence
 
@@ -33,6 +34,11 @@
   usage is extracted from original stdout before truncation.
 - Final local baseline before PR: 696 Python tests, 26 Node tests, 113 eval
   tests, self-eval 33/33, strict drift 100/A, and synchronized trilingual docs.
+- Implementation PR [#196](https://github.com/NieZhuZhu/ai-harness-doctor/pull/196)
+  head `8a63c43` passed all nine required contexts. Focused eval coverage includes
+  runner non-zero/missing/timeout, no-judge-on-runner-failure, judge
+  non-zero/malformed/missing/timeout, bounded output, and single/round/matrix
+  parity.
 
 ## Why this matters
 
@@ -263,16 +269,16 @@ contexts, resolve discussions, then record PR/CI evidence and mark DONE.
 
 ## Done criteria
 
-- [ ] No non-zero runner record can be `passed: true`.
-- [ ] Failed runner output is never sent to a judge.
-- [ ] No non-zero external judge verdict can pass.
-- [ ] Timeout/spawn/malformed judge failures are concise failed metadata.
-- [ ] Single, rounds, and matrix share one operational gate.
-- [ ] Later tasks/agents continue after a failed record.
-- [ ] Diagnostic output is bounded and exit evidence preserved.
-- [ ] Existing stored result/evidence/baseline consumers remain compatible.
-- [ ] Trilingual docs/SKILL/AGENTS/self-eval are current.
-- [ ] Full local gate and all nine PR contexts pass.
+- [x] No non-zero runner record can be `passed: true`.
+- [x] Failed runner output is never sent to a judge.
+- [x] No non-zero external judge verdict can pass.
+- [x] Timeout/spawn/malformed judge failures are concise failed metadata.
+- [x] Single, rounds, and matrix share one operational gate.
+- [x] Later tasks/agents continue after a failed record.
+- [x] Diagnostic output is bounded and exit evidence preserved.
+- [x] Existing stored result/evidence/baseline consumers remain compatible.
+- [x] Trilingual docs/SKILL/AGENTS/self-eval are current.
+- [x] Full local gate and all nine PR contexts pass.
 
 ## STOP conditions
 
