@@ -266,7 +266,7 @@ verification gate, and update its status here.
 | 034 | Self-test every public GitHub Action success path | P1 | S | — | DONE |
 | 035 | Model deterministic Cursor and Copilot rule applicability | P1 | L | — | DONE |
 | 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
-| 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | IN PROGRESS |
+| 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -460,7 +460,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   containment, mode preservation, and update-nudge ledger isolation.
 - Plan 037 implementation PR #194 first head `225ff9f` passed all nine required
   contexts. The final evidence head adds malformed/symlinked lock-state refusal
-  and must repeat the full matrix before merge.
+  and passed the full matrix again as `58bf875`. The implementation preserves
+  manifest schema 2 and adds durable fsync journal recovery, idempotent
+  rollback, process serialization/dead-lock claims, managed-path allow-list,
+  backup/mode integrity, and a separate non-authoritative update-nudge cache.
 
 ## Post-v1.8.1 completion evidence
 

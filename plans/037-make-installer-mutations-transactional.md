@@ -19,7 +19,8 @@
 - **Depends on**: Plans 008 and 011 (DONE)
 - **Category**: bug
 - **Planned at**: commit `660977e`, 2026-07-16
-- **Implementation**: in progress on `fix/037-transactional-installer`
+- **Implementation**: DONE in PR
+  [#194](https://github.com/NieZhuZhu/ai-harness-doctor/pull/194)
 
 ## Implementation evidence
 
@@ -40,8 +41,8 @@
   trilingual docs.
 - Implementation PR: [#194](https://github.com/NieZhuZhu/ai-harness-doctor/pull/194).
   First head `225ff9f` passed all nine required contexts. A final evidence/test
-  head adds malformed/symlinked lock-state refusal and must repeat the same
-  matrix before DONE.
+  head `58bf875` added malformed/symlinked lock-state refusal and repeated all
+  nine required contexts successfully.
 
 ## Why this matters
 
@@ -330,18 +331,18 @@ only after merge.
 
 ## Done criteria
 
-- [ ] Injected manifest failure leaves filesystem and manifest exactly as before.
-- [ ] Failed first install leaves no managed residue or ownership state.
-- [ ] Fresh process recovers pre-manifest interruption by rollback.
-- [ ] Fresh process recognizes post-manifest commit and only cleans journal.
-- [ ] Ambiguous/malformed recovery fails closed with evidence retained.
-- [ ] External post-snapshot edits are never overwritten during rollback.
-- [ ] All installer mutations are transaction-aware; no bypassing direct writes.
-- [ ] Existing ownership, symlink, user-edit, legacy migration, shared-payload,
+- [x] Injected manifest failure leaves filesystem and manifest exactly as before.
+- [x] Failed first install leaves no managed residue or ownership state.
+- [x] Fresh process recovers pre-manifest interruption by rollback.
+- [x] Fresh process recognizes post-manifest commit and only cleans journal.
+- [x] Ambiguous/malformed recovery fails closed with evidence retained.
+- [x] External post-snapshot edits are never overwritten during rollback.
+- [x] All installer mutations are transaction-aware; no bypassing direct writes.
+- [x] Existing ownership, symlink, user-edit, legacy migration, shared-payload,
       copy/link, and cursor-root tests remain green.
-- [ ] Manifest schema remains backward-compatible schema 2.
-- [ ] Trilingual docs, SKILL, AGENTS, and self-eval are current.
-- [ ] Full local gate and all nine PR contexts pass.
+- [x] Manifest schema remains backward-compatible schema 2.
+- [x] Trilingual docs, SKILL, AGENTS, and self-eval are current.
+- [x] Full local gate and all nine PR contexts pass.
 
 ## STOP conditions
 
