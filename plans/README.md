@@ -396,7 +396,7 @@ verification gate, and update its status here.
 | 042 | Make SARIF alert identity survive edits and coexist per command | P1 | M | 012, 024 | DONE |
 | 043 | Fall back to the deterministic judge when an LLM returns unparseable output | P1 | S | — | DONE |
 | 044 | Recover from an incomplete installer transaction directory instead of bricking | P1 | S | 011, 037 | DONE |
-| 045 | Make scoped eval use the shared lockfile registry | P1 | S | 027, 029 | TODO |
+| 045 | Make scoped eval use the shared lockfile registry | P1 | S | 027, 029 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
