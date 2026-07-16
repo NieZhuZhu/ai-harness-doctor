@@ -21,7 +21,8 @@
 - **Depends on**: Plans 024 and 042 (DONE)
 - **Category**: security / data minimization
 - **Planned at**: commit `48a644b`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #226 (plan) / PR #227 (impl), squash-merged to
+  `main` as `60dd32f`; all nine required contexts green.
 
 ## Why this matters
 
