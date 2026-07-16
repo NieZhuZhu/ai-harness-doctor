@@ -29,7 +29,23 @@
 - **Depends on**: Plan 033 (DONE)
 - **Category**: correctness
 - **Planned at**: commit `a5c6195`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: IN PROGRESS on `fix/041-validate-baseline-history`
+
+## Implementation progress
+
+- Added `validate_baseline_store(data, location)` raising `ResultFileError` on
+  structural corruption (non-list/non-`baselines` top level, non-dict entry, or
+  non-numeric non-null `score`); `load_baseline_store` routes decodable content
+  through it while missing/undecodable files still yield an empty history.
+- `--trend`, `--check-regression`, and `--save-baseline` now fail closed with
+  `result error` / exit 2 and never append onto a corrupt store; existing
+  `main()` `ResultFileError` handling suppresses the traceback.
+- Hardened `detect_regression`/`render_trend` via a shared `_snapshot_score`
+  helper so absent/`null`/wrong-typed scores are non-comparable rather than
+  crashes, and bool is excluded from numeric scores.
+- New `BaselineHistoryValidationTests`; existing `BaselineTests` unchanged.
+  Local gate: full Python + 26 Node tests, self scan rc 0, strict drift 100/A,
+  evidence-bound self-eval 34/34. Final PR/CI/merge evidence pending.
 
 ## Why this matters
 
