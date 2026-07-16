@@ -315,6 +315,24 @@ verification gate, and update its status here.
    `llm_judge` boundary, leaving the external `--judge-cmd` path and valid-verdict
    logic untouched.
 
+### 2026-07-16 improve loop round 2 (installer crash-recovery robustness)
+
+1. **Incomplete transaction directory bricks the installer** — independently
+   traced the installer crash-recovery path (`recoverInstallerTransactions` →
+   `readTransactionDirectory`), which runs before every install/update/uninstall.
+   `beginInstallerTransaction` creates the transaction directory
+   (`fs.mkdirSync`) and only later writes `journal.json`; a process killed in
+   that window leaves a journal-less directory. On the next run,
+   `readTransactionDirectory` does `fs.lstatSync(journalPath)`, throws `ENOENT`,
+   and `withInstallerTransaction` turns it into a fatal "Cannot start installer
+   transaction" — so recovery, which runs first on every command, permanently
+   bricks install/update/uninstall until the stray directory is removed by hand.
+   The same failure is the recurring `unittest (3.9)` flake in
+   `test_concurrent_installer_fails_without_recovering_live_transaction`. Plan 044
+   makes recovery treat a genuinely journal-absent directory as an abandoned
+   artifact (contained cleanup + continue) while keeping every present-but-
+   invalid/unsafe journal fatal (Plan 011/037 security preserved).
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -361,7 +379,8 @@ verification gate, and update its status here.
 | 040 | Prevent provisional AGENTS drafts from authorizing stub destruction | P1 | M | 004, 008, 011, 037 | DONE |
 | 041 | Validate the eval baseline-history store before trend/regression reads | P1 | S | 033 | DONE |
 | 042 | Make SARIF alert identity survive edits and coexist per command | P1 | M | 012, 024 | DONE |
-| 043 | Fall back to the deterministic judge when an LLM returns unparseable output | P1 | S | — | TODO |
+| 043 | Fall back to the deterministic judge when an LLM returns unparseable output | P1 | S | — | DONE |
+| 044 | Recover from an incomplete installer transaction directory instead of bricking | P1 | S | 011, 037 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

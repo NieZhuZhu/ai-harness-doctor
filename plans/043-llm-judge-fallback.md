@@ -27,7 +27,8 @@
 - **Depends on**: none
 - **Category**: bug (correctness — eval health integrity)
 - **Planned at**: commit `3f0c017`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #211 (plan) / PR #212 (impl), squash-merged to
+  `main` as `21c99a8`; all nine required contexts green.
 
 ## Why this matters
 
