@@ -188,6 +188,21 @@ def exists_within_root(root, path):
     return resolve_within_root(path, root) is not None
 
 
+def ancestor_dirs(scope_root, repository_root):
+    """Return contained lexical directories nearest-first through repo root."""
+    scope_root = Path(scope_root).resolve()
+    repository_root = Path(repository_root).resolve()
+    if scope_root != repository_root and repository_root not in scope_root.parents:
+        raise ValueError("scope escapes repository")
+    directories = []
+    current = scope_root
+    while True:
+        directories.append(current)
+        if current == repository_root:
+            return directories
+        current = current.parent
+
+
 def repository_ignored_paths(root, tokens, timeout=5):
     """Return contained relative paths ignored by repository ``.gitignore`` files.
 
@@ -407,6 +422,13 @@ def package_scripts(root):
         return None
     scripts = data.get("scripts")
     return set(scripts.keys()) if isinstance(scripts, dict) else set()
+
+
+def package_name(root):
+    """Return the exact local package.json name, or ``None`` if unavailable."""
+    data = load_json_within_root(root, Path(root) / "package.json")
+    name = data.get("name") if isinstance(data, dict) else None
+    return name if isinstance(name, str) and name else None
 
 
 def _walk_package_jsons(root):

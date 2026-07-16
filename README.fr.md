@@ -183,6 +183,7 @@ Les adapters non Claude sont volontairement légers. La distribution massive app
 
 - Scan est en lecture seule et exclut les symlinks externes dérivés du dépôt.
 - Les chemins absents ignorés par le `.gitignore` du dépôt sont des runtime paths volontaires ; des metadata Git synthétiques excluent les règles locales/globales et une panne Git conserve le finding.
+- Nested drift résout commands, paths et facts runtime/package manager via les ancestors lexicaux sans chercher les packages frères ; les liens Markdown restent relatifs au fichier.
 - Les chemins d’écriture refusent les fichiers ou parents symlinked.
 - Les plugins ne s’activent qu’avec `--allow-plugins`.
 - Les findings de secrets indiquent type/chemin sans reproduire la valeur ; les hooks dangereux sont expurgés dans JSON, Markdown, SARIF et les retours PR.

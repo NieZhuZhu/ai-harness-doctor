@@ -52,21 +52,51 @@ _STUB_POINTER_SIGNAL_RE = re.compile(
 )
 
 
-def d1_command_drift(root, text, fallback_root=None):
+def _fact_ancestors(root, fallback_root=None, ancestors=None):
+    """Return one contained nearest-first fact chain for a drift scope."""
+    root = Path(root).resolve()
+    if ancestors is not None:
+        directories = [Path(directory).resolve() for directory in ancestors]
+        if not directories or directories[0] != root:
+            raise ValueError("ancestor chain must start at the drift scope")
+        repository_root = (
+            Path(fallback_root).resolve()
+            if fallback_root is not None
+            else root
+        )
+        if (
+            directories[-1] != repository_root
+            or len(directories) != len(set(directories))
+            or any(
+                child.parent != parent
+                for child, parent in zip(directories, directories[1:])
+            )
+        ):
+            raise ValueError("ancestor chain must be lexical and contained")
+        return directories
+    if fallback_root is None or Path(fallback_root).resolve() == root:
+        return [root]
+    return facts.ancestor_dirs(root, fallback_root)
+
+
+def _package_name_at(root):
+    return facts.package_name(root)
+
+
+def d1_command_drift(root, text, fallback_root=None, ancestors=None):
     findings = []
-    scripts = package_scripts(root)
+    directories = _fact_ancestors(root, fallback_root, ancestors)
+    script_sets = [
+        scripts
+        for directory in directories
+        if (scripts := package_scripts(directory)) is not None
+    ]
+    target_sets = [
+        targets
+        for directory in directories
+        if (targets := make_targets(directory)) is not None
+    ]
     scope_dependencies = "not computed"
-    fallback_scripts = None
-    if fallback_root is not None and Path(fallback_root).resolve() != Path(root).resolve():
-        fallback_scripts = package_scripts(fallback_root)
-        if scripts is None and not facts.is_file_within_root(root, Path(root) / "package.json"):
-            scripts, fallback_scripts = fallback_scripts, None
-    targets = make_targets(root)
-    fallback_targets = None
-    if fallback_root is not None and Path(fallback_root).resolve() != Path(root).resolve():
-        fallback_targets = make_targets(fallback_root)
-        if targets is None:
-            targets, fallback_targets = fallback_targets, None
     # Keep the package-manager alternation in lock-step with semantic.py's
     # _NODE_CMD_RE (npm|pnpm|bun); omitting bun left this CI gate blind to
     # `bun run <script>` references that the Phase-0 engine already audits.
@@ -88,9 +118,8 @@ def d1_command_drift(root, text, fallback_root=None):
                 continue
             if (
                 tool == "make"
-                and targets is not None
-                and name not in targets
-                and (fallback_targets is None or name not in fallback_targets)
+                and target_sets
+                and not any(name in targets for targets in target_sets)
             ):
                 findings.append(
                     {
@@ -108,10 +137,9 @@ def d1_command_drift(root, text, fallback_root=None):
             # Same for yarn/pnpm node_modules/.bin passthrough (`yarn vitest`,
             # `pnpm mastra`) — see facts.is_node_bin_passthrough (TD-02).
             if tool != "make" and (
-                facts.is_node_bin_passthrough(root, tool, name)
-                or (
-                    fallback_root is not None
-                    and facts.is_node_bin_passthrough(fallback_root, tool, name)
+                any(
+                    facts.is_node_bin_passthrough(directory, tool, name)
+                    for directory in directories
                 )
                 or (
                     tool in {"yarn", "pnpm"}
@@ -119,18 +147,23 @@ def d1_command_drift(root, text, fallback_root=None):
                     in (
                         scope_dependencies
                         if scope_dependencies != "not computed"
-                        else facts.all_package_dependency_names(root)
+                        else facts.all_package_dependency_names(directories[0])
                     )
                 )
             ):
                 if tool in {"yarn", "pnpm"} and scope_dependencies == "not computed":
-                    scope_dependencies = facts.all_package_dependency_names(root)
+                    # Preserve the existing canonical-scope contract: a parent
+                    # AGENTS.md may describe a binary supplied by one of its
+                    # descendant packages. Scripts/paths/facts below never use
+                    # this descendant fallback.
+                    scope_dependencies = facts.all_package_dependency_names(
+                        directories[0]
+                    )
                 continue
             if (
                 tool != "make"
-                and scripts is not None
-                and name not in scripts
-                and (fallback_scripts is None or name not in fallback_scripts)
+                and script_sets
+                and not any(name in scripts for scripts in script_sets)
             ):
                 findings.append(
                     {
@@ -150,9 +183,11 @@ def d1_command_drift(root, text, fallback_root=None):
 _within_root = facts.within_root
 
 
-def d2_path_drift(root, text, fallback_root=None):
+def d2_path_drift(root, text, fallback_root=None, ancestors=None):
     findings = []
-    containment_root = Path(fallback_root).resolve() if fallback_root is not None else Path(root).resolve()
+    directories = _fact_ancestors(root, fallback_root, ancestors)
+    containment_root = directories[-1]
+    nested_scope = len(directories) > 1
     # Use the shared registry.declared_paths classifier so this Phase-2 gate and
     # the Phase-0 semantic check agree on exactly what counts as a declared path
     # (TD-03). Candidacy is decided by the shared token rules; this gate then
@@ -166,63 +201,72 @@ def d2_path_drift(root, text, fallback_root=None):
     missing = []
     for decl in registry.declared_paths(text):
         token, lineno = decl["path"], decl["line"]
-        # Never probe outside the repo root: an absolute or `../`-escaping token
-        # is not repo drift and must not be stat()'d (info-leak guard).
-        candidate = facts.resolve_within_root(Path(root) / token, containment_root, strict=False)
-        if candidate is None:
-            continue
-        if not facts.exists_within_root(containment_root, candidate):
-            if (
-                fallback_root is not None
-                and _within_root(fallback_root, token)
-                and facts.exists_within_root(fallback_root, Path(fallback_root) / token)
-            ):
+        candidates = []
+        for directory in directories:
+            candidate = facts.resolve_within_root(
+                directory / token,
+                containment_root,
+                strict=False,
+            )
+            if candidate is None:
                 continue
-            try:
-                repository_token = candidate.relative_to(containment_root).as_posix()
-            except ValueError:
-                continue
-            missing.append((decl, repository_token))
+            if facts.exists_within_root(containment_root, candidate):
+                break
+            candidates.append(candidate.relative_to(containment_root).as_posix())
+        else:
+            if candidates:
+                missing.append((decl, candidates))
     ignored = facts.repository_ignored_paths(
         containment_root,
-        [repository_token for _decl, repository_token in missing],
+        [
+            repository_token
+            for _decl, repository_tokens in missing
+            for repository_token in repository_tokens
+        ],
     )
-    for decl, repository_token in missing:
+    for decl, repository_tokens in missing:
         token, lineno = decl["path"], decl["line"]
-        if repository_token in ignored:
+        if any(repository_token in ignored for repository_token in repository_tokens):
             continue
-        candidate = facts.resolve_within_root(Path(root) / token, containment_root, strict=False)
-        if candidate is None:
-            continue
-        if not facts.exists_within_root(containment_root, candidate):
-            # Monorepo package self-import guard — mirrors semantic.compare_paths
-            # so both gates agree (TD-03). A token whose first segment matches a
-            # package.json `name` (e.g. `better-auth/test`) is a package export
-            # subpath, not a repo-relative filesystem path. Without this, `scan`
-            # stays silent while `drift` ERRORs on the identical token.
-            if package_names == "not computed":
-                package_names = facts.all_package_names(root)
-            if token.split("/", 1)[0] in package_names:
-                continue
-            if facts.is_eslint_rule_identifier(root, token):
-                continue
-            # A root AGENTS.md may scope a section to one workspace and then
-            # name paths relative to that subtree. Match Phase 0's existence
-            # policy so scan and drift cannot disagree on the same declaration.
-            # Build one lazy index and reuse it across every missing token.
-            if facts.is_subtree_path_candidate(token) and subtree_index is None:
-                subtree_index = facts.build_subtree_path_index(root)
-            if subtree_index is not None and facts.path_resolves_in_subtree(root, token, subtree_index):
-                continue
-            findings.append(
+        # Monorepo package self-import guard — mirrors semantic.compare_paths
+        # so both gates agree (TD-03). Restrict nested lookup to lexical
+        # ancestors; root keeps its historical whole-repository fallback.
+        if package_names == "not computed":
+            package_names = (
                 {
-                    "check": "D2",
-                    "level": "ERROR",
-                    "line": lineno,
-                    "message": f"Referenced path `{token}` does not exist",
-                    "suggestion": "Fix or remove the backtick-quoted path.",
+                    name
+                    for directory in directories
+                    if (name := _package_name_at(directory)) is not None
                 }
+                if nested_scope
+                else facts.all_package_names(directories[0])
             )
+        if token.split("/", 1)[0] in package_names:
+            continue
+        if any(
+            facts.is_eslint_rule_identifier(directory, token)
+            for directory in directories
+        ):
+            continue
+        # Root keeps repository-wide suffix lookup. A nested canonical scope
+        # may describe conventions in its own descendants, so its suffix index
+        # is bounded to that scope root; it must never search sibling packages.
+        if facts.is_subtree_path_candidate(token) and subtree_index is None:
+            subtree_index = facts.build_subtree_path_index(directories[0])
+        if (
+            subtree_index is not None
+            and facts.path_resolves_in_subtree(directories[0], token, subtree_index)
+        ):
+            continue
+        findings.append(
+            {
+                "check": "D2",
+                "level": "ERROR",
+                "line": lineno,
+                "message": f"Referenced path `{token}` does not exist",
+                "suggestion": "Fix or remove the backtick-quoted path.",
+            }
+        )
     return findings
 
 
@@ -351,23 +395,26 @@ declared_package_managers = facts.declared_package_managers
 lockfile_managers = facts.lockfile_managers
 
 
-def d6_fact_drift(root, text, fallback_root=None):
+def d6_fact_drift(root, text, fallback_root=None, ancestors=None):
     """Cross-validate factual claims in AGENTS.md against repo ground-truth files."""
     findings = []
     if not text:
         return findings
-    fallback_root = (
-        Path(fallback_root)
-        if fallback_root is not None and Path(fallback_root).resolve() != Path(root).resolve()
-        else None
-    )
+    directories = _fact_ancestors(root, fallback_root, ancestors)
 
     # Node version: declared claim vs .nvmrc and package.json engines.node.
     declared_node, node_line = declared_node_version(text)
     if declared_node is not None:
-        nvmrc = nvmrc_node_version(root)
-        if nvmrc is None and fallback_root is not None:
-            nvmrc = nvmrc_node_version(fallback_root)
+        node_root = next(
+            (
+                directory
+                for directory in directories
+                if nvmrc_node_version(directory) is not None
+                or engines_node_version(directory) is not None
+            ),
+            None,
+        )
+        nvmrc = nvmrc_node_version(node_root) if node_root is not None else None
         if nvmrc is not None and nvmrc != declared_node:
             findings.append(
                 {
@@ -378,9 +425,7 @@ def d6_fact_drift(root, text, fallback_root=None):
                     "suggestion": "Align AGENTS.md with `.nvmrc` or update `.nvmrc`.",
                 }
             )
-        engines = engines_node_version(root)
-        if engines is None and fallback_root is not None:
-            engines = engines_node_version(fallback_root)
+        engines = engines_node_version(node_root) if node_root is not None else None
         if engines is not None and engines != declared_node:
             findings.append(
                 {
@@ -395,11 +440,15 @@ def d6_fact_drift(root, text, fallback_root=None):
 
     # Package manager: declared claim vs the lockfile that actually exists.
     declared_pms = declared_package_managers(text)
-    ground_pms = lockfile_managers(root)
-    ground_root = Path(root)
-    if not ground_pms and fallback_root is not None:
-        ground_pms = lockfile_managers(fallback_root)
-        ground_root = fallback_root
+    ground_root = next(
+        (
+            directory
+            for directory in directories
+            if lockfile_managers(directory)
+        ),
+        directories[0],
+    )
+    ground_pms = lockfile_managers(ground_root)
     if len(declared_pms) == 1 and len(ground_pms) == 1:
         declared_pm = next(iter(declared_pms))
         ground_pm = next(iter(ground_pms))
@@ -545,9 +594,10 @@ def drift_scopes(root):
     root = Path(root).resolve()
     scopes = [{"root": root, "path": "AGENTS.md", "is_root": True}]
     for rel_path in nested_agents(root):
+        scope_root = root / Path(rel_path).parent
         scopes.append(
             {
-                "root": root / Path(rel_path).parent,
+                "root": scope_root,
                 "path": rel_path,
                 "is_root": False,
             }
@@ -717,9 +767,35 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
             root_text = text
         scoped = []
         fallback_root = root if not scope["is_root"] else None
-        scoped.extend(d1_command_drift(scope["root"], text, fallback_root=fallback_root))
-        scoped.extend(d2_path_drift(scope["root"], text, fallback_root=fallback_root))
-        scoped.extend(d6_fact_drift(scope["root"], text, fallback_root=fallback_root))
+        ancestors = (
+            facts.ancestor_dirs(scope["root"], root)
+            if not scope["is_root"]
+            else [root]
+        )
+        scoped.extend(
+            d1_command_drift(
+                scope["root"],
+                text,
+                fallback_root=fallback_root,
+                ancestors=ancestors,
+            )
+        )
+        scoped.extend(
+            d2_path_drift(
+                scope["root"],
+                text,
+                fallback_root=fallback_root,
+                ancestors=ancestors,
+            )
+        )
+        scoped.extend(
+            d6_fact_drift(
+                scope["root"],
+                text,
+                fallback_root=fallback_root,
+                ancestors=ancestors,
+            )
+        )
         scoped.extend(d7_markdown_link_drift(scope["root"], text, fallback_root=fallback_root))
         findings.extend(_attribute_scope(scoped, scope))
 

@@ -28,7 +28,9 @@
 - **Depends on**: Plans 018, 021, 045, and 052 (DONE)
 - **Category**: correctness / monorepo scope truth
 - **Planned at**: commit `ffcfe32`, 2026-07-17
-- **Implementation**: TODO
+- **Implementation**: IN PROGRESS — PR #236 (plan); implementation branch
+  `fix/053-resolve-nested-package-ancestors`, full local gates and pinned Dify
+  validation green, awaiting implementation PR and required CI.
 
 ## Why this matters
 
@@ -182,12 +184,17 @@ scope model.
    - an unknown command after the complete chain remains an error.
 4. D1 yarn/pnpm binary passthrough:
    - check installed/declared dependencies along the same ancestor chain;
-   - do not walk sibling packages merely because they declare the binary.
+   - retain the existing canonical-scope fallback in which a parent
+     `AGENTS.md` may describe a binary supplied by one of its own descendants;
+   - do not use that fallback for scripts, paths, Node, or package-manager
+     facts, and do not search outside the canonical scope subtree.
 5. D2 path resolution:
    - for token `T`, check `scope_parent/T`, then each lexical ancestor `/T`,
      ending at `repo_root/T`;
    - accept the first contained existing path;
    - never search siblings or arbitrary subtree suffixes for nested scopes;
+   - a nested canonical scope may retain suffix lookup inside its own subtree
+     for conventions such as descendant `_shared/` / `_strategies/` folders;
    - root `AGENTS.md` keeps the existing conservative subtree-suffix behavior
      established by Plans 014/018;
    - Plan 052 ignore matching receives the final repository-relative candidate
@@ -271,9 +278,10 @@ form and ask the Plan 052 batch ignore helper once. A token is deliberately
 absent when an applicable repository-owned ignore rule matches the candidate at
 the scope where it is documented.
 
-For nested scopes, do not invoke the root-wide suffix index after the lexical
-chain misses: that would reintroduce sibling false validity. Root scopes keep
-the old suffix index unchanged.
+For nested scopes, do not invoke a repository-wide suffix index after the
+lexical chain misses: that would reintroduce sibling false validity. A suffix
+index bounded to the canonical scope root is compatible and preserves
+descendant conventions. Root scopes keep the old repository-wide index.
 
 ## Commands you will need
 
@@ -471,16 +479,17 @@ condition requires public schema/exit changes.
 
 ## Done criteria
 
-- [ ] Current Dify nested CLI scope loses exactly the reproduced false D1/D2
+- [x] Current Dify nested CLI scope loses exactly the reproduced false D1/D2
       findings without suppressing unrelated drift.
-- [ ] Synthetic D1/D2/D6 package-ancestor matrix passes.
-- [ ] Sibling package facts never validate a nested declaration.
-- [ ] D7 remains document-relative.
-- [ ] Eval and drift share one contained ancestor primitive.
-- [ ] Root behavior, finding schemas, attribution, baselines, SARIF, and exits
+- [x] Synthetic D1/D2/D6 package-ancestor matrix passes.
+- [x] Sibling package facts never validate a nested declaration.
+- [x] D7 remains document-relative.
+- [x] Eval and drift share one contained ancestor primitive.
+- [x] Root behavior, finding schemas, attribution, baselines, SARIF, and exits
       remain compatible.
-- [ ] Seven README translations, `SKILL.md`, and external validation are current.
-- [ ] Full local gates and all nine PR checks pass; implementation is
+- [x] Seven README translations, `SKILL.md`, and external validation are current.
+- [x] Full local gates pass.
+- [ ] All nine PR checks pass; implementation is
       squash-merged.
 
 ## STOP conditions
