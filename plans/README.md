@@ -333,6 +333,21 @@ verification gate, and update its status here.
    artifact (contained cleanup + continue) while keeping every present-but-
    invalid/unsafe journal fatal (Plan 011/037 security preserved).
 
+### 2026-07-16 improve loop round 3 (eval fact-source parity)
+
+1. **Scoped eval uses a divergent private lockfile vocabulary** — independently
+   traced root and target-aware package-manager generation. Root eval, scan,
+   drift, and Treat use `registry.LOCKFILE_MANAGERS` through
+   `facts.lockfile_managers`, but `_scoped_package_manager` iterates a private
+   `PKG_MANAGER_LOCKFILES` list that additionally recognizes the non-standard
+   `pnpm-lock.yml`. A synthetic package mechanically reproduced the split:
+   registry/root detection returned no manager while `--target` confidently
+   generated a pnpm task bound to `packages/app/pnpm-lock.yml`. Current pnpm
+   documentation names `pnpm-lock.yaml`; this is engine-local drift, not a
+   missing registry entry. Plan 045 removes the private list, reuses the
+   registry, and extends the consistency gate so scope can change fact
+   precedence but never the vocabulary of valid facts.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -380,7 +395,8 @@ verification gate, and update its status here.
 | 041 | Validate the eval baseline-history store before trend/regression reads | P1 | S | 033 | DONE |
 | 042 | Make SARIF alert identity survive edits and coexist per command | P1 | M | 012, 024 | DONE |
 | 043 | Fall back to the deterministic judge when an LLM returns unparseable output | P1 | S | — | DONE |
-| 044 | Recover from an incomplete installer transaction directory instead of bricking | P1 | S | 011, 037 | TODO |
+| 044 | Recover from an incomplete installer transaction directory instead of bricking | P1 | S | 011, 037 | DONE |
+| 045 | Make scoped eval use the shared lockfile registry | P1 | S | 027, 029 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
