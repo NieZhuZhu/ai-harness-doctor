@@ -54,6 +54,9 @@ when changing GitHub integration, baselines, CI, release, or installer state.
   findings, never edits foreign markers, and does not duplicate the summary on
   HTTP 422. Package paths stay attributed; batch findings are summary-only; host
   resolved paths never leak.
+- Every PR-feedback API operation uses the shared finite request timeout.
+  Timeout/transport failures terminate cleanly; the workflow caller decides
+  whether that bounded posting failure is fatal.
 
 ## CI, release, and repository operations
 

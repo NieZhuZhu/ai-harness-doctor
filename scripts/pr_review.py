@@ -40,6 +40,11 @@ MARKER = "<!-- ai-harness-doctor:pr-review -->"
 # advisory gate.
 REVIEW_EVENT = "COMMENT"
 
+# Bound each GitHub API operation independently so a stalled connect/read
+# cannot wedge the PR-feedback step forever. This is deliberately internal:
+# workflow callers still decide whether a bounded posting failure is fatal.
+GITHUB_API_TIMEOUT_SECONDS = 15
+
 _ERROR_LEVELS = {"ERROR", "HIGH"}
 _WARNING_LEVELS = {"NOTICE", "WARN", "WARNING", "MEDIUM", "MISMATCH"}
 _INFO_LEVELS = {"INFO", "LOW"}
@@ -865,7 +870,10 @@ def post_review(payload, repo, pr_number, commit_sha, token):
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         req.add_header("User-Agent", "ai-harness-doctor")
         try:
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(
+                req,
+                timeout=GITHUB_API_TIMEOUT_SECONDS,
+            ) as resp:
                 return json.loads(resp.read().decode("utf-8") or "{}")
         except urllib.error.HTTPError as exc:
             try:
@@ -873,6 +881,26 @@ def post_review(payload, repo, pr_number, commit_sha, token):
             finally:
                 exc.close()
             raise _GitHubAPIError(method, url, exc.code, exc.reason, detail) from None
+        except TimeoutError:
+            raise SystemExit(
+                f"GitHub API {method} {parsed.path} timed out after "
+                f"{GITHUB_API_TIMEOUT_SECONDS}s"
+            ) from None
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, TimeoutError):
+                message = (
+                    f"GitHub API {method} {parsed.path} timed out after "
+                    f"{GITHUB_API_TIMEOUT_SECONDS}s"
+                )
+            else:
+                message = f"GitHub API {method} {parsed.path} transport failed"
+            raise SystemExit(message) from None
+        except OSError:
+            # Response-body reads can raise a raw socket/SSL OSError after the
+            # connection was opened instead of urllib wrapping it in URLError.
+            raise SystemExit(
+                f"GitHub API {method} {parsed.path} transport failed"
+            ) from None
 
     def _authenticated_identity():
         """Return the token's GraphQL actor identity for safe comment PATCH."""
