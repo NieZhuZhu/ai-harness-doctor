@@ -11,12 +11,12 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 34 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 38 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
-  evidence freshness, repository operations, public lockfile sources, nested
-  instruction scopes, and where the core scripts live).
+  evidence freshness, repository operations, path truth, nested package facts,
+  Action argv safety, the deep-improve loop, and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
-- `results-after.json` — manual-protocol answers refreshed on 2026-07-16 from the
+- `results-after.json` — manual-protocol answers refreshed on 2026-07-17 from the
   current `AGENTS.md`, with no repository browsing or external model call.
 - `*-graded.json` — the same files after `--regrade` (adds `passed`/`answer`).
 - `results-after-graded.json` additionally binds the exact `tasks.json` and
@@ -43,7 +43,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 34/34 |
+| current evidence-bound maintenance pack | 38/38 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -56,7 +56,7 @@ script and listing the key directories. Closing that gap raised the pass rate to
 keeping `AGENTS.md` small (progressive disclosure preserved). The drift guard stays green
 (100/100, grade A) after the change.
 
-The 2026-07-16 refresh covers objective checks for installer manifest safety,
+The 2026-07-17 refresh covers objective checks for installer manifest safety,
 unsuppressible HIGH security findings, MCP read-only/error semantics, semantic
 release classification, isolated-HOME installer tests, eval evidence freshness,
 MCP versioned wire contracts, and the public-repository operations baseline. Any change to
@@ -91,3 +91,13 @@ discovery into recursive deletion or rewriting authority.
 Destructive stub consolidation also preflights canonical readiness:
 product-owned draft markers, unsafe paths, size, and required sections block
 apply, while `--force` can accept only dirty-tree risk.
+The newest checks bind three implementation invariants and their maintenance
+workflow: repository-owned `.gitignore` truth is queried through synthetic Git
+metadata and fails closed; nested D1/D2/D6 facts walk lexical ancestors without
+sibling leakage while D7 remains file-relative; and `action-run.js` owns bounded
+no-shell argv parsing while `action-report.js` remains the reporting authority.
+They also require each deep-improve round to start from an independent
+nine-category audit, land plan-only and implementation PRs behind all nine CI
+contexts, verify Standards/Spec plus real evidence, squash/delete, close out the
+plan in a green docs PR, and revalidate candidates instead of carrying them
+forward unexamined.

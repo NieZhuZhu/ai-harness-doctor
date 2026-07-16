@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-16 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-17 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
   "tasks": [
     {"id": "test-suite", "stdout": "python3 -m unittest discover -s tests -v"},
     {"id": "python-version", "stdout": "3.9+"},
@@ -36,6 +36,10 @@
     {"id": "stored-result-health", "stdout": "Offline eval consumers validate stored result records, derive health from those records, and require every cached health field to agree."},
     {"id": "action-success-matrix", "stdout": "PR validation proves bundled scan, bundled drift, and an exact npm override; release repeats both bundled commands before npm and verifies floating bundled code plus the exact new npm version post-publish."},
     {"id": "structured-applicability", "stdout": "Claude/Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion or rewriting."},
-    {"id": "canonical-readiness", "stdout": "Product-owned draft markers, unsafe paths, size, and required-section failures block destructive stub consolidation; --force may bypass only dirty-tree risk."}
+    {"id": "canonical-readiness", "stdout": "Product-owned draft markers, unsafe paths, size, and required-section failures block destructive stub consolidation; --force may bypass only dirty-tree risk."},
+    {"id": "gitignored-path-truth", "stdout": "Missing paths covered by contained .gitignore rules are deliberate; synthetic Git metadata excludes host state and fails closed."},
+    {"id": "nested-drift-ancestors", "stdout": "Nested D1/D2/D6 use facts.ancestor_dirs nearest-first with no sibling leakage; D7 remains file-relative."},
+    {"id": "action-argv-contract", "stdout": "action-run.js owns bounded args-json and legacy argv with shell:false; action-report.js alone owns SARIF outputs."},
+    {"id": "deep-improve-loop", "stdout": "Independently audit all nine categories on current main; land plan-only, wait for nine green contexts, implement test-first, run Standards/Spec review plus real evidence, wait for nine green, squash/delete, close out the plan in a green docs PR, and revalidate every candidate each round."}
   ]
 }
