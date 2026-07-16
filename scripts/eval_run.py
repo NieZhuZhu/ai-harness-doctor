@@ -26,6 +26,7 @@ import explain  # noqa: E402  # shared contained target/scope vocabulary
 import facts  # noqa: E402
 import registry  # noqa: E402  # shared lockfile/package-manager vocabulary
 import semantic  # noqa: E402
+from redaction import redact_secret_values  # noqa: E402
 
 EVIDENCE_SCHEMA_VERSION = 1
 EVIDENCE_STALE_EXIT = 7
@@ -197,6 +198,27 @@ def bounded_process_output(value, limit=_MAX_STORED_PROCESS_CHARS):
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n...[truncated, {len(text) - limit} more characters]"
+
+
+def sanitize_judge_info(info):
+    """Return judge metadata with persisted free-text diagnostics redacted."""
+    if not isinstance(info, dict):
+        return info
+    sanitized = dict(info)
+    for key in ("raw", "stderr", "reason"):
+        if isinstance(sanitized.get(key), str):
+            sanitized[key] = redact_secret_values(sanitized[key])
+    return sanitized
+
+
+def sanitize_result_record(record):
+    """Redact every persisted runner/judge text field in one task record."""
+    for key in ("stdout", "answer", "stderr"):
+        if isinstance(record.get(key), str):
+            record[key] = redact_secret_values(record[key])
+    if isinstance(record.get("judge"), dict):
+        record["judge"] = sanitize_judge_info(record["judge"])
+    return record
 
 
 def extract_answer(stdout):
@@ -1437,7 +1459,7 @@ def run_judge(judge_cmd, answer, rubric, workdir, timeout):
             verdict["passed"] = False
             verdict["score"] = None
             verdict["reason"] = f"judge exited {proc.returncode}"
-        return verdict
+        return sanitize_judge_info(verdict)
     finally:
         try:
             os.unlink(handle.name)
@@ -1731,18 +1753,18 @@ def run_runner_record(runner, task, workdir, judge_cmd, default_judge=True, judg
         )
     except subprocess.TimeoutExpired as exc:
         duration = round(time.time() - start, 3)
-        stdout = bounded_process_output(exc.stdout)
-        return {
+        raw_stdout = bounded_process_output(exc.stdout)
+        return sanitize_result_record({
             "id": task["id"],
             "passed": False,
             "timed_out": True,
             "duration_s": duration,
             "exit_code": None,
-            "stdout": stdout,
-            "answer": extract_answer(stdout),
+            "stdout": raw_stdout,
+            "answer": extract_answer(raw_stdout),
             "stderr": bounded_process_output(exc.stderr),
             "usage": {},
-        }
+        })
     except (FileNotFoundError, OSError) as exc:
         return {
             "id": task["id"],
@@ -1758,25 +1780,25 @@ def run_runner_record(runner, task, workdir, judge_cmd, default_judge=True, judg
 
     duration = round(time.time() - start, 3)
     usage = maybe_usage(proc.stdout)
-    stdout = bounded_process_output(proc.stdout)
-    stderr = bounded_process_output(proc.stderr)
-    answer = extract_answer(stdout)
+    raw_stdout = bounded_process_output(proc.stdout)
+    raw_stderr = bounded_process_output(proc.stderr)
+    raw_answer = extract_answer(raw_stdout)
     record = {
         "id": task["id"],
         "passed": False,
         "timed_out": False,
         "duration_s": duration,
         "exit_code": proc.returncode,
-        "stdout": stdout,
-        "answer": answer,
-        "stderr": stderr,
+        "stdout": raw_stdout,
+        "answer": raw_answer,
+        "stderr": raw_stderr,
         "usage": usage,
     }
     if proc.returncode != 0:
-        return record
+        return sanitize_result_record(record)
     passed, judge_info = grade_answer(
         task,
-        answer,
+        raw_answer,
         workdir,
         judge_cmd,
         default_judge,
@@ -1784,8 +1806,8 @@ def run_runner_record(runner, task, workdir, judge_cmd, default_judge=True, judg
     )
     record["passed"] = passed
     if judge_info is not None:
-        record["judge"] = judge_info
-    return record
+        record["judge"] = sanitize_judge_info(judge_info)
+    return sanitize_result_record(record)
 
 
 def _run_round(tasks, args, workdir):
@@ -1923,6 +1945,7 @@ def regrade(args):
         record["answer"] = answer
         if not task:
             record["regraded"] = False
+            sanitize_result_record(record)
             continue
         check = task.get("check", {})
         if check.get("type") == "regex":
@@ -1932,6 +1955,7 @@ def regrade(args):
             record["regraded"] = False
         else:
             record["regraded"] = False
+        sanitize_result_record(record)
     if evidence_manifest is not None or had_health:
         results["health"] = compute_health(results)
     if evidence_manifest is not None:
@@ -2092,10 +2116,20 @@ def run_matrix(args, runners):
         total = len(recs)
         passed = sum(1 for r in recs if r.get("passed"))
         summary[name] = {"passed": passed, "total": total, "pass_rate": round(passed / total, 4) if total else 0.0}
+    # Runner templates can contain inline credentials. Execute the originals,
+    # but persist and render only report-safe copies.
+    public_runners = {
+        name: redact_secret_values(runner)
+        for name, runner in runners.items()
+    }
     matrix = {
         "workdir": str(workdir),
         "agents": {
-            name: {"runner": runners[name], "tasks": recs, "summary": summary[name]}
+            name: {
+                "runner": public_runners[name],
+                "tasks": recs,
+                "summary": summary[name],
+            }
             for name, recs in agent_records.items()
         },
         "summary": summary,
@@ -2110,7 +2144,10 @@ def run_matrix(args, runners):
         if args.matrix_report
         else (Path(args.output) if args.output else Path("matrix-report.md"))
     )
-    report_out.write_text(render_matrix(tasks, agent_records, runners), encoding="utf-8")
+    report_out.write_text(
+        render_matrix(tasks, agent_records, public_runners),
+        encoding="utf-8",
+    )
     print(f"wrote {json_out}")
     print(f"wrote {report_out}")
     health = matrix["health"]

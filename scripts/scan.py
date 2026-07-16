@@ -21,6 +21,12 @@ import facts  # noqa: E402  # contained repository fact reads
 import plugins  # noqa: E402  # user-extensible deterministic rule plugins
 import registry  # noqa: E402
 import semantic  # noqa: E402  # declaration-vs-fact consistency engine
+from redaction import (  # noqa: E402,F401  (public compatibility exports)
+    _SECRET_PLACEHOLDER_RE,
+    SECRET_PATTERNS,
+    redact_secret_values,
+    secret_hits,
+)
 
 # Markdown rendering lives in scan_render.py (ARCH-07) so this module stays
 # focused on producing the report. Re-exported here so `scan.render_*` remains a
@@ -112,50 +118,6 @@ COMMAND_PATTERNS = [
     ".gemini/commands/**/*.toml",
 ]
 SETTINGS_FILES = [".claude/settings.json", ".claude/settings.local.json"]
-
-# Secret-shaped tokens. Kept reasonably conservative to limit false positives;
-# the goal is to flag obvious plaintext credentials committed into agent configs
-# and MCP env values. Each pattern targets a concrete, high-confidence shape.
-SECRET_PATTERNS = [
-    ("AWS access key id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")),
-    ("OpenAI API key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b")),
-    ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}\b")),
-    ("Slack token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
-    ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
-    # Stripe live/restricted secret keys (sk_live_/rk_live_). Publishable
-    # pk_live_ keys are intentionally excluded — they are not secret.
-    ("Stripe secret key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{16,}\b")),
-    # JSON Web Token: three base64url segments; the header (and usually the
-    # payload) begin with the literal `eyJ` (base64 of `{"`).
-    ("JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
-    ("Private key block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
-    (
-        "Generic hardcoded secret",
-        # A credential-shaped key followed by `:`/`=` and a value that is either
-        # quoted (>=12 non-space chars) OR unquoted but long/high-signal (>=16
-        # credential chars with no spaces). The unquoted arm catches `.env`-style
-        # `KEY=value` assignments that the quoted-only rule used to miss, while
-        # the length/charset floor keeps prose from matching.
-        re.compile(
-            r"(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?key|client[_-]?secret|token|password|passwd|"
-            r"auth[_-]?token|bearer)\b\s*[:=]\s*"
-            r"(?:['\"][^'\"\s]{12,}['\"]|[A-Za-z0-9+/_\-.]{16,})"
-        ),
-    ),
-]
-
-# Documentation/example placeholders, not real committed secrets — checked
-# against the MATCHED SPAN only (not the whole line), so an unrelated comment
-# elsewhere on the same line can't hide a genuine secret. Found scanning
-# continuedev/continue's `.continue/rules/dev-data-guide.md`, which has
-# `apiKey: "your-api-key-here"` in an example config block; that shape passes
-# every other check (quoted, 12+ chars, no spaces) and was flagged HIGH.
-_SECRET_PLACEHOLDER_RE = re.compile(
-    r"\byour[_-]|\bmy[_-]|\bexample\b|\bsample\b|\bdummy\b|\bplaceholder\b|\bchangeme\b|"
-    r"\bxxx|\binsert[_-]|\bredacted\b|\bhere\b|<[^<>]*>|\$\{",
-    re.I,
-)
 
 # Permission entries that grant broad/unrestricted execution. A wildcard rule
 # is "broad" only when the COMMAND itself is unconstrained: `Bash(*)`,
@@ -1399,37 +1361,6 @@ def scan_permissions(root, ctx=None):
             entry["defaultMode"] = str(block["defaultMode"])
         perms.append(entry)
     return perms
-
-
-def secret_hits(text):
-    hits = []
-    for label, pattern in SECRET_PATTERNS:
-        if any(
-            not _SECRET_PLACEHOLDER_RE.search(match.group(0))
-            for match in pattern.finditer(text)
-        ):
-            hits.append(label)
-    return hits
-
-
-def redact_secret_values(text):
-    """Replace complete high-confidence secret spans with stable markers.
-
-    Risk/security detection continues to run on the original bytes. This helper
-    is for PUBLIC report fields only, so a scanner never republishes a detected
-    credential through JSON, Markdown, SARIF, or PR feedback.
-    """
-    redacted = str(text)
-    for label, pattern in SECRET_PATTERNS:
-        redacted = pattern.sub(
-            lambda match: (
-                match.group(0)
-                if _SECRET_PLACEHOLDER_RE.search(match.group(0))
-                else f"<redacted:{label}>"
-            ),
-            redacted,
-        )
-    return redacted
 
 
 def public_hooks(hooks):
