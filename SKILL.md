@@ -310,6 +310,15 @@ without silently switching to a builtin or LLM judge. Single, multi-round, and
 matrix modes share this operational gate and continue later records. Overall
 CLI failure remains controlled by `--fail-under` and regression gates.
 
+Runner stdout/answer/stderr, external-judge raw/reason/stderr, and persisted
+matrix runner templates redact the same high-confidence credential shapes as
+scan reports before any result JSON/Markdown is written. Detection, usage
+parsing, answer extraction, and grading still use the original bounded output
+in memory, so redaction does not change pass/fail. Offline regrade sanitizes the
+records it rewrites and deterministically grades the stored (possibly already
+redacted) stdout; this is artifact minimization, not encryption or general PII
+classification.
+
 Run tasks:
 
 ```bash

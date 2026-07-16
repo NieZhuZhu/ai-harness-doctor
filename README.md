@@ -188,6 +188,7 @@ Non-Claude adapters are intentionally thin. Broad rules distribution belongs to 
 - Installer mutations are lock-serialized, journaled, ownership-aware, and recoverable.
 - MCP tools remain read-only; findings are not transport failures.
 - External judges and real LLM grading are opt-in. Remote judge endpoints require HTTPS, loopback HTTP is explicit, redirects are refused, and failures fall back to the deterministic judge.
+- Eval result artifacts redact high-confidence credentials from runner/judge diagnostics and matrix runner templates; grading still uses the original bounded output in memory.
 - No telemetry. The optional npm update check can be disabled with `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1`.
 
 ## Evidence and benchmark

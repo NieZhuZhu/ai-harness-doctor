@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -999,6 +1000,272 @@ class EvalRunTests(unittest.TestCase):
             self.assertLess(len(record["stderr"]), 1050000)
             self.assertIn("[truncated", record["stdout"])
             self.assertIn("[truncated", record["stderr"])
+
+    def test_runner_secret_is_redacted_after_raw_grading(self):
+        with tempfile.TemporaryDirectory() as td:
+            token = "ghp_" + ("A" * 24)
+            task = {
+                "id": "secret",
+                "prompt": "x",
+                # Prove grading sees the raw answer even though persistence is
+                # redacted: this exact generated token must match to pass.
+                "check": {"type": "regex", "value": re.escape(token)},
+                "timeout_s": 10,
+            }
+            runner = (
+                f"{sys.executable} -c "
+                + shlex_quote(
+                    "import sys; "
+                    f"print('answer {token}'); "
+                    f"print('diagnostic {token}', file=sys.stderr)"
+                )
+            )
+
+            record = eval_run.run_runner_record(
+                runner,
+                task,
+                Path(td),
+                None,
+            )
+
+            self.assertTrue(record["passed"])
+            serialized = json.dumps(record)
+            self.assertNotIn(token, serialized)
+            self.assertIn("<redacted:GitHub token>", record["stdout"])
+            self.assertIn("<redacted:GitHub token>", record["answer"])
+            self.assertIn("<redacted:GitHub token>", record["stderr"])
+
+    def test_nonzero_and_timeout_runner_output_is_redacted(self):
+        with tempfile.TemporaryDirectory() as td:
+            token = "ghp_" + ("B" * 24)
+            task = {
+                "id": "secret",
+                "prompt": "x",
+                "check": {"type": "regex", "value": "never"},
+                "timeout_s": 10,
+            }
+            runner = (
+                f"{sys.executable} -c "
+                + shlex_quote(
+                    "import sys; "
+                    f"print('{token}'); print('{token}', file=sys.stderr); "
+                    "sys.exit(7)"
+                )
+            )
+            failed = eval_run.run_runner_record(runner, task, Path(td), None)
+            self.assertFalse(failed["passed"])
+            self.assertNotIn(token, json.dumps(failed))
+
+            original = eval_run.run_subprocess
+            eval_run.run_subprocess = lambda *a, **k: (_ for _ in ()).throw(
+                subprocess.TimeoutExpired(
+                    "runner",
+                    1,
+                    output=f"partial {token}",
+                    stderr=f"error {token}",
+                )
+            )
+            try:
+                timed_out = eval_run.run_runner_record(
+                    "runner",
+                    task,
+                    Path(td),
+                    None,
+                )
+            finally:
+                eval_run.run_subprocess = original
+            self.assertTrue(timed_out["timed_out"])
+            self.assertNotIn(token, json.dumps(timed_out))
+            self.assertIn("<redacted:GitHub token>", timed_out["stdout"])
+            self.assertIn("<redacted:GitHub token>", timed_out["stderr"])
+
+    def test_external_judge_raw_reason_and_stderr_are_redacted(self):
+        with tempfile.TemporaryDirectory() as td:
+            token = "ghp_" + ("C" * 24)
+            task = {
+                "id": "judged-secret",
+                "prompt": "x",
+                "check": {"type": "judge", "rubric": "right"},
+                "timeout_s": 10,
+            }
+            judge_program = (
+                "import json,sys; "
+                f"print(json.dumps({{'passed': True, 'score': 1, 'reason': '{token}'}})); "
+                f"print('{token}', file=sys.stderr)"
+            )
+            judge = f"{sys.executable} -c {shlex_quote(judge_program)}"
+
+            record = eval_run.run_runner_record(
+                "echo right",
+                task,
+                Path(td),
+                judge,
+            )
+
+            self.assertTrue(record["passed"])
+            self.assertNotIn(token, json.dumps(record))
+            self.assertIn("<redacted:GitHub token>", record["judge"]["raw"])
+            self.assertIn("<redacted:GitHub token>", record["judge"]["reason"])
+            self.assertIn("<redacted:GitHub token>", record["judge"]["stderr"])
+
+    def test_single_round_result_file_redacts_runner_secret(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tasks = root / "tasks.json"
+            output = root / "results.json"
+            token = "ghp_" + ("D" * 24)
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "secret",
+                            "prompt": "x",
+                            "check": {"type": "regex", "value": re.escape(token)},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            rc = eval_run.main(
+                [
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "redacted",
+                    "--workdir",
+                    str(root),
+                    "--runner",
+                    f"printf {shlex_quote(token)}",
+                    "-o",
+                    str(output),
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            raw = output.read_text(encoding="utf-8")
+            self.assertNotIn(token, raw)
+            self.assertIn("<redacted:GitHub token>", raw)
+            self.assertTrue(json.loads(raw)["tasks"][0]["passed"])
+
+    def test_round_matrix_and_regrade_artifacts_redact_secrets(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tasks = root / "tasks.json"
+            token = "ghp_" + ("E" * 24)
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "secret",
+                            "prompt": "x",
+                            "check": {"type": "regex", "value": re.escape(token)},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            runner = f"printf {shlex_quote(token)}"
+
+            rounds = root / "rounds.json"
+            rounds_rc = eval_run.main(
+                [
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "rounds",
+                    "--workdir",
+                    str(root),
+                    "--runner",
+                    runner,
+                    "--rounds",
+                    "2",
+                    "-o",
+                    str(rounds),
+                ]
+            )
+            self.assertEqual(rounds_rc, 0)
+            rounds_raw = rounds.read_text(encoding="utf-8")
+            self.assertNotIn(token, rounds_raw)
+            self.assertEqual(
+                [
+                    record["passed"]
+                    for round_result in json.loads(rounds_raw)["round_results"]
+                    for record in round_result["tasks"]
+                ],
+                [True, True],
+            )
+
+            matrix_json = root / "matrix.json"
+            matrix_report = root / "matrix.md"
+            matrix_rc = eval_run.main(
+                [
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(root),
+                    "--runner-cmd",
+                    f"secret={runner}",
+                    "--matrix-json",
+                    str(matrix_json),
+                    "--matrix-report",
+                    str(matrix_report),
+                ]
+            )
+            self.assertEqual(matrix_rc, 0)
+            matrix_raw = matrix_json.read_text(encoding="utf-8")
+            report_raw = matrix_report.read_text(encoding="utf-8")
+            self.assertNotIn(token, matrix_raw + report_raw)
+            self.assertIn("<redacted:GitHub token>", matrix_raw)
+            self.assertIn("<redacted:GitHub token>", report_raw)
+            self.assertTrue(json.loads(matrix_raw)["agents"]["secret"]["tasks"][0]["passed"])
+
+            regraded = root / "regraded.json"
+            regraded.write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {
+                                "id": "secret",
+                                "passed": False,
+                                "stdout": token,
+                                "answer": token,
+                                "stderr": token,
+                                "judge": {
+                                    "raw": token,
+                                    "reason": token,
+                                    "stderr": token,
+                                },
+                            },
+                            {
+                                "id": "orphan",
+                                "passed": False,
+                                "stdout": token,
+                                "answer": token,
+                                "stderr": token,
+                            },
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            regrade_rc = eval_run.main(
+                [
+                    "--regrade",
+                    str(regraded),
+                    "--tasks",
+                    str(tasks),
+                    "-o",
+                    str(regraded),
+                ]
+            )
+            self.assertEqual(regrade_rc, 0)
+            regrade_raw = regraded.read_text(encoding="utf-8")
+            self.assertNotIn(token, regrade_raw)
+            regrade_records = json.loads(regrade_raw)["tasks"]
+            self.assertTrue(regrade_records[0]["passed"])
+            self.assertTrue(regrade_records[0]["regraded"])
+            self.assertFalse(regrade_records[1]["regraded"])
 
     def test_missing_runner_shell_command_is_operational_failure(self):
         with tempfile.TemporaryDirectory() as td:
