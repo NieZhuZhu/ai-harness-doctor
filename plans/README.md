@@ -483,7 +483,7 @@ verification gate, and update its status here.
 | 049 | Redact hook-command secrets from every report surface | P0 | M | 024, 042 | DONE |
 | 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | DONE |
 | 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | DONE |
-| 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | IN PROGRESS |
+| 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

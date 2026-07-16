@@ -29,9 +29,8 @@
 - **Depends on**: Plans 014, 018, and 021 (DONE)
 - **Category**: correctness / diagnostic precision
 - **Planned at**: commit `7e03467`, 2026-07-17
-- **Implementation**: IN PROGRESS — PR #233 (plan) / PR #234 (impl);
-  implementation branch `fix/052-honor-gitignored-runtime-paths`, full local
-  gates and pinned Qwen validation green, awaiting required CI and merge.
+- **Implementation**: DONE — PR #233 (plan) / PR #234 (impl),
+  squash-merged to `main` as `23e6b0f`; all nine required contexts green.
 
 ## Why this matters
 
@@ -475,7 +474,7 @@ implementation requires a public schema/exit change (STOP).
 - [x] No candidate causes per-token subprocess amplification.
 - [x] Seven README translations, `SKILL.md`, and external validation are current.
 - [x] Full local gates pass.
-- [ ] All nine PR checks pass; implementation is
+- [x] All nine PR checks pass; implementation is
       squash-merged.
 
 ## STOP conditions
