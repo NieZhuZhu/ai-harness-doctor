@@ -392,6 +392,17 @@ verification gate, and update its status here.
    049 keeps detection on raw commands while exposing only deterministic
    redacted snippets, and pins the guarantee end-to-end across all artifacts.
 
+### 2026-07-16 improve loop round 5 (LLM credential transport)
+
+1. **LLM judge credentials cross untrusted endpoint boundaries** — traced
+   `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` through stdlib `urllib`. Remote
+   `http://` endpoints receive API keys in clear text, and Python's default POST
+   302 handling copies `Authorization` / `x-api-key` to a cross-origin redirect.
+   Two local generated servers reproduced both sentinel headers at the redirect
+   sink. Plan 050 validates HTTPS (with explicit loopback HTTP support), rejects
+   unsafe URL components, disables redirects for authenticated judge requests,
+   and preserves deterministic built-in fallback without logging credentials.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -444,7 +455,8 @@ verification gate, and update its status here.
 | 046 | Make the GitHub Action emit composable quality outputs and a Job Summary | P1 | M | 012, 034, 042 | DONE |
 | 047 | Make repaired baseline debt visible, checkable, and prunable | P1 | L | 007, 021 | DONE |
 | 048 | Report baseline maintenance failures truthfully through SARIF and the Action | P1 | M | 046, 047 | DONE |
-| 049 | Redact hook-command secrets from every report surface | P0 | M | 024, 042 | TODO |
+| 049 | Redact hook-command secrets from every report surface | P0 | M | 024, 042 | DONE |
+| 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
