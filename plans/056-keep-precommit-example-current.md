@@ -27,6 +27,8 @@
 - **Depends on**: Plans 003, 005, and 019 (DONE)
 - **Category**: docs / consumer safety / test coverage
 - **Planned at**: commit `725128d`, 2026-07-17
+- **Implementation**: DONE — PR #248 (plan) / PR #249 (impl),
+  squash-merged to `main` as `fcb400f`; all nine required contexts green.
 
 ## Why this matters
 
@@ -302,16 +304,17 @@ Open one implementation PR and wait for all nine contexts before squash merge.
 
 ## Done criteria
 
-- [ ] All seven public pre-commit snippets use `rev: v1.11.0`.
-- [ ] The expected ref is derived from `package.json`, not duplicated in test
+- [x] All seven public pre-commit snippets use `rev: v1.11.0`.
+- [x] The expected ref is derived from `package.json`, not duplicated in test
       code.
-- [ ] Exact stable SemVer is required; mutable refs are rejected.
-- [ ] Missing, stale, malformed, and duplicate snippets fail deterministically.
-- [ ] README fenced blocks remain byte-identical across translations.
-- [ ] `.pre-commit-hooks.yaml` and Action examples are unchanged.
-- [ ] No required test performs a network or pre-commit installation.
-- [ ] Full local gate, strict drift 100/A, and self eval 38/38 pass.
-- [ ] All nine PR checks pass and the implementation is squash-merged.
+- [x] Exact stable SemVer is required; mutable refs are rejected.
+- [x] Missing, stale, malformed, and duplicate snippets fail deterministically.
+- [x] README fenced blocks remain byte-identical across translations.
+- [x] `.pre-commit-hooks.yaml` and Action examples are unchanged.
+- [x] No required test performs a network or pre-commit installation.
+- [x] Full local gate (802 Python + 47 Node), strict drift 100/A, and self eval
+      38/38 pass.
+- [x] All nine PR checks pass and the implementation is squash-merged.
 
 ## STOP conditions
 

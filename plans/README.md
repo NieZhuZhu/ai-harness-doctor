@@ -546,7 +546,7 @@ verification gate, and update its status here.
 | 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | DONE |
 | 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | DONE |
 | 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | DONE |
-| 056 | Keep the pre-commit example on the current stable release | P1 | S | 003, 005, 019 | TODO |
+| 056 | Keep the pre-commit example on the current stable release | P1 | S | 003, 005, 019 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
