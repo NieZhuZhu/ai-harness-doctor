@@ -24,6 +24,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-17 at commit `eac8426` (plan 054).
 - 2026-07-17 at commit `5d96c95` (plan 055).
 - 2026-07-17 at commit `725128d` (plan 056).
+- 2026-07-17 at commit `30675ba` (plan 057).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -487,6 +488,20 @@ verification gate, and update its status here.
    every language to the current exact tag and derives a future-staleness test
    from `package.json`.
 
+### 2026-07-17 post-v1.11.0 improve round 3 (packed npm candidate)
+
+1. **Required CI and release preflight never execute the npm package
+   candidate** — independently re-audited all nine categories after Plan 056,
+   including release coupling, guard copies, public-surface parity, package
+   inventory, input/process bounds, dependencies, remote controls, and prior
+   package-test decisions. In an isolated worktree, removing only
+   `"scripts/*.py"` from `package.json#files` left all Node tests,
+   `npm pack --dry-run`, and bundled checkout doctor self-test green. The real
+   tarball still installed successfully, but its installed doctor failed every
+   Python engine as missing. Plan 057 packs once, validates inventory, installs
+   the exact local tarball under isolated HOME/prefix, executes installed doctor
+   before PR merge/release publish, and retains post-publish registry proof.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -547,6 +562,7 @@ verification gate, and update its status here.
 | 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | DONE |
 | 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | DONE |
 | 056 | Keep the pre-commit example on the current stable release | P1 | S | 003, 005, 019 | DONE |
+| 057 | Execute the packed npm candidate before publication | P0 | M | 005, 025, 028, 034 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -814,6 +830,28 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 
 ## Findings considered and rejected or deferred
 
+- **Treat post-publish exact npm verification as sufficient package testing** —
+  rejected. It catches registry/package defects only after immutable
+  publication. Plan 057 keeps that proof and adds the missing pre-publication
+  candidate boundary.
+- **Validate only a hard-coded file list from `npm pack --dry-run`** — rejected.
+  A long duplicate list can drift and still does not prove installed dispatch.
+  Plan 057 combines derived/explicit inventory policy with installation and
+  `doctor --self-test` against the real tarball bytes.
+- **Run the package verifier in all three Node matrix jobs** — rejected as
+  redundant cost and race/noise. One existing required job is enough; release
+  preflight runs it independently at the exact tag.
+- **Add a `prepack` or lifecycle generator to repair omissions automatically** —
+  rejected. Packaging must be complete from reviewed checkout bytes, and local
+  candidate install deliberately disables scripts. Generation would hide
+  allowlist defects and expand the supply-chain surface.
+- **Remove bundled Action preflight once candidate smoke exists** — rejected.
+  The Action's checked-out wrapper/bundled behavior and the npm tarball are
+  separate public distribution paths; both require pre-publish evidence.
+- **Turn the transient GitHub protection HTTP 503 into a product finding** — no
+  finding. The read-back failed once while recent PR enforcement and prior
+  verified settings remained intact; no repository operation or product code
+  depends on that ad-hoc audit call.
 - **Treat the broad `npm run format` write set as Plan 056** — rejected after
   fresh isolation. The command successfully rewrites 106 tracked files plus a
   worktree-local symlink, including historical evidence and fixtures; however,
