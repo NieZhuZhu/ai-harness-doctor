@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across fifteen deep `improve` audit batches:
+Generated and reconciled across sixteen deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -17,6 +17,7 @@ Generated and reconciled across fifteen deep `improve` audit batches:
 - 2026-07-16 at commit `660977e` (plan 037).
 - 2026-07-16 at commit `a2a7227` (plan 038).
 - 2026-07-16 at commit `c141268` (plan 039).
+- 2026-07-16 at commit `26b07b0` (plan 040).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -254,6 +255,19 @@ verification gate, and update its status here.
    applicability seam without generic YAML, external reads, or recursive
    mutation authority.
 
+### 2026-07-16 premium-project loop 1 round 2
+
+1. **Treat canonical-readiness truth** — independently audited draft
+   provenance, validation, stub mutation ordering, library-doc compatibility,
+   MCP validate semantics, Git recovery, and human-adjudication claims. An
+   untouched `--draft` output carries explicit auto-draft/TODO/inference
+   markers but passes `validate` because it has the required headings. After
+   committing that draft, `--write-stubs --apply` exits 0 and replaces a real
+   `CLAUDE.md`, hiding its repository-specific truth behind the unreviewed
+   canonical file. Plan 040 single-sources exact provisional markers and
+   preflights canonical readiness before destructive consolidation without
+   rejecting arbitrary user TODOs or weakening library-doc behavior.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -296,7 +310,8 @@ verification gate, and update its status here.
 | 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
 | 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | DONE |
 | 038 | Prevent failed runners and judges from producing passing eval records | P0 | M | 030, 033 | DONE |
-| 039 | Model Claude Code project rules and their path applicability | P1 | L | 020, 023, 035 | TODO |
+| 039 | Model Claude Code project rules and their path applicability | P1 | L | 020, 023, 035 | DONE |
+| 040 | Prevent provisional AGENTS drafts from authorizing stub destruction | P1 | M | 004, 008, 011, 037 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -516,6 +531,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   therefore minor-release work if its compatibility STOP conditions do not
   expose a breaking requirement. It remains one plan PR followed by one
   implementation PR, each requiring all nine protected contexts.
+- Plan 039 plan PR #197 and implementation PR #198 passed all nine required
+  contexts. The implementation squash-merged as `26b07b0` with registry-backed
+  Claude rule inventory, bounded `paths` applicability, complete report/Action
+  coverage, Bitwarden/Algolia validation, and unchanged Treat ownership.
+- Plan 040 is a separate correctness/safety repair. Exact generated provisional
+  markers must fail validation, and stub apply must reuse canonical readiness
+  before any write/delete. Keep ordinary TODO prose, library-doc soft warnings,
+  pre-migration STUB notices, dry-run utility, and MCP's finding-vs-operational
+  distinction compatible. This is patch-level unless a STOP condition requires
+  a new approval artifact or breaking flag.
 
 ## Post-v1.8.1 completion evidence
 
@@ -850,3 +875,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - **Delete or rewrite recursively discovered Claude rules during Treat** —
   rejected. Read completeness does not prove write ownership. Plan 039 leaves
   the Claude stub targets flat and adds a no-recursive-mutation regression.
+- **Reject every TODO in AGENTS.md** — rejected in loop 1 round 2. Repository
+  owners may intentionally document TODO policies or task conventions. Plan
+  040 matches only exact product-owned provisional markers/prompts.
+- **Treat a clean Git tree as proof of semantic readiness** — rejected. Git
+  makes stub replacement recoverable but cannot prove the generated TODOs and
+  inferred conflict defaults were reviewed.
+- **Let `--force` bypass unreviewed draft markers** — rejected. The flag
+  currently accepts dirty-tree risk; expanding it into a semantic/path safety
+  bypass would conflate unrelated trust decisions.
+- **Require a signed approval sidecar or reviewer identity** — rejected as
+  disproportionate and non-deterministic. Exact marker resolution is a bounded,
+  reviewable intent signal; scripts still do not claim human correctness.
