@@ -1427,6 +1427,7 @@ class BaselineTests(unittest.TestCase):
         proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
         self.assertEqual(json.loads(proc.stdout)["baselined"], [])
         self.assertNotIn("baseline", json.loads(proc.stdout))
+        self.assertNotIn("resolved_baseline", json.loads(proc.stdout))
         md = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
         self.assertNotIn("## Baseline", md.stdout)
 

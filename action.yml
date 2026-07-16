@@ -30,7 +30,7 @@ outputs:
     description: "Path to the generated SARIF file."
     value: ${{ steps.run.outputs.sarif-file }}
   status:
-    description: "Report status: ok or findings."
+    description: "Report status: ok, findings, or maintenance."
     value: ${{ steps.run.outputs.status }}
   finding-count:
     description: "Number of active SARIF findings."
@@ -44,6 +44,9 @@ outputs:
   note-count:
     description: "Number of note-level findings."
     value: ${{ steps.run.outputs.note-count }}
+  resolved-baseline-count:
+    description: "Number of repaired baseline entries ready to prune."
+    value: ${{ steps.run.outputs.resolved-baseline-count }}
   health-score:
     description: "Drift health score (empty for scan or a legacy npm override)."
     value: ${{ steps.run.outputs.health-score }}

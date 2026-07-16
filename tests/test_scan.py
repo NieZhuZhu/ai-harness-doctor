@@ -1346,6 +1346,22 @@ class ScanBaselineTests(unittest.TestCase):
         scan.apply_scan_baseline(shifted_report, scan.baseline_fingerprints(first), "baseline.json")
         self.assertEqual(shifted_report["baselined"][0]["message"], shifted["message"])
 
+        # Pruning must keep this still-known entry even though the visible
+        # finding restores current line evidence. Identity remains normalized.
+        store = scan.parse_scan_baseline(first, path="baseline.json", strict=True)
+        shifted_report = self._report(gaps=[shifted])
+        scan.apply_scan_baseline(shifted_report, store, "baseline.json")
+        resolved_fps = {
+            scan.scan_finding_fingerprint(entry)
+            for entry in shifted_report["resolved_baseline"]
+        }
+        kept = [
+            entry
+            for entry in store["entries"]
+            if scan.scan_finding_fingerprint(entry) not in resolved_fps
+        ]
+        self.assertEqual(kept, first["findings"])
+
     def test_fingerprint_distinguishes_package_and_reopens_changed_identity(self):
         finding = self._semantic_finding()
         root = self._report(semantic=[finding])

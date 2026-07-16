@@ -57,6 +57,7 @@ function parseSarif(data, expectedCommand) {
   let grade = '';
   let ok;
   let legacy = true;
+  let resolvedBaselineCount = 0;
 
   if (producer !== undefined) {
     if (!producer || typeof producer !== 'object' || Array.isArray(producer)) {
@@ -67,6 +68,10 @@ function parseSarif(data, expectedCommand) {
       nonNegativeInteger(producer[key], key);
       if (producer[key] !== counts[key]) fail(`SARIF ${key} does not match results`);
     }
+    resolvedBaselineCount = nonNegativeInteger(
+      producer.resolvedBaselineCount === undefined ? 0 : producer.resolvedBaselineCount,
+      'resolvedBaselineCount',
+    );
     if (expectedCommand === 'drift') {
       if (typeof producer.ok !== 'boolean') fail('invalid drift health status');
       if (typeof producer.score !== 'number' || !Number.isFinite(producer.score)) {
@@ -82,8 +87,11 @@ function parseSarif(data, expectedCommand) {
 
   return {
     command: expectedCommand,
-    status: counts.findingCount === 0 ? 'ok' : 'findings',
+    status: counts.findingCount > 0
+      ? 'findings'
+      : (resolvedBaselineCount > 0 ? 'maintenance' : 'ok'),
     ...counts,
+    resolvedBaselineCount,
     ok,
     score,
     grade,
@@ -100,6 +108,7 @@ function outputLines(report, sarifFile) {
     `error-count=${report.errorCount}`,
     `warning-count=${report.warningCount}`,
     `note-count=${report.noteCount}`,
+    `resolved-baseline-count=${report.resolvedBaselineCount}`,
     `health-score=${report.score}`,
     `health-grade=${report.grade}`,
   ].join('\n') + '\n';
@@ -110,13 +119,22 @@ function markdownCell(value) {
 }
 
 function summaryMarkdown(report) {
-  const status = report.status === 'ok' ? '✅ No active findings' : `⚠️ ${report.findingCount} active finding(s)`;
+  const status = report.status === 'ok'
+    ? '✅ No active findings'
+    : (
+      report.status === 'maintenance'
+        ? `🧹 ${report.resolvedBaselineCount} resolved baseline entry/entries ready to prune`
+        : `⚠️ ${report.findingCount} active finding(s)`
+    );
   const rows = [
     ['Command', `\`${report.command}\``],
     ['Status', status],
     ['Findings', String(report.findingCount)],
     ['Severity', `${report.errorCount} error · ${report.warningCount} warning · ${report.noteCount} note`],
   ];
+  if (report.resolvedBaselineCount > 0) {
+    rows.push(['Resolved baseline debt', `${report.resolvedBaselineCount} entry/entries ready to prune`]);
+  }
   if (report.command === 'drift' && report.grade) {
     rows.push(['Health', `${report.score}/100 (grade ${report.grade})`]);
   } else if (report.command === 'drift' && report.legacy) {

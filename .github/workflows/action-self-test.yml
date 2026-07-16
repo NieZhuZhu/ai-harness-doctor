@@ -118,12 +118,14 @@ jobs:
           BUNDLED_SCAN_ERRORS: ${{ steps.bundled-scan.outputs.error-count }}
           BUNDLED_SCAN_WARNINGS: ${{ steps.bundled-scan.outputs.warning-count }}
           BUNDLED_SCAN_NOTES: ${{ steps.bundled-scan.outputs.note-count }}
+          BUNDLED_SCAN_RESOLVED: ${{ steps.bundled-scan.outputs.resolved-baseline-count }}
           BUNDLED_DRIFT: ${{ steps.bundled-drift.outputs.sarif-file }}
           BUNDLED_DRIFT_STATUS: ${{ steps.bundled-drift.outputs.status }}
           BUNDLED_DRIFT_COUNT: ${{ steps.bundled-drift.outputs.finding-count }}
           BUNDLED_DRIFT_ERRORS: ${{ steps.bundled-drift.outputs.error-count }}
           BUNDLED_DRIFT_WARNINGS: ${{ steps.bundled-drift.outputs.warning-count }}
           BUNDLED_DRIFT_NOTES: ${{ steps.bundled-drift.outputs.note-count }}
+          BUNDLED_DRIFT_RESOLVED: ${{ steps.bundled-drift.outputs.resolved-baseline-count }}
           BUNDLED_DRIFT_SCORE: ${{ steps.bundled-drift.outputs.health-score }}
           BUNDLED_DRIFT_GRADE: ${{ steps.bundled-drift.outputs.health-grade }}
           CLAUDE_RULE_SCAN: ${{ steps.claude-rule-scan.outputs.sarif-file }}
@@ -132,12 +134,14 @@ jobs:
           CLAUDE_RULE_ERRORS: ${{ steps.claude-rule-scan.outputs.error-count }}
           CLAUDE_RULE_WARNINGS: ${{ steps.claude-rule-scan.outputs.warning-count }}
           CLAUDE_RULE_NOTES: ${{ steps.claude-rule-scan.outputs.note-count }}
+          CLAUDE_RULE_RESOLVED: ${{ steps.claude-rule-scan.outputs.resolved-baseline-count }}
           NPM_SCAN: ${{ steps.npm-scan.outputs.sarif-file }}
           NPM_SCAN_STATUS: ${{ steps.npm-scan.outputs.status }}
           NPM_SCAN_COUNT: ${{ steps.npm-scan.outputs.finding-count }}
           NPM_SCAN_ERRORS: ${{ steps.npm-scan.outputs.error-count }}
           NPM_SCAN_WARNINGS: ${{ steps.npm-scan.outputs.warning-count }}
           NPM_SCAN_NOTES: ${{ steps.npm-scan.outputs.note-count }}
+          NPM_SCAN_RESOLVED: ${{ steps.npm-scan.outputs.resolved-baseline-count }}
           BUNDLED_VERSION: ${{ steps.fixture.outputs.checkout_version }}
           NPM_VERSION: ${{ steps.fixture.outputs.published_version }}
           INSTALL_DIR: ${{ runner.temp }}/ai-harness-doctor-action
@@ -216,6 +220,7 @@ jobs:
                 ["ERRORS", String(counts.error)],
                 ["WARNINGS", String(counts.warning)],
                 ["NOTES", String(counts.note)],
+                ["RESOLVED", "0"],
               ]) {
                 const actual = process.env[`${outputPrefix}_${suffix}`];
                 if (actual !== expectedValue) {
@@ -302,6 +307,77 @@ jobs:
             const errors = results.filter((item) => item.level === "error").length;
             if (process.env.ERROR_COUNT !== String(errors)) {
               throw new Error("Tail credential error-count output mismatch");
+            }
+          '
+
+      - name: Create resolved baseline fixture
+        env:
+          FIXTURE_ROOT: ${{ runner.temp }}/resolved-baseline-repo
+        run: |
+          mkdir -p "$FIXTURE_ROOT/.ai-harness-doctor"
+          cat > "$FIXTURE_ROOT/AGENTS.md" <<'EOF'
+          # Project overview
+          Resolved baseline fixture.
+          # Build & test
+          No commands.
+          # Conventions
+          Keep it small.
+          # Testing requirements
+          None.
+          # Safety
+          No secrets.
+          # Commit & PR
+          Use pull requests.
+          EOF
+          cat > "$FIXTURE_ROOT/.ai-harness-doctor/drift-baseline.json" <<'EOF'
+          {
+            "version": 1,
+            "findings": [
+              {
+                "check": "D1",
+                "message": "Unknown package.json script `nope`",
+                "path": null
+              }
+            ]
+          }
+          EOF
+
+      - name: Report resolved baseline maintenance before failure
+        id: baseline-maintenance
+        continue-on-error: true
+        uses: ./
+        with:
+          command: drift
+          path: ${{ runner.temp }}/resolved-baseline-repo
+          args: "--baseline ${{ runner.temp }}/resolved-baseline-repo/.ai-harness-doctor/drift-baseline.json --check-baseline"
+          sarif-file: ${{ runner.temp }}/baseline-maintenance.sarif
+
+      - name: Validate baseline maintenance Action report and failure
+        env:
+          OUTCOME: ${{ steps.baseline-maintenance.outcome }}
+          SARIF_FILE: ${{ runner.temp }}/baseline-maintenance.sarif
+          STATUS: ${{ steps.baseline-maintenance.outputs.status }}
+          FINDING_COUNT: ${{ steps.baseline-maintenance.outputs.finding-count }}
+          RESOLVED_COUNT: ${{ steps.baseline-maintenance.outputs.resolved-baseline-count }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            if (process.env.OUTCOME !== "failure") {
+              throw new Error(`Expected baseline maintenance to fail, got ${process.env.OUTCOME}`);
+            }
+            if (process.env.STATUS !== "maintenance") {
+              throw new Error(`Expected maintenance output, got ${process.env.STATUS}`);
+            }
+            if (process.env.FINDING_COUNT !== "0" || process.env.RESOLVED_COUNT !== "1") {
+              throw new Error(
+                `Baseline maintenance counts mismatch: active=${process.env.FINDING_COUNT}, resolved=${process.env.RESOLVED_COUNT}`,
+              );
+            }
+            const sarif = JSON.parse(fs.readFileSync(process.env.SARIF_FILE, "utf8"));
+            const run = sarif.runs && sarif.runs[0];
+            const metadata = run && run.properties && run.properties.aiHarnessDoctor;
+            if (!run || run.results.length !== 0 || metadata.resolvedBaselineCount !== 1) {
+              throw new Error("Baseline maintenance SARIF metadata mismatch");
             }
           '
 
