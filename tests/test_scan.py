@@ -154,6 +154,51 @@ class FormatterConflictTests(unittest.TestCase):
         )
 
 
+class TestFrameworkVsRunnerConflictTests(unittest.TestCase):
+    """A package-manager test command (`npm/pnpm/yarn test`) merely invokes an
+    underlying JS test framework (`jest/vitest/mocha`), so declaring both — e.g.
+    `pnpm test  # vitest` — is complementary, not a competing test_command. Two
+    rival frameworks, or a genuinely cross-stack runner, must still conflict.
+    Found in round 28 external validation across QwenLM/qwen-code and
+    langgenius/dify."""
+
+    def _test_command_values(self, text):
+        conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
+        tc = [c for c in conflicts if c["signal"] == "test_command"]
+        return set(tc[0]["values"].keys()) if tc else set()
+
+    def test_pnpm_test_running_vitest_is_not_a_conflict(self):
+        # dify cli/AGENTS.md: `pnpm test  # vitest`.
+        self.assertEqual(
+            self._test_command_values("Run `pnpm test` to execute the vitest suite."),
+            set(),
+        )
+
+    def test_npm_test_and_vitest_framework_is_not_a_conflict(self):
+        # qwen-code AGENTS.md: `npm run test:integration...` plus "vitest framework".
+        self.assertEqual(
+            self._test_command_values(
+                "Run `npm run test:integration:interactive`. Tests use the vitest framework."
+            ),
+            set(),
+        )
+
+    def test_two_rival_frameworks_still_conflict(self):
+        # jest and vitest are competing frameworks — a real conflict remains.
+        self.assertEqual(
+            self._test_command_values("Use `jest` in core and `vitest` in the cli package."),
+            {"jest", "vitest"},
+        )
+
+    def test_cross_stack_runner_still_conflicts(self):
+        # A Python framework (pytest) alongside a JS runner (pnpm test) is a
+        # genuine cross-stack ambiguity, not a framework-invokes-runner pair.
+        self.assertEqual(
+            self._test_command_values("Backend tests via `pytest`; frontend via `pnpm test`."),
+            {"pytest", "pnpm test"},
+        )
+
+
 class NegatedExistenceClauseTests(unittest.TestCase):
     """Existence negations ("There are no ... npm lockfiles") state a tool is
     ABSENT, so a manager named inside must not be extracted as a declared
