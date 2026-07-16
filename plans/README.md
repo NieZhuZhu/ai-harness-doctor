@@ -562,7 +562,7 @@ verification gate, and update its status here.
 | 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | DONE |
 | 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | DONE |
 | 056 | Keep the pre-commit example on the current stable release | P1 | S | 003, 005, 019 | DONE |
-| 057 | Execute the packed npm candidate before publication | P0 | M | 005, 025, 028, 034 | TODO |
+| 057 | Execute the packed npm candidate before publication | P0 | M | 005, 025, 028, 034 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

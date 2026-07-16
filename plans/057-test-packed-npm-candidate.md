@@ -27,6 +27,8 @@
 - **Depends on**: Plans 005, 025, 028, and 034 (DONE)
 - **Category**: bug / supply chain / tests / release reliability
 - **Planned at**: commit `30675ba`, 2026-07-17
+- **Implementation**: DONE — PR #251 (plan) / PR #252 (impl),
+  squash-merged to `main` as `0b49830`; all nine required contexts green.
 
 ## Why this matters
 
@@ -376,17 +378,19 @@ Open one implementation PR and wait for all nine contexts before squash merge.
 
 ## Done criteria
 
-- [ ] Required PR CI installs and executes the exact local npm candidate once.
-- [ ] Release preflight does the same before npm publish is reachable.
-- [ ] Missing scripts/helpers in `package.json#files` fail before merge/publish.
-- [ ] Candidate version and every doctor self-test check are healthy.
-- [ ] Candidate install uses isolated HOME/prefix, local tarball, disabled
+- [x] Required PR CI installs and executes the exact local npm candidate once;
+      verified in required lint job `87762189365`.
+- [x] Release preflight does the same before npm publish is reachable.
+- [x] Missing scripts/helpers in `package.json#files` fail before merge/publish.
+- [x] Candidate version and every doctor self-test check are healthy.
+- [x] Candidate install uses isolated HOME/prefix, local tarball, disabled
       lifecycle scripts, finite timeouts, and no registry/credential.
-- [ ] Required/excluded inventory is mechanically checked.
-- [ ] Post-publish exact npm/floating Action verification remains unchanged.
-- [ ] No new required status context or runtime dependency is added.
-- [ ] Full local gates, actionlint, strict drift 100/A, and self eval 38/38 pass.
-- [ ] All nine PR checks pass and the implementation is squash-merged.
+- [x] Required/excluded inventory is mechanically checked.
+- [x] Post-publish exact npm/floating Action verification remains unchanged.
+- [x] No new required status context or runtime dependency is added.
+- [x] Full local gates (812 Python + 47 Node), actionlint v1.7.12, strict drift
+      100/A, and self eval 38/38 pass.
+- [x] All nine PR checks pass and the implementation is squash-merged.
 
 ## STOP conditions
 
