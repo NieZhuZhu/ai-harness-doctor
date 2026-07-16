@@ -371,6 +371,17 @@ verification gate, and update its status here.
    version-1 schemas. It deliberately does not introduce an opaque ignore
    language or auto-baseline new debt.
 
+### 2026-07-16 premium-project loop 3 round 3 (maintenance reporting integrity)
+
+1. **Baseline maintenance gate can be reported as healthy by the Action** —
+   traced the newly added exit-9 baseline lifecycle through Plan 046's SARIF
+   producer metadata and Action Job Summary. A resolved-only baseline has zero
+   active SARIF results, so without explicit metadata the Action emits
+   `status=ok` / “No active findings” and then fails with exit 9. Plan 048 adds
+   `resolvedBaselineCount`, `status=maintenance`, a resolved-count output and a
+   real `uses: ./` maintenance-failure self-test, while keeping resolved debt
+   outside Code Scanning results and preserving the exact exit code.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -421,7 +432,8 @@ verification gate, and update its status here.
 | 044 | Recover from an incomplete installer transaction directory instead of bricking | P1 | S | 011, 037 | DONE |
 | 045 | Make scoped eval use the shared lockfile registry | P1 | S | 027, 029 | DONE |
 | 046 | Make the GitHub Action emit composable quality outputs and a Job Summary | P1 | M | 012, 034, 042 | DONE |
-| 047 | Make repaired baseline debt visible, checkable, and prunable | P1 | L | 007, 021 | TODO |
+| 047 | Make repaired baseline debt visible, checkable, and prunable | P1 | L | 007, 021 | DONE |
+| 048 | Report baseline maintenance failures truthfully through SARIF and the Action | P1 | M | 046, 047 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
