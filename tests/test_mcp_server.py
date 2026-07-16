@@ -183,6 +183,59 @@ class McpServerTests(unittest.TestCase):
             self.assertFalse(metadata["ok"])
             self.assertEqual(metadata["report"], scan)
 
+    def test_large_tool_response_survives_stdin_close(self):
+        # Regression: a client that batches requests then closes stdin makes
+        # readline emit 'close' immediately. Forcing process.exit() before the
+        # stdout stream buffer drains truncated large responses (surfacing as an
+        # "Unterminated string" JSON parse error, or losing the response
+        # entirely once the payload exceeded a single pipe write), silently
+        # corrupting real scan/drift output. The server must flush stdout first.
+        rule_count = 120
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\n\nUse pnpm install.\n", encoding="utf-8"
+            )
+            rules_dir = repo / ".cursor" / "rules"
+            rules_dir.mkdir(parents=True)
+            for index in range(rule_count):
+                (rules_dir / f"rule{index:04d}.mdc").write_text(
+                    f"---\ndescription: rule {index}\nglobs: src/**/*.ts\n---\n"
+                    f"# Rule {index}\nInstruction body number {index}.\n",
+                    encoding="utf-8",
+                )
+
+            messages = [
+                self._initialize(request_id=1),
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "harness_scan",
+                        "arguments": {"repo": str(repo), "json": True},
+                    },
+                },
+            ]
+            responses = self._exchange(messages)
+
+            by_id = {r.get("id"): r for r in responses if "id" in r}
+            # Both the small initialize reply and the large scan reply must
+            # arrive intact; a premature exit drops the queued remainder.
+            self.assertIn(1, by_id)
+            self.assertIn(3, by_id)
+            call = by_id[3]["result"]
+            self.assertFalse(call.get("isError"))
+            scan = json.loads(call["content"][0]["text"])
+            scanned = {f["path"] for f in scan["files"]}
+            for index in range(rule_count):
+                self.assertIn(f".cursor/rules/rule{index:04d}.mdc", scanned)
+            # The serialized response must exceed a single pipe write so the test
+            # actually exercises the drain-before-exit path rather than a payload
+            # that happens to flush in one syscall.
+            self.assertGreater(len(json.dumps(by_id[3])), 64 * 1024)
+
     def test_protocol_negotiation_and_legacy_wire_shape(self):
         for requested, expected in (
             (LATEST_PROTOCOL, LATEST_PROTOCOL),

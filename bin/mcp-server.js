@@ -198,6 +198,20 @@ function writeMessage(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
+function flushStdoutAndExit(code) {
+  // A client that batches requests then closes stdin makes readline emit
+  // 'close' immediately. Calling process.exit() while a large response is still
+  // queued in the stdout stream buffer discards the unflushed remainder and
+  // silently truncates the JSON (observed as an "Unterminated string" once the
+  // response exceeds the pipe write size). Drain the buffer first so every
+  // response is delivered in full before we exit.
+  if (process.stdout.writableLength === 0) {
+    process.exit(code);
+    return;
+  }
+  process.stdout.once('drain', () => process.exit(code));
+}
+
 function sendResult(id, result) {
   writeMessage({ jsonrpc: '2.0', id, result });
 }
@@ -545,7 +559,7 @@ function main() {
       sendError(message.id !== undefined ? message.id : null, INTERNAL_ERROR, `Internal error: ${error && error.message}`);
     }
   });
-  rl.on('close', () => process.exit(0));
+  rl.on('close', () => flushStdoutAndExit(0));
 }
 
 if (require.main === module) {
