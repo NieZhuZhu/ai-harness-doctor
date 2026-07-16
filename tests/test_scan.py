@@ -1474,6 +1474,171 @@ class ScanBaselineTests(unittest.TestCase):
             self.assertFalse(any("missing` script" in message for message in messages))
             self.assertEqual(len(new_report["baselined"]), 1)
 
+    def test_resolved_baseline_is_visible_checkable_and_prunable(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo_with_semantic_debt(td)
+            baseline = Path(td) / "scan-baseline.json"
+            subprocess.run(
+                [sys.executable, str(SCAN), str(repo), "--write-baseline", str(baseline)],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            original = json.loads(baseline.read_text(encoding="utf-8"))
+            self.assertEqual(len(original["findings"]), 1)
+
+            # Repair the known finding and introduce a NEW one. Prune must remove
+            # the resolved entry without silently adding the new active debt.
+            agents = (repo / "AGENTS.md").read_text(encoding="utf-8")
+            agents = agents.replace("Run `npm run missing`.", "Run `npm run brandnew`.")
+            (repo / "AGENTS.md").write_text(agents, encoding="utf-8")
+
+            report_proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            report = json.loads(report_proc.stdout)
+            self.assertEqual(report["baselined"], [])
+            self.assertEqual(report["resolved_baseline"], original["findings"])
+            self.assertEqual(report["baseline"]["known"], 0)
+            self.assertEqual(report["baseline"]["resolved"], 1)
+            self.assertTrue(
+                any("brandnew" in finding["message"] for finding in report["semantic"]["findings"])
+            )
+
+            checked = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--check-baseline",
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(checked.returncode, scan.BASELINE_MAINTENANCE_EXIT)
+            self.assertEqual(len(json.loads(checked.stdout)["resolved_baseline"]), 1)
+
+            pruned = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--prune-baseline",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(pruned.returncode, 0, pruned.stdout + pruned.stderr)
+            self.assertEqual(
+                json.loads(baseline.read_text(encoding="utf-8")),
+                {"version": scan.SCAN_BASELINE_VERSION, "findings": []},
+            )
+            self.assertNotIn("brandnew", baseline.read_text(encoding="utf-8"))
+
+            second = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(repo),
+                    "--baseline",
+                    str(baseline),
+                    "--prune-baseline",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(second.returncode, 0)
+            self.assertIn("Pruned 0", second.stdout)
+
+    def test_mixed_baseline_keeps_known_prunes_resolved_and_leaves_new_active(self):
+        known = self._semantic_finding("known")
+        resolved = self._semantic_finding("resolved")
+        new = self._semantic_finding("new")
+        baseline = scan.scan_baseline_payload(
+            self._report(semantic=[known, resolved])
+        )
+        report = self._report(semantic=[known, new])
+        store = scan.parse_scan_baseline(baseline, path="baseline.json", strict=True)
+
+        scan.apply_scan_baseline(report, store, "baseline.json")
+
+        self.assertEqual(
+            [entry["declared"] for entry in report["baselined"]],
+            [known["declared"]],
+        )
+        self.assertEqual(
+            [entry["declared"] for entry in report["resolved_baseline"]],
+            [resolved["declared"]],
+        )
+        self.assertEqual(
+            [entry["declared"] for entry in report["semantic"]["findings"]],
+            [new["declared"]],
+        )
+        self.assertEqual(report["baseline"]["known"], 1)
+        self.assertEqual(report["baseline"]["resolved"], 1)
+
+    def test_baseline_maintenance_fails_closed_on_malformed_input(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._repo_with_semantic_debt(td)
+            baseline = Path(td) / "bad.json"
+            baseline.write_text("{bad", encoding="utf-8")
+            original = baseline.read_bytes()
+            for mode in ("--check-baseline", "--prune-baseline"):
+                with self.subTest(mode=mode):
+                    proc = subprocess.run(
+                        [
+                            sys.executable,
+                            str(SCAN),
+                            str(repo),
+                            "--baseline",
+                            str(baseline),
+                            mode,
+                        ],
+                        text=True,
+                        capture_output=True,
+                    )
+                    self.assertNotEqual(proc.returncode, 0)
+                    self.assertIn("baseline error", proc.stderr)
+                    self.assertEqual(baseline.read_bytes(), original)
+
+    def test_ordinary_baseline_skips_bad_entry_but_maintenance_rejects_it(self):
+        good = scan.scan_baseline_payload(
+            self._report(semantic=[self._semantic_finding("known")])
+        )["findings"][0]
+        payload = {
+            "version": scan.SCAN_BASELINE_VERSION,
+            "findings": [
+                good,
+                {
+                    "family": "conflict",
+                    "rule": "bad",
+                    "package": "",
+                    "path": "",
+                    "message": "bad",
+                    "values": {"not": "a list"},
+                },
+            ],
+        }
+        ordinary = scan.parse_scan_baseline(payload)
+        self.assertTrue(ordinary["valid"])
+        self.assertEqual(ordinary["entries"], [good])
+        with self.assertRaises(scan.BaselineFileError):
+            scan.parse_scan_baseline(payload, strict=True)
+
     def test_write_baseline_creates_explicit_parent_directory(self):
         with tempfile.TemporaryDirectory() as td:
             repo = self._repo_with_semantic_debt(td)

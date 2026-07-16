@@ -1262,6 +1262,123 @@ class BaselineTests(unittest.TestCase):
         self.assertNotIn("Unknown package.json script `nope`", new_msgs)
         self.assertEqual(len(report["baselined"]), 1)
 
+    def test_resolved_baseline_is_visible_checkable_and_prunable(self):
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        baseline = repo.parent / "drift-baseline.json"
+        subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--write-baseline", str(baseline)],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        original = json.loads(baseline.read_text(encoding="utf-8"))
+        self.assertEqual(len(original["findings"]), 1)
+
+        # Replace the known command drift with a new one. The old entry is
+        # resolved; the new finding must remain active and never be auto-added.
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS.replace("npm run test", "npm run brandnew"),
+            encoding="utf-8",
+        )
+        reported = subprocess.run(
+            [
+                sys.executable,
+                str(DRIFT),
+                str(repo),
+                "--baseline",
+                str(baseline),
+                "--json",
+            ],
+            text=True,
+            capture_output=True,
+        )
+        report = json.loads(reported.stdout)
+        self.assertEqual(report["baselined"], [])
+        self.assertEqual(report["resolved_baseline"], original["findings"])
+        self.assertEqual(report["baseline"]["known"], 0)
+        self.assertEqual(report["baseline"]["resolved"], 1)
+        self.assertIn(
+            "Unknown package.json script `brandnew`",
+            [finding["message"] for finding in report["findings"]],
+        )
+
+        checked = subprocess.run(
+            [
+                sys.executable,
+                str(DRIFT),
+                str(repo),
+                "--baseline",
+                str(baseline),
+                "--check-baseline",
+                "--json",
+            ],
+            text=True,
+            capture_output=True,
+        )
+        # Active drift exit 1 keeps precedence over baseline maintenance exit 9.
+        self.assertEqual(checked.returncode, 1)
+
+        # Repair every active finding so the maintenance-only exit becomes 9.
+        (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+        checked_clean = subprocess.run(
+            [
+                sys.executable,
+                str(DRIFT),
+                str(repo),
+                "--baseline",
+                str(baseline),
+                "--check-baseline",
+                "--json",
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(checked_clean.returncode, check_drift.BASELINE_MAINTENANCE_EXIT)
+        self.assertEqual(len(json.loads(checked_clean.stdout)["resolved_baseline"]), 1)
+
+        pruned = subprocess.run(
+            [
+                sys.executable,
+                str(DRIFT),
+                str(repo),
+                "--baseline",
+                str(baseline),
+                "--prune-baseline",
+            ],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(pruned.returncode, 0, pruned.stdout + pruned.stderr)
+        self.assertEqual(
+            json.loads(baseline.read_text(encoding="utf-8")),
+            {"version": check_drift.BASELINE_VERSION, "findings": []},
+        )
+
+    def test_baseline_maintenance_fails_closed_on_malformed_input(self):
+        td, repo = self._repo_with_drift()
+        self.addCleanup(td.cleanup)
+        baseline = repo.parent / "bad.json"
+        baseline.write_text("{bad", encoding="utf-8")
+        original = baseline.read_bytes()
+        for mode in ("--check-baseline", "--prune-baseline"):
+            with self.subTest(mode=mode):
+                proc = subprocess.run(
+                    [
+                        sys.executable,
+                        str(DRIFT),
+                        str(repo),
+                        "--baseline",
+                        str(baseline),
+                        mode,
+                    ],
+                    text=True,
+                    capture_output=True,
+                )
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("baseline error", proc.stderr)
+                self.assertEqual(baseline.read_bytes(), original)
+
     def test_baseline_survives_line_number_shift(self):
         # Fingerprints ignore line numbers, so an unrelated edit above the drift
         # must not "un-baseline" it (the whole point of a durable baseline).
@@ -1309,6 +1426,7 @@ class BaselineTests(unittest.TestCase):
         self.addCleanup(td.cleanup)
         proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
         self.assertEqual(json.loads(proc.stdout)["baselined"], [])
+        self.assertNotIn("baseline", json.loads(proc.stdout))
         md = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
         self.assertNotIn("## Baseline", md.stdout)
 

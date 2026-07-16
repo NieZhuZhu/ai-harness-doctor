@@ -176,7 +176,8 @@ def render_instruction_scopes(lines, scopes, overrides):
 def render_baseline(lines, baseline, findings):
     """Render transparent baseline debt without duplicating full finding prose."""
     lines.extend(["", "## Scan baseline"])
-    count = baseline.get("suppressed", len(findings))
+    count = baseline.get("known", baseline.get("suppressed", len(findings)))
+    resolved = baseline.get("resolved", 0)
     path = baseline.get("path", "")
     lines.append(
         f"{count} pre-existing non-security finding(s) suppressed by baseline `{path}` "
@@ -189,6 +190,11 @@ def render_baseline(lines, baseline, findings):
             counts[family] = counts.get(family, 0) + 1
         summary = ", ".join(f"{family}={counts[family]}" for family in sorted(counts))
         lines.append(f"Suppressed debt by family: {summary}.")
+    if resolved:
+        lines.append(
+            f"{resolved} resolved baseline finding(s) are ready to prune "
+            "(`resolved_baseline` in JSON; run `--baseline FILE --prune-baseline`)."
+        )
     lines.append("HIGH security findings are never baseline-eligible.")
     lines.append("")
 

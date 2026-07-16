@@ -47,6 +47,7 @@ REPOS_FILE_OPERATIONAL_EXIT = 8
 # nor hand-crafted baseline can suppress a credential or unsafe permission.
 SCAN_BASELINE_VERSION = 1
 SCAN_BASELINE_FAMILIES = {"gap", "semantic", "conflict"}
+BASELINE_MAINTENANCE_EXIT = 9
 _LINE_EVIDENCE_RE = re.compile(
     r"(?P<path>(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+):\d+\b"
 )
@@ -2193,13 +2194,112 @@ def baseline_fingerprints(payload):
     return fingerprints
 
 
-def load_scan_baseline(path):
-    """Load a scan baseline; missing/malformed files suppress nothing."""
+class BaselineFileError(ValueError):
+    """A safe, caller-facing baseline maintenance error."""
+
+
+def parse_scan_baseline(payload, path="", strict=False):
+    """Return canonical entries + fingerprints for one scan baseline.
+
+    Ordinary scans remain fail-safe: malformed input suppresses nothing.
+    Explicit check/prune operations pass ``strict=True`` and receive a concise
+    error instead of mutating an untrusted or malformed baseline.
+    """
+    valid = (
+        isinstance(payload, dict)
+        and payload.get("version") == SCAN_BASELINE_VERSION
+        and isinstance(payload.get("findings"), list)
+    )
+    entries = []
+    if valid:
+        for entry in payload["findings"]:
+            common_valid = (
+                isinstance(entry, dict)
+                and entry.get("family") in SCAN_BASELINE_FAMILIES
+                and all(
+                    isinstance(entry.get(key, ""), str)
+                    for key in ("rule", "package", "path", "message")
+                )
+            )
+            family = entry.get("family") if isinstance(entry, dict) else None
+            specific_valid = (
+                family == "gap"
+                and isinstance(entry.get("item", ""), str)
+                or family == "semantic"
+                and isinstance(entry.get("declared", ""), str)
+                and isinstance(entry.get("actual", ""), str)
+                or family == "conflict"
+                and isinstance(entry.get("values", []), list)
+                and all(isinstance(value, str) for value in entry.get("values", []))
+                and (
+                    entry.get("scope") is None
+                    or isinstance(entry.get("scope"), str)
+                )
+            )
+            if not common_valid or not specific_valid:
+                if strict:
+                    valid = False
+                    break
+                continue
+            entries.append(_baseline_entry(entry))
+    if not valid:
+        if strict:
+            raise BaselineFileError("baseline must be a version-1 scan baseline")
+        entries = []
+    unique = {scan_finding_fingerprint(entry): entry for entry in entries}
+    ordered = sorted(
+        unique.values(),
+        key=lambda entry: (
+            entry["package"],
+            entry["family"],
+            entry["rule"],
+            entry["path"],
+            entry["message"],
+            json.dumps(entry, ensure_ascii=False, sort_keys=True),
+        ),
+    )
+    return {
+        "path": str(path),
+        "valid": valid,
+        "entries": ordered,
+        "fingerprints": set(unique),
+        "by_fingerprint": {scan_finding_fingerprint(entry): entry for entry in ordered},
+    }
+
+
+def load_scan_baseline_store(path, strict=False):
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return set()
-    return baseline_fingerprints(payload)
+        if strict:
+            raise BaselineFileError("baseline file is missing or invalid JSON")
+        payload = None
+    return parse_scan_baseline(payload, path=path, strict=strict)
+
+
+def load_scan_baseline(path):
+    """Load a scan baseline; missing/malformed files suppress nothing."""
+    return load_scan_baseline_store(path)["fingerprints"]
+
+
+def write_json_atomic(path, payload):
+    """Write deterministic JSON via a same-directory atomic replacement."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
+    try:
+        os.fchmod(fd, 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, target)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise
 
 
 def scan_baseline_payload(report):
@@ -2232,8 +2332,28 @@ def _refresh_package_summaries(report):
         report["monorepo"]["aggregate"] = _aggregate_packages(packages)
 
 
+def current_scan_baseline_entries(report):
+    """Return current baseline-eligible entries keyed by stable fingerprint."""
+    current = {}
+    for package, subreport in _scan_reports(report):
+        for record in _scan_finding_records(subreport, package):
+            entry = _baseline_entry(record)
+            current[scan_finding_fingerprint(entry)] = entry
+    return current
+
+
 def apply_scan_baseline(report, baseline, baseline_path):
     """Suppress matching gap/semantic/conflict debt while retaining attribution."""
+    if isinstance(baseline, dict):
+        baseline_fps = baseline["fingerprints"]
+        baseline_entries = baseline["entries"]
+    else:
+        # Backward-compatible library surface for callers/tests that supplied
+        # only the historical fingerprint set. Resolved entries require the
+        # persisted payload and therefore remain empty on this compatibility path.
+        baseline_fps = baseline
+        baseline_entries = []
+    current = current_scan_baseline_entries(report)
     baselined = []
 
     def visible_entry(record, finding):
@@ -2249,7 +2369,7 @@ def apply_scan_baseline(report, baseline, baseline_path):
         kept_gaps = []
         for finding in subreport.get("gaps", []):
             record = _scan_finding_records({"gaps": [finding]}, package)[0]
-            if scan_finding_fingerprint(record) in baseline:
+            if scan_finding_fingerprint(record) in baseline_fps:
                 baselined.append(visible_entry(record, finding))
             else:
                 kept_gaps.append(finding)
@@ -2262,7 +2382,7 @@ def apply_scan_baseline(report, baseline, baseline_path):
                 {"semantic": {"findings": [finding]}},
                 package,
             )[0]
-            if scan_finding_fingerprint(record) in baseline:
+            if scan_finding_fingerprint(record) in baseline_fps:
                 baselined.append(visible_entry(record, finding))
             else:
                 kept_semantic.append(finding)
@@ -2273,7 +2393,7 @@ def apply_scan_baseline(report, baseline, baseline_path):
         kept_conflicts = []
         for finding in subreport.get("conflicts", []):
             record = _scan_finding_records({"conflicts": [finding]}, package)[0]
-            if scan_finding_fingerprint(record) in baseline:
+            if scan_finding_fingerprint(record) in baseline_fps:
                 baselined.append(visible_entry(record, finding))
             else:
                 kept_conflicts.append(finding)
@@ -2289,8 +2409,19 @@ def apply_scan_baseline(report, baseline, baseline_path):
             entry["message"],
         )
     )
+    resolved = [
+        entry
+        for entry in baseline_entries
+        if scan_finding_fingerprint(entry) not in current
+    ]
     report["baselined"] = baselined
-    report["baseline"] = {"path": str(baseline_path), "suppressed": len(baselined)}
+    report["resolved_baseline"] = resolved
+    report["baseline"] = {
+        "path": str(baseline_path),
+        "suppressed": len(baselined),
+        "known": len(baselined),
+        "resolved": len(resolved),
+    }
     _refresh_package_summaries(report)
     return report
 
@@ -2513,6 +2644,16 @@ def main(argv=None):
         "The deterministic payload excludes all security findings.",
     )
     parser.add_argument(
+        "--check-baseline",
+        action="store_true",
+        help=f"Exit {BASELINE_MAINTENANCE_EXIT} when FILE contains resolved/stale debt. Requires --baseline.",
+    )
+    parser.add_argument(
+        "--prune-baseline",
+        action="store_true",
+        help="Atomically remove only resolved/stale entries from --baseline FILE and exit 0.",
+    )
+    parser.add_argument(
         "--no-snapshot",
         action="store_true",
         help="Skip the project snapshot section (drops the `project_snapshot` key).",
@@ -2561,11 +2702,23 @@ def main(argv=None):
         "take precedence).",
     )
     args = parser.parse_args(argv)
+    if (args.check_baseline or args.prune_baseline) and not args.baseline:
+        print("error: --check-baseline/--prune-baseline requires --baseline FILE", file=sys.stderr)
+        return 1
+    if args.write_baseline and (args.baseline or args.check_baseline or args.prune_baseline):
+        print(
+            "error: --write-baseline cannot be combined with --baseline maintenance modes",
+            file=sys.stderr,
+        )
+        return 1
+    if args.check_baseline and args.prune_baseline:
+        print("error: --check-baseline and --prune-baseline are mutually exclusive", file=sys.stderr)
+        return 1
     if args.repos_file:
         if args.repo_root != ".":
             print("error: repo_root and --repos-file are mutually exclusive", file=sys.stderr)
             return 1
-        if args.baseline or args.write_baseline:
+        if args.baseline or args.write_baseline or args.check_baseline or args.prune_baseline:
             print(
                 "error: --repos-file cannot be combined with --baseline or --write-baseline; "
                 "each repository must own and run its own scan baseline",
@@ -2606,19 +2759,41 @@ def main(argv=None):
     # Security findings are structurally excluded by scan_baseline_payload().
     if args.write_baseline:
         payload = scan_baseline_payload(report)
-        baseline_path = Path(args.write_baseline)
-        baseline_path.parent.mkdir(parents=True, exist_ok=True)
-        baseline_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        write_json_atomic(args.write_baseline, payload)
         print(f"Wrote scan baseline with {len(payload['findings'])} finding(s) to {args.write_baseline}")
         return 0
 
     # Apply suppression before gate and SARIF decisions. Only the explicitly
     # suppressible report families are mutated; security remains untouched.
     if args.baseline:
-        apply_scan_baseline(report, load_scan_baseline(args.baseline), args.baseline)
+        try:
+            baseline_store = load_scan_baseline_store(
+                args.baseline,
+                strict=args.check_baseline or args.prune_baseline,
+            )
+        except BaselineFileError as exc:
+            print(f"baseline error: {exc}", file=sys.stderr)
+            return 1
+        apply_scan_baseline(report, baseline_store, args.baseline)
+        if args.prune_baseline:
+            known_fps = {
+                scan_finding_fingerprint(entry)
+                for entry in report.get("baselined", [])
+            }
+            kept = [
+                entry
+                for entry in baseline_store["entries"]
+                if scan_finding_fingerprint(entry) in known_fps
+            ]
+            write_json_atomic(
+                args.baseline,
+                {"version": SCAN_BASELINE_VERSION, "findings": kept},
+            )
+            print(
+                f"Pruned {len(report.get('resolved_baseline', []))} resolved scan baseline finding(s); "
+                f"{len(kept)} known finding(s) remain."
+            )
+            return 0
 
     # Evaluate the fail-on gates on the ACTUAL findings BEFORE the --no-* flags
     # suppress any report sections. Otherwise --no-security would pop the security
@@ -2638,6 +2813,12 @@ def main(argv=None):
         exit_code = 4
     elif args.fail_on_conflicts and any(r.get("conflicts") for r in reports):
         exit_code = 7
+    if (
+        exit_code == 0
+        and args.check_baseline
+        and report.get("resolved_baseline")
+    ):
+        exit_code = BASELINE_MAINTENANCE_EXIT
 
     # SARIF emission happens on the COMPLETE report (root + every package) before
     # any --no-* suppression below, so GitHub code scanning always receives the
