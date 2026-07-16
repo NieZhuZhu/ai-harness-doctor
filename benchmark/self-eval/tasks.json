@@ -193,7 +193,7 @@
   },
   {
     "id": "structured-applicability",
-    "prompt": "How may Cursor/Copilot structured rules narrow conflicts, and what must remain diagnostic or mutation-safe? Answer briefly.",
+    "prompt": "How may Claude/Cursor/Copilot structured rules narrow conflicts, and what must remain diagnostic or mutation-safe? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)structured.*glob.*automatic.*conflict.*conditional.*diagnostic.*recursive.*delet|conditional.*manual.*diagnostic.*recursive.*delet"}
   }

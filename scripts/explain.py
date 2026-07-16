@@ -13,9 +13,10 @@ import scan  # noqa: E402
 
 SCHEMA_VERSION = 1
 DIAGNOSTIC_LIMITATION = (
-    "Cursor .mdc globs/alwaysApply and Copilot instructions applyTo metadata "
-    "are modeled deterministically. Description-selected, manual, malformed, "
-    "and other tool/prose applicability remains diagnostically associated only."
+    "Claude rules paths, Cursor .mdc globs/alwaysApply, and Copilot instructions "
+    "applyTo metadata are modeled deterministically. Description-selected, "
+    "manual, malformed, and other tool/prose applicability remains "
+    "diagnostically associated only."
 )
 
 

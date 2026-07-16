@@ -229,8 +229,8 @@
     },
     {
       "id": "structured-applicability",
-      "stdout": "Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion.",
-      "answer": "Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion.",
+      "stdout": "Claude/Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion or rewriting.",
+      "answer": "Claude/Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion or rewriting.",
       "passed": true,
       "regraded": true
     }
@@ -247,12 +247,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "39e57eebfc2e7f8e87cc2afa59f19893859bd2eb21f9f26c866fa324f9881c0a"
+      "sha256": "55817710d3e4965da6179ab3c808a49f021d89ac941693163bd2a6478c8ebee9"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "35016b58836721460408e7226d924be88ea40fe333ee1118ac9d2a84932a8ee7"
+        "sha256": "ec4a1879642537e437d2643b2c8ac6c676c2aaa4316aa9e25ebba2396a81f54c"
       }
     ]
   }

@@ -8,7 +8,7 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
 - `scripts/` — deterministic Python engines:
   - `scan.py` — Phase 0 inventory/security scan, monorepo results, structured applicability, and debt baselines.
   - `semantic.py` — Phase 0 declaration-vs-code facts for Node, Python, Go, Rust, Java, and Ruby.
-  - `applicability.py` — bounded Cursor/Copilot frontmatter + glob classifier; no general YAML.
+  - `applicability.py` — bounded Claude/Cursor/Copilot applicability; no general YAML.
   - `canonicalize.py` — Phase 1 merge plan, `--draft`, tool-stub downgrade, and validation.
   - `check_drift.py` — Phase 2 root/nested D1–D8 guard, health, `--fix`, and baselines.
   - `explain.py` — read-only target-path projection of scan's canonical scope, diagnostic-source, override, and conflict evidence.
@@ -40,8 +40,8 @@ node bin/cli.js help
 - Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
 - Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
 - `--max-bytes` bounds semantic text only; full-file SHA/line/security stays bounded-memory. Mark prefix-only evidence; never call a prefix digest a file SHA or claim unseen tails clean.
-- Instruction scope is lexical: same-scope differences conflict; ancestor→descendant differences are non-blocking overrides. Cursor/Copilot structured globs may narrow automatic conflict domains; conditional/manual/invalid/ignored rules stay diagnostic. Never infer prose scopes or let recursive discovery authorize recursive deletion.
-- Explain reuses scan scope/containment: canonical files form the chain; modeled Cursor/Copilot rules may apply automatically, while unmodeled sources stay diagnostic. Keep CLI/MCP/Claude/generated-adapter schemas/counts synchronized.
+- Instruction scope is lexical: same-scope differences conflict; descendant differences are non-blocking overrides. Structured applicability stays registry-sourced, bounded/fail-closed, and full-byte security scanned; conditional/manual/invalid/ignored stays diagnostic. Never infer prose scopes or grant mutation authority from recursive discovery.
+- Explain reuses scan scope/containment: canonical files form the chain; modeled rules may apply automatically, while unmodeled sources stay diagnostic. Keep CLI/MCP/adapter contracts synchronized.
 - Baselines are visible debt registers: HIGH security is ineligible; identities are deterministic and line-independent. Shrink repaired debt. PR feedback keeps one owned marker summary current, preserves inline findings, and never edits foreign markers or duplicates the summary on 422. Preserve package paths, keep batch findings summary-only, and never post baselined debt as active. Batch scans must report every reachable repo, fail on any unscanned entry (exit 8 after 2/3/4/7 precedence), and never leak resolved paths.
 - Eval validates tasks/results before side effects; runner and explicit judge exit 0 are prerequisites for a passing record; failed runner output is never judged. Derive health from records, require cached agreement, then verify evidence freshness before gates. Refresh committed results honestly.
 - Targeted eval reuses explain scope/containment. Keep root IDs; use local scripts/deps, nearest clear manager/runtime, inherited canonical rules, relative evidence, and no automatic all-scope expansion.

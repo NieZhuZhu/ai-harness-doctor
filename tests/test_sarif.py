@@ -176,6 +176,31 @@ class ScanReportTests(unittest.TestCase):
         )
         self.assertEqual(conflict["locations"], [])
 
+    def test_claude_applicability_warning_reaches_sarif(self):
+        report = {
+            "applicability_warnings": [
+                {
+                    "category": "no-current-match",
+                    "level": "NOTICE",
+                    "path": ".claude/rules/future.md",
+                    "line": 1,
+                    "message": "Structured rule matches no current path.",
+                    "suggestion": "Review the paths list.",
+                }
+            ]
+        }
+
+        result = sarif.scan_report_to_sarif(report)["runs"][0]["results"][0]
+
+        self.assertEqual(result["ruleId"], "applicability/no-current-match")
+        self.assertEqual(result["level"], "warning")
+        location = result["locations"][0]["physicalLocation"]
+        self.assertEqual(
+            location["artifactLocation"]["uri"],
+            ".claude/rules/future.md",
+        )
+        self.assertEqual(location["region"]["startLine"], 1)
+
     def test_scope_overrides_are_not_sarif_findings(self):
         report = self._report()
         report["scope_overrides"] = [

@@ -307,7 +307,7 @@ It also inventories the **extended harness surface** — MCP servers, subagents,
 
 For an oversized instruction file, `--max-bytes` bounds only the semantic text retained for overlap, conflict, override, and declaration analysis. The inventory SHA/line count and high-confidence secret/bypass checks still cover every byte without retaining the whole file in memory. JSON exposes `analyzed_bytes`, `truncated`, `security_scanned_bytes`, and top-level `analysis_limits`; Markdown labels prefix-only overlap evidence. An empty bounded-semantic result is never presented as proof about the unseen tail.
 
-**Structured rule applicability.** Scan recursively discovers Cursor `.cursor/rules/**/*.mdc` and Copilot/VS Code `.github/instructions/**/*.instructions.md`. A bounded stdlib parser models Cursor `alwaysApply`/`globs`/`description` and Copilot `applyTo` (quoted/unquoted scalars, booleans, comma lists, and brace alternatives; no general YAML). Blocking conflicts require different values whose automatic domains overlap on at least one current contained repository path. Disjoint path rules do not conflict; always-on/canonical rules and overlapping path rules still do. Conditional/semantic, manual, ignored Cursor `.md`, malformed, truncated, and no-current-match rules remain visible under `applicability` / `applicability_warnings`, but do not become blocking conflicts. Diagnostics reach Markdown, SARIF, and PR review. Security, identity, and overlap still inspect the original file regardless of applicability; recursive discovery never authorizes recursive Treat deletion.
+**Structured rule applicability.** Scan recursively discovers Claude Code `.claude/rules/**/*.md`, Cursor `.cursor/rules/**/*.mdc`, and Copilot/VS Code `.github/instructions/**/*.instructions.md`. A bounded stdlib parser models Claude's `paths` block/inline string lists (no frontmatter means always-on), Cursor `alwaysApply`/`globs`/`description`, and Copilot `applyTo`. It supports the documented bounded glob forms needed by each format, including brace alternatives and Claude character classes; it is not a general YAML parser. Blocking conflicts require different values whose automatic domains overlap on at least one current contained repository path. Disjoint path rules do not conflict; always-on/canonical rules and overlapping path rules still do. Conditional/semantic, manual, ignored Cursor `.md`, malformed, truncated, and no-current-match rules remain visible under `applicability` / `applicability_warnings`, but do not become blocking conflicts. Diagnostics reach Markdown, SARIF, and PR review. Security, identity, and overlap still inspect the original file regardless of applicability; recursive discovery never authorizes recursive Treat deletion or rewriting of Claude rule files. External rule symlinks remain excluded by the repository audit boundary even though Claude Code itself supports shared rules.
 
 It exits 0 by default. With `--fail-on-security` it exits `2` when any HIGH-severity finding is present, which is handy as a CI gate.
 
@@ -489,7 +489,7 @@ Downgrades existing tool files to minimal pointers after `AGENTS.md` exists.
 
 | Tool | Downgrade strategy |
 |---|---|
-| Claude | `CLAUDE.md` / `.claude/CLAUDE.md` import `@AGENTS.md`. |
+| Claude | `CLAUDE.md` / `.claude/CLAUDE.md` import `@AGENTS.md`; recursively discovered `.claude/rules/**/*.md` remain untouched. |
 | Cursor | `.cursorrules` points to `AGENTS.md`; `.cursor/rules` becomes one always-apply pointer. |
 | Windsurf | `.windsurfrules` becomes a pointer. |
 | Copilot | `.github/copilot-instructions.md` becomes a pointer. |
@@ -624,7 +624,7 @@ npx ai-harness-doctor explain . packages/api/src/future.ts --json
 
 The schema-version-1 JSON contains `target`, `effective_scope`, root→nearest `canonical_chain`, `diagnostic_sources`, `source_applicability`, relevant `scope_overrides` / same-scope `conflicts`, and explicit `limitations`. Existing and future paths are accepted; contained absolute paths are normalized to repository-relative paths. Escapes and external-symlink targets fail closed. Targets under `.git`, `node_modules`, `dist`, `build`, or `__pycache__` are marked `excluded_by_scan`, because configs inside those subtrees are not inventoried.
 
-Only canonical files are described as the inheritance chain. For Cursor `.mdc` and Copilot `.instructions.md`, `source_applicability` deterministically labels a concrete existing or future target as automatic/non-matching/conditional/manual/ignored/invalid using the structured fields above. Description-based semantic selection, malformed metadata, other tools, and prose scope stay **diagnostically associated**, never claimed effective. The command does not merge text, execute plugins, or modify files.
+Only canonical files are described as the inheritance chain. For Claude `.claude/rules/**/*.md`, Cursor `.mdc`, and Copilot `.instructions.md`, `source_applicability` deterministically labels a concrete existing or future target as automatic/non-matching/conditional/manual/ignored/invalid using the structured fields above. Description-based semantic selection, malformed metadata, other tools, and prose scope stay **diagnostically associated**, never claimed effective. The command does not merge text, execute plugins, or modify files.
 
 </details>
 

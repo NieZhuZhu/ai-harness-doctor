@@ -31,7 +31,24 @@
 - **Depends on**: Plans 020, 023, and 035 (DONE)
 - **Category**: direction / correctness
 - **Planned at**: commit `c141268`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: IN PROGRESS on `feat/039-claude-rules-applicability`
+
+## Implementation progress
+
+- Implemented on branch `feat/039-claude-rules-applicability`.
+- The standards review expanded scope minimally to
+  `.github/workflows/action-self-test.yml` and
+  `tests/test_action_metadata.py`: `AGENTS.md` requires a real `uses: ./`
+  regression whenever Action-facing scan/SARIF behavior changes. The new
+  bundled scan fixture proves `applicability/no-current-match` reaches Action
+  SARIF. No `action.yml` interface changed.
+- External validation completed read-only:
+  - Bitwarden `44c808ea278b472c3e092ce5dc6f57b62a0c4b70`:
+    block-list rule, 617 sparse-checkout matches, matching/non-matching explain;
+  - Algolia `997a511f7ca034c92fcc53bd707c6448cf1bfdcf`:
+    no-frontmatter always-on rule.
+- Both sparse target worktrees remained clean; no Treat, plugin, agent, or LLM
+  ran. Final PR/CI/merge evidence is pending.
 
 ## Why this matters
 
@@ -310,6 +327,9 @@ not authorize recursive Treat deletion. Preserve the same boundary for Claude:
 - `README.ja.md`
 - `SKILL.md`
 - `EXTERNAL_VALIDATION.md`
+- `.github/workflows/action-self-test.yml` — required real composite-Action
+  coverage for the new scan/SARIF behavior
+- `tests/test_action_metadata.py` — structural gate for that Action fixture
 - `AGENTS.md`
 - `benchmark/self-eval/results-after-graded.json` when the AGENTS evidence hash
   changes

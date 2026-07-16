@@ -85,6 +85,6 @@ all reachable repositories but exit 8 when any listed entry was not scanned.
 It now also locks the post-v1.8.1 invariants: offline eval health is derived
 from validated stored records rather than cached scores; Action tests cover
 bundled scan/drift plus exact npm overrides before/after publish; and modeled
-Cursor/Copilot globs may narrow automatic conflicts without turning
+Claude/Cursor/Copilot globs may narrow automatic conflicts without turning
 conditional/manual/invalid sources into effective guidance or recursive scan
-discovery into recursive deletion authority.
+discovery into recursive deletion or rewriting authority.

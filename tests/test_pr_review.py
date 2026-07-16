@@ -279,6 +279,28 @@ class BuildReviewTests(unittest.TestCase):
         )
         self.assertIn("Rename it to .mdc.", payload["comments"][0]["body"])
 
+    def test_claude_applicability_warning_is_attributed_inline(self):
+        report = {
+            "applicability_warnings": [
+                {
+                    "category": "no-current-match",
+                    "level": "NOTICE",
+                    "path": ".claude/rules/future.md",
+                    "line": 1,
+                    "message": "Structured rule matches no current path.",
+                    "suggestion": "Review the paths list.",
+                }
+            ]
+        }
+
+        payload = pr_review.build_review(report)
+
+        self.assertEqual(payload["inline_count"], 1)
+        comment = payload["comments"][0]
+        self.assertEqual(comment["path"], ".claude/rules/future.md")
+        self.assertIn("applicability/no-current-match", comment["body"])
+        self.assertIn("Review the paths list.", comment["body"])
+
     def test_collects_conflicts_and_excludes_baselined_debt(self):
         report = {
             "conflicts": [

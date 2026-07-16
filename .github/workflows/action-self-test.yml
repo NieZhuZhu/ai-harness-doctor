@@ -53,6 +53,15 @@ jobs:
 
           Use pull requests.
           EOF
+          mkdir -p "$FIXTURE_ROOT/.claude/rules" "$FIXTURE_ROOT/src"
+          printf '%s\n' "export {};" > "$FIXTURE_ROOT/src/app.ts"
+          cat > "$FIXTURE_ROOT/.claude/rules/future.md" <<'EOF'
+          ---
+          paths:
+            - "future/**/*.ts"
+          ---
+          Use `npm test` for future TypeScript files.
+          EOF
           checkout_version="$(node -p "require('./package.json').version")"
           published_version="$(npm view ai-harness-doctor@latest version)"
           if [[ ! "$published_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -81,6 +90,14 @@ jobs:
           path: ${{ runner.temp }}/clean-drift-repo
           sarif-file: ${{ runner.temp }}/bundled-drift.sarif
 
+      - name: Run bundled scan against a Claude rule fixture
+        id: claude-rule-scan
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/clean-drift-repo
+          sarif-file: ${{ runner.temp }}/claude-rule-scan.sarif
+
       # This checks the npm-install override mechanism against the exact package
       # version already published from main. The bundled calls above, not this
       # compatibility call, are the evidence for the current PR's source code.
@@ -97,6 +114,7 @@ jobs:
         env:
           BUNDLED_SCAN: ${{ steps.bundled-scan.outputs.sarif-file }}
           BUNDLED_DRIFT: ${{ steps.bundled-drift.outputs.sarif-file }}
+          CLAUDE_RULE_SCAN: ${{ steps.claude-rule-scan.outputs.sarif-file }}
           NPM_SCAN: ${{ steps.npm-scan.outputs.sarif-file }}
           BUNDLED_VERSION: ${{ steps.fixture.outputs.checkout_version }}
           NPM_VERSION: ${{ steps.fixture.outputs.published_version }}
@@ -109,6 +127,7 @@ jobs:
             for (const [label, file, expected] of [
               ["bundledScan", process.env.BUNDLED_SCAN, process.env.BUNDLED_VERSION],
               ["bundledDrift", process.env.BUNDLED_DRIFT, process.env.BUNDLED_VERSION],
+              ["claudeRuleScan", process.env.CLAUDE_RULE_SCAN, process.env.BUNDLED_VERSION],
               ["npmScan", process.env.NPM_SCAN, process.env.NPM_VERSION],
             ]) {
               const sarif = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -124,6 +143,16 @@ jobs:
                 throw new Error(
                   `${label} mismatch: expected SARIF driver ${expected}, ` +
                   `got ${driver && driver.version}`,
+                );
+              }
+              if (
+                label === "claudeRuleScan"
+                && !run.results.some(
+                  (item) => item.ruleId === "applicability/no-current-match",
+                )
+              ) {
+                throw new Error(
+                  "Claude rule fixture did not deliver applicability SARIF",
                 );
               }
             }

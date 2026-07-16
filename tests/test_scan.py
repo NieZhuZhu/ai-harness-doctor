@@ -425,6 +425,45 @@ class StructuredApplicabilityTests(unittest.TestCase):
     def _scan(self, root):
         return scan.scan_repo(root, 32768)
 
+    def test_claude_rule_is_inventoried_and_scoped_into_conflicts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(Path(td))
+            _write(root / "AGENTS.md", "Use pnpm.\n")
+            _write(
+                root / ".claude/rules/python.md",
+                "---\npaths:\n  - \"scripts/**/*.py\"\n---\nUse `uv run pytest`.\n",
+            )
+
+            report = self._scan(root)
+            files = {item["path"]: item for item in report["files"]}
+            app = {
+                item["path"]: item for item in report["applicability"]
+            }
+
+            self.assertEqual(
+                files[".claude/rules/python.md"]["tool"],
+                "Claude Code",
+            )
+            self.assertEqual(
+                app[".claude/rules/python.md"],
+                {
+                    "path": ".claude/rules/python.md",
+                    "tool": "Claude Code",
+                    "mode": "path",
+                    "format": "claude-rules",
+                    "patterns": ["scripts/**/*.py"],
+                    "match_count": 1,
+                },
+            )
+            self.assertIn(
+                frozenset({"pnpm", "uv"}),
+                {
+                    frozenset(item["values"])
+                    for item in report["conflicts"]
+                    if item["signal"] == "package_manager"
+                },
+            )
+
     def test_disjoint_copilot_rules_do_not_conflict_but_overlap_does(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._repo(Path(td))
@@ -660,8 +699,193 @@ class StructuredApplicabilityTests(unittest.TestCase):
             )
             self.assertNotIn(token, json.dumps(report))
 
+    def test_invalid_truncated_claude_rule_still_receives_complete_security_scan(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + "A" * 24
+            _write(root / "scripts/check.py", "pass\n")
+            _write(
+                root / ".claude/rules/truncated.md",
+                "---\n"
+                "paths:\n"
+                '  - "scripts/**/*.py"\n'
+                + ("# filler\n" * 20)
+                + f"token={token}\n",
+            )
+
+            report = scan.scan_repo(root, 64)
+            by_path = {
+                item["path"]: item for item in report["applicability"]
+            }
+            security_paths = {
+                item["path"]
+                for item in report["security"]
+                if item["category"] == "secret"
+            }
+
+            self.assertEqual(
+                by_path[".claude/rules/truncated.md"]["mode"],
+                "invalid",
+            )
+            self.assertIn(".claude/rules/truncated.md", security_paths)
+            self.assertNotIn(token, json.dumps(report))
+
+    def test_claude_rule_with_no_current_match_is_visible_but_non_blocking(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(Path(td))
+            _write(
+                root / ".claude/rules/future.md",
+                '---\npaths: ["future/**/*.go"]\n---\nUse `go test`.\n',
+            )
+
+            report = self._scan(root)
+            warning = next(
+                item
+                for item in report["applicability_warnings"]
+                if item["path"] == ".claude/rules/future.md"
+            )
+
+            self.assertEqual(warning["category"], "no-current-match")
+            self.assertEqual(warning["level"], "NOTICE")
+            self.assertEqual(report["conflicts"], [])
+
+    def test_package_local_claude_rules_are_scanned_in_monorepo_context(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _write(
+                root / "package.json",
+                json.dumps({"workspaces": ["packages/*"]}),
+            )
+            _write(
+                root / "packages/api/package.json",
+                json.dumps({"name": "api"}),
+            )
+            _write(root / "packages/api/src/app.ts", "export {};\n")
+            _write(
+                root / "packages/api/.claude/rules/typescript.md",
+                '---\npaths: ["src/**/*.ts"]\n---\nUse `pnpm test`.\n',
+            )
+            ctx = scan.ScanContext(root)
+            package_dirs, source = scan.detect_packages(root, "auto", ctx=ctx)
+
+            _monorepo, packages = scan.scan_monorepo(
+                root,
+                32768,
+                package_dirs,
+                source,
+                ctx=ctx,
+            )
+            package_report = packages[0]["report"]
+
+            self.assertEqual(packages[0]["path"], "packages/api")
+            self.assertIn(
+                ".claude/rules/typescript.md",
+                {item["path"] for item in package_report["files"]},
+            )
+            self.assertEqual(
+                package_report["applicability"][0]["match_count"],
+                1,
+            )
+
 
 class ApplicabilityParserTests(unittest.TestCase):
+    def test_claude_rule_without_frontmatter_is_always_on(self):
+        cases = [
+            "# E2E rules\n\nUse `yarn test:e2e`.\n",
+            "---\n# no paths means always-on\n---\nUse `yarn test:e2e`.\n",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                result = applicability.classify(
+                    text,
+                    "claude-rules",
+                    ".claude/rules/e2e.md",
+                )
+
+                self.assertEqual(result["mode"], "always")
+                self.assertEqual(result["patterns"], [])
+                self.assertIn("Use `yarn test:e2e`.", result["signal_text"])
+
+    def test_claude_block_paths_are_path_scoped(self):
+        result = applicability.classify(
+            "---\n"
+            "paths:\n"
+            '  - "apps/**/*.ts"\n'
+            '  - "libs/**/*.{ts,tsx}"\n'
+            "---\n"
+            "Use pnpm.\n",
+            "claude-rules",
+            ".claude/rules/typescript.md",
+        )
+
+        self.assertEqual(result["mode"], "path")
+        self.assertEqual(
+            result["patterns"],
+            ["apps/**/*.ts", "libs/**/*.ts", "libs/**/*.tsx"],
+        )
+        self.assertEqual(result["signal_text"].splitlines()[5], "Use pnpm.")
+
+    def test_claude_inline_paths_are_path_scoped(self):
+        result = applicability.classify(
+            '---\npaths: ["**/*.iss", "src/**/*.{ts,tsx}"]\n---\nUse pnpm.\n',
+            "claude-rules",
+            ".claude/rules/source.md",
+        )
+
+        self.assertEqual(result["mode"], "path")
+        self.assertEqual(
+            result["patterns"],
+            ["**/*.iss", "src/**/*.ts", "src/**/*.tsx"],
+        )
+        self.assertEqual(result["signal_text"].splitlines()[3], "Use pnpm.")
+
+    def test_claude_paths_support_valid_character_classes_and_literal_brackets(self):
+        result = applicability.classify(
+            "---\n"
+            "paths:\n"
+            '  - "src/**/[a-c]*.ts"\n'
+            "  - 'photos \\[2024/**'\n"
+            "---\n"
+            "Use pnpm.\n",
+            "claude-rules",
+            ".claude/rules/classes.md",
+        )
+
+        self.assertEqual(result["mode"], "path")
+        self.assertTrue(
+            applicability.matches(result["patterns"], "src/nested/beta.ts")
+        )
+        self.assertFalse(
+            applicability.matches(result["patterns"], "src/nested/delta.ts")
+        )
+        self.assertTrue(
+            applicability.matches(result["patterns"], "photos [2024/raw/a.jpg")
+        )
+
+    def test_malformed_claude_frontmatter_fails_closed(self):
+        cases = [
+            ("empty", "---\npaths:\n---\nUse pnpm.\n"),
+            ("scalar", "---\npaths: src/**/*.ts\n---\nUse pnpm.\n"),
+            ("unknown", "---\ndescription: TypeScript\n---\nUse pnpm.\n"),
+            ("duplicate", "---\npaths: [\"a/**\"]\npaths: [\"b/**\"]\n---\nUse pnpm.\n"),
+            ("unquoted-inline", "---\npaths: [a/**]\n---\nUse pnpm.\n"),
+            ("nested-list", "---\npaths:\n  - [\"a/**\"]\n---\nUse pnpm.\n"),
+            ("escape", "---\npaths: [\"../outside/**\"]\n---\nUse pnpm.\n"),
+            ("absolute", "---\npaths: [\"/tmp/**\"]\n---\nUse pnpm.\n"),
+            ("bad-class", "---\npaths: [\"src/[ab.ts\"]\n---\nUse pnpm.\n"),
+            ("empty-negated-class", "---\npaths: [\"src/[!].ts\"]\n---\nUse pnpm.\n"),
+            ("reversed-class-range", "---\npaths: [\"src/[z-a].ts\"]\n---\nUse pnpm.\n"),
+        ]
+        for name, text in cases:
+            with self.subTest(name=name):
+                result = applicability.classify(
+                    text,
+                    "claude-rules",
+                    ".claude/rules/x.md",
+                )
+                self.assertEqual(result["mode"], "invalid")
+                self.assertEqual(result["signal_text"], "")
+
     def test_scalar_frontmatter_and_globs(self):
         result = applicability.classify(
             '---\nglobs: "src/**/*.{ts,tsx}, docs/**/*.md"\nalwaysApply: false\n---\nUse npm.\n',
@@ -2379,6 +2603,33 @@ class ScannerPerformanceTests(unittest.TestCase):
 
             self.assertEqual([entry["path"] for entry in report["files"]], ["AGENTS.md"])
             self.assertEqual(report["files"][0]["tool"], "AGENTS.md")
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_claude_rule_symlinks_preserve_the_repository_boundary(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            repo = base / "repo"
+            shared = repo / "shared"
+            rules = repo / ".claude" / "rules"
+            outside = base / "outside-rule.md"
+            shared.mkdir(parents=True)
+            rules.mkdir(parents=True)
+            safe_rule = shared / "safe.md"
+            safe_rule.write_text("Use `pnpm test`.\n", encoding="utf-8")
+            outside.write_text(
+                "Use `npm test`.\ntoken=ghp_" + "A" * 24 + "\n",
+                encoding="utf-8",
+            )
+            (rules / "safe.md").symlink_to(safe_rule)
+            (rules / "outside.md").symlink_to(outside)
+
+            report = scan.scan_repo(repo, 32768)
+            serialized = json.dumps(report)
+            paths = {item["path"] for item in report["files"]}
+
+            self.assertIn(".claude/rules/safe.md", paths)
+            self.assertNotIn(".claude/rules/outside.md", paths)
+            self.assertNotIn("ghp_", serialized)
 
     @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
     def test_external_semantic_fact_symlinks_are_not_read(self):
