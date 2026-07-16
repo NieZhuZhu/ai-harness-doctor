@@ -433,7 +433,7 @@ verification gate, and update its status here.
 | 045 | Make scoped eval use the shared lockfile registry | P1 | S | 027, 029 | DONE |
 | 046 | Make the GitHub Action emit composable quality outputs and a Job Summary | P1 | M | 012, 034, 042 | DONE |
 | 047 | Make repaired baseline debt visible, checkable, and prunable | P1 | L | 007, 021 | DONE |
-| 048 | Report baseline maintenance failures truthfully through SARIF and the Action | P1 | M | 046, 047 | TODO |
+| 048 | Report baseline maintenance failures truthfully through SARIF and the Action | P1 | M | 046, 047 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
