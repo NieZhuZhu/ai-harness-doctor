@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across fourteen deep `improve` audit batches:
+Generated and reconciled across fifteen deep `improve` audit batches:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -16,6 +16,7 @@ Generated and reconciled across fourteen deep `improve` audit batches:
 - 2026-07-16 at commit `43366d9` (plan 036).
 - 2026-07-16 at commit `660977e` (plan 037).
 - 2026-07-16 at commit `a2a7227` (plan 038).
+- 2026-07-16 at commit `c141268` (plan 039).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -239,6 +240,20 @@ verification gate, and update its status here.
    prints a passing verdict then exits 7 both produce passing records and
    100/A health. Plan 038 makes exit success authoritative across all modes.
 
+### 2026-07-16 premium-project loop 1 round 1
+
+1. **Claude Code project-rule compatibility** — independently researched the
+   current first-party Claude Code instruction contract, GitHub adoption,
+   registry coverage, structured applicability, security reads, conflict
+   domains, target explain, report delivery, and Treat ownership. Claude
+   recursively loads `.claude/rules/**/*.md`; rules without frontmatter are
+   always-on and `paths` lists select matching files. Current Bitwarden and
+   Algolia repositories use both scoped and always-on forms, but the doctor
+   inventories neither: a synthetic rule remained absent from scan files,
+   conflicts, and explain sources. Plan 039 extends the existing bounded
+   applicability seam without generic YAML, external reads, or recursive
+   mutation authority.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -281,6 +296,7 @@ verification gate, and update its status here.
 | 036 | Keep one current AI Harness Doctor summary per pull request | P1 | M | — | DONE |
 | 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | DONE |
 | 038 | Prevent failed runners and judges from producing passing eval records | P0 | M | 030, 033 | DONE |
+| 039 | Model Claude Code project rules and their path applicability | P1 | L | 020, 023, 035 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -491,6 +507,15 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   contexts. Single/round/matrix now share one operational gate; runner/judge
   exit failures cannot pass, outputs are bounded, and overall CLI failure
   remains controlled by existing health/regression flags.
+- Plan 039 builds on the DONE structured-scope and explain contracts from
+  Plans 020/023/035. Keep Claude rule discovery in the shared registry and
+  applicability engine; complete identity/security reads, current-path scan
+  domains, and concrete future-target explain must stay one model. Recursive
+  reads must not add `.claude/rules/` to Treat/stub/fix ownership.
+- Plan 039 adds a recognized public Claude Code instruction surface and is
+  therefore minor-release work if its compatibility STOP conditions do not
+  expose a breaking requirement. It remains one plan PR followed by one
+  implementation PR, each requiring all nine protected contexts.
 
 ## Post-v1.8.1 completion evidence
 
@@ -810,3 +835,18 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - **Expose paid eval execution over MCP** — rejected for safety. MCP remains
   read-only and offers task generation only; no runner, judge, API key, or
   output-write surface should be added.
+- **Add Kiro/Augment/Amazon Q filenames instead of Claude project rules** —
+  rejected again in loop 1 round 1. Breadth without semantics would only expand
+  inventory. Claude rules have a current first-party contract, widespread
+  public evidence, and an existing deterministic scope seam to reuse.
+- **Parse arbitrary YAML to support every Claude frontmatter form** — rejected.
+  The required `paths` list is a small documented metadata subset; general YAML
+  would violate stdlib-only constraints and enlarge the parser/security
+  surface. Plan 039 specifies block/inline sequences and bounded glob syntax.
+- **Follow external `.claude/rules/` symlinks because Claude Code does** —
+  rejected. Runtime sharing and repository auditing have different trust
+  boundaries. External bytes remain excluded; in-repo aliases retain lexical
+  evidence paths.
+- **Delete or rewrite recursively discovered Claude rules during Treat** —
+  rejected. Read completeness does not prove write ownership. Plan 039 leaves
+  the Claude stub targets flat and adds a no-recursive-mutation regression.
