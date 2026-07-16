@@ -130,6 +130,18 @@ La prioridad es `findings > maintenance > ok`. Un gate válido publica SARIF y e
 
 Los resultados SARIF usan fingerprints estables y categorías separadas para scan/drift, evitando alertas duplicadas y cierres cruzados.
 
+Usa `args-json` cuando un valor extra contenga espacios o necesites límites argv exactos/repetidos:
+
+```yaml
+- uses: NieZhuZhu/ai-harness-doctor@v1
+  with:
+    command: drift
+    path: .
+    args-json: '["--baseline", ".ai-harness-doctor/drift baseline.json", "--check-baseline"]'
+```
+
+`args-json` y el `args` legacy son mutuamente excluyentes. `args` solo divide espacios de la primera línea; ninguno se evalúa por shell.
+
 ## Adoptar deuda existente con seguridad
 
 Los baselines son registros revisables de deuda, no listas de ignore. Clasifican hallazgos como new, known o repaired:

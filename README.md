@@ -130,6 +130,18 @@ Status precedence is `findings > maintenance > ok`. A valid non-zero quality gat
 
 SARIF results carry stable partial fingerprints and separate scan/drift categories, so alerts survive unrelated line movement and independent uploads do not close each other.
 
+Use `args-json` when an extra option value contains spaces or when exact/repeated argv boundaries matter:
+
+```yaml
+- uses: NieZhuZhu/ai-harness-doctor@v1
+  with:
+    command: drift
+    path: .
+    args-json: '["--baseline", ".ai-harness-doctor/drift baseline.json", "--check-baseline"]'
+```
+
+`args-json` and legacy `args` are mutually exclusive. Legacy `args` keeps first-line whitespace splitting only; neither input is shell-evaluated.
+
 ## Adopt existing debt safely
 
 Baselines are reviewed debt registers, not ignore lists. They classify findings as new, known, or repaired:

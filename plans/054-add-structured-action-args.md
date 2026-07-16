@@ -29,7 +29,9 @@
 - **Depends on**: Plans 022, 034, 046, and 048 (DONE)
 - **Category**: direction / GitHub Action DX and safety
 - **Planned at**: commit `eac8426`, 2026-07-17
-- **Implementation**: TODO
+- **Implementation**: IN PROGRESS — PR #239 (plan); implementation branch
+  `feat/054-structured-action-args`, full local gates and actionlint green,
+  awaiting implementation PR and required CI.
 
 ## Why this matters
 
@@ -433,15 +435,16 @@ squash merge.
 
 - [ ] `args-json` preserves a baseline/rules path containing spaces as one argv
       item through a real `uses: ./` invocation.
-- [ ] Legacy `args` remains byte-compatible and documented as whitespace-only.
-- [ ] Both inputs and every malformed/oversized structured input fail before
+- [x] Legacy `args` remains byte-compatible and documented as whitespace-only.
+- [x] Both inputs and every malformed/oversized structured input fail before
       CLI execution.
-- [ ] No input reaches a shell interpreter or executable script text.
-- [ ] CLI/report exit and output ordering remain unchanged.
-- [ ] Bundled and npm-override paths share the helper.
-- [ ] Helper is shipped and release pre/post Action proof remains current.
-- [ ] Seven READMEs, `SKILL.md`, maintenance/release docs are synchronized.
-- [ ] `actionlint`, local gates, and all nine PR checks pass; implementation is
+- [x] No input reaches a shell interpreter or executable script text.
+- [x] CLI/report exit and output ordering remain unchanged.
+- [x] Bundled and npm-override paths share the helper.
+- [x] Helper is shipped and release pre/post Action proof remains current.
+- [x] Seven READMEs, `SKILL.md`, maintenance/release docs are synchronized.
+- [x] `actionlint` and local gates pass.
+- [ ] All nine PR checks pass; implementation is
       squash-merged.
 
 ## STOP conditions

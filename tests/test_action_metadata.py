@@ -103,7 +103,15 @@ class ActionMetadataTests(unittest.TestCase):
         text = ACTION.read_text(encoding="utf-8")
         self.assertIn("set -euo pipefail", text)
         self.assertIn("scan|drift)", text)
-        self.assertIn('run_args=("$INPUT_COMMAND" "$INPUT_PATH" "--sarif")', text)
+        self.assertIn("args-json:", text)
+        self.assertIn("INPUT_ARGS_JSON: ${{ inputs.args-json }}", text)
+        self.assertIn(
+            'node "$ACTION_PATH/bin/action-run.js" \\\n'
+            '          "$cli" "$INPUT_SARIF_FILE" "$INPUT_COMMAND" "$INPUT_PATH"',
+            text,
+        )
+        self.assertNotIn("read -r -a", text)
+        self.assertNotIn('run_args=(', text)
         self.assertIn('cli_status=$?', text)
         self.assertIn('report_status=$?', text)
         self.assertIn(
@@ -112,6 +120,10 @@ class ActionMetadataTests(unittest.TestCase):
         )
         self.assertIn('exit "$cli_status"', text)
         self.assertNotIn("|| true", text)
+        for forbidden in ("eval ", "sh -c", "bash -c"):
+            self.assertNotIn(forbidden, text)
+        self.assertIn("first-line spaces/tabs split argv", text)
+        self.assertIn("JSON array of exact extra CLI arguments", text)
 
     def test_action_exposes_composable_quality_outputs(self):
         text = ACTION.read_text(encoding="utf-8")
@@ -129,6 +141,22 @@ class ActionMetadataTests(unittest.TestCase):
             self.assertIn(f"  {output}:\n", text)
             self.assertIn(f"steps.run.outputs.{output}", text)
         self.assertIn("GITHUB_STEP_SUMMARY", (ROOT / "bin" / "action-report.js").read_text())
+
+    def test_action_run_helper_is_shipped_and_release_paths_use_the_wrapper(self):
+        package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertIn("bin", package["files"])
+        self.assertTrue((ROOT / "bin" / "action-run.js").is_file())
+        self.assertNotIn("!bin/action-run.js", package["files"])
+
+        for name in (
+            "Pre-publish bundled scan self-test",
+            "Pre-publish bundled drift self-test",
+            "Verify published floating bundled scan",
+            "Verify published exact npm drift override",
+        ):
+            block = self._named_step_block(RELEASE, name)
+            self.assertRegex(block, r"(?m)^        uses: \./(?:published-action)?$")
+            self.assertNotIn("bin/cli.js", block)
 
     def test_repository_dogfoods_the_composite_action(self):
         text = SELF_TEST.read_text(encoding="utf-8")
@@ -154,8 +182,16 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("Expected findings output before failure", text)
         self.assertIn("finding-count output mismatch", text)
         self.assertIn("Report resolved baseline maintenance before failure", text)
+        self.assertIn("resolved baseline repo", text)
+        self.assertIn("drift baseline.json", text)
+        self.assertIn("args-json: >-", text)
         self.assertIn("Expected maintenance output", text)
         self.assertIn("resolved-baseline-count", text)
+        self.assertIn("Reject malformed structured Action arguments", text)
+        self.assertIn("Reject conflicting Action argument inputs", text)
+        self.assertIn("Reject shell metacharacters as opaque arguments", text)
+        self.assertIn("Assert structured argument failures are side-effect free", text)
+        self.assertIn("action-run-pwned", text)
         for name in (
             "Run bundled scan against this checkout",
             "Run bundled drift against a clean fixture",

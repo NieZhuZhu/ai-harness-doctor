@@ -312,7 +312,7 @@ jobs:
 
       - name: Create resolved baseline fixture
         env:
-          FIXTURE_ROOT: ${{ runner.temp }}/resolved-baseline-repo
+          FIXTURE_ROOT: ${{ runner.temp }}/resolved baseline repo
         run: |
           mkdir -p "$FIXTURE_ROOT/.ai-harness-doctor"
           cat > "$FIXTURE_ROOT/AGENTS.md" <<'EOF'
@@ -329,7 +329,7 @@ jobs:
           # Commit & PR
           Use pull requests.
           EOF
-          cat > "$FIXTURE_ROOT/.ai-harness-doctor/drift-baseline.json" <<'EOF'
+          cat > "$FIXTURE_ROOT/.ai-harness-doctor/drift baseline.json" <<'EOF'
           {
             "version": 1,
             "findings": [
@@ -348,8 +348,11 @@ jobs:
         uses: ./
         with:
           command: drift
-          path: ${{ runner.temp }}/resolved-baseline-repo
-          args: "--baseline ${{ runner.temp }}/resolved-baseline-repo/.ai-harness-doctor/drift-baseline.json --check-baseline"
+          path: ${{ runner.temp }}/resolved baseline repo
+          args-json: >-
+            ["--baseline",
+             "${{ runner.temp }}/resolved baseline repo/.ai-harness-doctor/drift baseline.json",
+             "--check-baseline"]
           sarif-file: ${{ runner.temp }}/baseline-maintenance.sarif
 
       - name: Validate baseline maintenance Action report and failure
@@ -380,6 +383,55 @@ jobs:
               throw new Error("Baseline maintenance SARIF metadata mismatch");
             }
           '
+
+      - name: Reject malformed structured Action arguments
+        id: malformed-args
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: .
+          args-json: "{"
+          sarif-file: ${{ runner.temp }}/malformed-args.sarif
+
+      - name: Reject conflicting Action argument inputs
+        id: conflicting-args
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: .
+          args: "--fail-on-security"
+          args-json: '["--fail-on-semantic"]'
+          sarif-file: ${{ runner.temp }}/conflicting-args.sarif
+
+      - name: Reject shell metacharacters as opaque arguments
+        id: metacharacter-args
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: .
+          args-json: '["--definitely-unknown;touch", "${{ runner.temp }}/action-run-pwned"]'
+          sarif-file: ${{ runner.temp }}/metacharacter-args.sarif
+
+      - name: Assert structured argument failures are side-effect free
+        env:
+          MALFORMED: ${{ steps.malformed-args.outcome }}
+          CONFLICTING: ${{ steps.conflicting-args.outcome }}
+          METACHARACTER: ${{ steps.metacharacter-args.outcome }}
+          MARKER: ${{ runner.temp }}/action-run-pwned
+        run: |
+          for outcome in "$MALFORMED" "$CONFLICTING" "$METACHARACTER"; do
+            if [ "$outcome" != "failure" ]; then
+              echo "Expected structured Action argument failure, got: $outcome" >&2
+              exit 1
+            fi
+          done
+          if [ -e "$MARKER" ]; then
+            echo "Structured Action arguments executed shell metacharacters." >&2
+            exit 1
+          fi
 
       # A composite Action must not turn installation/CLI failures into a green
       # check. This deliberately invalid command should fail the Action step.

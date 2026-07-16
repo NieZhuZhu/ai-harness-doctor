@@ -14,7 +14,11 @@ inputs:
     required: false
     default: "scan"
   args:
-    description: "Extra arguments passed through to the command."
+    description: "Legacy extra arguments: first-line spaces/tabs split argv; no quote or shell parsing. Mutually exclusive with args-json."
+    required: false
+    default: ""
+  args-json:
+    description: "JSON array of exact extra CLI arguments. Mutually exclusive with args."
     required: false
     default: ""
   sarif-file:
@@ -60,6 +64,7 @@ runs:
       shell: bash
       env:
         INPUT_ARGS: ${{ inputs.args }}
+        INPUT_ARGS_JSON: ${{ inputs.args-json }}
         INPUT_COMMAND: ${{ inputs.command }}
         INPUT_PATH: ${{ inputs.path }}
         INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
@@ -91,17 +96,13 @@ runs:
           cli="$install_dir/node_modules/ai-harness-doctor/bin/cli.js"
         fi
 
-        run_args=("$INPUT_COMMAND" "$INPUT_PATH" "--sarif")
-        if [ -n "$INPUT_ARGS" ]; then
-          read -r -a extra_args <<< "$INPUT_ARGS"
-          run_args+=("${extra_args[@]}")
-        fi
         # A findings gate deliberately returns non-zero AFTER printing valid
         # SARIF. Capture that status so the report helper can publish Action
         # outputs + Job Summary, then restore the exact CLI exit code. Do not
         # rerun scan/drift or parse human-readable output in Bash.
         set +e
-        node "$cli" "${run_args[@]}" > "$INPUT_SARIF_FILE"
+        node "$ACTION_PATH/bin/action-run.js" \
+          "$cli" "$INPUT_SARIF_FILE" "$INPUT_COMMAND" "$INPUT_PATH"
         cli_status=$?
         set -e
 
