@@ -268,6 +268,20 @@ verification gate, and update its status here.
    preflights canonical readiness before destructive consolidation without
    rejecting arbitrary user TODOs or weakening library-doc behavior.
 
+### 2026-07-16 premium-project loop 1 round 3
+
+1. **Eval baseline-history integrity** — independently audited the last
+   result-JSON consumer family Plan 033 explicitly deferred: the
+   `--baseline`/`--save-baseline`/`--check-regression`/`--trend` history store.
+   Every other offline consumer (`--score`/`--stats`/`--compare`/`--regrade`)
+   validates records and exits `2` with a concise `result error`, but a
+   malformed history store (a list whose entries are not dicts, or a scalar
+   `score`) makes `--trend` and `--check-regression` crash with an uncaught
+   `AttributeError` traceback (exit 1), while a non-numeric/absent score is
+   silently ignored. Plan 041 gives the history store the same fail-closed
+   validation and derives regression/trend only from validated numeric
+   snapshots, without changing the append-only schema or valid histories.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -311,7 +325,8 @@ verification gate, and update its status here.
 | 037 | Make installer filesystem changes and ownership state transactional | P0 | L | 008, 011 | DONE |
 | 038 | Prevent failed runners and judges from producing passing eval records | P0 | M | 030, 033 | DONE |
 | 039 | Model Claude Code project rules and their path applicability | P1 | L | 020, 023, 035 | DONE |
-| 040 | Prevent provisional AGENTS drafts from authorizing stub destruction | P1 | M | 004, 008, 011, 037 | TODO |
+| 040 | Prevent provisional AGENTS drafts from authorizing stub destruction | P1 | M | 004, 008, 011, 037 | DONE |
+| 041 | Validate the eval baseline-history store before trend/regression reads | P1 | S | 033 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -541,6 +556,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   pre-migration STUB notices, dry-run utility, and MCP's finding-vs-operational
   distinction compatible. This is patch-level unless a STOP condition requires
   a new approval artifact or breaking flag.
+- Plan 040 plan PR #199 and implementation PR #200 passed all nine required
+  contexts; the implementation squash-merged as `a5c6195` with a shared
+  canonical-readiness helper, exact `DRAFT_REVIEW` markers, apply preflight,
+  and preserved dry-run / MCP-finding semantics.
+- Plan 041 depends only on the DONE Plan 033 validation model and extends it to
+  the deferred history store. Keep the append-only baseline schema and every
+  valid history byte-compatible; only add fail-closed validation plus
+  numeric-snapshot derivation so a malformed store exits `2` with a `result
+  error` instead of a traceback or a silent skip. This is patch-level unless a
+  STOP condition forces a schema change.
 
 ## Post-v1.8.1 completion evidence
 
@@ -887,3 +912,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - **Require a signed approval sidecar or reviewer identity** — rejected as
   disproportionate and non-deterministic. Exact marker resolution is a bounded,
   reviewable intent signal; scripts still do not claim human correctness.
+- **Rewrite the baseline-history schema while validating it** — rejected in
+  loop 1 round 3. The append-only snapshot list is a public artifact; Plan 041
+  only adds fail-closed validation and numeric-snapshot derivation, keeping
+  every valid history byte-compatible.
+- **Reject an entire baseline history when one snapshot is malformed** —
+  rejected. A single corrupt entry should surface a concise `result error`, not
+  discard a long legitimate history; Plan 041 fails closed on structural
+  corruption but treats a merely missing/non-numeric score as a non-comparable
+  snapshot, matching current trend rendering.
+- **Add a broad result-JSON schema validator spanning all consumers** —
+  rejected again. Plan 033 deliberately scoped record validation to
+  score/stats/compare/regrade; Plan 041 closes only the one deferred history
+  consumer rather than centralizing an over-broad validator.

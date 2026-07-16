@@ -30,7 +30,7 @@
 - **Depends on**: Plans 004, 008, 011, and 037 (DONE)
 - **Category**: correctness / safety
 - **Planned at**: commit `26b07b0`, 2026-07-16
-- **Implementation**: IN PROGRESS on `fix/040-reviewed-canonical-readiness`
+- **Implementation**: DONE in PR [#200](https://github.com/NieZhuZhu/ai-harness-doctor/pull/200), merge `a5c6195`
 
 ## Implementation progress
 
@@ -42,8 +42,10 @@
 - Regression coverage includes byte-exact source preservation, no Cursor
   pointer creation, symlinked canonical refusal, valid migration compatibility,
   and modern MCP `status:"findings"` / `isError:false`.
-- Local focused suites and 34/34 evidence-bound self-eval are green. Final full
-  gate, PR, CI, and merge evidence are pending.
+- Implementation PR #200 head `fd451e9` passed all nine required contexts
+  (`drift`, `lint`, Node 16/20/22, `self-test`, Python 3.9/3.10/3.12) and
+  squash-merged as `a5c6195`. Final gate was 719 Python + 26 Node tests, strict
+  drift 100/A, and evidence-bound self-eval 34/34.
 
 ## Why this matters
 
