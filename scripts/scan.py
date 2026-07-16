@@ -1180,6 +1180,27 @@ def analyze_scoped_conflicts(files):
                     }
                     if distinct <= {"prettier", "eslint"}:
                         continue
+                # A package-manager test command (npm/pnpm/yarn test) simply
+                # invokes an underlying JS test framework (jest/vitest/mocha),
+                # so declaring both — e.g. `pnpm test  # vitest` — is
+                # complementary, not a competing test_command. Only suppress
+                # when the component is exactly one framework plus one or more
+                # package-manager runners; two rival frameworks (jest vs
+                # vitest) or a cross-stack command (pytest, go test) still
+                # surface as a real conflict.
+                if signal == "test_command":
+                    distinct = {
+                        entries[0]["value"].lower()
+                        for entries in component_groups.values()
+                    }
+                    frameworks = distinct & {"jest", "vitest", "mocha"}
+                    runners = distinct & {"npm test", "pnpm test", "yarn test"}
+                    if (
+                        runners
+                        and len(frameworks) == 1
+                        and distinct <= (frameworks | runners)
+                    ):
+                        continue
                 conflict = {
                     "signal": signal,
                     "values": {
