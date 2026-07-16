@@ -299,6 +299,22 @@ verification gate, and update its status here.
    without importing `scan.py` into `sarif.py`, changing rule ids/levels, or
    emitting SARIF for batch mode.
 
+### 2026-07-16 improve loop round (parallel correctness/security/tests/DX audit)
+
+1. **LLM-judge fallback contract** — independently audited the Phase 3
+   judge path with parallel read-only category sweeps (correctness, security,
+   tests, tech-debt/DX). `eval_run.py`'s LLM-as-judge documents in three places
+   that "no key / network error / malformed response" all return `None` so
+   grading falls back to the deterministic keyword judge, but the malformed path
+   does not: on an HTTP-200 response whose content is not the expected JSON
+   verdict, `parse_judge_output` returns a non-`None` sentinel
+   (`{"passed": False, "reason": "judge output was not valid JSON"}`) and
+   `llm_judge` returns it unchanged, so `grade_answer` records a silent hard fail
+   instead of falling back — a false-health defect matching the Plan 030/033/038/
+   041 class. Plan 043 marks the unparseable branch and maps it to `None` at the
+   `llm_judge` boundary, leaving the external `--judge-cmd` path and valid-verdict
+   logic untouched.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -345,6 +361,7 @@ verification gate, and update its status here.
 | 040 | Prevent provisional AGENTS drafts from authorizing stub destruction | P1 | M | 004, 008, 011, 037 | DONE |
 | 041 | Validate the eval baseline-history store before trend/regression reads | P1 | S | 033 | DONE |
 | 042 | Make SARIF alert identity survive edits and coexist per command | P1 | M | 012, 024 | DONE |
+| 043 | Fall back to the deterministic judge when an LLM returns unparseable output | P1 | S | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -961,3 +978,48 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   importing the heavy scanner would risk a cycle and pull unrelated surface into
   the SARIF path. Plan 042 re-implements the small documented identity subset
   locally and pins it to `scan.scan_finding_fingerprint` with a parity test.
+- **`eval_run.py` keeps a local `PKG_MANAGER_LOCKFILES` diverging from
+  `registry.LOCKFILE_MANAGERS`** (improve loop round) — real, verified: the
+  scoped path `_scoped_package_manager` iterates the local list (which adds
+  `pnpm-lock.yml`), while `detect_package_manager` (root) and every other engine
+  route through `registry.LOCKFILE_MANAGERS` via `facts.lockfile_managers`; the
+  consistency test guards `detect_package_manager` but never asserts
+  `PKG_MANAGER_LOCKFILES == registry.LOCKFILE_MANAGERS`. Not selected for round 1
+  (narrow blast radius: only scoped `--target` eval on a `pnpm-lock.yml` repo),
+  but a good self-contained round-2/3 candidate — single-source the list and add
+  a consistency assertion.
+- **`npm run format` has no `.prettierignore` and rewrites single-source files**
+  (improve loop round) — real, verified with `prettier --check .` (91 files
+  would change, including `assets/agent-tools.json`, `assets/guard/*.yml` twins,
+  and the trilingual READMEs), and it is documented as a contributor command in
+  all three READMEs. A genuine footgun; not selected for round 1 (DX hygiene, not
+  a shipped-behavior defect). Good round-2/3 candidate — add a `.prettierignore`
+  (or narrow the script to `bin/**`) so the documented command cannot desync the
+  byte-locked sources.
+- **`AGENTS.md` sits ~55 bytes under its own strict-mode 12288-byte failure
+  threshold** (improve loop round) — real headroom risk (`check_drift.py` D4
+  NOTICE at `> 12 * 1024`, promoted to blocking ERROR under `--strict`, run by
+  the repo's own guards). Considered; the standing mitigation is that every plan
+  that touches `AGENTS.md` re-checks `wc -c` and relocates prose to `references/`
+  when needed. Track as a housekeeping candidate (relocate a dense Conventions
+  bullet to `references/`) rather than a behavior fix.
+- **`assets/tasks.example.json` is unreferenced and unpublished** (improve loop
+  round) — verified: no `scripts`/`bin`/`tests`/docs reference and absent from
+  the `package.json` `files` allowlist. Low-value cleanup candidate (delete, or
+  wire into the eval docs + `files`). Not a behavior defect.
+- **`llm_judge` / base-URL redirect & scheme validation, hook-command snippet in
+  SARIF/PR, Treat write TOCTOU, stored eval stdout secrets, missing GitHub API
+  timeout** (improve loop security sweep) — surfaced by the security sweep and
+  logged for future consideration; each needs independent confirmation of a
+  concrete, reachable impact before planning. Not selected for round 1 (the
+  documented LLM-judge fallback contract violation in Plan 043 had the clearest
+  reproduction and highest leverage). Do not treat as settled — revisit with a
+  focused `security` audit.
+- **`check_drift --fix` inverted unsafe-stub filter / `run_fix` remaining-count /
+  `pr_review` summary-only index location** (improve loop correctness sweep) —
+  CORRECTNESS-02 is locked in by an existing test (`test_fix_apply_refuses_
+  external_stub_symlink`) so its "silently skip all fixable stubs when one is
+  unsafe" behavior may be intended-refuse-all; the run_fix and pr_review items
+  were investigated and are cosmetic/cleared. Not selected; revisit
+  CORRECTNESS-02 only after confirming the intended fix-safe-vs-refuse-all
+  contract with the maintainer.
