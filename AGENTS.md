@@ -16,7 +16,7 @@ This repository contains the `ai-harness-doctor` Claude Code skill. It audits, c
   - `eval_run.py` — Phase 3 Efficacy: before/after + matrix eval runner and LLM-as-judge grading.
   - `pr_review.py` — Phase 2/3 CI helper: combines active scan+drift JSON (root/package/batch) into one attributed GitHub review; `--dry-run` prints it, `--post` uses the stdlib REST client.
   - `gen_adapters.py` — repo-maintenance tool (not shipped in the npm package): regenerates the per-command `adapters/` from a single source; `--check` gates re-divergence in CI.
-- `bin/cli.js` — npm CLI/installer/forwarder; `bin/mcp-server.js` — MCP stdio server; `bin/runtime.js` — their shared Python 3 resolver.
+- `bin/cli.js` — npm CLI/installer/forwarder; `bin/mcp-server.js` — MCP stdio server; `bin/runtime.js` — shared Python resolver; `bin/action-report.js` — SARIF→Action outputs/Job Summary.
 - `assets/` — templates: `assets/AGENTS.template.md` and the `assets/guard/` suite; `references/` — progressive-disclosure docs.
 - `commands/`, `adapters/` — Claude/Codex/Cursor/Gemini/universal command pointers. Edit `scripts/gen_adapters.py`, then regenerate; do not hand-edit generated adapter flavors.
 - `tests/` — Python unittest + Node CLI smoke tests; `benchmark/` — self-benchmark and efficacy eval fixtures.
@@ -42,19 +42,21 @@ node bin/cli.js help
 - `--max-bytes` bounds semantic text only; full-file SHA/line/security stays bounded-memory. Mark prefix-only evidence; never call a prefix digest a file SHA or claim unseen tails clean.
 - Instruction scope is lexical: same-scope differences conflict; descendant differences are non-blocking overrides. Structured applicability stays registry-sourced, bounded/fail-closed, and full-byte security scanned; conditional/manual/invalid/ignored stays diagnostic. Never infer prose scopes or grant mutation authority from recursive discovery.
 - Explain reuses scan scope/containment: canonical files form the chain; modeled rules may apply automatically, while unmodeled sources stay diagnostic. Keep CLI/MCP/adapter contracts synchronized.
-- Baselines are visible debt registers: HIGH security is ineligible; identities are deterministic and line-independent, and SARIF reuses that identity for stable `partialFingerprints` plus a per-command `automationDetails` category. Shrink repaired debt. PR feedback keeps one owned marker summary current, preserves inline findings, and never edits foreign markers or duplicates the summary on 422. Preserve package paths, keep batch findings summary-only, and never post baselined debt as active. Batch scans must report every reachable repo, fail on any unscanned entry (exit 8 after 2/3/4/7 precedence), and never leak resolved paths.
+- Baselines are visible debt registers, not ignores: HIGH security is ineligible; identity is line-independent; classify new/known/resolved debt; exit 9 checks repaired entries; prune only subtracts resolved entries. See `references/maintenance-contract.md`.
+- SARIF/Action reporting is single-run and self-describing. Preserve fingerprints/categories, `findings > maintenance > ok`, exact CLI exits, and real `uses: ./` tests. See `references/maintenance-contract.md`.
+- PR/batch feedback and GitHub guard lifecycle follow `references/maintenance-contract.md`; never leak host-resolved paths or post baselined debt as active.
 - Eval validates tasks/results before side effects; runner and explicit judge exit 0 are prerequisites for a passing record; failed runner output is never judged. Derive health from records, require cached agreement, then verify evidence freshness before gates. Refresh committed results honestly.
+- Validate the complete eval task pack before any runner, judge, evidence hash, or write. Task-declared evidence joins explicit evidence automatically: files bind exact hashes, directories bind existence/type, all before trusting health.
 - Targeted eval reuses explain scope/containment. Keep root IDs; use local scripts/deps, nearest clear manager/runtime, inherited canonical rules, relative evidence, and no automatic all-scope expansion.
 - Root/scoped eval and Treat draft share `facts.py` containment and ambiguity semantics; external symlinks never supply facts, contained symlinks keep lexical evidence, and competing managers cause abstention.
 - MCP tools stay read-only. Sync negotiated-version wire shapes, required/closed schemas, exit policies, stdio tests, and docs; findings are not operational failures, and legacy clients must not receive modern-only fields.
 - Keep English, Simplified Chinese, and Japanese READMEs structurally synchronized via `npm run lint:docs`: identical fenced code (including inline comments), table/link structure, and heading levels. Translate prose only; code comments and `assets/AGENTS.template.md` stay English.
-- Keep `assets/guard/` and adapted self-bootstrap workflows synchronized. GitHub drift guards run every PR without path filters because D2/D7 can depend on any named path. Weekly failure opens/updates one exact-title issue; recovery comments and closes it; unrelated issues stay untouched. Preserve self-checkup's non-failing policy.
+- Keep `assets/guard/` and adapted self-bootstrap workflows synchronized; detailed GitHub guard/issue contracts live in `references/maintenance-contract.md`.
 - Shipped guards/pre-commit hooks call only packaged public CLI commands usable without a local `scripts/` tree; behavior changes need an end-to-end consumer fixture. Self-bootstrap copies may use local code only when labeled.
-- Guard templates may consume the reviewed, committed default scan-baseline file; installers/CI never create or refresh it. Keep `--fail-on-security` active with baselines.
-- External Actions stay on vetted full SHAs with version hints. Dependabot updates npm dev tooling and Action pins; keep lockfile sources public, review updates as code, and move self/template copies together.
-- Lint CI uses `npm ci --ignore-scripts` with committed `package-lock.json`; never use an unlocked/fallback installer.
-- Privileged workflow expressions enter scripts only through `env`; validate exact versions and quote all uses. Release tags must be on `origin/main`; reruns skip npm only after `gitHead` + pack shasum match. Post-publish visibility must retry the same isolated exact-version npm install used by the Action, not a weaker pack probe.
-- Keep security/contribution templates truthful. Secret scanning, push protection, Dependabot security updates, required CI contexts, and conversation resolution are operational. Admin bypass only avoids sole-maintainer self-approval deadlock—never red CI.
+- CI/release/repository operations follow `references/maintenance-contract.md`: locked npm install, vetted Action SHAs, env-only privileged inputs, release identity checks, public lockfile sources, and admin bypass only for sole-maintainer self-approval—not red/pending CI.
+- Required lint uses `npm ci --ignore-scripts` over committed `package-lock.json`; public lockfile sources use `registry.npmjs.org`.
+- Release reruns skip an existing npm version only when registry `gitHead` and packed tarball shasum match. PR/release Action proof covers bundled scan+drift, exact npm override, and stable post-publish verification.
+- Repository operations require secret scanning, push protection, required checks, and resolved conversations. Admin bypass is only for the sole-maintainer self-approval deadlock, never red/pending CI.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
 
 # Testing requirements
@@ -66,7 +68,8 @@ node bin/cli.js help
 # Safety
 
 - The installer must never write into the real `~/.claude`, `~/.codex`, or other user config directories; always target an isolated `HOME` during tests.
-- Installer state is authorization evidence: serialize commands with an owned lock; journal each contained mutation before changing it; atomically replace the exact next manifest; recover by digest; fail closed on ambiguous/external edits; preserve user content; test only with isolated HOME.
+- Installer state is authorization evidence; follow the lock/journal/recovery contract in `references/maintenance-contract.md` and test only with isolated HOME.
+- Installer manifest/state parsing fails closed and replacement is atomic; preserve ownership evidence and user content.
 - Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
 - Repository-derived reads/probes/mutations use `scripts/facts.py` or the matching `bin/cli.js` guard helper. External symlinks neither affect output nor receive writes; mutations refuse symlinked files/parents. Only documented explicit inputs/outputs may be external.
 - Never commit secrets, tokens, or credentials.
@@ -91,6 +94,5 @@ Three repeatable loops let another agent reproduce how this repo is maintained; 
 - Every behavior change to `scripts/*.py` or `bin/cli.js` must ship with matching tests in the same commit/PR (see Testing requirements).
 - Before opening a PR, run the full test suite (see Build & test) and a self-checkup with `python3 scripts/scan.py .` and `python3 scripts/check_drift.py .`; keep the drift health score at grade A.
 - Keep the English, Simplified Chinese, and Japanese READMEs in sync within the same PR when user-facing behavior changes.
-- Any change to `action.yml`, Action-facing CLI/SARIF behavior, `.github/workflows/action-self-test.yml`, or `.github/workflows/release.yml` must update `tests/test_action_metadata.py` and pass a real `uses: ./` self-test. Direct CLI execution alone is not an Action regression test.
-- GitHub workflow changes must pass `actionlint`, preserve immutable Action-pin and trigger-contract tests, and keep release runs free of embedded Action-runtime deprecation warnings.
-- Action changes must prove bundled scan+drift and an exact npm override. Release self-tests both bundled commands before npm; stable post-publish verifies floating bundled code plus the exact new npm version before Marketplace. Prerelease leaves stable pointers untouched. Never suppress failures.
+- Action/workflow/release changes must satisfy `references/maintenance-contract.md`, update structural tests, pass real composite self-tests plus `actionlint`, and never suppress failures.
+- Weekly checkup failure opens/updates one exact-title issue; recovery comments and closes it; unrelated issues remain untouched.

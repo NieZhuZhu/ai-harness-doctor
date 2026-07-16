@@ -20,7 +20,8 @@
 - **Depends on**: Plans 046 and 047 (DONE)
 - **Category**: feature integration / correctness
 - **Planned at**: commit `775c31e`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #222 (plan) / PR #223 (impl), squash-merged to
+  `main` as `6ecb2d1`; all nine required contexts green.
 
 ## Why this matters
 
