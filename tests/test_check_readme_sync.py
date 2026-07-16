@@ -44,6 +44,32 @@ class ExtractTests(unittest.TestCase):
         self.assertEqual(sync.count_table_rows(REFERENCE), 3)
         self.assertEqual(sync.count_links(REFERENCE), 1)
 
+    def test_prose_paragraph_extraction_skips_structural_blocks(self):
+        doc = """# Title
+
+Short prose on
+two lines.
+
+- one list item
+- another list item
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+> a quote
+
+```text
+very long code that is not prose
+```
+"""
+        self.assertEqual(sync.extract_prose_paragraphs(doc), ["Short prose on two lines."])
+
+    def test_long_prose_paragraphs_enforces_readability_budget(self):
+        doc = "# Title\n\n" + ("x" * (sync.MAX_PROSE_PARAGRAPH_CHARS + 1)) + "\n"
+        self.assertEqual(len(sync.long_prose_paragraphs(doc)), 1)
+        self.assertEqual(sync.long_prose_paragraphs("# T\n\nShort.\n"), [])
+
 
 class CompareTests(unittest.TestCase):
     def test_identical_structure_has_no_problems(self):
@@ -113,10 +139,28 @@ class RepoReadmesTests(unittest.TestCase):
         reference_text = (ROOT / sync.README_FILES[0]).read_text(encoding="utf-8")
         for name in sync.README_FILES[1:]:
             path = ROOT / name
-            if not path.exists():
-                continue
+            self.assertTrue(path.is_file(), f"required translation is missing: {name}")
             problems = sync.compare(sync.README_FILES[0], reference_text, name, path.read_text(encoding="utf-8"))
             self.assertEqual(problems, [], f"{name} diverged: {problems}")
+            self.assertEqual(
+                sync.long_prose_paragraphs(path.read_text(encoding="utf-8")),
+                [],
+                f"{name} contains a prose wall longer than {sync.MAX_PROSE_PARAGRAPH_CHARS} characters",
+            )
+
+    def test_expected_public_language_set_is_complete(self):
+        self.assertEqual(
+            sync.README_FILES,
+            [
+                "README.md",
+                "README.zh-CN.md",
+                "README.ja.md",
+                "README.es.md",
+                "README.ko.md",
+                "README.pt-BR.md",
+                "README.fr.md",
+            ],
+        )
 
     def test_marketplace_badges_use_one_floated_source_line(self):
         # Marketplace forces README images to display:block. GitHub's supported

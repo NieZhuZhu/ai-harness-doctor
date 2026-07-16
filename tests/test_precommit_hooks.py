@@ -5,7 +5,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS = ROOT / ".pre-commit-hooks.yaml"
 PACKAGE_JSON = ROOT / "package.json"
-README_FILES = ("README.md", "README.zh-CN.md", "README.ja.md")
+README_FILES = (
+    "README.md",
+    "README.zh-CN.md",
+    "README.ja.md",
+    "README.es.md",
+    "README.ko.md",
+    "README.pt-BR.md",
+    "README.fr.md",
+)
 
 # Public packaged subcommands a shipped hook is allowed to call.
 PUBLIC_COMMANDS = {"scan", "drift"}

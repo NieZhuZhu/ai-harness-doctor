@@ -57,9 +57,10 @@ is enough.
    Linting requires Node >= 20.19 (eslint 10) and `ruff` on your PATH
    (`pip install ruff`); the runtime CLI itself still supports Node 16+.
    Keep the drift health score at grade A.
-5. If user-facing behavior changed, keep `README.md`, `README.zh-CN.md`, and
-   `README.ja.md` in sync within the same PR (`npm run lint:docs` enforces the
-   shared structure).
+5. If public behavior or README content changed, update English plus every
+   required translation listed in `scripts/check_readme_sync.py` in the same PR.
+   `npm run lint:docs` enforces presence, shared structure, identical code
+   blocks/link targets, and the prose readability budget.
 6. Use Conventional Commit messages in English, e.g. `feat(scan): ...`,
    `fix(drift): ...`, `docs(agents): ...`. Link a related issue with
    `Closes #<n>` when one exists.

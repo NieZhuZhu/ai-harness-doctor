@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Check that the trilingual READMEs stay structurally in sync.
+"""Check that every published-language README stays structurally in sync.
 
-Dev/CI-only helper (Python standard library only). The English, Simplified
-Chinese, and Japanese READMEs are expected to differ in prose but keep an
-identical structural skeleton:
+Dev/CI-only helper (Python standard library only). English is canonical; every
+translation may differ in prose but must keep an identical structural skeleton:
 
   1. Headings: same count, order, and levels.
   2. Fenced code blocks: same count and byte-identical content, in order.
@@ -19,8 +18,7 @@ This guards against a translation drifting out of sync when a section, command,
 table row, or link is added, removed, or re-nested in only one file.
 
 Exit codes:
-  0  all READMEs share the same structure (or a file is missing and the check
-     degrades to advisory).
+  0  all required READMEs exist and share the same structure.
   1  the structure diverges between READMEs.
 """
 
@@ -36,6 +34,10 @@ README_FILES = [
     "README.md",
     "README.zh-CN.md",
     "README.ja.md",
+    "README.es.md",
+    "README.ko.md",
+    "README.pt-BR.md",
+    "README.fr.md",
 ]
 
 # Matches ATX headings (# ... through ###### ...). A fenced code block can
@@ -45,6 +47,7 @@ FENCE_RE = re.compile(r"^\s*(```|~~~)")
 # Markdown inline links and images: [text](target) / ![alt](target). The
 # capturing group isolates the target so it can be compared byte-for-byte.
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+MAX_PROSE_PARAGRAPH_CHARS = 240
 
 
 def extract_headings(text):
@@ -128,6 +131,48 @@ def count_links(text):
     return len(extract_link_targets(text))
 
 
+def extract_prose_paragraphs(text):
+    """Return ordinary prose paragraphs subject to the readability budget.
+
+    Lists, tables, headings, quotes, HTML, and fenced code are already
+    scannable units and must not be merged into one synthetic paragraph.
+    """
+    paragraphs = []
+    current = []
+    in_fence = False
+
+    def flush():
+        if current:
+            paragraphs.append(" ".join(current))
+            current.clear()
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if FENCE_RE.match(raw):
+            flush()
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        structural = (
+            not line
+            or HEADING_RE.match(raw)
+            or line.startswith(("|", ">", "<", "- ", "* ", "+ "))
+            or re.match(r"^\d+\.\s", line)
+        )
+        if structural:
+            flush()
+            continue
+        current.append(line)
+    flush()
+    return paragraphs
+
+
+def long_prose_paragraphs(text, limit=MAX_PROSE_PARAGRAPH_CHARS):
+    """Return prose paragraphs that exceed the public README readability cap."""
+    return [paragraph for paragraph in extract_prose_paragraphs(text) if len(paragraph) > limit]
+
+
 def _is_fixed_target(target):
     """True if a link target is non-translatable (a URL or a stable file path).
 
@@ -208,16 +253,28 @@ def main():
     reference_path = ROOT / reference_name
 
     if not reference_path.exists():
-        print(f"[readme-sync] advisory: reference {reference_name} not found; skipping check")
-        return 0
+        print(f"[readme-sync] MISSING: required reference {reference_name}")
+        return 1
 
     reference_text = reference_path.read_text(encoding="utf-8")
 
     diverged = False
+    for name in README_FILES:
+        path = ROOT / name
+        if not path.exists():
+            continue
+        long_paragraphs = long_prose_paragraphs(path.read_text(encoding="utf-8"))
+        for paragraph in long_paragraphs:
+            diverged = True
+            print(
+                f"[readme-sync] LONG: {name} prose paragraph has {len(paragraph)} "
+                f"characters (max {MAX_PROSE_PARAGRAPH_CHARS}): {paragraph[:80]!r}"
+            )
     for name in README_FILES[1:]:
         path = ROOT / name
         if not path.exists():
-            print(f"[readme-sync] advisory: {name} not found; skipping comparison")
+            diverged = True
+            print(f"[readme-sync] MISSING: required translation {name}")
             continue
 
         problems = compare(reference_name, reference_text, name, path.read_text(encoding="utf-8"))
@@ -233,7 +290,7 @@ def main():
         f"[readme-sync] OK: {len(extract_headings(reference_text))} headings, "
         f"{len(extract_code_blocks(reference_text))} code blocks, "
         f"{count_table_rows(reference_text)} table rows, {count_links(reference_text)} links "
-        f"aligned across {len(README_FILES)} READMEs."
+        f"aligned across all {len(README_FILES)} required READMEs."
     )
     return 0
 
