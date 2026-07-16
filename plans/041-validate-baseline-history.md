@@ -29,7 +29,8 @@
 - **Depends on**: Plan 033 (DONE)
 - **Category**: correctness
 - **Planned at**: commit `a5c6195`, 2026-07-16
-- **Implementation**: IN PROGRESS on `fix/041-validate-baseline-history`
+- **Implementation**: DONE — PR #201 (plan) / PR #202 (impl), squash-merged to
+  `main` as `e25d421`; all nine required contexts green.
 
 ## Implementation progress
 

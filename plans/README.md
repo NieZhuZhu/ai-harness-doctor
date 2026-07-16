@@ -18,6 +18,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-16 at commit `a2a7227` (plan 038).
 - 2026-07-16 at commit `c141268` (plan 039).
 - 2026-07-16 at commit `26b07b0` (plan 040).
+- 2026-07-16 at commit `e25d421` (plans 041 landed; plan 042).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -282,6 +283,22 @@ verification gate, and update its status here.
    validation and derives regression/trend only from validated numeric
    snapshots, without changing the append-only schema or valid histories.
 
+### 2026-07-16 premium-project loop 2 round 1
+
+1. **GitHub-native alert lifecycle correctness** — independently traced the
+   Plan 012 SARIF surface end to end into GitHub code scanning's documented
+   ingestion rules. Every emitted `result` omits `partialFingerprints` and every
+   `run` omits `automationDetails.id`, so (a) an unrelated edit or line shift can
+   close and re-open the same alert, and (b) uploading both `scan` and `drift`
+   SARIF for one commit — exactly what the README instructs — makes the second
+   upload close the first command's alerts because both share the tool name and
+   an empty category. The repository already computes a stable, line-insensitive
+   finding identity (`scan.scan_finding_fingerprint`) for baselines, so the fix
+   reuses that identity model rather than inventing one. Plan 042 adds
+   deterministic per-result fingerprints and per-command categories additively,
+   without importing `scan.py` into `sarif.py`, changing rule ids/levels, or
+   emitting SARIF for batch mode.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -326,7 +343,8 @@ verification gate, and update its status here.
 | 038 | Prevent failed runners and judges from producing passing eval records | P0 | M | 030, 033 | DONE |
 | 039 | Model Claude Code project rules and their path applicability | P1 | L | 020, 023, 035 | DONE |
 | 040 | Prevent provisional AGENTS drafts from authorizing stub destruction | P1 | M | 004, 008, 011, 037 | DONE |
-| 041 | Validate the eval baseline-history store before trend/regression reads | P1 | S | 033 | TODO |
+| 041 | Validate the eval baseline-history store before trend/regression reads | P1 | S | 033 | DONE |
+| 042 | Make SARIF alert identity survive edits and coexist per command | P1 | M | 012, 024 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -925,3 +943,21 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   rejected again. Plan 033 deliberately scoped record validation to
   score/stats/compare/regrade; Plan 041 closes only the one deferred history
   consumer rather than centralizing an over-broad validator.
+- **Add GitHub Action `outputs` (health-grade/findings-count/drift-status) and a
+  `$GITHUB_STEP_SUMMARY` write** — real premium-surface candidate and the
+  runner-up this loop, but deferred behind Plan 042. It needs the CLI to expose
+  a machine-readable grade/finding count the composite step can parse, so it is
+  a larger, separate feature; the SARIF alert-lifecycle defects are already
+  user-visible the moment anyone uploads the current SARIF. Revisit as its own
+  plan once the fingerprint/category contract is stable.
+- **Emit SARIF for `--repos-file` batch mode with per-repo categories** —
+  rejected for Plan 042. Batch mode returns before the `--sarif` branch and has
+  no SARIF today; giving each repo a distinct `automationDetails` category is a
+  real multi-run upload design (one category per repository, coordinated with
+  `upload-sarif`), not a fingerprint tweak. Monorepo packages intentionally stay
+  in one run/category. Defer until batch SARIF has a concrete consumer.
+- **Import `scan.py` into `sarif.py` to reuse `scan_finding_fingerprint`** —
+  rejected. `sarif.py` is a light, dependency-free translation layer;
+  importing the heavy scanner would risk a cycle and pull unrelated surface into
+  the SARIF path. Plan 042 re-implements the small documented identity subset
+  locally and pins it to `scan.scan_finding_fingerprint` with a parity test.
