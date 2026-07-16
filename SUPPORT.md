@@ -2,7 +2,7 @@
 
 ## Questions and usage help
 
-Read the English, Simplified Chinese, or Japanese README first, then search
+Read the README in any published language first, then search
 existing issues. If the documentation does not answer your question, open a
 bug report or feature request with the relevant version and invocation surface.
 

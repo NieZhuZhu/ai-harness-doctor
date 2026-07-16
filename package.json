@@ -20,6 +20,10 @@
     "README.md",
     "README.zh-CN.md",
     "README.ja.md",
+    "README.es.md",
+    "README.ko.md",
+    "README.pt-BR.md",
+    "README.fr.md",
     "LICENSE"
   ],
   "engines": {
