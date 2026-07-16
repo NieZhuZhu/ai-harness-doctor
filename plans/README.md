@@ -403,6 +403,16 @@ verification gate, and update its status here.
    unsafe URL components, disables redirects for authenticated judge requests,
    and preserves deterministic built-in fallback without logging credentials.
 
+### 2026-07-16 improve loop round 6 (eval artifact minimization)
+
+1. **Eval results persist credentials printed by runners and judges** — traced a
+   generated token from runner stdout into both stored `stdout` and `answer` in
+   `results.json`. Timeout/non-zero stderr and external-judge `raw`/`stderr`
+   share the same persistence path. Plan 051 centralizes the Plan 049
+   high-confidence patterns in a small redaction module, keeps raw bounded output
+   for grading/usage in memory, and redacts every persisted result shape before
+   serialization.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -456,7 +466,8 @@ verification gate, and update its status here.
 | 047 | Make repaired baseline debt visible, checkable, and prunable | P1 | L | 007, 021 | DONE |
 | 048 | Report baseline maintenance failures truthfully through SARIF and the Action | P1 | M | 046, 047 | DONE |
 | 049 | Redact hook-command secrets from every report surface | P0 | M | 024, 042 | DONE |
-| 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | TODO |
+| 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | DONE |
+| 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
