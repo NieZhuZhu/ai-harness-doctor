@@ -23,6 +23,7 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import explain  # noqa: E402  # shared contained target/scope vocabulary
 import facts  # noqa: E402
+import registry  # noqa: E402  # shared lockfile/package-manager vocabulary
 import semantic  # noqa: E402
 
 EVIDENCE_SCHEMA_VERSION = 1
@@ -528,17 +529,6 @@ def rubric_keywords(rubric):
 # dependency-free: every generated check is a regex over the ground-truth fact.
 # ---------------------------------------------------------------------------
 
-# Lockfiles that unambiguously reveal the package manager (checked in order).
-PKG_MANAGER_LOCKFILES = [
-    ("pnpm-lock.yaml", "pnpm"),
-    ("pnpm-lock.yml", "pnpm"),
-    ("yarn.lock", "yarn"),
-    ("bun.lockb", "bun"),
-    ("bun.lock", "bun"),
-    ("package-lock.json", "npm"),
-    ("npm-shrinkwrap.json", "npm"),
-]
-
 # package.json script name -> human phrasing used in the generated prompt.
 SCRIPT_PROMPTS = [
     ("test", "run the test suite"),
@@ -609,7 +599,7 @@ def _scoped_package_manager(fact_root, repo_root):
     """Return the nearest unambiguous package manager plus evidence paths."""
     for directory in _ancestor_dirs(fact_root, repo_root):
         lock_candidates = {}
-        for filename, manager in PKG_MANAGER_LOCKFILES:
+        for filename, manager in registry.LOCKFILE_MANAGERS.items():
             path = directory / filename
             if facts.is_file_within_root(repo_root, path):
                 lock_candidates.setdefault(manager, []).append(_logical_source(path, repo_root))
