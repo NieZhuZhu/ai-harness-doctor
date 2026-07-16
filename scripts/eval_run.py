@@ -1318,7 +1318,19 @@ def parse_judge_output(stdout):
             except Exception:
                 data = None
     if not isinstance(data, dict):
-        return {"passed": False, "score": None, "reason": "judge output was not valid JSON", "raw": raw}
+        # Mark the unparseable branch distinctly so callers can tell "the judge
+        # did not return a JSON verdict at all" apart from a legitimate
+        # ``{"passed": false}`` verdict. ``llm_judge`` maps this to ``None`` to
+        # honor its documented fall-back-to-keyword-judge contract; ``run_judge``
+        # (external --judge-cmd) ignores the extra key and keeps its own
+        # exit-code-driven semantics.
+        return {
+            "passed": False,
+            "score": None,
+            "reason": "judge output was not valid JSON",
+            "raw": raw,
+            "parse_error": True,
+        }
     passed = data.get("passed")
     score = data.get("score")
     if passed is None and isinstance(score, (int, float)) and not isinstance(score, bool):
@@ -1570,6 +1582,18 @@ def llm_judge(answer, rubric, provider="auto", timeout=60, model=None):
         print(f"llm judge ({provider}) failed, falling back to keyword judge: {exc}", file=sys.stderr)
         return None
     verdict = parse_judge_output(content)
+    if verdict.get("parse_error"):
+        # HTTP succeeded but the model did not return a JSON verdict (truncation,
+        # a prose preamble, or a 200 error envelope from a compatible proxy).
+        # Per the documented contract, this is a judge failure — return None so
+        # grading falls back to the deterministic keyword judge rather than
+        # silently recording a hard fail.
+        print(
+            f"llm judge ({provider}) returned unparseable output, "
+            "falling back to keyword judge",
+            file=sys.stderr,
+        )
+        return None
     verdict["judge"] = "llm:" + provider
     verdict["model"] = used_model
     return verdict

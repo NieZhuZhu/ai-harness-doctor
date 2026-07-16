@@ -3391,6 +3391,57 @@ class LlmJudgeTests(unittest.TestCase):
         finally:
             eval_run._http_post_json = original
 
+    def test_unparseable_content_falls_back_to_none(self):
+        # Plan 043: HTTP 200 but the model returned prose instead of a JSON
+        # verdict. The documented contract is that a malformed response returns
+        # None so grading falls back to the deterministic keyword judge, rather
+        # than recording a silent hard fail.
+        def fake_post(url, headers, payload, timeout):
+            return {"choices": [{"message": {"content": "Sorry, I cannot comply."}}]}
+
+        original = eval_run._http_post_json
+        eval_run._http_post_json = fake_post
+        try:
+            with _EnvGuard(OPENAI_API_KEY="sk-test"):
+                self.assertIsNone(eval_run.llm_judge("the answer", "must mention X", "openai"))
+        finally:
+            eval_run._http_post_json = original
+
+    def test_valid_verdict_is_returned_and_not_treated_as_parse_error(self):
+        # A well-formed verdict must still be returned unchanged (regression
+        # guard so the parse_error fallback does not swallow real verdicts).
+        def fake_post(url, headers, payload, timeout):
+            return {"choices": [{"message": {"content": '{"passed": true, "score": 1, "reason": "ok"}'}}]}
+
+        original = eval_run._http_post_json
+        eval_run._http_post_json = fake_post
+        try:
+            with _EnvGuard(OPENAI_API_KEY="sk-test"):
+                verdict = eval_run.llm_judge("a", "r", "openai")
+        finally:
+            eval_run._http_post_json = original
+        self.assertIsNotNone(verdict)
+        self.assertTrue(verdict["passed"])
+        self.assertEqual(verdict["judge"], "llm:openai")
+        self.assertNotIn("parse_error", verdict)
+
+    def test_grade_answer_falls_back_to_builtin_on_unparseable_llm(self):
+        # End-to-end: an unparseable LLM response must let grade_answer fall
+        # through to the builtin keyword judge, not record the llm sentinel.
+        def fake_post(url, headers, payload, timeout):
+            return {"choices": [{"message": {"content": "not a verdict"}}]}
+
+        task = {"id": "j", "check": {"type": "judge", "rubric": "answer must mention `X`"}, "timeout_s": 5}
+        original = eval_run._http_post_json
+        eval_run._http_post_json = fake_post
+        try:
+            with _EnvGuard(OPENAI_API_KEY="sk-test"):
+                passed, info = eval_run.grade_answer(task, "the answer mentions X", ".", None, judge_llm="openai")
+        finally:
+            eval_run._http_post_json = original
+        self.assertEqual(info["judge"], "builtin")
+        self.assertTrue(passed)
+
     def test_grade_answer_prefers_llm_then_falls_back(self):
         task = {"id": "j", "check": {"type": "judge", "expect": ["ok"]}, "timeout_s": 5}
         # LLM available -> its verdict wins over the keyword judge.
@@ -3410,6 +3461,31 @@ class LlmJudgeTests(unittest.TestCase):
             eval_run.llm_judge = original
         self.assertTrue(passed)
         self.assertEqual(info["judge"], "builtin")
+
+
+class ParseJudgeOutputTests(unittest.TestCase):
+    """Plan 043: parse_error marks only the unparseable branch."""
+
+    def test_unparseable_output_is_flagged(self):
+        verdict = eval_run.parse_judge_output("not json at all")
+        self.assertTrue(verdict["parse_error"])
+        self.assertFalse(verdict["passed"])
+        self.assertIsNone(verdict["score"])
+
+    def test_legitimate_fail_verdict_is_not_a_parse_error(self):
+        verdict = eval_run.parse_judge_output('{"passed": false, "score": 0, "reason": "wrong"}')
+        self.assertNotIn("parse_error", verdict)
+        self.assertFalse(verdict["passed"])
+
+    def test_bare_passed_false_is_not_a_parse_error(self):
+        verdict = eval_run.parse_judge_output('{"passed": false}')
+        self.assertNotIn("parse_error", verdict)
+        self.assertFalse(verdict["passed"])
+
+    def test_embedded_json_in_prose_is_not_a_parse_error(self):
+        verdict = eval_run.parse_judge_output('Verdict: {"passed": true, "score": 1}')
+        self.assertNotIn("parse_error", verdict)
+        self.assertTrue(verdict["passed"])
 
 
 class ProcessHygieneTests(unittest.TestCase):
