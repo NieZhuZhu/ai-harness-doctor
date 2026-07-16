@@ -29,9 +29,9 @@
 - **Depends on**: Plans 014, 018, and 021 (DONE)
 - **Category**: correctness / diagnostic precision
 - **Planned at**: commit `7e03467`, 2026-07-17
-- **Implementation**: IN PROGRESS — PR #233 (plan); implementation branch
-  `fix/052-honor-gitignored-runtime-paths`, full local gates and pinned Qwen
-  validation green, awaiting implementation PR and required CI.
+- **Implementation**: IN PROGRESS — PR #233 (plan) / PR #234 (impl);
+  implementation branch `fix/052-honor-gitignored-runtime-paths`, full local
+  gates and pinned Qwen validation green, awaiting required CI and merge.
 
 ## Why this matters
 
