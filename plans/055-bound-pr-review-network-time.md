@@ -26,6 +26,8 @@
 - **Depends on**: Plans 010 and 036 (DONE)
 - **Category**: bug / CI reliability
 - **Planned at**: commit `5d96c95`, 2026-07-17
+- **Implementation**: DONE — PR #245 (plan) / PR #246 (impl),
+  squash-merged to `main` as `2306e06`; all nine required contexts green.
 
 ## Why this matters
 
@@ -165,11 +167,11 @@ a public function.
 | Self scan     | `python3 scripts/scan.py . --baseline .ai-harness-doctor/scan-baseline.json --check-baseline --fail-on-security --fail-on-gaps --fail-on-semantic --fail-on-conflicts --no-report-file`                | exit 0                                                  |
 | Self drift    | `python3 scripts/check_drift.py . --strict`                                                                                                                                                            | 100/100, Grade A                                        |
 | Self eval     | `python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.json --tasks benchmark/self-eval/tasks.json --workdir . --evidence AGENTS.md --require-current-evidence --fail-under 80` | 38/38, Grade A                                          |
-| CLI smoke     | `node bin/cli.js review --report /dev/null`                                                                                                                                                            | expected input-validation failure, never a network call |
+| CLI smoke     | `node bin/cli.js review --report /dev/null`                                                                                                                                                            | exit 0 with a deterministic zero-finding dry-run payload; never a network call |
 
-For the CLI smoke test, an invalid empty report may exit non-zero; success means
-it terminates promptly with a deterministic parse/input error rather than
-attempting network I/O.
+An empty report is intentionally valid input for the dry-run builder. Success
+means it terminates promptly with zero comments/findings and never enters
+`post_review()`.
 
 ## Scope
 
@@ -303,17 +305,17 @@ squash merge.
 
 ## Done criteria
 
-- [ ] Every `post_review()` GitHub API request passes the same positive finite
+- [x] Every `post_review()` GitHub API request passes the same positive finite
       timeout explicitly.
-- [ ] Timeout/transport failures terminate cleanly without traceback, token,
+- [x] Timeout/transport failures terminate cleanly without traceback, token,
       headers, payload, or response-body leakage.
-- [ ] Identity ownership, pagination, summary upsert, inline review, and HTTP
+- [x] Identity ownership, pagination, summary upsert, inline review, and HTTP
       422 behavior are byte/semantics-compatible.
-- [ ] `--dry-run` remains network-free.
-- [ ] No workflow files or public CLI/output schemas change.
-- [ ] Focused and full tests pass.
-- [ ] Strict drift remains 100/A and self eval remains 38/38.
-- [ ] All nine PR checks pass and the implementation is squash-merged.
+- [x] `--dry-run` remains network-free.
+- [x] No workflow files or public CLI/output schemas change.
+- [x] Focused and full tests pass: 799 Python and 47 Node tests.
+- [x] Strict drift remains 100/A and self eval remains 38/38.
+- [x] All nine PR checks pass and the implementation is squash-merged.
 
 ## STOP conditions
 
