@@ -791,7 +791,23 @@ function readTransactionDirectory(dir, allowedRoots, manifest) {
     throw new Error(`unsafe installer transaction directory: ${dir}`);
   }
   const journalPath = path.join(dir, 'journal.json');
-  const journalStat = fs.lstatSync(journalPath);
+  let journalStat;
+  try {
+    journalStat = fs.lstatSync(journalPath);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      // Incomplete/abandoned transaction: the directory was created
+      // (beginInstallerTransaction's fs.mkdirSync) but the journal was never
+      // written (a crash between mkdir and writeTransactionJournal), or a
+      // concurrent cleanup already removed it. Signal the caller to discard the
+      // directory rather than bricking every future install/uninstall — but do
+      // NOT relax any present-but-invalid/unsafe journal check below.
+      const incomplete = new Error(`installer transaction has no journal: ${journalPath}`);
+      incomplete.code = 'TRANSACTION_INCOMPLETE';
+      throw incomplete;
+    }
+    throw error;
+  }
   if (!journalStat.isFile() || journalStat.isSymbolicLink()) {
     throw new Error(`unsafe installer transaction journal: ${journalPath}`);
   }
@@ -999,11 +1015,22 @@ function recoverInstallerTransactions(extraRoots = []) {
     if (!entry.isDirectory() || entry.isSymbolicLink()) {
       throw new Error(`unsafe installer transaction entry: ${entry.name}`);
     }
-    const transaction = readTransactionDirectory(
-      path.join(TRANSACTIONS_DIR, entry.name),
-      allowedRoots,
-      manifestForPaths
-    );
+    const entryDir = path.join(TRANSACTIONS_DIR, entry.name);
+    let transaction;
+    try {
+      transaction = readTransactionDirectory(entryDir, allowedRoots, manifestForPaths);
+    } catch (error) {
+      if (error.code === 'TRANSACTION_INCOMPLETE') {
+        // A directory with no journal is an abandoned/incomplete transaction
+        // (crash between mkdir and journal write). Remove it — confined to
+        // TRANSACTIONS_DIR since entryDir is always path.join(TRANSACTIONS_DIR,
+        // name) and the symlink/non-directory entry guard above already ran —
+        // and continue instead of failing every future installer command.
+        rawRemovePath(entryDir);
+        continue;
+      }
+      throw error;
+    }
     const currentManifestState = manifestState();
     if (
       transaction.nextManifestDigest &&
