@@ -29,9 +29,9 @@
 - **Depends on**: Plans 022, 034, 046, and 048 (DONE)
 - **Category**: direction / GitHub Action DX and safety
 - **Planned at**: commit `eac8426`, 2026-07-17
-- **Implementation**: IN PROGRESS — PR #239 (plan); implementation branch
-  `feat/054-structured-action-args`, full local gates and actionlint green,
-  awaiting implementation PR and required CI.
+- **Implementation**: IN PROGRESS — PR #239 (plan) / PR #240 (impl);
+  implementation branch `feat/054-structured-action-args`, full local gates
+  and actionlint green, awaiting required CI and merge.
 
 ## Why this matters
 
