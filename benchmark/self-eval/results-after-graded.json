@@ -233,13 +233,20 @@
       "answer": "Claude/Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion or rewriting.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "canonical-readiness",
+      "stdout": "Product-owned draft markers, unsafe paths, size, and required-section failures block destructive stub consolidation; --force may bypass only dirty-tree risk.",
+      "answer": "Product-owned draft markers, unsafe paths, size, and required-section failures block destructive stub consolidation; --force may bypass only dirty-tree risk.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 33,
-    "total": 33,
+    "passed": 34,
+    "total": 34,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -247,12 +254,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "55817710d3e4965da6179ab3c808a49f021d89ac941693163bd2a6478c8ebee9"
+      "sha256": "c03a06d81bb27d2e38f9e9c299103039bfe985bba79060391c9f595b89e5c3cf"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "ec4a1879642537e437d2643b2c8ac6c676c2aaa4316aa9e25ebba2396a81f54c"
+        "sha256": "6b901523e90a2969039c18618b972f38988ecdc853f082392ac94844b48a58a7"
       }
     ]
   }

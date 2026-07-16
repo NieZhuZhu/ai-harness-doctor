@@ -114,7 +114,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `explain` | ✅ | ❌ | 既存または future の contained path について canonical inheritance と diagnostic scope evidence を説明します。 |
 | `plan` | ✅ | Optional output file | merge plan の土台を作ります。merge はしません。 |
 | Write `AGENTS.md` | ❌ | ✅ | 人間または agent による意味判断のステップです。 |
-| `validate` | ✅ | ❌ | 正本 `AGENTS.md` に必要な sections が含まれているか確認します。 |
+| `validate` | ✅ | ❌ | canonical path/size/sections を確認し、未解決の generated draft markers を拒否します。 |
 | `stubs` | ✅ | With `--apply` | `--force` がない限り clean tree が必要です。 |
 | `guard` | ✅ | With `--apply` | git repo と既存の `AGENTS.md` が必要です。 |
 | `drift` | ✅ | ❌ | blocking drift で失敗します。`--strict` は notices を昇格します。 |
@@ -463,14 +463,14 @@ scan output から Phase 1 の merge plan を組み立てます。inventory、ov
 - 検出された CI、lint/format、type-check ツール;
 - scan が報告する **すべての conflict の default 解決策**（例: lockfile が裏付ける package manager を優先）と、その rationale。
 
-推論された行はすべて `(inferred — confirm)`、安全な既定の慣習は `(suggested default)` とタグ付けされ、先頭の banner が commit 前のレビュー・編集を促します。`-o` なしでは stdout に出力し、`-o PATH` ではファイルに書き込みますが、既存ファイルは `--force` を付けない限り上書きを拒否します。
+推論された行はすべて `(inferred — confirm)`、安全な既定の慣習は `(suggested default)` とタグ付けされ、先頭の banner が commit 前のレビュー・編集を促します。これら product-owned provisional markers は実行可能な safety boundary でもあります。maintainer が generated TODO を解決し、各 inference/default を確認または書き換え、banner/marker を削除するまで、`validate` は `DRAFT_REVIEW` error を報告し、`stubs --apply` は original instruction sources の置換を拒否します。これは明示的な marker 解決を証明するだけで、reviewer identity や semantic correctness は証明しません。`-o` なしでは draft を stdout に出力し、`-o PATH` ではファイルに書き込みますが、既存ファイルは `--force` を付けない限り上書きを拒否します。
 
 </details>
 
 <details>
 <summary><code>validate</code></summary>
 
-正本 `AGENTS.md` を書いた後、その構造を検証します。`scripts/canonicalize.py --validate` への read-only passthrough です。
+`AGENTS.md` を書いた後、canonical readiness（path safety、size、required structure、ai-harness-doctor generated provisional markers が残っていないこと）を検証します。`scripts/canonicalize.py --validate` への read-only passthrough です。
 
 デフォルトでは `Project overview`、`Build & test`、`Conventions` の見出しを必須とします。独自のカンマ区切りリストを `--require-sections` に渡すと、どの見出しを必須にするかを変更できます（欠けている見出しは `SECTION` の指摘として報告されます）：
 
@@ -497,7 +497,7 @@ python3 scripts/canonicalize.py --validate . --require-sections "Project overvie
 | Continue | `.continuerules` が `AGENTS.md` へのポインタになります。`.continue/rules/*.md` は `scan` で検出されますが降格はされません。 |
 | Trae | `scan` で検出されます（`.trae/rules/project_rules.md`）が、降格は**されません**。Roo と同様、単一の慣例的な stub 位置を持ちません。 |
 
-デフォルトは dry-run です。`--apply` には clean git tree が必要です。`--force` はその safety check を上書きします。
+デフォルトは dry-run です。`--apply` は write/delete の前に canonical readiness を要求し、full pre-migration tool files は non-blocking migration inputs のままです。Apply には clean git tree も必要です。`--force` が上書きするのは dirty-tree check だけで、path、structure、size、`DRAFT_REVIEW` error は迂回できません。
 
 既知のツール config ファイルは `assets/agent-tools.json` に一元定義されています。これは `scan`、`stubs`/`canonicalize`、`drift` がすべて読み込む唯一の registry なので、新しいツールの追加はこのファイル 1 つを編集するだけで済みます。
 

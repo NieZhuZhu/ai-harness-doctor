@@ -114,7 +114,7 @@ npx ai-harness-doctor install --link                  # link to a global package
 | `explain` | ✅ | ❌ | Explains canonical inheritance and diagnostic scope evidence for one existing or future contained path. |
 | `plan` | ✅ | Optional output file | Scaffolds a merge plan; does not merge. |
 | Write `AGENTS.md` | ❌ | ✅ | Human-or-agent semantic step. |
-| `validate` | ✅ | ❌ | Checks whether canonical `AGENTS.md` contains the required sections. |
+| `validate` | ✅ | ❌ | Checks canonical path/size/sections and rejects unresolved generated draft markers. |
 | `stubs` | ✅ | With `--apply` | Requires clean tree unless `--force`. |
 | `guard` | ✅ | With `--apply` | Requires git repo and existing `AGENTS.md`. |
 | `drift` | ✅ | ❌ | Fails on blocking drift; `--strict` promotes notices. |
@@ -465,14 +465,14 @@ The draft fills every canonical section (`Project overview`, `Build & test`, `Co
 - detected CI, lint/format, and type-check tooling;
 - **default resolutions for every conflict** scan reports (e.g. prefer the lockfile-backed package manager), each with a rationale.
 
-Every inferred line is tagged `(inferred — confirm)` and safe conventions `(suggested default)`, and a banner reminds the human to review and edit before committing. Without `-o` it prints to stdout; with `-o PATH` it writes the file and refuses to overwrite an existing file unless `--force` is given.
+Every inferred line is tagged `(inferred — confirm)` and safe conventions `(suggested default)`, and a banner reminds the human to review and edit before committing. These product-owned provisional markers are an executable safety boundary: until the maintainer resolves the generated TODOs, confirms or rewrites every marked inference/default, and removes the banner/markers, `validate` reports `DRAFT_REVIEW` errors and `stubs --apply` refuses to replace the original instruction sources. This proves explicit marker resolution, not reviewer identity or semantic correctness. Without `-o` draft prints to stdout; with `-o PATH` it writes the file and refuses to overwrite an existing file unless `--force` is given.
 
 </details>
 
 <details>
 <summary><code>validate</code></summary>
 
-Validates the canonical `AGENTS.md` structure after you write it. It is a read-only passthrough to `scripts/canonicalize.py --validate`.
+Validates canonical readiness after you write `AGENTS.md`: path safety, size, required structure, and absence of ai-harness-doctor's generated provisional markers. It is a read-only passthrough to `scripts/canonicalize.py --validate`.
 
 By default it requires the `Project overview`, `Build & test`, and `Conventions` headings. Pass `--require-sections` with your own comma-separated list to change which headings are mandatory (a missing one is reported as a `SECTION` finding):
 
@@ -499,7 +499,7 @@ Downgrades existing tool files to minimal pointers after `AGENTS.md` exists.
 | Continue | `.continuerules` points to `AGENTS.md`; `.continue/rules/*.md` is detected by `scan` but not downgraded. |
 | Trae | Detected by `scan` (`.trae/rules/project_rules.md`) but **not** downgraded — same shape as Roo, no single conventional stub location. |
 
-Dry-run by default. `--apply` requires a clean git tree; `--force` overrides that safety check.
+Dry-run by default. Before `--apply` writes or deletes anything, it requires canonical readiness; full pre-migration tool files remain non-blocking migration inputs. Apply also requires a clean git tree. `--force` overrides only the dirty-tree check—it never bypasses path, structure, size, or `DRAFT_REVIEW` errors.
 
 Known tool config files are defined once in `assets/agent-tools.json`, the single registry that `scan`, `stubs`/`canonicalize`, and `drift` all read, so adding a new tool means editing that one file.
 

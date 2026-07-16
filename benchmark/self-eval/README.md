@@ -11,7 +11,7 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 33 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 34 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
   evidence freshness, repository operations, public lockfile sources, nested
   instruction scopes, and where the core scripts live).
@@ -43,7 +43,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 33/33 |
+| current evidence-bound maintenance pack | 34/34 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -88,3 +88,6 @@ bundled scan/drift plus exact npm overrides before/after publish; and modeled
 Claude/Cursor/Copilot globs may narrow automatic conflicts without turning
 conditional/manual/invalid sources into effective guidance or recursive scan
 discovery into recursive deletion or rewriting authority.
+Destructive stub consolidation also preflights canonical readiness:
+product-owned draft markers, unsafe paths, size, and required sections block
+apply, while `--force` can accept only dirty-tree risk.

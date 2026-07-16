@@ -38,6 +38,108 @@ def _can_symlink_files():
 
 
 class CanonicalizeTests(unittest.TestCase):
+    def test_provisional_draft_cannot_validate_or_authorize_stub_apply(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "package.json").write_text(
+                '{"scripts":{"test":"node --test"}}\n',
+                encoding="utf-8",
+            )
+            (repo / "package-lock.json").write_text("{}\n", encoding="utf-8")
+            claude = repo / "CLAUDE.md"
+            claude.write_text(
+                "# Legacy truth\n\nUse `npm test`.\nKeep the deployment fact.\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", "base"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            draft = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--draft",
+                    str(repo),
+                    "-o",
+                    str(repo / "AGENTS.md"),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(draft.returncode, 0, draft.stderr)
+            subprocess.run(["git", "add", "AGENTS.md"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "draft"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            agents_before = (repo / "AGENTS.md").read_bytes()
+            claude_before = claude.read_bytes()
+
+            validation = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--validate",
+                    str(repo),
+                    "--json",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            apply = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--write-stubs",
+                    str(repo),
+                    "--apply",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(validation.returncode, 1, validation.stdout)
+            report = json.loads(validation.stdout)
+            self.assertFalse(report["ok"])
+            self.assertTrue(
+                any(
+                    item["check"] == "DRAFT_REVIEW"
+                    and item["level"] == "ERROR"
+                    for item in report["findings"]
+                )
+            )
+            self.assertNotEqual(apply.returncode, 0)
+            self.assertIn("canonical readiness", apply.stderr)
+            self.assertEqual((repo / "AGENTS.md").read_bytes(), agents_before)
+            self.assertEqual(claude.read_bytes(), claude_before)
+
     def test_plan_contains_inventory_and_conflict(self):
         proc = subprocess.run([sys.executable, str(CANON), "--plan", str(FIXTURE)], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -158,6 +260,36 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertEqual(before, (repo / "CLAUDE.md").read_text(encoding="utf-8"))
             self.assertTrue((repo / ".cursor" / "rules" / "extra.mdc").is_file())
 
+    def test_provisional_draft_dry_run_still_previews_without_writing(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(
+                canonicalize.DRAFT_PROVENANCE
+                + "\n# Project overview\n\nDraft.\n"
+                + "# Build & test\n\nRun tests.\n"
+                + "# Conventions\n\nKeep changes small.\n",
+                encoding="utf-8",
+            )
+            claude = repo / "CLAUDE.md"
+            claude.write_text("legacy truth\n", encoding="utf-8")
+            before = claude.read_bytes()
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--write-stubs",
+                    str(repo),
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertIn("--- a/CLAUDE.md", proc.stdout)
+            self.assertEqual(claude.read_bytes(), before)
+
     def test_write_stubs_apply_rewrites_claude(self):
         with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"
@@ -177,6 +309,115 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertTrue((repo / "CLAUDE.md").read_text(encoding="utf-8").startswith("@AGENTS.md"))
             self.assertFalse((repo / ".cursor" / "rules" / "extra.mdc").exists())
             self.assertTrue((repo / ".cursor" / "rules" / "agents-md.mdc").is_file())
+
+    def test_stub_apply_force_cannot_bypass_provisional_readiness(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(
+                canonicalize.DRAFT_PROVENANCE
+                + "\n# Project overview\n\nDraft.\n"
+                + "# Build & test\n\nRun tests.\n"
+                + "# Conventions\n\nKeep changes small.\n",
+                encoding="utf-8",
+            )
+            claude = repo / "CLAUDE.md"
+            claude.write_text("legacy truth\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "base"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            (repo / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+            before = claude.read_bytes()
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--write-stubs",
+                    str(repo),
+                    "--apply",
+                    "--force",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("DRAFT_REVIEW", proc.stderr)
+            self.assertEqual(claude.read_bytes(), before)
+
+    def test_stub_readiness_failure_creates_no_cursor_pointer(self):
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            rules = repo / ".cursor" / "rules"
+            rules.mkdir(parents=True)
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\n\nMissing required sections.\n",
+                encoding="utf-8",
+            )
+            legacy = rules / "legacy.mdc"
+            legacy.write_text("legacy cursor truth\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "base"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            before = legacy.read_bytes()
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--write-stubs",
+                    str(repo),
+                    "--apply",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("SECTION", proc.stderr)
+            self.assertEqual(legacy.read_bytes(), before)
+            self.assertFalse((rules / "agents-md.mdc").exists())
 
     def test_recursive_scan_discovery_does_not_authorize_nested_rule_deletion(self):
         with ResilientTemporaryDirectory() as td:
@@ -301,6 +542,59 @@ class CanonicalizeTests(unittest.TestCase):
             self.assertEqual(outside.read_bytes(), before)
             self.assertEqual(regular_stub.read_bytes(), regular_before)
             self.assertTrue((repo / "CLAUDE.md").is_symlink())
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_stub_apply_refuses_symlinked_canonical_readiness(self):
+        with ResilientTemporaryDirectory() as td:
+            base = Path(td)
+            repo = base / "repo"
+            outside = base / "outside-agents.md"
+            repo.mkdir()
+            outside.write_text(AGENTS_MIN, encoding="utf-8")
+            (repo / "AGENTS.md").symlink_to(outside)
+            claude = repo / "CLAUDE.md"
+            claude.write_text("legacy truth\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.com"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Test User"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "base"],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            )
+            before = claude.read_bytes()
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANON),
+                    "--write-stubs",
+                    str(repo),
+                    "--apply",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("UNSAFE_PATH", proc.stderr)
+            self.assertEqual(claude.read_bytes(), before)
+            self.assertTrue((repo / "AGENTS.md").is_symlink())
 
     @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
     def test_write_stubs_apply_refuses_symlinked_cursor_rules_directory(self):
@@ -521,6 +815,67 @@ REQUIRED_DRAFT_HEADINGS = [
 
 
 class DraftTests(unittest.TestCase):
+    def test_unresolved_draft_markers_are_exact_bounded_and_deterministic(self):
+        draft = canonicalize.render_draft(
+            {
+                "project_snapshot": {
+                    "tech_stack": [],
+                    "existing_files": {
+                        "ci": [],
+                        "lint_format": [],
+                        "typecheck": [],
+                    },
+                },
+                "conflicts": [],
+            },
+            Path("/repo-that-does-not-exist"),
+        )
+
+        first = canonicalize.unresolved_draft_markers(draft)
+        second = canonicalize.unresolved_draft_markers(draft)
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            [item["kind"] for item in first],
+            ["provenance", "inferred", "suggested", "todo"],
+        )
+        self.assertTrue(all(set(item) == {"kind", "line"} for item in first))
+        self.assertTrue(all(isinstance(item["line"], int) for item in first))
+
+    def test_unresolved_draft_markers_track_partial_and_completed_review(self):
+        draft = (
+            f"{canonicalize.DRAFT_PROVENANCE}\n"
+            f"{canonicalize.DRAFT_TODOS[0]}\n"
+            f"- npm test  # {canonicalize.INFERRED}\n"
+            f"- Use pull requests. {canonicalize.SUGGESTED}\n"
+        )
+        partial = draft.replace(canonicalize.DRAFT_PROVENANCE + "\n", "").replace(
+            canonicalize.DRAFT_TODOS[0] + "\n",
+            "",
+        )
+        reviewed = (
+            "# Project overview\n\nA reviewed project.\n"
+            "# Build & test\n\nRun `npm test`.\n"
+            "# Conventions\n\nKeep changes small.\n"
+        )
+
+        self.assertEqual(
+            [item["kind"] for item in canonicalize.unresolved_draft_markers(partial)],
+            ["inferred", "suggested"],
+        )
+        self.assertEqual(canonicalize.unresolved_draft_markers(reviewed), [])
+
+    def test_user_authored_todo_and_similar_prose_are_not_draft_markers(self):
+        text = (
+            "# Project overview\n\n"
+            "TODO(owner): rotate the sample quarterly.\n"
+            "This value was inferred from production history.\n"
+            "The reviewer suggested default branch protection.\n"
+            "<!-- Auto-drafted by a different internal tool. -->\n"
+        )
+
+        self.assertEqual(canonicalize.unresolved_draft_markers(text), [])
+
     def test_draft_fills_all_canonical_sections_with_marked_inferences(self):
         proc = subprocess.run([sys.executable, str(CANON), str(FIXTURE), "--draft"], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)

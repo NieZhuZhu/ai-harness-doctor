@@ -299,8 +299,22 @@ def write_plan(args):
         print(content, end="")
 
 
+DRAFT_PROVENANCE = "<!-- Auto-drafted by `ai-harness-doctor canonicalize.py --draft`. -->"
+INFERRED = "(inferred — confirm)"
+SUGGESTED = "(suggested default)"
+DRAFT_TODOS = [
+    "TODO: Describe what this repository does, its main subsystems, "
+    "and boundaries an agent cannot infer from code alone.",
+    "TODO: List only the commands agents must run and any required preconditions.",
+    "TODO: Document repository-specific conventions not already enforced "
+    "by a formatter, linter, type checker, or manifest.",
+    "TODO: Explain when tests are required, where fixtures live, and which test scopes are safe to run locally.",
+    "TODO: Call out secrets, production resources, data boundaries, and destructive commands.",
+    "TODO: Document commit message style and PR validation expectations.",
+    "# TODO: no build/test commands could be inferred; add the exact commands agents must run.",
+]
 DRAFT_BANNER = [
-    "<!-- Auto-drafted by `ai-harness-doctor canonicalize.py --draft`. -->",
+    DRAFT_PROVENANCE,
     '<!-- Lines tagged "(inferred — confirm)" are mechanical guesses derived from repository facts; -->',
     '<!-- lines tagged "(suggested default)" are safe conventions to keep. Replace every TODO, review -->',
     "<!-- each inference, and delete this banner before committing. -->",
@@ -327,10 +341,6 @@ _PY_CLAUDE_CMD_RE = re.compile(
     r"|pytest\b|ruff\b|pyright\b|mypy\b|tox\b|nox\b|pre-commit\b"
     r"|python3?\s+-m\s+\S+)"
 )
-
-INFERRED = "(inferred — confirm)"
-SUGGESTED = "(suggested default)"
-
 
 def _detected_package_manager(root):
     """Return ``(manager, rationale)`` for the repo's primary Node package manager.
@@ -489,7 +499,7 @@ def _draft_build_lines(root):
         for cmd, note in commands:
             lines.append(f"{cmd.ljust(width)}  # {note}")
     else:
-        lines.append("# TODO: no build/test commands could be inferred; add the exact commands agents must run.")
+        lines.append(DRAFT_TODOS[6])
     lines.append("```")
     # Surface pyproject console scripts as a note so agents know the entry points
     # without cluttering the command block (a package can declare many aliases).
@@ -532,16 +542,13 @@ def render_draft(report, root):
     lines = list(DRAFT_BANNER)
 
     lines += ["", "# Project overview", ""]
-    lines.append(
-        "TODO: Describe what this repository does, its main subsystems, "
-        "and boundaries an agent cannot infer from code alone."
-    )
+    lines.append(DRAFT_TODOS[0])
     if stack:
         stack_text = "; ".join(f"{s['language']} ({', '.join(f'`{m}`' for m in s['markers'])})" for s in stack)
         lines += ["", f"- Detected tech stack: {stack_text}. {INFERRED}"]
 
     lines += ["", "# Build & test", ""]
-    lines.append("TODO: List only the commands agents must run and any required preconditions.")
+    lines.append(DRAFT_TODOS[1])
     lines += [""]
     lines += _draft_build_lines(root)
     if ci:
@@ -550,10 +557,7 @@ def render_draft(report, root):
     lines += _draft_conflict_lines(report, root)
 
     lines += ["", "# Conventions", ""]
-    lines.append(
-        "TODO: Document repository-specific conventions not already enforced "
-        "by a formatter, linter, type checker, or manifest."
-    )
+    lines.append(DRAFT_TODOS[2])
     if lint_format:
         lf_text = ", ".join(f"`{c}`" for c in lint_format)
         lines += [
@@ -565,16 +569,14 @@ def render_draft(report, root):
         lines += [f"- Type checking is configured via {tc_text}. {INFERRED}"]
 
     lines += ["", "# Testing requirements", ""]
-    lines.append(
-        "TODO: Explain when tests are required, where fixtures live, and which test scopes are safe to run locally."
-    )
+    lines.append(DRAFT_TODOS[3])
     if scripts and "test" in scripts:
         pm, _ = _detected_package_manager(root)
         if pm is not None:
             lines += ["", f"- A `test` script is defined; run `{pm} run test` before pushing. {INFERRED}"]
 
     lines += ["", "# Safety", ""]
-    lines.append("TODO: Call out secrets, production resources, data boundaries, and destructive commands.")
+    lines.append(DRAFT_TODOS[4])
     lines += [
         "",
         f"- Never commit secrets, tokens, or credentials. {SUGGESTED}",
@@ -582,7 +584,7 @@ def render_draft(report, root):
     ]
 
     lines += ["", "# Commit & PR", ""]
-    lines.append("TODO: Document commit message style and PR validation expectations.")
+    lines.append(DRAFT_TODOS[5])
     lines += ["", f"- Land changes through pull requests; do not push directly to the default branch. {SUGGESTED}"]
     if ci:
         ci_text = ", ".join(f"`{c}`" for c in ci)
@@ -630,11 +632,30 @@ def collect_stub_targets(root, tools):
 
 def write_stubs(args):
     root = Path(args.repo_root).resolve()
-    if not facts.is_file_within_root(root, root / "AGENTS.md"):
+    readiness = canonical_readiness_findings(
+        root,
+        args.max_bytes,
+        args.require_sections,
+    )
+    if any(finding["check"] == "AGENTS_EXISTS" for finding in readiness):
         raise SystemExit("AGENTS.md must exist before writing stubs.")
     tools = [t.strip() for t in args.tools.split(",") if t.strip()]
     changes = collect_stub_targets(root, tools)
     if args.apply:
+        blockers = [
+            finding
+            for finding in readiness
+            if finding.get("level") == "ERROR"
+        ]
+        if blockers:
+            checks = ", ".join(
+                dict.fromkeys(finding["check"] for finding in blockers)
+            )
+            raise SystemExit(
+                "Refusing stub apply: canonical readiness failed "
+                f"({checks}). Run `ai-harness-doctor validate {root}` and "
+                "resolve every error before replacing instruction sources."
+            )
         git_clean_or_forced(root, args.force)
     if not changes:
         print("No existing tool files matched; nothing to change.")
@@ -723,8 +744,31 @@ def _looks_like_library_doc(text):
     return matched >= 3
 
 
-def validate(args):
-    root = Path(args.repo_root).resolve()
+def unresolved_draft_markers(text):
+    """Return product-owned provisional markers without echoing user content."""
+    records = []
+    seen_kinds = set()
+    exact_todos = set(DRAFT_TODOS)
+    for lineno, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        kind = None
+        if stripped == DRAFT_PROVENANCE:
+            kind = "provenance"
+        elif stripped in exact_todos:
+            kind = "todo"
+        elif INFERRED in line:
+            kind = "inferred"
+        elif SUGGESTED in line:
+            kind = "suggested"
+        if kind is not None and kind not in seen_kinds:
+            seen_kinds.add(kind)
+            records.append({"kind": kind, "line": lineno})
+    return records
+
+
+def canonical_readiness_findings(root, max_bytes, require_sections):
+    """Return canonical AGENTS.md blockers shared by validate and stub apply."""
+    root = Path(root).resolve()
     findings = []
     agents = root / "AGENTS.md"
     agents_unsafe = agents.is_symlink() or (
@@ -752,15 +796,15 @@ def validate(args):
         library_doc = _looks_like_library_doc(text)
         soft_level = "WARN" if library_doc else "ERROR"
         note = " (library/reference doc: relaxed to non-blocking)" if library_doc else ""
-        if len(data) > args.max_bytes:
+        if len(data) > max_bytes:
             findings.append(
                 {
                     "level": soft_level,
                     "check": "SIZE",
-                    "message": f"AGENTS.md is {len(data)} bytes, above {args.max_bytes}{note}",
+                    "message": f"AGENTS.md is {len(data)} bytes, above {max_bytes}{note}",
                 }
             )
-        for req in args.require_sections.split(","):
+        for req in require_sections.split(","):
             if req.strip() and not heading_present(text, req.strip()):
                 findings.append(
                     {
@@ -769,6 +813,36 @@ def validate(args):
                         "message": f"Missing required heading: {req.strip()}{note}",
                     }
                 )
+        marker_labels = {
+            "provenance": "auto-draft provenance banner",
+            "todo": "generated TODO prompt",
+            "inferred": "unconfirmed inferred value",
+            "suggested": "unreviewed suggested default",
+        }
+        for marker in unresolved_draft_markers(text):
+            findings.append(
+                {
+                    "level": "ERROR",
+                    "check": "DRAFT_REVIEW",
+                    "path": "AGENTS.md",
+                    "line": marker["line"],
+                    "message": (
+                        f"AGENTS.md still contains a {marker_labels[marker['kind']]}; "
+                        "review the draft and remove product-owned provisional markers."
+                    ),
+                }
+            )
+    return findings
+
+
+def validate(args):
+    root = Path(args.repo_root).resolve()
+    findings = canonical_readiness_findings(
+        root,
+        args.max_bytes,
+        args.require_sections,
+    )
+    agents = root / "AGENTS.md"
     if agents.exists() or agents.is_symlink():
         all_canonicalizable = [t["id"] for t in registry.canonicalizable_tools()]
         for change in collect_stub_targets(root, all_canonicalizable):

@@ -196,5 +196,11 @@
     "prompt": "How may Claude/Cursor/Copilot structured rules narrow conflicts, and what must remain diagnostic or mutation-safe? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)structured.*glob.*automatic.*conflict.*conditional.*diagnostic.*recursive.*delet|conditional.*manual.*diagnostic.*recursive.*delet"}
+  },
+  {
+    "id": "canonical-readiness",
+    "prompt": "What must block destructive stub consolidation, and what may --force bypass? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)draft.*marker.*unsafe.*path.*size.*required.*section.*block.*force.*dirty|force.*dirty.*draft.*marker.*block"}
   }
 ]

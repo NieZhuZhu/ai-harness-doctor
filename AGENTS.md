@@ -37,8 +37,8 @@ node bin/cli.js help
 - Python scripts must use Python 3.9+ standard library only.
 - `assets/agent-tools.json` is the single source for scanned/canonicalized/drifted agent configs via `scripts/registry.py`; add tools there, not in engine-local lists. `bin/cli.js`'s `AGENTS` is intentionally separate installer-target metadata.
 - `bin/cli.js` must use Node >=16 standard library only; do not add npm runtime dependencies.
-- Keep scripts deterministic: scanning, stub writing, validation, drift checks, and eval harness mechanics only.
-- Do not implement semantic merging in scripts; semantic decisions belong in `SKILL.md` workflow and human review.
+- Scripts stay deterministic and never semantically merge; those decisions remain in `SKILL.md` and human review.
+- Stub apply requires canonical readiness (no product draft markers; safe path/size/sections); `--force` only accepts dirty-tree risk.
 - `--max-bytes` bounds semantic text only; full-file SHA/line/security stays bounded-memory. Mark prefix-only evidence; never call a prefix digest a file SHA or claim unseen tails clean.
 - Instruction scope is lexical: same-scope differences conflict; descendant differences are non-blocking overrides. Structured applicability stays registry-sourced, bounded/fail-closed, and full-byte security scanned; conditional/manual/invalid/ignored stays diagnostic. Never infer prose scopes or grant mutation authority from recursive discovery.
 - Explain reuses scan scope/containment: canonical files form the chain; modeled rules may apply automatically, while unmodeled sources stay diagnostic. Keep CLI/MCP/adapter contracts synchronized.

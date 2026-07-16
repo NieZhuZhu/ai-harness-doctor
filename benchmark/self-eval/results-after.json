@@ -35,6 +35,7 @@
     {"id": "batch-scan-coverage", "stdout": "Report every reachable repository, but any unscanned entry fails with exit 8 after finding exits 2, 3, 4, and 7 take precedence."},
     {"id": "stored-result-health", "stdout": "Offline eval consumers validate stored result records, derive health from those records, and require every cached health field to agree."},
     {"id": "action-success-matrix", "stdout": "PR validation proves bundled scan, bundled drift, and an exact npm override; release repeats both bundled commands before npm and verifies floating bundled code plus the exact new npm version post-publish."},
-    {"id": "structured-applicability", "stdout": "Claude/Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion or rewriting."}
+    {"id": "structured-applicability", "stdout": "Claude/Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion or rewriting."},
+    {"id": "canonical-readiness", "stdout": "Product-owned draft markers, unsafe paths, size, and required-section failures block destructive stub consolidation; --force may bypass only dirty-tree risk."}
   ]
 }

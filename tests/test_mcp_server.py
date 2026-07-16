@@ -492,6 +492,43 @@ class McpServerTests(unittest.TestCase):
             self.assertFalse(metadata["ok"])
             self.assertEqual(metadata["report"], report)
 
+    def test_provisional_draft_validation_is_a_finding_not_tool_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            draft = subprocess.run(
+                [
+                    sys.executable,
+                    str(CANONICALIZE),
+                    "--draft",
+                    str(repo),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(draft.returncode, 0, draft.stderr)
+            (repo / "AGENTS.md").write_text(draft.stdout, encoding="utf-8")
+
+            response = self._call(
+                "harness_validate",
+                {"repo": str(repo), "json": True},
+            )
+            result = response["result"]
+            report = json.loads(result["content"][0]["text"])
+            metadata = self._metadata(result)
+
+            self.assertFalse(result["isError"])
+            self.assertFalse(report["ok"])
+            self.assertTrue(
+                any(
+                    finding["check"] == "DRAFT_REVIEW"
+                    for finding in report["findings"]
+                )
+            )
+            self.assertEqual(metadata["exitCode"], 1)
+            self.assertEqual(metadata["status"], "findings")
+            self.assertFalse(metadata["ok"])
+            self.assertEqual(metadata["report"], report)
+
     def test_exit_zero_notice_report_still_has_findings_status(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
