@@ -770,11 +770,11 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
         "info": info,
         "custom": custom,
         "baselined": baselined,
-        "resolved_baseline": resolved_baseline,
         "score": score,
         "grade": grade,
     }
     if isinstance(baseline, dict):
+        report["resolved_baseline"] = resolved_baseline
         report["baseline"] = {
             "path": baseline.get("path", ""),
             "known": len(baselined),
@@ -1081,11 +1081,14 @@ def main(argv=None):
         root, args.max_bytes, args.strict, args.rules, allow_plugins=args.allow_plugins, baseline=baseline
     )
     if args.prune_baseline:
-        known_fps = {finding_fingerprint(finding) for finding in report["baselined"]}
+        resolved_fps = {
+            finding_fingerprint(entry)
+            for entry in report["resolved_baseline"]
+        }
         kept = [
             entry
             for entry in baseline["entries"]
-            if finding_fingerprint(entry) in known_fps
+            if finding_fingerprint(entry) not in resolved_fps
         ]
         scan.write_json_atomic(
             args.baseline,

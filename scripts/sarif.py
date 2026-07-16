@@ -190,7 +190,7 @@ def _rules_from_results(results):
     return rules
 
 
-def _run_properties(command, results, ok=None, score=None, grade=None):
+def _run_properties(command, results, ok=None, score=None, grade=None, resolved_count=0):
     """Return deterministic producer metadata for Action/report consumers.
 
     Counts are derived from the FINAL SARIF results so baselined debt stays
@@ -208,6 +208,7 @@ def _run_properties(command, results, ok=None, score=None, grade=None):
         "errorCount": levels["error"],
         "warningCount": levels["warning"],
         "noteCount": levels["note"],
+        "resolvedBaselineCount": resolved_count,
     }
     if isinstance(ok, bool):
         metadata["ok"] = ok
@@ -433,7 +434,11 @@ def scan_report_to_sarif(report, version=None):
         prefix = package.get("path", "")
         results.extend(_scan_results_for_report(package.get("report", {}), prefix))
     rules = _rules_from_results(results)
-    properties = _run_properties("scan", results)
+    properties = _run_properties(
+        "scan",
+        results,
+        resolved_count=len(report.get("resolved_baseline", [])),
+    )
     return build_document(
         results,
         rules,
@@ -469,6 +474,7 @@ def drift_report_to_sarif(report, version=None):
         ok=report.get("ok"),
         score=report.get("score"),
         grade=report.get("grade"),
+        resolved_count=len(report.get("resolved_baseline", [])),
     )
     return build_document(
         results,

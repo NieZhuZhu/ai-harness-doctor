@@ -807,6 +807,7 @@ class ActionReportMetadataTests(unittest.TestCase):
                 "errorCount": 1,
                 "warningCount": 2,
                 "noteCount": 1,
+                "resolvedBaselineCount": 0,
             },
         )
 
@@ -837,8 +838,26 @@ class ActionReportMetadataTests(unittest.TestCase):
                 "ok": False,
                 "score": 82,
                 "grade": "B",
+                "resolvedBaselineCount": 0,
             },
         )
+
+    def test_resolved_baseline_count_reaches_metadata(self):
+        report = {
+            "resolved_baseline": [{"family": "gap"}],
+            "findings": [],
+            "ok": True,
+            "score": 100,
+            "grade": "A",
+        }
+        scan_metadata = sarif.scan_report_to_sarif(report)["runs"][0]["properties"][
+            "aiHarnessDoctor"
+        ]
+        drift_metadata = sarif.drift_report_to_sarif(report)["runs"][0]["properties"][
+            "aiHarnessDoctor"
+        ]
+        self.assertEqual(scan_metadata["resolvedBaselineCount"], 1)
+        self.assertEqual(drift_metadata["resolvedBaselineCount"], 1)
 
     def test_empty_scan_metadata_has_zero_counts(self):
         metadata = sarif.scan_report_to_sarif({})["runs"][0]["properties"][

@@ -20,6 +20,7 @@ function document(command, results, extra = {}) {
           errorCount: results.filter((item) => item.level === 'error').length,
           warningCount: results.filter((item) => item.level === 'warning').length,
           noteCount: results.filter((item) => !['error', 'warning'].includes(item.level)).length,
+          resolvedBaselineCount: 0,
           ...extra,
         },
       },
@@ -88,6 +89,16 @@ test('producer counts must match SARIF results', () => {
 
 test('producer command must match Action command', () => {
   assert.throws(() => report.parseSarif(document('scan', []), 'drift'), /command does not match/);
+});
+
+test('resolved baseline debt produces maintenance status and summary', () => {
+  const data = document('scan', []);
+  data.runs[0].properties.aiHarnessDoctor.resolvedBaselineCount = 2;
+  const parsed = report.parseSarif(data, 'scan');
+  assert.strictEqual(parsed.status, 'maintenance');
+  assert.strictEqual(parsed.resolvedBaselineCount, 2);
+  assert.match(report.summaryMarkdown(parsed), /2 entry\/entries ready to prune/);
+  assert.match(report.outputLines(parsed, 'x.sarif'), /resolved-baseline-count=2/);
 });
 
 test('SARIF must come from ai-harness-doctor', () => {

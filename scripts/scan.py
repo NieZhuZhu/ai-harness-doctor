@@ -2776,14 +2776,14 @@ def main(argv=None):
             return 1
         apply_scan_baseline(report, baseline_store, args.baseline)
         if args.prune_baseline:
-            known_fps = {
+            resolved_fps = {
                 scan_finding_fingerprint(entry)
-                for entry in report.get("baselined", [])
+                for entry in report.get("resolved_baseline", [])
             }
             kept = [
                 entry
                 for entry in baseline_store["entries"]
-                if scan_finding_fingerprint(entry) in known_fps
+                if scan_finding_fingerprint(entry) not in resolved_fps
             ]
             write_json_atomic(
                 args.baseline,

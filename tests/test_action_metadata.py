@@ -122,6 +122,7 @@ class ActionMetadataTests(unittest.TestCase):
             "error-count",
             "warning-count",
             "note-count",
+            "resolved-baseline-count",
             "health-score",
             "health-grade",
         ):
@@ -152,6 +153,9 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("BUNDLED_DRIFT_GRADE", text)
         self.assertIn("Expected findings output before failure", text)
         self.assertIn("finding-count output mismatch", text)
+        self.assertIn("Report resolved baseline maintenance before failure", text)
+        self.assertIn("Expected maintenance output", text)
+        self.assertIn("resolved-baseline-count", text)
         for name in (
             "Run bundled scan against this checkout",
             "Run bundled drift against a clean fixture",
