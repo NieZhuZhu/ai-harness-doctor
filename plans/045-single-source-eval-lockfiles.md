@@ -25,7 +25,8 @@
 - **Depends on**: Plans 027 and 029 (DONE)
 - **Category**: bug / tech debt (fact parity)
 - **Planned at**: commit `731d9e7`, 2026-07-16
-- **Implementation**: TODO
+- **Implementation**: DONE — PR #215 (plan) / PR #216 (impl), squash-merged to
+  `main` as `98b7eca`; all nine required contexts green.
 
 ## Why this matters
 
