@@ -2,7 +2,9 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
+import time
 import unittest
 from pathlib import Path
 
@@ -269,7 +271,7 @@ class CliInstallerTests(unittest.TestCase):
             manifest.write_bytes(original)
 
             proc = self.run_cli_raw_with_env(
-                ["help"],
+                ["doctor", "--json"],
                 home,
                 project,
                 {
@@ -279,8 +281,62 @@ class CliInstallerTests(unittest.TestCase):
             )
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("AI Harness Doctor", proc.stdout)
+            self.assertTrue(json.loads(proc.stdout)["ok"])
             self.assertEqual(manifest.read_bytes(), original)
+
+    def test_update_nudge_uses_separate_cache_without_rewriting_manifest(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            state = home / ".ai-harness-doctor"
+            manifest = state / "manifest.json"
+            before = manifest.read_bytes()
+
+            proc = self.run_cli_raw_with_env(
+                ["doctor", "--json"],
+                home,
+                project,
+                {
+                    "AI_HARNESS_DOCTOR_NO_UPDATE_CHECK": "0",
+                    "AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK": "1",
+                    "AI_HARNESS_DOCTOR_REGISTRY": "http://127.0.0.1:9/",
+                },
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(json.loads(proc.stdout)["ok"])
+            self.assertEqual(manifest.read_bytes(), before)
+            cache = json.loads((state / "update-check.json").read_text(encoding="utf-8"))
+            self.assertIsInstance(cache["lastUpdateCheck"], (int, float))
+
+    def test_update_nudge_skips_while_installer_lock_exists(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            state = home / ".ai-harness-doctor"
+            lock = state / "installer.lock"
+            lock.mkdir(parents=True)
+            (lock / "owner.json").write_text(
+                json.dumps({"pid": os.getpid(), "token": "test-owner"}) + "\n",
+                encoding="utf-8",
+            )
+
+            proc = self.run_cli_raw_with_env(
+                ["help"],
+                home,
+                project,
+                {
+                    "AI_HARNESS_DOCTOR_NO_UPDATE_CHECK": "0",
+                    "AI_HARNESS_DOCTOR_FORCE_UPDATE_CHECK": "1",
+                    "AI_HARNESS_DOCTOR_REGISTRY": "http://127.0.0.1:9/",
+                },
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertFalse((state / "update-check.json").exists())
+            self.assertTrue(lock.is_dir())
 
     def test_failed_atomic_manifest_replace_preserves_previous_state(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
@@ -290,6 +346,14 @@ class CliInstallerTests(unittest.TestCase):
             self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
             manifest = home / ".ai-harness-doctor" / "manifest.json"
             original = manifest.read_bytes()
+            adapter = project / ".cursor" / "commands" / "harness-scan.md"
+            payload = project / ".ai-harness-doctor" / "payload" / "SKILL.md"
+            adapter.chmod(0o600)
+            manifest.chmod(0o644)
+            adapter_before = adapter.read_bytes()
+            payload_before = payload.read_bytes()
+            adapter_mode = adapter.stat().st_mode & 0o777
+            manifest_mode = manifest.stat().st_mode & 0o777
 
             proc = self.run_cli_raw_with_env(
                 ["uninstall", "--agent", "cursor", "--project"],
@@ -301,10 +365,335 @@ class CliInstallerTests(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("manifest", proc.stderr.lower())
             self.assertEqual(manifest.read_bytes(), original)
+            self.assertEqual(adapter.read_bytes(), adapter_before)
+            self.assertEqual(payload.read_bytes(), payload_before)
+            self.assertEqual(adapter.stat().st_mode & 0o777, adapter_mode)
+            self.assertEqual(manifest.stat().st_mode & 0o777, manifest_mode)
             self.assertEqual(
                 [path for path in manifest.parent.iterdir() if path.name.startswith(".manifest-")],
                 [],
             )
+            self.assertFalse((manifest.parent / "transactions").exists())
+            self.assertFalse((manifest.parent / "installer.lock").exists())
+
+    def test_failed_first_install_rolls_back_files_and_absent_manifest(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+
+            proc = self.run_cli_raw_with_env(
+                ["install", "--agent", "cursor", "--project"],
+                home,
+                project,
+                {"AI_HARNESS_DOCTOR_TEST_MANIFEST_WRITE_FAILURE": "1"},
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertFalse((project / ".cursor").exists())
+            self.assertFalse((project / ".ai-harness-doctor").exists())
+            state = home / ".ai-harness-doctor"
+            self.assertFalse((state / "manifest.json").exists())
+            self.assertFalse((state / "transactions").exists())
+            self.assertFalse((state / "installer.lock").exists())
+
+    def test_failed_update_restores_all_managed_bytes(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            manifest = home / ".ai-harness-doctor" / "manifest.json"
+            adapter = project / ".cursor" / "commands" / "harness-scan.md"
+            payload = project / ".ai-harness-doctor" / "payload" / "SKILL.md"
+            adapter.unlink()
+            payload.unlink()
+            manifest_before = manifest.read_bytes()
+
+            proc = self.run_cli_raw_with_env(
+                ["update"],
+                home,
+                project,
+                {"AI_HARNESS_DOCTOR_TEST_MANIFEST_WRITE_FAILURE": "1"},
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertEqual(manifest.read_bytes(), manifest_before)
+            self.assertFalse(adapter.exists())
+            self.assertFalse(payload.exists())
+            self.assertFalse((manifest.parent / "transactions").exists())
+            self.assertFalse((manifest.parent / "installer.lock").exists())
+
+    def test_fresh_process_recovers_interrupted_installer_transactions(self):
+        phases = ("after-mutation", "before-manifest", "after-manifest")
+        for phase in phases:
+            with (
+                self.subTest(phase=phase),
+                ResilientTemporaryDirectory() as home_dir,
+                ResilientTemporaryDirectory() as project_dir,
+            ):
+                home = Path(home_dir)
+                project = Path(project_dir)
+                (project / "package.json").write_text("{}\n", encoding="utf-8")
+                crash = self.run_cli_raw_with_env(
+                    ["install", "--agent", "cursor", "--project"],
+                    home,
+                    project,
+                    {"AI_HARNESS_DOCTOR_TEST_TRANSACTION_CRASH": phase},
+                )
+                self.assertEqual(crash.returncode, 86, crash.stderr)
+                state = home / ".ai-harness-doctor"
+                self.assertTrue((state / "transactions").is_dir())
+
+                if phase == "after-manifest":
+                    # Manifest commit won; startup recovery keeps installed files
+                    # and only retires the completed journal.
+                    recovered = self.run_cli(["update"], home, project)
+                    self.assertIn("Update summary", recovered.stdout)
+                    self.assertTrue((project / ".cursor" / "commands" / "harness-scan.md").is_file())
+                    self.assertEqual(
+                        len(json.loads((state / "manifest.json").read_text(encoding="utf-8"))["installs"]),
+                        1,
+                    )
+                else:
+                    # No manifest commit: startup recovery restores pre-install
+                    # absence before the requested uninstall observes empty state.
+                    self.run_cli(["uninstall", "--agent", "cursor", "--project"], home, project)
+                    self.assertFalse((project / ".cursor").exists())
+                    self.assertFalse((project / ".ai-harness-doctor").exists())
+                    self.assertEqual(
+                        json.loads((state / "manifest.json").read_text(encoding="utf-8"))["installs"],
+                        [],
+                    )
+                self.assertFalse((state / "transactions").exists())
+                self.assertFalse((state / "installer.lock").exists())
+
+    def test_recovery_refuses_malformed_or_escaping_transaction_journal(self):
+        payloads = (
+            b"{broken\n",
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "id": "tx",
+                    "command": "install",
+                    "roots": ["/"],
+                    "originalManifest": {"kind": "absent"},
+                    "nextManifestDigest": None,
+                    "snapshots": [
+                        {
+                            "path": "/tmp/outside",
+                            "prior": {"kind": "absent"},
+                            "expected": {"kind": "absent"},
+                        }
+                    ],
+                }
+            ).encode(),
+        )
+        for payload in payloads:
+            with (
+                self.subTest(payload=payload[:20]),
+                ResilientTemporaryDirectory() as home_dir,
+                ResilientTemporaryDirectory() as project_dir,
+            ):
+                home = Path(home_dir)
+                project = Path(project_dir)
+                (project / "package.json").write_text("{}\n", encoding="utf-8")
+                transaction = home / ".ai-harness-doctor" / "transactions" / "tx"
+                transaction.mkdir(parents=True)
+                journal = transaction / "journal.json"
+                journal.write_bytes(payload)
+                original = journal.read_bytes()
+
+                proc = self.run_cli_raw(
+                    ["install", "--agent", "cursor", "--project"],
+                    home,
+                    project,
+                )
+
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("transaction", proc.stderr.lower())
+                self.assertEqual(journal.read_bytes(), original)
+                self.assertFalse((project / ".cursor").exists())
+                self.assertFalse((project / ".ai-harness-doctor").exists())
+
+    def test_recovery_refuses_symlinked_transaction_directory(self):
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as project_dir,
+            ResilientTemporaryDirectory() as outside_dir,
+        ):
+            home = Path(home_dir)
+            project = Path(project_dir)
+            outside = Path(outside_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            transactions = home / ".ai-harness-doctor" / "transactions"
+            transactions.mkdir(parents=True)
+            (outside / "journal.json").write_text("{}\n", encoding="utf-8")
+            try:
+                (transactions / "tx").symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks unsupported on this platform")
+
+            proc = self.run_cli_raw(
+                ["install", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("transaction", proc.stderr.lower())
+            self.assertEqual((outside / "journal.json").read_text(encoding="utf-8"), "{}\n")
+            self.assertFalse((project / ".cursor").exists())
+
+    def test_recovery_refuses_to_overwrite_external_post_crash_edit(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            crash = self.run_cli_raw_with_env(
+                ["install", "--agent", "cursor", "--project"],
+                home,
+                project,
+                {"AI_HARNESS_DOCTOR_TEST_TRANSACTION_CRASH": "before-manifest"},
+            )
+            self.assertEqual(crash.returncode, 86, crash.stderr)
+            adapter = project / ".cursor" / "commands" / "harness-scan.md"
+            adapter.write_text("external edit after crash\n", encoding="utf-8")
+
+            recovery = self.run_cli_raw(
+                ["uninstall", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+
+            self.assertNotEqual(recovery.returncode, 0)
+            self.assertIn("externally modified", recovery.stderr)
+            self.assertEqual(adapter.read_text(encoding="utf-8"), "external edit after crash\n")
+            self.assertTrue((home / ".ai-harness-doctor" / "transactions").is_dir())
+            self.assertFalse((home / ".ai-harness-doctor" / "installer.lock").exists())
+
+    def test_recovery_refuses_tampered_transaction_backup(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            self.run_cli(["install", "--agent", "cursor", "--project"], home, project)
+            crash = self.run_cli_raw_with_env(
+                ["uninstall", "--agent", "cursor", "--project"],
+                home,
+                project,
+                {"AI_HARNESS_DOCTOR_TEST_TRANSACTION_CRASH": "before-manifest"},
+            )
+            self.assertEqual(crash.returncode, 86, crash.stderr)
+            transactions = home / ".ai-harness-doctor" / "transactions"
+            transaction = next(transactions.iterdir())
+            backup = next(path for path in transaction.iterdir() if path.name.startswith("backup-") and path.is_file())
+            backup.write_bytes(backup.read_bytes() + b"tampered")
+            adapter = project / ".cursor" / "commands" / "harness-scan.md"
+            adapter_before = adapter.exists()
+
+            recovery = self.run_cli_raw(
+                ["update"],
+                home,
+                project,
+            )
+
+            self.assertNotEqual(recovery.returncode, 0)
+            self.assertIn("backup digest does not match", recovery.stderr)
+            self.assertEqual(adapter.exists(), adapter_before)
+            self.assertTrue(transaction.is_dir())
+            self.assertFalse((home / ".ai-harness-doctor" / "installer.lock").exists())
+
+    def test_concurrent_installer_fails_without_recovering_live_transaction(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
+            home = Path(home_dir)
+            project = Path(project_dir)
+            (project / "package.json").write_text("{}\n", encoding="utf-8")
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+            env["AI_HARNESS_DOCTOR_TEST_TRANSACTION_PAUSE"] = "after-mutation"
+            first = subprocess.Popen(
+                ["node", str(CLI), "install", "--agent", "cursor", "--project"],
+                cwd=project,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            lock = home / ".ai-harness-doctor" / "installer.lock"
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and not lock.exists():
+                time.sleep(0.05)
+            self.assertTrue(lock.is_dir())
+
+            second = self.run_cli_raw(
+                ["uninstall", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+
+            self.assertNotEqual(second.returncode, 0)
+            self.assertIn("another installer command is active", second.stderr)
+            self.assertTrue((home / ".ai-harness-doctor" / "transactions").is_dir())
+            first.send_signal(signal.SIGTERM)
+            first.communicate(timeout=10)
+
+            recovered = self.run_cli(
+                ["uninstall", "--agent", "cursor", "--project"],
+                home,
+                project,
+            )
+            self.assertIn("Uninstall summary", recovered.stdout)
+            self.assertFalse((project / ".cursor").exists())
+            self.assertFalse((home / ".ai-harness-doctor" / "installer.lock").exists())
+            self.assertFalse((home / ".ai-harness-doctor" / "transactions").exists())
+
+    def test_installer_refuses_malformed_or_symlinked_lock_state(self):
+        cases = ("malformed", "symlink")
+        for case in cases:
+            with (
+                self.subTest(case=case),
+                ResilientTemporaryDirectory() as home_dir,
+                ResilientTemporaryDirectory() as project_dir,
+                ResilientTemporaryDirectory() as outside_dir,
+            ):
+                home = Path(home_dir)
+                project = Path(project_dir)
+                outside = Path(outside_dir)
+                (project / "package.json").write_text("{}\n", encoding="utf-8")
+                state = home / ".ai-harness-doctor"
+                state.mkdir()
+                lock = state / "installer.lock"
+                if case == "malformed":
+                    lock.mkdir()
+                    owner = lock / "owner.json"
+                    owner.write_text("{broken\n", encoding="utf-8")
+                    evidence = owner
+                else:
+                    outside_lock = outside / "lock"
+                    outside_lock.mkdir()
+                    (outside_lock / "owner.json").write_text(
+                        json.dumps({"pid": 99999999, "token": "outside"}) + "\n",
+                        encoding="utf-8",
+                    )
+                    try:
+                        lock.symlink_to(outside_lock, target_is_directory=True)
+                    except (OSError, NotImplementedError):
+                        self.skipTest("directory symlinks unsupported on this platform")
+                    evidence = outside_lock / "owner.json"
+                before = evidence.read_bytes()
+
+                proc = self.run_cli_raw(
+                    ["install", "--agent", "cursor", "--project"],
+                    home,
+                    project,
+                )
+
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("lock", proc.stderr.lower())
+                self.assertEqual(evidence.read_bytes(), before)
+                self.assertFalse((project / ".cursor").exists())
 
     def test_project_adapter_install_preserves_repository_harness_state(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as project_dir:
@@ -1191,7 +1580,7 @@ class CliInstallerTests(unittest.TestCase):
             # while tolerating jitter, so the check is deterministic.
             try:
                 proc = subprocess.run(
-                    ["node", str(CLI), "help"],
+                    ["node", str(CLI), "doctor", "--json"],
                     cwd=project_dir,
                     env=env,
                     text=True,
@@ -1205,7 +1594,7 @@ class CliInstallerTests(unittest.TestCase):
                 )
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("ai-harness-doctor validate [...args]", proc.stdout)
+            self.assertTrue(json.loads(proc.stdout)["ok"])
             self.assertNotIn("Traceback", proc.stderr)
             self.assertNotIn("TypeError", proc.stderr)
 

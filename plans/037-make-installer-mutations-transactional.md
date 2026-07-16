@@ -19,6 +19,30 @@
 - **Depends on**: Plans 008 and 011 (DONE)
 - **Category**: bug
 - **Planned at**: commit `660977e`, 2026-07-16
+- **Implementation**: DONE in PR
+  [#194](https://github.com/NieZhuZhu/ai-harness-doctor/pull/194)
+
+## Implementation evidence
+
+- The pre-fix failpoint reproduced both inconsistency classes: failed first
+  install left adapter/payload files without a manifest; failed uninstall
+  deleted an adapter while preserving a manifest that still claimed it.
+- The implementation adds a schema-1 sidecar journal without changing manifest
+  schema 2, a token-owned process lock with dead-owner recovery claim, contained
+  product-managed path allow-list, exact path/backup fingerprints including
+  modes, write-ahead expected states, fsync ordering, and exact next-manifest
+  digest commit detection.
+- Focused tests now cover caught first-install/update/uninstall failures, three
+  interruption phases, idempotent recovery, concurrent commands, malformed /
+  escaping / symlinked journals, tampered backups, post-crash external edits,
+  lock cleanup, and update-nudge separation from the ownership ledger.
+- Final local baseline before PR: 689 Python tests, 26 Node tests, 56 installer
+  lifecycle tests, self-eval 33/33, strict drift 100/A, and synchronized
+  trilingual docs.
+- Implementation PR: [#194](https://github.com/NieZhuZhu/ai-harness-doctor/pull/194).
+  First head `225ff9f` passed all nine required contexts. A final evidence/test
+  head `58bf875` added malformed/symlinked lock-state refusal and repeated all
+  nine required contexts successfully.
 
 ## Why this matters
 
@@ -307,18 +331,18 @@ only after merge.
 
 ## Done criteria
 
-- [ ] Injected manifest failure leaves filesystem and manifest exactly as before.
-- [ ] Failed first install leaves no managed residue or ownership state.
-- [ ] Fresh process recovers pre-manifest interruption by rollback.
-- [ ] Fresh process recognizes post-manifest commit and only cleans journal.
-- [ ] Ambiguous/malformed recovery fails closed with evidence retained.
-- [ ] External post-snapshot edits are never overwritten during rollback.
-- [ ] All installer mutations are transaction-aware; no bypassing direct writes.
-- [ ] Existing ownership, symlink, user-edit, legacy migration, shared-payload,
+- [x] Injected manifest failure leaves filesystem and manifest exactly as before.
+- [x] Failed first install leaves no managed residue or ownership state.
+- [x] Fresh process recovers pre-manifest interruption by rollback.
+- [x] Fresh process recognizes post-manifest commit and only cleans journal.
+- [x] Ambiguous/malformed recovery fails closed with evidence retained.
+- [x] External post-snapshot edits are never overwritten during rollback.
+- [x] All installer mutations are transaction-aware; no bypassing direct writes.
+- [x] Existing ownership, symlink, user-edit, legacy migration, shared-payload,
       copy/link, and cursor-root tests remain green.
-- [ ] Manifest schema remains backward-compatible schema 2.
-- [ ] Trilingual docs, SKILL, AGENTS, and self-eval are current.
-- [ ] Full local gate and all nine PR contexts pass.
+- [x] Manifest schema remains backward-compatible schema 2.
+- [x] Trilingual docs, SKILL, AGENTS, and self-eval are current.
+- [x] Full local gate and all nine PR contexts pass.
 
 ## STOP conditions
 

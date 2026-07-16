@@ -250,7 +250,7 @@ repos:
 | `cursor` | `.cursor/commands/` | 目标项目中的 `.cursor/commands/`。 |
 | `gemini` | `~/.gemini/commands/harness/` + shared payload | 同一 command 位置；project 影响 payload 路径。 |
 
-Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。复制 payload 位于独立的 `.ai-harness-doctor/payload/` 子树，与仓库自有的 baseline、rules 和其他状态分离。版本化的 `~/.ai-harness-doctor/manifest.json` 会记录精确托管路径及 SHA-256 digest。现有 manifest 若损坏、schema 不受支持或状态路径是 symlink，installer 会 fail closed 并保持原样；合法状态通过原子替换写入。install/update 绝不覆盖无归属的同名文件或安装后被用户修改的托管文件，而是报告 `manual-merge` / `modified-preserved`。uninstall 只删除逐字节验证的托管文件，并在最后一个引用它的 agent 被移除前保留共享 payload。旧 manifest 会增量迁移，只清理与旧 payload 逐字节一致的文件。`--link` 会指向全局 package，而不是复制 payload 文件；CLI 会阻止不安全的 `npx` cache linking，并提示你先全局安装。
+Adapters 会把 `{{PLAYBOOK}}` 替换为已安装 playbook 路径。复制 payload 位于独立的 `.ai-harness-doctor/payload/` 子树，与仓库自有的 baseline、rules 和其他状态分离。版本化的 `~/.ai-harness-doctor/manifest.json` 会记录精确托管路径及 SHA-256 digest。现有 manifest 若损坏、schema 不受支持或状态路径是 symlink，installer 会 fail closed 并保持原样；合法状态通过原子替换写入。install/update/uninstall 通过归属明确的进程锁串行执行，并使用受 containment 保护的持久事务 journal：可捕获的失败会把文件系统与 manifest 一起回滚；若进程中断，下一次严格 installer 命令会恢复尚未提交 manifest 的事务，或通过精确 digest 识别已经提交的 manifest。journal 损坏、恢复状态有歧义，或崩溃后路径被外部修改时会 fail closed 并保留 journal，绝不覆盖恢复证据。这是逻辑 journal 恢复，并不声称跨文件系统写入共享一次原子 rename。install/update 绝不覆盖无归属的同名文件或安装后被用户修改的托管文件，而是报告 `manual-merge` / `modified-preserved`。uninstall 只删除逐字节验证的托管文件，并在最后一个引用它的 agent 被移除前保留共享 payload。旧 manifest 会增量迁移，只清理与旧 payload 逐字节一致的文件。`--link` 会指向全局 package，而不是复制 payload 文件；CLI 会阻止不安全的 `npx` cache linking，并提示你先全局安装。
 
 </details>
 
