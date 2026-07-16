@@ -720,6 +720,302 @@ class EvalRunTests(unittest.TestCase):
             data = json.loads(out.read_text(encoding="utf-8"))
             self.assertTrue(data["tasks"][0]["passed"])
 
+    def test_nonzero_runner_output_cannot_pass_or_invoke_judge(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            marker = Path(td) / "judge-ran"
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "failed-runner",
+                            "prompt": "answer",
+                            "check": {"type": "judge", "rubric": "must be right"},
+                            "timeout_s": 10,
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            output = Path(td) / "results.json"
+            runner = (
+                f'{sys.executable} -c "import sys; '
+                "print('right'); sys.exit(9)\""
+            )
+            judge = (
+                f'{sys.executable} -c "from pathlib import Path; '
+                f"Path(r'{marker}').write_text('ran'); "
+                "print('{\\\"passed\\\":true}')\""
+            )
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "failed",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    runner,
+                    "--judge-cmd",
+                    judge,
+                    "-o",
+                    str(output),
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            data = json.loads(output.read_text(encoding="utf-8"))
+            record = data["tasks"][0]
+            self.assertFalse(record["passed"])
+            self.assertEqual(record["exit_code"], 9)
+            self.assertEqual(record["answer"], "right")
+            self.assertNotIn("judge", record)
+            self.assertFalse(marker.exists())
+            self.assertEqual(data["health"]["score"], 0)
+
+    def test_nonzero_external_judge_cannot_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            task = {
+                "id": "judged",
+                "prompt": "answer",
+                "check": {"type": "judge", "rubric": "must be right"},
+                "timeout_s": 10,
+            }
+            judge = (
+                f'{sys.executable} -c "import sys; '
+                "print('{\\\"passed\\\":true,\\\"score\\\":1,\\\"reason\\\":\\\"ok\\\"}'); "
+                "sys.exit(7)\""
+            )
+
+            record = eval_run.run_runner_record(
+                "echo right",
+                task,
+                workdir,
+                judge,
+            )
+
+            self.assertFalse(record["passed"])
+            self.assertEqual(record["exit_code"], 0)
+            self.assertEqual(record["judge"]["exit_code"], 7)
+            self.assertFalse(record["judge"]["passed"])
+            self.assertIsNone(record["judge"]["score"])
+            self.assertEqual(record["judge"]["reason"], "judge exited 7")
+
+    def test_malformed_and_missing_external_judges_fail_without_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td)
+            task = {
+                "id": "judged",
+                "prompt": "answer",
+                "check": {
+                    "type": "judge",
+                    "rubric": "right",
+                    "expect": ["right"],
+                },
+                "timeout_s": 10,
+            }
+            malformed = eval_run.run_runner_record(
+                "echo right",
+                task,
+                workdir,
+                "printf not-json",
+            )
+            missing = eval_run.run_runner_record(
+                "echo right",
+                task,
+                workdir,
+                "definitely-missing-judge-binary",
+            )
+
+            self.assertFalse(malformed["passed"])
+            self.assertEqual(malformed["judge"]["exit_code"], 0)
+            self.assertEqual(
+                malformed["judge"]["reason"],
+                "judge output was not valid JSON",
+            )
+            self.assertFalse(missing["passed"])
+            self.assertEqual(missing["judge"]["exit_code"], 127)
+            self.assertEqual(missing["judge"]["reason"], "judge exited 127")
+            # Explicit --judge-cmd failure must not fall back to the passing
+            # builtin `expect` rule.
+            self.assertNotEqual(missing["judge"].get("judge"), "builtin")
+
+    def test_nonzero_judge_raw_and_stderr_are_bounded(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td)
+            task = {
+                "id": "judged",
+                "prompt": "answer",
+                "check": {"type": "judge", "rubric": "right"},
+                "timeout_s": 10,
+            }
+            judge = (
+                f'{sys.executable} -c "import sys; '
+                "print('x' * 1100000); print('e' * 1100000, file=sys.stderr); "
+                "sys.exit(7)\""
+            )
+
+            record = eval_run.run_runner_record(
+                "echo right",
+                task,
+                workdir,
+                judge,
+            )
+
+            self.assertFalse(record["passed"])
+            self.assertLess(len(record["judge"]["raw"]), 1050000)
+            self.assertLess(len(record["judge"]["stderr"]), 1050000)
+            self.assertIn("[truncated", record["judge"]["raw"])
+            self.assertIn("[truncated", record["judge"]["stderr"])
+
+    def test_rounds_and_matrix_share_nonzero_runner_failure_contract(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td) / "repo"
+            workdir.mkdir()
+            tasks = Path(td) / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "x",
+                            "prompt": "answer",
+                            "check": {"type": "regex", "value": "right"},
+                            "timeout_s": 10,
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            failed_runner = (
+                f'{sys.executable} -c "import sys; '
+                "print('right'); print('diagnostic', file=sys.stderr); sys.exit(9)\""
+            )
+            rounds = Path(td) / "rounds.json"
+            rounds_proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--label",
+                    "rounds",
+                    "--workdir",
+                    str(workdir),
+                    "--runner",
+                    failed_runner,
+                    "--rounds",
+                    "2",
+                    "-o",
+                    str(rounds),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                rounds_proc.returncode,
+                0,
+                rounds_proc.stdout + rounds_proc.stderr,
+            )
+            round_data = json.loads(rounds.read_text(encoding="utf-8"))
+            records = [
+                record
+                for round_result in round_data["round_results"]
+                for record in round_result["tasks"]
+            ]
+            self.assertEqual([record["passed"] for record in records], [False, False])
+            self.assertEqual([record["exit_code"] for record in records], [9, 9])
+            self.assertEqual(round_data["health"]["score"], 0)
+
+            matrix_json = Path(td) / "matrix.json"
+            matrix_report = Path(td) / "matrix.md"
+            matrix_proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(EVAL),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(workdir),
+                    "--runner-cmd",
+                    f"failed={failed_runner}",
+                    "--runner-cmd",
+                    "good=echo right",
+                    "--matrix-json",
+                    str(matrix_json),
+                    "--matrix-report",
+                    str(matrix_report),
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(
+                matrix_proc.returncode,
+                0,
+                matrix_proc.stdout + matrix_proc.stderr,
+            )
+            matrix = json.loads(matrix_json.read_text(encoding="utf-8"))
+            failed = matrix["agents"]["failed"]["tasks"][0]
+            self.assertFalse(failed["passed"])
+            self.assertEqual(failed["exit_code"], 9)
+            self.assertEqual(failed["stdout"], "right\n")
+            self.assertIn("diagnostic", failed["stderr"])
+            self.assertEqual(matrix["summary"]["failed"]["passed"], 0)
+            self.assertEqual(matrix["summary"]["good"]["passed"], 1)
+
+    def test_failed_process_output_is_bounded_in_results(self):
+        with tempfile.TemporaryDirectory() as td:
+            workdir = Path(td)
+            task = {
+                "id": "large",
+                "prompt": "x",
+                "check": {"type": "regex", "value": "x"},
+                "timeout_s": 10,
+            }
+            runner = (
+                f'{sys.executable} -c "import sys; '
+                "print('x' * 1100000); print('e' * 1100000, file=sys.stderr); "
+                "sys.exit(3)\""
+            )
+
+            record = eval_run.run_runner_record(runner, task, workdir, None)
+
+            self.assertFalse(record["passed"])
+            self.assertEqual(record["exit_code"], 3)
+            self.assertLess(len(record["stdout"]), 1050000)
+            self.assertLess(len(record["stderr"]), 1050000)
+            self.assertIn("[truncated", record["stdout"])
+            self.assertIn("[truncated", record["stderr"])
+
+    def test_missing_runner_shell_command_is_operational_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            task = {
+                "id": "missing",
+                "prompt": "x",
+                "check": {"type": "regex", "value": ".*"},
+                "timeout_s": 10,
+            }
+
+            record = eval_run.run_runner_record(
+                "definitely-missing-runner-binary {prompt}",
+                task,
+                Path(td),
+                None,
+            )
+
+            self.assertFalse(record["passed"])
+            self.assertEqual(record["exit_code"], 127)
+            self.assertNotIn("judge", record)
+
     def test_command_check_timeout_is_graded_as_non_crashing_fail(self):
         # grade_answer must swallow a slow `command` check and return a plain
         # fail (passed=False) without raising subprocess.TimeoutExpired.

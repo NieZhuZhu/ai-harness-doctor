@@ -18,6 +18,21 @@
 - **Depends on**: Plans 030 and 033 (DONE)
 - **Category**: bug
 - **Planned at**: commit `a2a7227`, 2026-07-16
+- **Implementation**: in progress on `fix/038-eval-runner-judge-exits`
+
+## Implementation evidence
+
+- The implementation centralizes single/round/matrix execution in
+  `run_runner_record`: only runner exit 0 reaches grading; non-zero, timeout,
+  and launch failures remain failed diagnostic records and later work
+  continues.
+- Explicit external judges require exit 0 and valid passing JSON. Non-zero,
+  malformed, missing-command, and timeout states remain failed judge metadata
+  without fallback.
+- Runner/judge stdout/stderr persisted in records is capped at 1 MiB per stream;
+  usage is extracted from original stdout before truncation.
+- Final local baseline before PR: 696 Python tests, 26 Node tests, 113 eval
+  tests, self-eval 33/33, strict drift 100/A, and synchronized trilingual docs.
 
 ## Why this matters
 

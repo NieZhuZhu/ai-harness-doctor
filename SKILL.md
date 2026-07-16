@@ -298,6 +298,14 @@ multi-round, or matrix input exits 2 with a concise `result error` before a
 comparison/regrade output or baseline snapshot can be written. Trend history is
 a separate append-only schema.
 
+A task passes only when its runner exits zero and its selected check passes.
+Non-zero, timeout, and spawn failures remain bounded diagnostic records and are
+never sent to a judge. An explicitly configured external judge must also exit
+zero and emit valid passing verdict JSON; non-zero/malformed output fails
+without silently switching to a builtin or LLM judge. Single, multi-round, and
+matrix modes share this operational gate and continue later records. Overall
+CLI failure remains controlled by `--fail-under` and regression gates.
+
 Run tasks:
 
 ```bash

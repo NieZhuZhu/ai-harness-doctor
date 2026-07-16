@@ -183,6 +183,16 @@ def timeout_output(value):
     return value
 
 
+_MAX_STORED_PROCESS_CHARS = 1024 * 1024
+
+
+def bounded_process_output(value, limit=_MAX_STORED_PROCESS_CHARS):
+    text = timeout_output(value)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n...[truncated, {len(text) - limit} more characters]"
+
+
 def extract_answer(stdout):
     """Return the normalized text used for grading.
 
@@ -1296,7 +1306,7 @@ def parse_judge_output(stdout):
     A best-effort attempt is made to locate a JSON object embedded in noisier
     output so simple echo-based judges keep working.
     """
-    raw = timeout_output(stdout).strip()
+    raw = bounded_process_output(stdout).strip()
     data = None
     try:
         data = json.loads(raw)
@@ -1415,6 +1425,11 @@ def run_judge(judge_cmd, answer, rubric, workdir, timeout):
         )
         verdict = parse_judge_output(proc.stdout)
         verdict["exit_code"] = proc.returncode
+        verdict["stderr"] = bounded_process_output(proc.stderr)
+        if proc.returncode != 0:
+            verdict["passed"] = False
+            verdict["score"] = None
+            verdict["reason"] = f"judge exited {proc.returncode}"
         return verdict
     finally:
         try:
@@ -1609,7 +1624,19 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True, judg
             try:
                 verdict = run_judge(judge_cmd, answer, rubric, workdir, timeout)
             except subprocess.TimeoutExpired:
-                return False, {"passed": False, "score": None, "reason": "judge timed out"}
+                return False, {
+                    "passed": False,
+                    "score": None,
+                    "reason": "judge timed out",
+                    "exit_code": None,
+                }
+            except (FileNotFoundError, OSError) as exc:
+                return False, {
+                    "passed": False,
+                    "score": None,
+                    "reason": f"judge failed to start: {exc.__class__.__name__}",
+                    "exit_code": None,
+                }
             return verdict["passed"], verdict
         if judge_llm and judge_llm != "off":
             verdict = llm_judge(answer, rubric, provider=judge_llm, timeout=timeout, model=check.get("model"))
@@ -1622,59 +1649,91 @@ def grade_answer(task, answer, workdir, judge_cmd=None, default_judge=True, judg
     return False, None
 
 
+def run_runner_record(runner, task, workdir, judge_cmd, default_judge=True, judge_llm="off"):
+    """Execute and grade one runner task; operational failure always fails."""
+    command = runner.replace("{prompt}", shlex.quote(task["prompt"]))
+    start = time.time()
+    timeout = task.get("timeout_s", 60)
+    try:
+        proc = run_subprocess(
+            command,
+            cwd=str(workdir),
+            text=True,
+            shell=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        duration = round(time.time() - start, 3)
+        stdout = bounded_process_output(exc.stdout)
+        return {
+            "id": task["id"],
+            "passed": False,
+            "timed_out": True,
+            "duration_s": duration,
+            "exit_code": None,
+            "stdout": stdout,
+            "answer": extract_answer(stdout),
+            "stderr": bounded_process_output(exc.stderr),
+            "usage": {},
+        }
+    except (FileNotFoundError, OSError) as exc:
+        return {
+            "id": task["id"],
+            "passed": False,
+            "timed_out": False,
+            "duration_s": round(time.time() - start, 3),
+            "exit_code": None,
+            "stdout": "",
+            "answer": "",
+            "stderr": f"runner failed to start: {exc.__class__.__name__}",
+            "usage": {},
+        }
+
+    duration = round(time.time() - start, 3)
+    usage = maybe_usage(proc.stdout)
+    stdout = bounded_process_output(proc.stdout)
+    stderr = bounded_process_output(proc.stderr)
+    answer = extract_answer(stdout)
+    record = {
+        "id": task["id"],
+        "passed": False,
+        "timed_out": False,
+        "duration_s": duration,
+        "exit_code": proc.returncode,
+        "stdout": stdout,
+        "answer": answer,
+        "stderr": stderr,
+        "usage": usage,
+    }
+    if proc.returncode != 0:
+        return record
+    passed, judge_info = grade_answer(
+        task,
+        answer,
+        workdir,
+        judge_cmd,
+        default_judge,
+        judge_llm=judge_llm,
+    )
+    record["passed"] = passed
+    if judge_info is not None:
+        record["judge"] = judge_info
+    return record
+
+
 def _run_round(tasks, args, workdir):
     """Run every task once and return the list of graded task records."""
-    records = []
-    for task in tasks:
-        prompt = task["prompt"]
-        command = args.runner.replace("{prompt}", shlex.quote(prompt))
-        start = time.time()
-        try:
-            proc = run_subprocess(
-                command, cwd=str(workdir), text=True, shell=True, timeout=task.get("timeout_s", 60)
-            )
-        except subprocess.TimeoutExpired as exc:
-            duration = round(time.time() - start, 3)
-            stdout = timeout_output(exc.stdout)
-            records.append(
-                {
-                    "id": task["id"],
-                    "passed": False,
-                    "timed_out": True,
-                    "duration_s": duration,
-                    "exit_code": None,
-                    "stdout": stdout,
-                    "answer": extract_answer(stdout),
-                    "stderr": timeout_output(exc.stderr),
-                    "usage": {},
-                }
-            )
-            continue
-        duration = round(time.time() - start, 3)
-        answer = extract_answer(proc.stdout)
-        passed, judge_info = grade_answer(
+    return [
+        run_runner_record(
+            args.runner,
             task,
-            answer,
             workdir,
             args.judge_cmd,
             not args.no_default_judge,
             judge_llm=getattr(args, "judge_llm", "off"),
         )
-        record = {
-            "id": task["id"],
-            "passed": passed,
-            "timed_out": False,
-            "duration_s": duration,
-            "exit_code": proc.returncode,
-            "stdout": proc.stdout,
-            "answer": answer,
-            "stderr": proc.stderr,
-            "usage": maybe_usage(proc.stdout),
-        }
-        if judge_info is not None:
-            record["judge"] = judge_info
-        records.append(record)
-    return records
+        for task in tasks
+    ]
 
 
 def run_tasks(args):
@@ -1891,40 +1950,14 @@ def load_matrix(args):
 
 def run_task_with_runner(runner, task, workdir, judge_cmd, default_judge=True, judge_llm="off"):
     """Run a single task under a single runner and return a graded record."""
-    prompt = task["prompt"]
-    command = runner.replace("{prompt}", shlex.quote(prompt))
-    start = time.time()
-    try:
-        proc = run_subprocess(
-            command, cwd=str(workdir), text=True, shell=True, timeout=task.get("timeout_s", 60)
-        )
-    except subprocess.TimeoutExpired as exc:
-        duration = round(time.time() - start, 3)
-        stdout = timeout_output(exc.stdout)
-        return {
-            "id": task["id"],
-            "passed": False,
-            "timed_out": True,
-            "duration_s": duration,
-            "exit_code": None,
-            "answer": extract_answer(stdout),
-            "usage": {},
-        }
-    duration = round(time.time() - start, 3)
-    answer = extract_answer(proc.stdout)
-    passed, judge_info = grade_answer(task, answer, workdir, judge_cmd, default_judge, judge_llm=judge_llm)
-    record = {
-        "id": task["id"],
-        "passed": passed,
-        "timed_out": False,
-        "duration_s": duration,
-        "exit_code": proc.returncode,
-        "answer": answer,
-        "usage": maybe_usage(proc.stdout),
-    }
-    if judge_info is not None:
-        record["judge"] = judge_info
-    return record
+    return run_runner_record(
+        runner,
+        task,
+        workdir,
+        judge_cmd,
+        default_judge,
+        judge_llm=judge_llm,
+    )
 
 
 def render_matrix(tasks, agent_records, runners):
