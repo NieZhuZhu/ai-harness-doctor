@@ -22,6 +22,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-17 at commit `7e03467` (plan 052).
 - 2026-07-17 at commit `ffcfe32` (plan 053).
 - 2026-07-17 at commit `eac8426` (plan 054).
+- 2026-07-17 at commit `5d96c95` (plan 055).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -458,6 +459,19 @@ verification gate, and update its status here.
    splitting, Action report order, exact exits, npm overrides, and release
    verification.
 
+### 2026-07-17 post-v1.11.0 improve round 1 (bounded PR feedback)
+
+1. **PR review delivery has no network timeout** — independently re-audited all
+   nine categories from the released `v1.11.0` baseline, including current
+   dependency posture, repository protection, release/Marketplace state,
+   CLI/MCP/Action parity, test gaps, formatter safety, and every network/process
+   boundary. A patched current-HEAD post captured GraphQL identity, comment-list
+   GET, and summary POST calls; every `urlopen` invocation had no positional or
+   keyword timeout. Plan 055 adds one shared per-request bound and clean,
+   secret-safe transport failure while preserving dry-run isolation, ownership,
+   pagination, summary-first delivery, HTTP-422 fallback, and caller-owned
+   workflow fatality.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -516,6 +530,7 @@ verification gate, and update its status here.
 | 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | DONE |
 | 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | DONE |
 | 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | DONE |
+| 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -783,6 +798,30 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 
 ## Findings considered and rejected or deferred
 
+- **Make `npm run format` safe in the same Plan 055 change** — rejected as a
+  separate DX contract. Current `prettier --check .` reports 105 files and the
+  write command can touch generated adapters, guard-template/self-copy pairs,
+  seven synchronized READMEs, fixtures, and historical plans. That is a real
+  maintainer footgun, but it neither causes nor fixes unbounded PR-feedback
+  networking; re-audit it independently after Plan 055.
+- **Add retries or one global deadline while bounding PR-review HTTP** —
+  rejected. The comment scan is already bounded to ten pages, and writes are not
+  uniformly safe to retry when authenticated identity is unavailable. Plan 055
+  adds the smallest deterministic per-request bound; retries/global budgeting
+  require a separate idempotency design and measured need.
+- **Change the self-bootstrap workflow's `|| echo` posting policy** — rejected.
+  The shipped template intentionally treats posting as required, while this
+  repository soft-fails token/API restrictions on fork PRs. The helper must
+  terminate in both cases; workflow fatality remains an explicit caller policy.
+- **Dependency/security remediation after v1.11.0** — no finding. Both runtime-
+  omitted and full `npm audit` reports contain zero vulnerabilities, public
+  registry/release/floating-tag identity is current, branch protection still
+  requires all nine contexts plus conversation resolution, and secret scanning,
+  push protection, and Dependabot security updates remain enabled.
+- **Refactor the large scan/eval/CLI modules in round 1** — rejected again.
+  Current file size/churn did not produce a new correctness, performance, or
+  testability failure. The selected network defect has one deep existing seam
+  and a direct regression test.
 - **Duplicate CI and mutable Action tags (previously deferred)** — promoted to
   plan 006 after the `v1.0.1` release emitted Action runtime deprecation
   warnings and the second audit confirmed the same workflow changes can add a
