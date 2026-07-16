@@ -57,6 +57,8 @@ Secret findings name only the credential type and repository path; they never re
 
 The scanner's filesystem boundary is the audited repository root: repository-derived configs, manifests, workspace metadata, semantic facts, and default rule plugins are used only when their resolved targets remain inside that root. In-repo file symlinks stay supported and retain their lexical repo-relative report path. Explicit `--rules DIR` locations remain an intentional opt-in and may live outside the repository.
 
+Semantic/D2 path checks treat an absent path as deliberate when repository-owned `.gitignore` files positively ignore its exact repository-relative name. Matching uses one bounded Git query with synthetic metadata, so nested rules and negations work without consulting the target `.git/config`, `.git/info/exclude`, user/global config, or an enclosing worktree. Git absence, warnings, malformed output, timeouts, unsafe symlinks, and temporary-metadata failures suppress nothing: the existing missing-path finding remains. This is deterministic checkout-absence evidence, not mutation authority or a general ignore language.
+
 Repository mutation is stricter than scanning: `stubs --apply`, `drift --fix --apply`, and `guard --apply` / `--remove --apply` refuse a repository-derived target when the file itself or any existing parent directory is a symlink. They never follow a symlink to rewrite/delete another location. Explicit output arguments such as `draft -o PATH`, `--write-baseline FILE`, and eval result paths remain user-selected destinations and are not inferred repository mutations.
 
 Installer mutation follows the same ownership principle. Copy payloads live under the dedicated `.ai-harness-doctor/payload/` subtree so repository baselines and custom rules are never treated as disposable package files. The versioned install manifest records every managed file/link and its digest/target. Existing malformed/unsupported manifest state or symlinked state paths fail closed without overwriting ownership evidence; valid state is atomically replaced. Install/update/uninstall serialize through an owned process lock and couple managed filesystem mutations to the manifest through a contained durable transaction journal. Caught errors roll back immediately. On interruption, the next strict installer command either rolls back a pre-manifest transaction or recognizes an exact committed next-manifest digest and cleans only recovery state. Malformed/ambiguous journals and post-crash external edits fail closed with evidence retained; this is logical journal recovery, not cross-filesystem atomic rename. Install/update preserve unowned name collisions and user-edited managed files; uninstall removes only pristine owned outputs and keeps shared payloads until no installed agent references them. Legacy manifests are adopted only where existing bytes match the package-generated output.
@@ -175,7 +177,7 @@ python3 scripts/check_drift.py /path/to/repo --baseline .ai-harness-doctor/drift
 Checks:
 
 - D1: command drift, comparing referenced commands against `package.json` scripts and `Makefile` targets.
-- D2: path drift, checking whether backtick-quoted paths exist.
+- D2: path drift, checking whether backtick-quoted paths exist or are deliberately absent under repository `.gitignore` rules.
 - D3: stub re-divergence, checking size and the `AGENTS.md` pointer.
 - D4: `AGENTS.md` size.
 - D5: nested `AGENTS.md` inventory, informational and non-blocking.

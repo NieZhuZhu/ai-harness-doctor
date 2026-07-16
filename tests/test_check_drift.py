@@ -58,6 +58,37 @@ class DriftTests(unittest.TestCase):
         shutil.copytree(FIXTURE, repo)
         return td, repo
 
+    def test_nested_agents_use_repository_gitignore_and_keep_attribution(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / ".gitignore").write_text(
+                "packages/*/.runtime/*\n",
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\nRoot.\n",
+                encoding="utf-8",
+            )
+            package = repo / "packages" / "api"
+            package.mkdir(parents=True)
+            (package / "AGENTS.md").write_text(
+                "# API package\n"
+                "Runtime cache lives in `.runtime/cache/`; "
+                "source lives in `src/missing.py`.\n",
+                encoding="utf-8",
+            )
+
+            report = check_drift.run_checks(repo, 32768)
+            d2 = [
+                finding
+                for finding in report["findings"]
+                if finding["check"] == "D2"
+            ]
+
+            self.assertEqual(len(d2), 1)
+            self.assertEqual(d2[0]["path"], "packages/api/AGENTS.md")
+            self.assertIn("src/missing.py", d2[0]["message"])
+
     def test_nested_agents_content_checks_use_package_scope_and_attribution(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
@@ -294,6 +325,22 @@ class DriftTests(unittest.TestCase):
             (root / "packages" / "app" / "src" / "config").mkdir(parents=True)
             text = "In the packages/app workspace, edit `src/config`."
             self.assertEqual(check_drift.d2_path_drift(root, text), [])
+
+    def test_repository_gitignored_runtime_path_does_not_trigger_d2(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".gitignore").write_text(".qwen/*\n", encoding="utf-8")
+            text = (
+                "Runtime notes live in `.qwen/issues/`; "
+                "the source path `src/missing.ts` must exist."
+            )
+
+            missing = {
+                finding["message"].split("`")[1]
+                for finding in check_drift.d2_path_drift(root, text)
+            }
+
+            self.assertEqual(missing, {"src/missing.ts"})
 
     def test_fully_missing_path_still_triggers_d2_with_subtrees_present(self):
         # Subtree leniency must not mask genuine drift merely because the repo

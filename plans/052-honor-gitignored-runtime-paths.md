@@ -29,7 +29,9 @@
 - **Depends on**: Plans 014, 018, and 021 (DONE)
 - **Category**: correctness / diagnostic precision
 - **Planned at**: commit `7e03467`, 2026-07-17
-- **Implementation**: TODO
+- **Implementation**: IN PROGRESS — PR #233 (plan) / PR #234 (impl);
+  implementation branch `fix/052-honor-gitignored-runtime-paths`, full local
+  gates and pinned Qwen validation green, awaiting required CI and merge.
 
 ## Why this matters
 
@@ -463,16 +465,17 @@ implementation requires a public schema/exit change (STOP).
 
 ## Done criteria
 
-- [ ] Current Qwen `.qwen/*` scratch paths no longer produce semantic/D2 false
+- [x] Current Qwen `.qwen/*` scratch paths no longer produce semantic/D2 false
       positives.
-- [ ] Missing unignored and negated/re-included paths still fail.
-- [ ] Global excludes and `.git/info/exclude` cannot suppress findings.
-- [ ] Git absence/temporary-metadata failure preserves current fail-closed
+- [x] Missing unignored and negated/re-included paths still fail.
+- [x] Global excludes and `.git/info/exclude` cannot suppress findings.
+- [x] Git absence/temporary-metadata failure preserves current fail-closed
       behavior.
-- [ ] Phase 0 and Phase 2 share one batch ignore decision and remain in parity.
-- [ ] No candidate causes per-token subprocess amplification.
-- [ ] Seven README translations, `SKILL.md`, and external validation are current.
-- [ ] Full local gates and all nine PR checks pass; implementation is
+- [x] Phase 0 and Phase 2 share one batch ignore decision and remain in parity.
+- [x] No candidate causes per-token subprocess amplification.
+- [x] Seven README translations, `SKILL.md`, and external validation are current.
+- [x] Full local gates pass.
+- [ ] All nine PR checks pass; implementation is
       squash-merged.
 
 ## STOP conditions

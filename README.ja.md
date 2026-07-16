@@ -182,6 +182,7 @@ Non-Claude adapter は意図的に薄い設計です。広範な rule distributi
 ## セーフティモデル
 
 - Scan は read-only で、repository-derived external symlink を除外します。
+- Repository の `.gitignore` が除外する missing path は意図的な runtime path とみなします。Synthetic Git metadata は local/global rule を排除し、Git failure 時は finding を維持します。
 - Write path は symlinked file または既存 parent directory を拒否します。
 - Plugin は `--allow-plugins` を明示した場合だけ有効です。
 - Secret finding は type/path のみを示し値を再掲しません。危険な hook snippet は JSON、Markdown、SARIF、PR feedback で redacted になります。

@@ -163,6 +163,7 @@ def d2_path_drift(root, text, fallback_root=None):
     # repo walk.
     package_names = "not computed"
     subtree_index = None
+    missing = []
     for decl in registry.declared_paths(text):
         token, lineno = decl["path"], decl["line"]
         # Never probe outside the repo root: an absolute or `../`-escaping token
@@ -177,6 +178,23 @@ def d2_path_drift(root, text, fallback_root=None):
                 and facts.exists_within_root(fallback_root, Path(fallback_root) / token)
             ):
                 continue
+            try:
+                repository_token = candidate.relative_to(containment_root).as_posix()
+            except ValueError:
+                continue
+            missing.append((decl, repository_token))
+    ignored = facts.repository_ignored_paths(
+        containment_root,
+        [repository_token for _decl, repository_token in missing],
+    )
+    for decl, repository_token in missing:
+        token, lineno = decl["path"], decl["line"]
+        if repository_token in ignored:
+            continue
+        candidate = facts.resolve_within_root(Path(root) / token, containment_root, strict=False)
+        if candidate is None:
+            continue
+        if not facts.exists_within_root(containment_root, candidate):
             # Monorepo package self-import guard — mirrors semantic.compare_paths
             # so both gates agree (TD-03). A token whose first segment matches a
             # package.json `name` (e.g. `better-auth/test`) is a package export

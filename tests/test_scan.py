@@ -2454,6 +2454,39 @@ class MonorepoTests(unittest.TestCase):
             self.assertIn("files", pkg["report"])
             self.assertIn("summary", pkg)
 
+    def test_package_semantic_paths_use_repository_gitignore(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(
+                repo / "package.json",
+                json.dumps({"workspaces": ["packages/*"]}),
+            )
+            _write(
+                repo / ".gitignore",
+                "packages/*/.runtime/*\n",
+            )
+            _write(
+                repo / "packages" / "app" / "package.json",
+                json.dumps({"name": "app"}),
+            )
+            _write(
+                repo / "packages" / "app" / "AGENTS.md",
+                "# Project overview\n"
+                "Runtime cache lives in `.runtime/cache/`; "
+                "source lives in `src/missing.ts`.\n",
+            )
+
+            report = self.run_json(repo)
+            package = report["packages"][0]
+            missing = {
+                finding["declared"]
+                for finding in package["report"]["semantic"]["findings"]
+                if finding["category"] == "path"
+            }
+
+            self.assertEqual(package["path"], "packages/app")
+            self.assertEqual(missing, {"src/missing.ts"})
+
     def test_aggregate_present_and_consistent(self):
         report = self.run_json(MONOREPO_FIXTURE)
         agg = report["monorepo"]["aggregate"]
