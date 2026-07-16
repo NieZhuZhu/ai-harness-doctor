@@ -499,7 +499,7 @@ verification gate, and update its status here.
 | 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | DONE |
 | 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | DONE |
 | 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | DONE |
-| 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | IN PROGRESS |
+| 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

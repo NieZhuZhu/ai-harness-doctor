@@ -28,9 +28,8 @@
 - **Depends on**: Plans 018, 021, 045, and 052 (DONE)
 - **Category**: correctness / monorepo scope truth
 - **Planned at**: commit `ffcfe32`, 2026-07-17
-- **Implementation**: IN PROGRESS — PR #236 (plan) / PR #237 (impl);
-  implementation branch `fix/053-resolve-nested-package-ancestors`, full local
-  gates and pinned Dify validation green, awaiting required CI and merge.
+- **Implementation**: DONE — PR #236 (plan) / PR #237 (impl),
+  squash-merged to `main` as `2fd5f4a`; all nine required contexts green.
 
 ## Why this matters
 
@@ -489,7 +488,7 @@ condition requires public schema/exit changes.
       remain compatible.
 - [x] Seven README translations, `SKILL.md`, and external validation are current.
 - [x] Full local gates pass.
-- [ ] All nine PR checks pass; implementation is
+- [x] All nine PR checks pass; implementation is
       squash-merged.
 
 ## STOP conditions
