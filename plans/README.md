@@ -21,6 +21,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-16 at commit `e25d421` (plans 041 landed; plan 042).
 - 2026-07-17 at commit `7e03467` (plan 052).
 - 2026-07-17 at commit `ffcfe32` (plan 053).
+- 2026-07-17 at commit `eac8426` (plan 054).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -443,6 +444,20 @@ verification gate, and update its status here.
    for D1/D2/D6 while preserving D7 Markdown-relative semantics and rejecting
    sibling/prose inference.
 
+### 2026-07-17 premium-project loop 4 round 3 (structured Action arguments)
+
+1. **The Marketplace Action cannot represent exact path-valued CLI arguments**
+   — independently re-audited Action/MCP/CLI parity, live workflows, release
+   proof, dependency/security posture, deferred external findings, and DX after
+   Plans 052–053. `action.yml` parses free-form `args` with Bash
+   `read -r -a`: a baseline/rules path containing spaces becomes multiple argv
+   values even when quoted, and multiline YAML silently drops every line after
+   the first. The direct CLI accepts the same quoted path. Plan 054 adds an
+   opt-in JSON string-array `args-json`, parsed and executed by a Node 16
+   stdlib helper with `shell:false`, while preserving legacy whitespace
+   splitting, Action report order, exact exits, npm overrides, and release
+   verification.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -500,6 +515,7 @@ verification gate, and update its status here.
 | 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | DONE |
 | 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | DONE |
 | 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | DONE |
+| 054 | Add structured GitHub Action arguments without shell evaluation | P1 | M | 022, 034, 046, 048 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
