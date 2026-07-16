@@ -20,6 +20,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-16 at commit `26b07b0` (plan 040).
 - 2026-07-16 at commit `e25d421` (plans 041 landed; plan 042).
 - 2026-07-17 at commit `7e03467` (plan 052).
+- 2026-07-17 at commit `ffcfe32` (plan 053).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -428,6 +429,20 @@ verification gate, and update its status here.
    evidence is unavailable. Package-root-relative nested paths and image/RPC
    identifiers remain independent follow-ups rather than prose heuristics.
 
+### 2026-07-17 premium-project loop 4 round 2 (nested package facts)
+
+1. **Nested drift skips the package ancestor between an AGENTS file and repo
+   root** — independently re-audited all nine categories after Plan 052,
+   including current Dify, nested AGENTS guidance, Action/MCP asymmetries,
+   dependency posture, and deferred scope classes. A synthetic conflicting-root
+   fixture reproduced false D1, D2, and D6 findings because drift checks only
+   the canonical file parent and repository root. Current Dify commit
+   `96e34e7b` still reports two false `tree:gen` D1 and five false package-path
+   D2 findings from `cli/src/commands/AGENTS.md`, dropping health to 0/F.
+   Plan 053 reuses target-aware eval's nearest-first lexical ancestor primitive
+   for D1/D2/D6 while preserving D7 Markdown-relative semantics and rejecting
+   sibling/prose inference.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -484,6 +499,7 @@ verification gate, and update its status here.
 | 050 | Keep LLM judge API keys on trusted endpoints | P0 | M | 043 | DONE |
 | 051 | Redact secrets before persisting eval result artifacts | P0 | L | 049, 050 | DONE |
 | 052 | Stop treating repository-gitignored runtime paths as stale | P1 | M | 014, 018, 021 | DONE |
+| 053 | Resolve nested AGENTS facts through the lexical package ancestor chain | P1 | M | 018, 021, 045, 052 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
