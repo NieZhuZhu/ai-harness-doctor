@@ -31,7 +31,7 @@
 - **Depends on**: Plans 020, 023, and 035 (DONE)
 - **Category**: direction / correctness
 - **Planned at**: commit `c141268`, 2026-07-16
-- **Implementation**: IN PROGRESS on `feat/039-claude-rules-applicability`
+- **Implementation**: DONE in PR [#198](https://github.com/NieZhuZhu/ai-harness-doctor/pull/198), merge `26b07b0`
 
 ## Implementation progress
 
@@ -48,7 +48,7 @@
   - Algolia `997a511f7ca034c92fcc53bd707c6448cf1bfdcf`:
     no-frontmatter always-on rule.
 - Both sparse target worktrees remained clean; no Treat, plugin, agent, or LLM
-  ran. Final PR/CI/merge evidence is pending.
+  ran. Implementation PR #198 head `2676fc7` passed all nine required contexts (`drift`, `lint`, Node 16/20/22, `self-test`, and Python 3.9/3.10/3.12) and squash-merged as `26b07b0`.
 
 ## Why this matters
 
