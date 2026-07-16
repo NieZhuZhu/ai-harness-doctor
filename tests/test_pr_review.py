@@ -749,6 +749,7 @@ class PostReviewTests(unittest.TestCase):
                 "method": req.get_method(),
                 "data": json.loads(req.data.decode("utf-8")) if req.data else None,
                 "headers": dict(req.header_items()),
+                "timeout": kw.get("timeout"),
             }
             requests.append(request)
             response = handler(request, len(requests))
@@ -772,6 +773,14 @@ class PostReviewTests(unittest.TestCase):
             hdrs=None,
             fp=io.BytesIO(json.dumps({"message": reason}).encode("utf-8")),
         )
+
+    @staticmethod
+    def _url_error(url, reason):
+        import urllib.error
+
+        error = urllib.error.URLError(reason)
+        error.filename = url
+        return error
 
     def test_clean_rerun_updates_owned_user_summary_instead_of_posting_another(self):
         payload = pr_review.build_review({"findings": []})
@@ -1049,6 +1058,125 @@ class PostReviewTests(unittest.TestCase):
             self.assertIsInstance(comment["line"], int)
         headers = {key.lower(): value for key, value in review["headers"].items()}
         self.assertEqual(headers["authorization"], "Bearer tok")
+
+    def test_every_github_request_uses_the_bounded_timeout(self):
+        payload = pr_review.build_review(
+            {
+                "findings": [
+                    {
+                        "check": "D2",
+                        "level": "ERROR",
+                        "path": "AGENTS.md",
+                        "line": 2,
+                        "message": "bad path",
+                    }
+                ]
+            }
+        )
+
+        def handler(request, _count):
+            if request["url"] == "https://api.github.com/graphql":
+                return {"data": {"viewer": {"id": "U_maintainer", "login": "maintainer"}}}
+            if request["url"].endswith("/issues/7/comments?per_page=100&page=1"):
+                return []
+            if request["url"].endswith("/issues/7/comments"):
+                return {"id": 42, "html_url": "https://github.com/o/r/pull/7#issuecomment-42"}
+            if request["url"].endswith("/pulls/7/reviews"):
+                return {"html_url": "https://github.com/o/r/pull/7#review"}
+            self.fail(f"unexpected request: {request}")
+
+        requests, _response = self._run_api(
+            payload,
+            handler,
+            repo="o/r",
+            pr_number=7,
+            commit_sha="deadbeef",
+            token="tok",
+        )
+
+        self.assertEqual(len(requests), 4)
+        self.assertTrue(
+            all(
+                request["timeout"] == pr_review.GITHUB_API_TIMEOUT_SECONDS
+                for request in requests
+            )
+        )
+
+    def test_timeout_fails_cleanly_without_request_secrets_or_followup_writes(self):
+        payload = pr_review.build_review({"findings": []})
+        marker_body = payload["body"]
+
+        def handler(_request, count):
+            self.assertEqual(count, 1)
+            raise TimeoutError("sentinel transport detail")
+
+        with self.assertRaises(SystemExit) as caught:
+            self._run_api(
+                payload,
+                handler,
+                repo="o/r",
+                pr_number=9,
+                commit_sha="cafe",
+                token="sentinel-token",
+            )
+
+        message = str(caught.exception)
+        self.assertIn("GitHub API POST /graphql timed out", message)
+        self.assertNotIn("sentinel-token", message)
+        self.assertNotIn("sentinel transport detail", message)
+        self.assertNotIn(marker_body, message)
+        self.assertNotIn("Traceback", message)
+
+    def test_transport_error_fails_cleanly_without_request_secrets(self):
+        payload = pr_review.build_review({"findings": []})
+
+        def handler(_request, count):
+            self.assertEqual(count, 1)
+            return self._url_error(
+                "https://api.github.com/graphql",
+                "sentinel transport detail",
+            )
+
+        with self.assertRaises(SystemExit) as caught:
+            self._run_api(
+                payload,
+                handler,
+                repo="o/r",
+                pr_number=9,
+                commit_sha="cafe",
+                token="sentinel-token",
+            )
+
+        message = str(caught.exception)
+        self.assertEqual(message, "GitHub API POST /graphql transport failed")
+        self.assertNotIn("sentinel-token", message)
+        self.assertNotIn("sentinel transport detail", message)
+        self.assertNotIn(payload["body"], message)
+        self.assertNotIn("Traceback", message)
+
+    def test_raw_socket_error_fails_cleanly_without_request_secrets(self):
+        payload = pr_review.build_review({"findings": []})
+
+        def handler(_request, count):
+            self.assertEqual(count, 1)
+            raise OSError("sentinel socket detail")
+
+        with self.assertRaises(SystemExit) as caught:
+            self._run_api(
+                payload,
+                handler,
+                repo="o/r",
+                pr_number=9,
+                commit_sha="cafe",
+                token="sentinel-token",
+            )
+
+        message = str(caught.exception)
+        self.assertEqual(message, "GitHub API POST /graphql transport failed")
+        self.assertNotIn("sentinel-token", message)
+        self.assertNotIn("sentinel socket detail", message)
+        self.assertNotIn(payload["body"], message)
+        self.assertNotIn("Traceback", message)
 
     def test_inline_review_422_uses_already_upserted_summary_without_duplicate(self):
         report = {
