@@ -18,9 +18,9 @@
 - **Depends on**: Plans 049 and 050 (DONE)
 - **Category**: security / persisted artifact minimization
 - **Planned at**: commit `2f9784d`, 2026-07-16
-- **Implementation**: IN PROGRESS — PR #230 (plan); implementation branch
-  `fix/051-redact-eval-artifacts`, awaiting local gates, PR, required CI, and
-  merge.
+- **Implementation**: IN PROGRESS — PR #230 (plan) / PR #231 (impl);
+  implementation branch `fix/051-redact-eval-artifacts`, full local gates
+  green, awaiting nine required CI contexts and merge.
 
 ## Why this matters
 
@@ -213,7 +213,8 @@ is a backward-compatible security **patch**.
 - [x] Scan and eval use one shared pattern source.
 - [x] Placeholder examples remain unredacted/non-findings.
 - [x] Plan 049 scan report tests remain green.
-- [ ] Seven-language docs, full local gates, and nine CI contexts pass.
+- [x] Seven-language docs and full local gates pass.
+- [ ] Nine required CI contexts pass; PR squash-merged.
 
 ## STOP conditions
 
