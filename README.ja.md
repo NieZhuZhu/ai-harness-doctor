@@ -130,6 +130,18 @@ Status precedence は `findings > maintenance > ok`。Valid な non-zero quality
 
 SARIF findings は stable partial fingerprint と独立した scan/drift category を持つため、無関係な行移動で重複せず、個別 upload が互いを close しません。
 
+追加 option value に空白がある場合、または exact/repeated argv 境界が必要な場合は `args-json` を使用します：
+
+```yaml
+- uses: NieZhuZhu/ai-harness-doctor@v1
+  with:
+    command: drift
+    path: .
+    args-json: '["--baseline", ".ai-harness-doctor/drift baseline.json", "--check-baseline"]'
+```
+
+`args-json` と legacy `args` は相互排他です。Legacy `args` は first-line whitespace split のみで、どちらの input も shell-evaluate されません。
+
 ## 既存 debt を安全に導入
 
 Baseline は review 可能な debt register であり、ignore list ではありません。Finding を new、known、repaired に分類します：

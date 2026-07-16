@@ -37,6 +37,10 @@ the npm call proves only public install/dispatch compatibility. All npm
 overrides install under `RUNNER_TEMP`, never user HOME or a global prefix. The
 stable verifier allows up to two minutes for npm CDN visibility, probing only
 the exact version; it never falls back to `latest` or treats timeout as success.
+The packaged `bin/action-run.js` owns bounded `args-json` parsing and
+`shell:false` execution for both bundled and npm-override paths; tagged and
+floating `uses: ./` verification therefore exercises the same adapter consumers
+receive.
 
 Release verification also includes the workflow annotations: current
 full-SHA-pinned Action dependencies must not emit embedded Node runtime

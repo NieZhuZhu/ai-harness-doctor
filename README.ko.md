@@ -130,6 +130,18 @@ Marketplace Action은 기본적으로 선택한 ref의 bundled code를 실행하
 
 SARIF 결과는 안정적인 partial fingerprint와 분리된 scan/drift category를 사용해 줄 이동에 따른 중복과 상호 종료를 방지합니다.
 
+추가 option value에 공백이 있거나 exact/repeated argv 경계가 필요하면 `args-json`을 사용합니다:
+
+```yaml
+- uses: NieZhuZhu/ai-harness-doctor@v1
+  with:
+    command: drift
+    path: .
+    args-json: '["--baseline", ".ai-harness-doctor/drift baseline.json", "--check-baseline"]'
+```
+
+`args-json`과 legacy `args`는 상호 배타적입니다. Legacy `args`는 첫 줄의 공백만 분할하며 어느 input도 shell evaluation을 거치지 않습니다.
+
 ## 기존 부채를 안전하게 도입
 
 Baseline은 검토 가능한 debt register이지 ignore list가 아닙니다. Finding을 new, known, repaired로 분류합니다:

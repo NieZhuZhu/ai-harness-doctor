@@ -28,6 +28,11 @@ when changing GitHub integration, baselines, CI, release, or installer state.
   counts, resolved-baseline count, and drift health.
 - `bin/action-report.js` is the only Action output/Job Summary parser. Never
   reimplement counts in Bash or run the doctor twice.
+- `bin/action-run.js` is the only Action argv/process adapter. Structured
+  `args-json` is a bounded JSON string array; legacy `args` keeps first-line
+  whitespace splitting. They are mutually exclusive and neither is shell
+  evaluated. Keep user input in env/argv, use `shell:false`, and stream stdout
+  directly to SARIF.
 - Action status precedence is `findings > maintenance > ok`. A valid non-zero
   finding/maintenance gate reports first, then restores the exact CLI exit.
   Operational/malformed reports never fabricate health.
