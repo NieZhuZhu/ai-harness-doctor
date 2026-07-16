@@ -190,7 +190,35 @@ def _rules_from_results(results):
     return rules
 
 
-def build_document(results, rules, version=None, category=None):
+def _run_properties(command, results, ok=None, score=None, grade=None):
+    """Return deterministic producer metadata for Action/report consumers.
+
+    Counts are derived from the FINAL SARIF results so baselined debt stays
+    excluded and every emitted family (including monorepo/custom findings) is
+    represented exactly once. Drift health fields are additive only when the
+    source report provides them, preserving compatibility with minimal callers.
+    """
+    levels = {"error": 0, "warning": 0, "note": 0}
+    for result in results:
+        level = result.get("level", "note")
+        levels[level if level in levels else "note"] += 1
+    metadata = {
+        "command": command,
+        "findingCount": len(results),
+        "errorCount": levels["error"],
+        "warningCount": levels["warning"],
+        "noteCount": levels["note"],
+    }
+    if isinstance(ok, bool):
+        metadata["ok"] = ok
+    if isinstance(score, (int, float)) and not isinstance(score, bool):
+        metadata["score"] = score
+    if isinstance(grade, str):
+        metadata["grade"] = grade
+    return {"aiHarnessDoctor": metadata}
+
+
+def build_document(results, rules, version=None, category=None, properties=None):
     """Assemble the top-level SARIF 2.1.0 document.
 
     When ``category`` is set, the run carries ``automationDetails.id`` so GitHub
@@ -210,6 +238,8 @@ def build_document(results, rules, version=None, category=None):
     }
     if category:
         run["automationDetails"] = {"id": category}
+    if properties:
+        run["properties"] = properties
     return {
         "$schema": SCHEMA,
         "version": "2.1.0",
@@ -403,7 +433,14 @@ def scan_report_to_sarif(report, version=None):
         prefix = package.get("path", "")
         results.extend(_scan_results_for_report(package.get("report", {}), prefix))
     rules = _rules_from_results(results)
-    return build_document(results, rules, version=version, category=SCAN_CATEGORY)
+    properties = _run_properties("scan", results)
+    return build_document(
+        results,
+        rules,
+        version=version,
+        category=SCAN_CATEGORY,
+        properties=properties,
+    )
 
 
 def drift_report_to_sarif(report, version=None):
@@ -426,4 +463,17 @@ def drift_report_to_sarif(report, version=None):
             )
         )
     rules = _rules_from_results(results)
-    return build_document(results, rules, version=version, category=DRIFT_CATEGORY)
+    properties = _run_properties(
+        "drift",
+        results,
+        ok=report.get("ok"),
+        score=report.get("score"),
+        grade=report.get("grade"),
+    )
+    return build_document(
+        results,
+        rules,
+        version=version,
+        category=DRIFT_CATEGORY,
+        properties=properties,
+    )

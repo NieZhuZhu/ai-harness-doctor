@@ -29,6 +29,27 @@ outputs:
   sarif-file:
     description: "Path to the generated SARIF file."
     value: ${{ steps.run.outputs.sarif-file }}
+  status:
+    description: "Report status: ok or findings."
+    value: ${{ steps.run.outputs.status }}
+  finding-count:
+    description: "Number of active SARIF findings."
+    value: ${{ steps.run.outputs.finding-count }}
+  error-count:
+    description: "Number of error-level findings."
+    value: ${{ steps.run.outputs.error-count }}
+  warning-count:
+    description: "Number of warning-level findings."
+    value: ${{ steps.run.outputs.warning-count }}
+  note-count:
+    description: "Number of note-level findings."
+    value: ${{ steps.run.outputs.note-count }}
+  health-score:
+    description: "Drift health score (empty for scan or a legacy npm override)."
+    value: ${{ steps.run.outputs.health-score }}
+  health-grade:
+    description: "Drift health grade (empty for scan or a legacy npm override)."
+    value: ${{ steps.run.outputs.health-grade }}
 runs:
   using: composite
   steps:
@@ -72,5 +93,21 @@ runs:
           read -r -a extra_args <<< "$INPUT_ARGS"
           run_args+=("${extra_args[@]}")
         fi
+        # A findings gate deliberately returns non-zero AFTER printing valid
+        # SARIF. Capture that status so the report helper can publish Action
+        # outputs + Job Summary, then restore the exact CLI exit code. Do not
+        # rerun scan/drift or parse human-readable output in Bash.
+        set +e
         node "$cli" "${run_args[@]}" > "$INPUT_SARIF_FILE"
-        echo "sarif-file=$INPUT_SARIF_FILE" >> "$GITHUB_OUTPUT"
+        cli_status=$?
+        set -e
+
+        set +e
+        node "$ACTION_PATH/bin/action-report.js" "$INPUT_SARIF_FILE" "$INPUT_COMMAND"
+        report_status=$?
+        set -e
+
+        if [ "$report_status" -ne 0 ] && [ "$cli_status" -eq 0 ]; then
+          exit "$report_status"
+        fi
+        exit "$cli_status"
