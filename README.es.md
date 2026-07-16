@@ -182,6 +182,7 @@ Los adapters no Claude son deliberadamente finos. La distribución masiva corres
 ## Modelo de seguridad
 
 - Scan es de solo lectura y excluye symlinks externos derivados del repositorio.
+- Las rutas ausentes ignoradas por `.gitignore` del repositorio se consideran runtime deliberado; metadata Git sintética excluye reglas locales/globales y un fallo de Git conserva el finding.
 - Las rutas de escritura rechazan archivos o padres symlinked.
 - Los plugins solo se activan con `--allow-plugins`.
 - Los hallazgos de secretos indican tipo/ruta sin repetir valores; los hooks peligrosos se redactan en JSON, Markdown, SARIF y feedback de PR.

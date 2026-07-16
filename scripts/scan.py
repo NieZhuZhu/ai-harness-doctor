@@ -1836,8 +1836,20 @@ def analysis_limits(files):
     ]
 
 
-def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=None):
+def scan_repo(
+    repo_root,
+    max_bytes,
+    rules_dirs=None,
+    allow_plugins=False,
+    ctx=None,
+    repository_root=None,
+):
     root = Path(repo_root).resolve()
+    repository_root = (
+        Path(repository_root).resolve()
+        if repository_root is not None
+        else root
+    )
     # Walk the tree once and share the read/parse cache across every stage below
     # (PERF-01/PERF-02). In monorepo mode the caller passes a subcontext sliced
     # from the parent inventory so package subtrees are not re-walked (PERF-03).
@@ -1877,7 +1889,11 @@ def scan_repo(repo_root, max_bytes, rules_dirs=None, allow_plugins=False, ctx=No
         "surface": surface,
         "security": security_findings(root, files, mcp, hooks, permissions, ctx),
         "project_snapshot": build_project_snapshot(root, surface, agents_text, ctx),
-        "semantic": semantic.analyze(root, agents_text),
+        "semantic": semantic.analyze(
+            root,
+            agents_text,
+            repository_root=repository_root,
+        ),
         "gaps": find_gaps(root, surface, conflicts, ctx, agents_text=agents_text),
     }
     # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
@@ -2403,7 +2419,14 @@ def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_
     for relpath, pdir in package_dirs.items():
         # Reuse the root walk + read cache by slicing a subcontext for the
         # package instead of re-walking (and re-reading) its subtree (PERF-03).
-        sub = scan_repo(pdir, max_bytes, rules_dirs, allow_plugins=allow_plugins, ctx=ctx.subcontext(pdir))
+        sub = scan_repo(
+            pdir,
+            max_bytes,
+            rules_dirs,
+            allow_plugins=allow_plugins,
+            ctx=ctx.subcontext(pdir),
+            repository_root=root,
+        )
         packages.append(
             {
                 "path": relpath,

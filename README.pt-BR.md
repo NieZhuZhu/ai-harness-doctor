@@ -182,6 +182,7 @@ Adapters não Claude são deliberadamente finos. Distribuição ampla cabe ao Ru
 ## Modelo de segurança
 
 - Scan é somente leitura e exclui symlinks externos derivados do repositório.
+- Caminhos ausentes ignorados pelo `.gitignore` do repositório são runtime intencional; metadata Git sintética exclui regras locais/globais e falha do Git preserva o finding.
 - Caminhos de escrita rejeitam arquivos ou pais symlinked.
 - Plugins só são ativados com `--allow-plugins`.
 - Achados de segredo informam tipo/caminho sem repetir valores; hooks perigosos são redigidos em JSON, Markdown, SARIF e feedback de PR.

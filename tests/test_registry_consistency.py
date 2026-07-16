@@ -285,6 +285,35 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             self.assertEqual(sem_missing, {"src/missing-config"})
             self.assertEqual(d2_missing, sem_missing)
 
+    def test_repository_gitignore_existence_policy_agrees_across_stages(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".gitignore").write_text(
+                "runtime/*\n"
+                "!runtime/keep/\n"
+                "!runtime/keep/**\n",
+                encoding="utf-8",
+            )
+            text = (
+                "Ignored `runtime/cache/`; re-included `runtime/keep/missing`; "
+                "ordinary `src/missing.ts`."
+            )
+
+            sem_missing = {
+                finding["declared"]
+                for finding in semantic.compare_paths(root, text)
+            }
+            d2_missing = {
+                finding["message"].split("`")[1]
+                for finding in check_drift.d2_path_drift(root, text)
+            }
+
+            self.assertEqual(
+                sem_missing,
+                {"runtime/keep/missing", "src/missing.ts"},
+            )
+            self.assertEqual(d2_missing, sem_missing)
+
     def test_code_expression_tokens_are_not_declared_paths(self):
         # A backtick token carrying code-expression punctuation (attribute
         # macros, function/index calls, quoted-argument literals) is a code

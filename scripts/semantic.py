@@ -794,16 +794,39 @@ def compare_commands(root, text):
     return findings
 
 
-def compare_paths(root, text):
+def compare_paths(root, text, repository_root=None):
     findings = []
+    root = Path(root).resolve()
+    repository_root = (
+        Path(repository_root).resolve()
+        if repository_root is not None
+        else root
+    )
+    try:
+        scope_prefix = root.relative_to(repository_root)
+    except ValueError:
+        repository_root = root
+        scope_prefix = Path()
     # Lazily computed only on a potential MISSING finding, mirroring
     # compare_commands's all_scripts laziness so the common case (path
     # exists) never pays for a repo walk.
     package_names = "not computed"
     subtree_index = None
-    for decl in declared_paths(text):
+    declarations = declared_paths(text)
+    missing = []
+    for decl in declarations:
         token, line = decl["path"], decl["line"]
         if not _within_root(root, token):
+            continue
+        if not facts.exists_within_root(root, root / token):
+            missing.append((decl, (scope_prefix / token).as_posix()))
+    ignored = facts.repository_ignored_paths(
+        repository_root,
+        [repository_token for _decl, repository_token in missing],
+    )
+    for decl, repository_token in missing:
+        token, line = decl["path"], decl["line"]
+        if repository_token in ignored:
             continue
         if not facts.exists_within_root(root, root / token):
             if package_names == "not computed":
@@ -988,7 +1011,7 @@ ORDER = {
 }
 
 
-def analyze(root, text):
+def analyze(root, text, repository_root=None):
     """Compare AGENTS.md declarations against repository facts.
 
     Returns ``{"findings": [...], "checked": int, "mismatches": int}``. ``findings``
@@ -999,7 +1022,7 @@ def analyze(root, text):
     findings = []
     if text:
         findings.extend(compare_commands(root, text))
-        findings.extend(compare_paths(root, text))
+        findings.extend(compare_paths(root, text, repository_root=repository_root))
         findings.extend(compare_package_manager(root, text))
         findings.extend(compare_node_version(root, text))
         findings.extend(compare_python_version(root, text))

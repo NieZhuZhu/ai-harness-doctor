@@ -251,6 +251,215 @@ class SemanticPackageScriptsTests(unittest.TestCase):
 
 
 class SemanticPathTests(unittest.TestCase):
+    def test_repository_ignore_query_fails_closed_on_git_errors(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(root, ".gitignore", "ignored/*\n")
+            with mock.patch.object(
+                facts.tempfile,
+                "gettempdir",
+                return_value=str(root),
+            ), mock.patch.object(
+                facts.tempfile,
+                "TemporaryDirectory",
+                wraps=facts.tempfile.TemporaryDirectory,
+            ) as temporary:
+                self.assertEqual(
+                    facts.repository_ignored_paths(root, ["ignored/a.txt"]),
+                    set(),
+                )
+                temporary.assert_not_called()
+            with mock.patch.object(
+                facts.tempfile,
+                "TemporaryDirectory",
+                side_effect=OSError("cannot create temp metadata"),
+            ):
+                self.assertEqual(
+                    facts.repository_ignored_paths(root, ["ignored/a.txt"]),
+                    set(),
+                )
+            cases = [
+                FileNotFoundError("git"),
+                TimeoutError("timeout"),
+                mock.Mock(returncode=2, stdout=b"ignored/a.txt\0", stderr=b""),
+                mock.Mock(returncode=0, stdout=b"ignored/a.txt", stderr=b""),
+                mock.Mock(
+                    returncode=0,
+                    stdout=b"ignored/a.txt\0",
+                    stderr=b"unexpected warning",
+                ),
+                mock.Mock(returncode=0, stdout=b"\xff\0", stderr=b""),
+                mock.Mock(returncode=0, stdout=b"other/path\0", stderr=b""),
+            ]
+            for response in cases:
+                with self.subTest(response=type(response).__name__):
+                    if isinstance(response, BaseException):
+                        configured = mock.patch.object(
+                            facts.subprocess,
+                            "run",
+                            side_effect=response,
+                        )
+                    else:
+                        configured = mock.patch.object(
+                            facts.subprocess,
+                            "run",
+                            return_value=response,
+                        )
+                    with configured:
+                        self.assertEqual(
+                            facts.repository_ignored_paths(
+                                root,
+                                ["ignored/a.txt"],
+                            ),
+                            set(),
+                        )
+
+    @unittest.skipUnless(
+        hasattr(Path, "symlink_to"),
+        "file symlinks unsupported",
+    )
+    def test_external_gitignore_symlink_cannot_supply_rules(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "repo"
+            outside = base / "outside"
+            root.mkdir()
+            outside.mkdir()
+            external_ignore = write(outside, "ignore", "external/*\n")
+            try:
+                (root / ".gitignore").symlink_to(external_ignore)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported")
+
+            self.assertEqual(
+                facts.repository_ignored_paths(root, ["external/a.txt"]),
+                set(),
+            )
+
+    def test_repository_ignore_query_batches_candidates_once(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            completed = mock.Mock(
+                returncode=0,
+                stdout=b"ignored/a.txt\0ignored/b.txt\0ignored/c.txt\0",
+                stderr=b"",
+            )
+            with mock.patch.object(
+                facts.subprocess,
+                "run",
+                return_value=completed,
+            ) as run:
+                ignored = facts.repository_ignored_paths(
+                    root,
+                    [
+                        "ignored/a.txt",
+                        "ignored/b.txt",
+                        "ignored/a.txt",
+                        "ignored/./c.txt",
+                    ],
+                )
+
+            self.assertEqual(
+                ignored,
+                {"ignored/a.txt", "ignored/b.txt", "ignored/./c.txt"},
+            )
+            run.assert_called_once()
+            self.assertEqual(
+                run.call_args.kwargs["input"],
+                b"ignored/a.txt\0ignored/b.txt\0ignored/c.txt\0",
+            )
+
+    def test_repository_ignore_query_uses_only_worktree_gitignore_rules(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(
+                root,
+                ".gitignore",
+                ".qwen/*\n"
+                "!.qwen/commands/\n"
+                "!.qwen/commands/**\n"
+                "scratch space/*\n"
+                "缓存/*\n",
+            )
+            write(
+                root,
+                "nested/.gitignore",
+                "cache/*\n"
+                "!cache/keep.txt\n",
+            )
+            write(root, ".git/info/exclude", "local-only/*\n")
+            global_ignore = write(root, "global-ignore", "global-only/*\n")
+            global_config = write(
+                root,
+                "global-config",
+                f"[core]\n\texcludesFile = {global_ignore}\n",
+            )
+            tokens = [
+                ".qwen/issues/",
+                ".qwen/commands/example.md",
+                "nested/cache/tmp.bin",
+                "nested/cache/keep.txt",
+                "scratch space/note.txt",
+                "缓存/note.txt",
+                "local-only/note.txt",
+                "global-only/note.txt",
+            ]
+
+            with mock.patch.dict(
+                "os.environ",
+                {"GIT_CONFIG_GLOBAL": str(global_config)},
+                clear=False,
+            ):
+                ignored = facts.repository_ignored_paths(root, tokens)
+
+            self.assertEqual(
+                ignored,
+                {
+                    ".qwen/issues/",
+                    "nested/cache/tmp.bin",
+                    "scratch space/note.txt",
+                    "缓存/note.txt",
+                },
+            )
+
+    def test_repository_gitignored_runtime_path_is_not_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(root, ".gitignore", ".qwen/*\n")
+            text = (
+                "Runtime notes live in `.qwen/issues/`; "
+                "the source path `src/missing.ts` must exist."
+            )
+            result = semantic.analyze(root, text)
+            missing = {
+                finding["declared"]
+                for finding in result["findings"]
+                if finding["category"] == "path"
+            }
+
+            self.assertEqual(missing, {"src/missing.ts"})
+            self.assertEqual(result["checked"], 2)
+
+    def test_unrelated_repository_root_cannot_supply_ignore_rules(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "repo"
+            other = base / "other"
+            root.mkdir()
+            other.mkdir()
+            write(other, ".gitignore", "src/*\n")
+
+            findings = semantic.compare_paths(
+                root,
+                "Source lives in `src/missing.ts`.",
+                repository_root=other,
+            )
+
+            self.assertEqual(
+                {finding["declared"] for finding in findings},
+                {"src/missing.ts"},
+            )
+
     def test_many_missing_paths_build_one_subtree_index(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

@@ -15,8 +15,11 @@ Python 3.9 standard library only; no runtime dependencies.
 
 import json
 import os
+import posixpath
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # scripts/ holds the shared agent-config registry (lockfile->manager map, the
@@ -183,6 +186,138 @@ def is_dir_within_root(root, path):
 def exists_within_root(root, path):
     """Return True only for an existing path contained by ``root``."""
     return resolve_within_root(path, root) is not None
+
+
+def repository_ignored_paths(root, tokens, timeout=5):
+    """Return contained relative paths ignored by repository ``.gitignore`` files.
+
+    Git supplies the matcher so nested rules and negation keep their native
+    semantics. A synthetic metadata directory prevents the audited repository's
+    ``.git/config`` and ``.git/info/exclude`` (plus user/system config) from
+    changing deterministic scan output. Any unavailable or ambiguous result
+    fails closed to an empty set, preserving existing missing-path findings.
+    """
+    root = Path(root).resolve()
+    candidates = []
+    originals_by_candidate = {}
+    for value in tokens:
+        token = str(value)
+        if (
+            not token
+            or "\0" in token
+            or resolve_within_root(root / token, root, strict=False) is None
+        ):
+            continue
+        normalized = Path(os.path.normpath(token)).as_posix()
+        normalized = posixpath.normpath(normalized)
+        if normalized in ("", ".", "..") or normalized.startswith("../"):
+            continue
+        if token.endswith("/") and not normalized.endswith("/"):
+            normalized += "/"
+        if normalized not in originals_by_candidate:
+            candidates.append(normalized)
+            originals_by_candidate[normalized] = []
+        originals_by_candidate[normalized].append(token)
+    if not candidates:
+        return set()
+
+    try:
+        temp_parent = Path(tempfile.gettempdir()).resolve()
+        try:
+            temp_parent.relative_to(root)
+        except ValueError:
+            pass
+        else:
+            # Scanning is read-only. A caller-controlled TMPDIR inside the
+            # audited repository must not turn ignore classification into a
+            # repository write; retain existing missing-path findings instead.
+            return set()
+        with tempfile.TemporaryDirectory(prefix="ai-harness-doctor-gitignore-") as td:
+            temp_root = Path(td)
+            git_dir = temp_root / "git"
+            for relative in (
+                "objects/info",
+                "objects/pack",
+                "refs/heads",
+                "refs/tags",
+                "info",
+            ):
+                (git_dir / relative).mkdir(parents=True, exist_ok=True)
+            (git_dir / "HEAD").write_text(
+                "ref: refs/heads/main\n",
+                encoding="utf-8",
+            )
+            (git_dir / "config").write_text(
+                "[core]\n"
+                "\trepositoryformatversion = 0\n"
+                "\tbare = false\n"
+                "\tfilemode = true\n",
+                encoding="utf-8",
+            )
+            (git_dir / "info" / "exclude").write_text("", encoding="utf-8")
+
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith("GIT_")
+            }
+            env.update(
+                {
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "GIT_CONFIG_GLOBAL": os.devnull,
+                    "GIT_OPTIONAL_LOCKS": "0",
+                    "HOME": str(temp_root),
+                    "XDG_CONFIG_HOME": str(temp_root),
+                }
+            )
+            proc = subprocess.run(
+                [
+                    "git",
+                    f"--git-dir={git_dir}",
+                    f"--work-tree={root}",
+                    "-c",
+                    f"core.excludesFile={os.devnull}",
+                    "-c",
+                    "core.fsmonitor=false",
+                    "check-ignore",
+                    "--no-index",
+                    "-z",
+                    "--stdin",
+                ],
+                input=b"".join(
+                    token.encode("utf-8") + b"\0" for token in candidates
+                ),
+                capture_output=True,
+                timeout=timeout,
+                env=env,
+            )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return set()
+
+    if proc.returncode == 1:
+        return set()
+    if (
+        proc.returncode != 0
+        or proc.stderr
+        or not proc.stdout
+        or not proc.stdout.endswith(b"\0")
+    ):
+        return set()
+    try:
+        ignored = {
+            item.decode("utf-8")
+            for item in proc.stdout[:-1].split(b"\0")
+            if item
+        }
+    except UnicodeError:
+        return set()
+    if not ignored.issubset(originals_by_candidate):
+        return set()
+    return {
+        original
+        for candidate in ignored
+        for original in originals_by_candidate[candidate]
+    }
 
 
 def read_text_within_root(root, path, errors="strict"):
