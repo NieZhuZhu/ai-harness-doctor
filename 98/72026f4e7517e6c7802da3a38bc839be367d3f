@@ -1,0 +1,23 @@
+package-lock.json
+  s_da394e20280a0e::t_f1a0b47ece3a26 3,9
+package.json
+  s_da394e20280a0e::t_d184ebb4aec7ac 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "9872026f4e7517e6c7802da3a38bc839be367d3f",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
