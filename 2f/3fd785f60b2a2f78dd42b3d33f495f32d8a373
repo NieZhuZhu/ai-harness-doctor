@@ -1,0 +1,29 @@
+.gitignore
+  s_da394e20280a0e::t_5b06875fc23f9d 8
+benchmark/corpus/evals/codex/results/results-after-run2.json
+  s_da394e20280a0e::t_a560ce5237eec7 1-530
+benchmark/corpus/evals/codex/results/results-after.json
+  s_da394e20280a0e::t_584b833eab9e0e 1-530
+benchmark/corpus/evals/codex/results/results-before-run2.json
+  s_da394e20280a0e::t_64e516462e4d75 1-530
+benchmark/corpus/evals/codex/results/results-before.json
+  s_da394e20280a0e::t_fc34d9c9a2edba 1-530
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "2f3fd785f60b2a2f78dd42b3d33f495f32d8a373",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
