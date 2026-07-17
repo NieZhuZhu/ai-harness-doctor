@@ -1233,6 +1233,11 @@ class ActionMetadataTests(unittest.TestCase):
             self.assertIn("Safety", sections)
             testing_body = sections["Testing requirements"]
             safety_body = sections["Safety"]
+            self.assertIn(
+                "- Never commit or report secrets or credentials.",
+                safety_body,
+                "Safety must prohibit both committing and reporting secrets",
+            )
             with self.subTest(root="Safety detailed isolated temporary HOME rule"):
                 self.assertRegex(
                     safety_body,

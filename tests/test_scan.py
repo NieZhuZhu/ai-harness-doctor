@@ -2222,6 +2222,236 @@ class ExtendedSurfaceTests(unittest.TestCase):
                 )
             )
 
+    def test_mcp_secret_is_redacted_from_every_report_surface(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            sentinel = "ghp_" + ("B" * 24)
+            _write(repo / "AGENTS.md", "# Project overview\nDemo.\n")
+            _write(
+                repo / ".mcp.json",
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "private-api": {
+                                "type": "stdio-over-http",
+                                "command": f"mcp-proxy --token {sentinel}",
+                                "url": f"http://example.test/mcp?token={sentinel}",
+                            }
+                        }
+                    }
+                ),
+            )
+
+            captured = {}
+            original_security_findings = scan.security_findings
+
+            def capture_security_findings(root, files, mcp, hooks, permissions, ctx=None):
+                captured["mcp"] = mcp
+                return original_security_findings(root, files, mcp, hooks, permissions, ctx)
+
+            with unittest.mock.patch.object(
+                scan, "security_findings", side_effect=capture_security_findings
+            ):
+                report = scan.scan_repo(repo, 32768)
+            for field in ("command", "url"):
+                with self.subTest(raw_detection_field=field):
+                    self.assertIn(
+                        sentinel,
+                        captured["mcp"][0][field],
+                        f"security_findings must receive raw MCP {field}",
+                    )
+            report_path = scan.write_report_file(report, repo)
+            self.assertIsNotNone(report_path)
+            try:
+                inventory = report["surface"]["mcp_servers"][0]
+                serialized = {
+                    "json": json.dumps(report),
+                    "markdown": scan.render_markdown(report),
+                    "temp_report": Path(report_path).read_text(encoding="utf-8"),
+                }
+                recall_only = {
+                    "sarif": json.dumps(sarif.scan_report_to_sarif(report)),
+                    "review": json.dumps(pr_review.build_review(report)),
+                }
+
+                secret_findings = [
+                    finding
+                    for finding in report["security"]
+                    if finding["category"] == "secret"
+                ]
+                self.assertTrue(secret_findings)
+                self.assertTrue(
+                    all(finding["level"] == "HIGH" for finding in secret_findings)
+                )
+                self.assertTrue(
+                    any(
+                        finding["category"] == "mcp"
+                        and "insecure http:// transport" in finding["message"]
+                        for finding in report["security"]
+                    )
+                )
+                self.assertEqual(inventory["config"], ".mcp.json")
+                self.assertEqual(inventory["name"], "private-api")
+                self.assertEqual(inventory["transport"], "stdio-over-http")
+                for field in ("command", "url"):
+                    with self.subTest(field=field):
+                        self.assertNotIn(sentinel, inventory[field])
+                        self.assertIn("<redacted:GitHub token>", inventory[field])
+                for label, output in serialized.items():
+                    with self.subTest(surface=label):
+                        self.assertNotIn(sentinel, output)
+                        self.assertIn("<redacted:GitHub token>", output)
+                for label, output in recall_only.items():
+                    with self.subTest(surface=label):
+                        self.assertNotIn(sentinel, output)
+            finally:
+                Path(report_path).unlink(missing_ok=True)
+
+    def test_mcp_public_inventory_sanitizes_all_controlled_strings(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            sentinel = "ghp_" + ("C" * 24)
+            unsafe = f"unsafe`\nvalue-{sentinel}"
+            placeholder = "token=your-api-key-here"
+            _write(repo / "AGENTS.md", "# Project overview\nDemo.\n")
+            _write(
+                repo / ".mcp.json",
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            unsafe: {
+                                "type": unsafe,
+                                "command": unsafe,
+                                "url": f"http://example.test/{unsafe}",
+                                "env": {unsafe: sentinel},
+                            },
+                            "example": {
+                                "type": placeholder,
+                                "command": placeholder,
+                                "url": f"https://example.test/?{placeholder}",
+                            },
+                        }
+                    }
+                ),
+            )
+
+            raw_mcp = scan.scan_mcp(repo)
+            self.assertIn(sentinel, json.dumps(raw_mcp))
+            report = scan.scan_repo(repo, 32768)
+            serialized = json.dumps(report)
+            markdown = scan.render_markdown(report)
+            self.assertNotIn(sentinel, serialized)
+            self.assertNotIn(sentinel, markdown)
+
+            inventory = report["surface"]["mcp_servers"]
+            private = next(server for server in inventory if server["name"] != "example")
+            for field in ("name", "transport", "command", "url"):
+                with self.subTest(field=field):
+                    self.assertIn("<redacted:GitHub token>", private[field])
+                    self.assertNotIn("\n", private[field])
+                    self.assertNotIn("`", private[field])
+            self.assertEqual(len(private["env_keys"]), 1)
+            self.assertIn("<redacted:GitHub token>", private["env_keys"][0])
+            self.assertNotIn("\n", private["env_keys"][0])
+            self.assertNotIn("`", private["env_keys"][0])
+
+            example = next(server for server in inventory if server["name"] == "example")
+            self.assertEqual(example["transport"], placeholder)
+            self.assertEqual(example["command"], placeholder)
+            self.assertEqual(
+                example["url"], f"https://example.test/?{placeholder}"
+            )
+
+            messages = [finding["message"] for finding in report["security"]]
+            self.assertTrue(any("<redacted:GitHub token>" in message for message in messages))
+            self.assertTrue(
+                any(
+                    finding["category"] == "secret"
+                    and "MCP server" in finding["message"]
+                    and "env" in finding["message"]
+                    for finding in report["security"]
+                )
+            )
+            for message in messages:
+                self.assertNotIn(sentinel, message)
+                self.assertNotIn("\n", message)
+                self.assertEqual(message.count("`") % 2, 0)
+            self.assertFalse(
+                [
+                    finding
+                    for finding in report["security"]
+                    if finding["category"] == "secret"
+                    and "example" in finding["message"]
+                ]
+            )
+
+    def test_no_security_keeps_mcp_inventory_redacted_and_gate_active(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            sentinel = "ghp_" + ("D" * 24)
+            _write(repo / "AGENTS.md", "# Project overview\nDemo.\n")
+            _write(
+                repo / ".mcp.json",
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "private": {
+                                "command": f"mcp-proxy --token {sentinel}"
+                            }
+                        }
+                    }
+                ),
+            )
+
+            proc = self.run_json(
+                repo, "--no-security", "--fail-on-security"
+            )
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            report = json.loads(proc.stdout)
+            self.assertNotIn("security", report)
+            self.assertNotIn(sentinel, proc.stdout)
+            self.assertIn(
+                "<redacted:GitHub token>",
+                report["surface"]["mcp_servers"][0]["command"],
+            )
+
+    def test_mcp_redaction_is_inherited_by_monorepo_and_batch_reports(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "workspace"
+            package = root / "packages" / "app"
+            sentinel = "ghp_" + ("E" * 24)
+            _write(root / "AGENTS.md", "# Project overview\nWorkspace.\n")
+            _write(package / "AGENTS.md", "# Project overview\nApp.\n")
+            _write(package / "package.json", '{"name": "app"}')
+            _write(
+                package / ".mcp.json",
+                json.dumps(
+                    {
+                        "mcpServers": {
+                            "private": {
+                                "command": f"mcp-proxy --token {sentinel}"
+                            }
+                        }
+                    }
+                ),
+            )
+
+            _, packages = scan.scan_monorepo(
+                root,
+                32768,
+                {"packages/app": package},
+                "test",
+            )
+            _, repos = scan.scan_repos_file([str(package)], 32768)
+            inherited = {
+                "monorepo": json.dumps(packages),
+                "batch": json.dumps(repos),
+            }
+            for label, output in inherited.items():
+                with self.subTest(report=label):
+                    self.assertNotIn(sentinel, output)
+                    self.assertIn("<redacted:GitHub token>", output)
+
     def test_hook_placeholder_is_not_redacted_or_flagged_as_secret(self):
         placeholder = "token=your-api-key-here"
         self.assertEqual(scan.redact_secret_values(placeholder), placeholder)

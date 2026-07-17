@@ -11,17 +11,17 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-The current Plan 061 maintenance-pack answers are **manually maintained by an AI
+The current Plan 062 maintenance-pack answers are **manually maintained by an AI
 implementation workflow** directly from `AGENTS.md`. No `eval_run.py` runner or
 judge model call was performed; the offline regex regrade is evidence-bounded,
 **not an independent model benchmark**.
 
-- `tasks.json` — 39 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 40 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
   evidence freshness, repository operations, path truth, nested package facts,
   Action argv safety, the deep-improve loop, and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
-- `results-after.json` — current Plan 061 manual-protocol answers maintained
+- `results-after.json` — current Plan 062 manual-protocol answers maintained
   by AI implementation workflow from the current `AGENTS.md`; no `eval_run.py`
   runner or judge model call.
 - `*-graded.json` — the same files after `--regrade` (adds `passed`/`answer`).
@@ -49,7 +49,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 39/39 |
+| current evidence-bound maintenance pack | 40/40 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -111,6 +111,12 @@ The `local-all-green` task checks the local/CI parity invariant: the local
 all-green `npm run check` runs lint, tests, then packed npm candidate
 verification, while CI remains responsible for the Python 3.9–3.12 and
 Node 16–22 matrix coverage.
+
+The Plan 062 refresh adds the objective `secret-report-safety` task, binding
+the root invariant that repository tooling must never commit or report secret
+credential values. Its answer is manually maintained from `AGENTS.md`; no
+`eval_run.py` runner or judge model call was made, and the offline regex
+regrade is not an independent model benchmark.
 
 The Plan 061 refresh expands `doc-languages` to seven required locales
 (English, zh-CN, ja, es, ko, pt-BR, fr) and adds a progressive-disclosure
