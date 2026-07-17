@@ -1,0 +1,110 @@
+[
+  {
+    "id": "app-tests",
+    "prompt": "What is the exact command to run the frontend app (apps/app) test suite once from its package directory? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "^(?![\\s\\S]*npx)[\\s\\S]*(bunx\\s+vitest\\s+run|bun\\s+run\\s+test(?![:\\w]))"
+    }
+  },
+  {
+    "id": "api-tests",
+    "prompt": "What is the exact command to run the API (apps/api) tests from its package directory? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "^(?![\\s\\S]*npx)[\\s\\S]*(bunx\\s+jest\\b|bun\\s+run\\s+test(?![:\\w]))"
+    }
+  },
+  {
+    "id": "typecheck-api",
+    "prompt": "What is the exact command to typecheck only the @trycompai/api package using turbo? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "^(?![\\s\\S]*npx)(?=[\\s\\S]*--filter[= ]@trycompai/api)[\\s\\S]*bunx\\s+turbo\\s+(run\\s+)?typecheck"
+    }
+  },
+  {
+    "id": "prisma-migrate",
+    "prompt": "What is the exact command to create a new database migration? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "^(?![\\s\\S]*npx)[\\s\\S]*bunx\\s+prisma\\s+migrate\\s+dev"
+    }
+  },
+  {
+    "id": "api-desc-limit",
+    "prompt": "In this repository's API endpoint contract, the @ApiOperation description must not exceed how many characters? Answer with ONLY the number, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "\\b240\\b"
+    }
+  },
+  {
+    "id": "dto-style",
+    "prompt": "In this repository, must request body DTOs be declared as classes or as interfaces? Answer with ONLY one word, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "(?i)\\bclass(es)?\\b"
+    }
+  },
+  {
+    "id": "agent-uploads",
+    "prompt": "According to this repository's API endpoint contract, file uploads coming from agents must use what mechanism instead of inline base64? Answer with ONLY the mechanism, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "(?i)(pre-?signed|s3\\s*-?\\s*key|s3key)"
+    }
+  },
+  {
+    "id": "summary-ci",
+    "prompt": "Which spec file fails the CI build when a public API endpoint is missing a meaningful @ApiOperation summary/description? Answer with ONLY the filename, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "openapi-docs\\.spec\\.ts"
+    }
+  },
+  {
+    "id": "responsive",
+    "prompt": "Every UI change in this repository must work at which four viewport widths by default? Answer with ONLY the widths, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "(?=[\\s\\S]*\\b375(?!\\d))(?=[\\s\\S]*\\b768(?!\\d))(?=[\\s\\S]*\\b1280(?!\\d))[\\s\\S]*\\b1920(?!\\d)"
+    }
+  },
+  {
+    "id": "build",
+    "prompt": "What is the exact command to build this monorepo? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "bun\\s+run\\s+build(?![:\\w-])"
+    }
+  },
+  {
+    "id": "max-lines",
+    "prompt": "What is the maximum number of lines allowed per file by this repository's code conventions? Answer with ONLY the number, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "\\b300\\b"
+    }
+  },
+  {
+    "id": "package-manager",
+    "prompt": "Which package manager does this repository mandate? Answer with ONLY the name, no explanation.",
+    "timeout_s": 240,
+    "check": {
+      "type": "regex",
+      "value": "(?i)\\bbun\\b"
+    }
+  }
+]

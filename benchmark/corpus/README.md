@@ -129,9 +129,11 @@ payload.
   will produce different numbers.
 - This is a Phase-0 scan corpus: it measures inventory, gaps, security and semantic
   consistency deterministically. The Phase-3 before/after efficacy eval (which makes
-  paid agent calls) has been run against one corpus repo so far — openai/codex, with
-  an honestly published null result; see [`evals/codex/`](evals/codex/README.md) —
-  and is not part of the deterministic corpus refresh.
+  paid agent calls) lives separately under [`evals/`](evals/): a null result on the
+  corpus member openai/codex ([`evals/codex/`](evals/codex/README.md)) and a positive
+  result on the disease-targeted addition trycompai/comp
+  ([`evals/comp/`](evals/comp/README.md), pinned by commit rather than submodule).
+  Neither is part of the deterministic corpus refresh.
 - Third-party findings are unadjudicated evidence. Unlike `EXTERNAL_VALIDATION.md`
   rounds, corpus refreshes do not individually verify whether each finding is genuine
   upstream drift or a scanner limitation; the corpus exists precisely to surface such

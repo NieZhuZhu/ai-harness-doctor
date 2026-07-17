@@ -12,8 +12,9 @@
 ## エビデンス
 
 - **harness を直せば、agent の挙動は測定可能なレベルで改善します。** 再現可能な before/after ベンチマークでは、矛盾した設定を 1 つの正準 `AGENTS.md` に統合した結果、客観的回答が **6/28 から 28/28** に改善し、flip-flop していた 2 つの不安定な回答が消え、同一タスクで平均 latency が 27%、記録された cost が 17% 低下しました — [方法論と生データ](benchmark/README.md)。
+- **実在のプロダクションリポジトリでも成立します。** trycompai/comp（活発に開発中の約 1.7k スターの bun monorepo。`CLAUDE.md` が `AGENTS.md` から分岐し、古い `npx` コマンドを教えたままでした）では、1 回の治療で客観的回答が **18/24 から 24/24** に改善 — 治療前は 2 回の実行とも決定論的に古いドキュメントをそのまま復唱していました — さらにレイテンシ 37% 減、agent ターン 45% 減。効果の境界も正直に公開しています。ドキュメントが健全な openai/codex では **null result** でした — [ポジティブ事例](benchmark/corpus/evals/comp/README.md) · [境界事例](benchmark/corpus/evals/codex/README.md)。
 - **この病はトップクラスの OSS でも現実に存在します。** 有名リポジトリ 14 件のコーパス（react、vscode、n8n、ollama、transformers、dify、supabase、gemini-cli、codex、home-assistant、zed、elasticsearch、cline、ghostty — 58k–247k スター、submodule で固定）では 10/14 がすでにルート `AGENTS.md` を持つ一方、決定論的な一括スキャン 1 回で 150 個の agent 設定ファイルから **96 件のギャップ、44 件の指示重複、15 件の宣言とコードの不一致、3 件の同一スコープ競合** が見つかりました — [コーパスとリポジトリ別結果](benchmark/corpus/README.md)。
-- **報告される検出結果は信頼できます。** 実リポジトリに対する 31 回の検証ラウンドの記録から、10 件の誤検出修正（openai/codex、microsoft/vscode、cline、gemini-cli など）が回帰テスト付きでリリースされ、保留中のクラスも隠さず公開記録されています — [外部検証ログ](EXTERNAL_VALIDATION.md)。
+- **報告される検出結果は信頼できます。** 実リポジトリに対する 37 回の検証ラウンドの記録から、13 件の誤検出修正（openai/codex、microsoft/vscode、cline、gemini-cli など）が回帰テスト付きでリリースされ、保留中のクラスも隠さず公開記録されています — [外部検証ログ](EXTERNAL_VALIDATION.md)。
 
 ## 60 秒で開始
 

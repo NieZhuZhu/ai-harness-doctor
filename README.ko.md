@@ -12,8 +12,9 @@
 ## 근거
 
 - **harness를 고치면 agent 성능이 측정 가능하게 좋아집니다.** 재현 가능한 before/after 벤치마크에서 모순된 설정을 하나의 정본 `AGENTS.md`로 통합하자 객관식 정답이 **6/28에서 28/28**로 올랐고, flip-flop하던 불안정한 답변 2개가 사라졌으며, 동일 작업에서 평균 latency 27%, 기록된 cost 17%가 줄었습니다 — [방법론과 원본 데이터](benchmark/README.md).
+- **실제 프로덕션 저장소에서도 성립합니다.** trycompai/comp(활발히 개발 중인 약 1.7k 스타 bun monorepo로, `CLAUDE.md`가 `AGENTS.md`에서 분기된 뒤 여전히 낡은 `npx` 명령을 가르치고 있었습니다)에서 치료 1회로 agent 정답이 **18/24에서 24/24**로 올랐습니다 — 치료 전에는 두 번의 실행 모두 낡은 문서를 결정론적으로 그대로 되풀이했습니다 — 동시에 지연 시간 37%, agent 턴 45% 감소. 효과의 경계도 정직하게 공개합니다: 문서가 건강한 openai/codex에서는 **null result**였습니다 — [긍정 사례](benchmark/corpus/evals/comp/README.md) · [경계 사례](benchmark/corpus/evals/codex/README.md).
 - **이 문제는 오픈소스 최상위 저장소에서도 실재합니다.** 유명 저장소 14곳의 코퍼스(react, vscode, n8n, ollama, transformers, dify, supabase, gemini-cli, codex, home-assistant, zed, elasticsearch, cline, ghostty — 58k–247k 스타, submodule로 고정)에서 10/14이 이미 루트 `AGENTS.md`를 갖추고 있음에도, 결정론적 일괄 스캔 한 번으로 agent 설정 파일 150개에서 **갭 96건, 지침 중복 44건, 선언-코드 불일치 15건, 동일 범위 충돌 3건**이 드러났습니다 — [코퍼스와 저장소별 결과](benchmark/corpus/README.md).
-- **신뢰할 수 있는 결과.** 실제 저장소 대상 31회의 검증 라운드 기록에서 오탐 수정 10건(openai/codex, microsoft/vscode, cline, gemini-cli 등)이 회귀 테스트와 함께 릴리스되었고, 보류된 유형도 숨기지 않고 공개 기록합니다 — [외부 검증 로그](EXTERNAL_VALIDATION.md).
+- **신뢰할 수 있는 결과.** 실제 저장소 대상 37회의 검증 라운드 기록에서 오탐 수정 13건(openai/codex, microsoft/vscode, cline, gemini-cli 등)이 회귀 테스트와 함께 릴리스되었고, 보류된 유형도 숨기지 않고 공개 기록합니다 — [외부 검증 로그](EXTERNAL_VALIDATION.md).
 
 ## 60초 만에 시작
 

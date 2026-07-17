@@ -12,8 +12,9 @@
 ## 效果证据
 
 - **修好 harness，agent 的表现可测量地变好。** 在可复现的前后对照基准中，把互相冲突的配置整合成一份规范 `AGENTS.md` 后，agent 客观题正确数从 **6/28 提升到 28/28**，两个反复横跳的不稳定回答全部消除，相同任务的平均延迟下降 27%、记录成本下降 17% —— [方法论与原始数据](benchmark/README.md)。
+- **在真实生产仓库上同样成立。** 在 trycompai/comp（约 1.7k star、活跃开发的 bun monorepo，其 `CLAUDE.md` 从 `AGENTS.md` 分叉后仍在教已过期的 `npx` 命令）上，一次治疗就让 agent 客观题从 **18/24 提升到 24/24**——治疗前它在两轮运行中都确定性地逐字复读过期文档——同时延迟下降 37%、agent 轮数减少 45%；效果边界也如实公开：在文档本就健康的 openai/codex 上发布了**无效果的 null result** —— [正面案例](benchmark/corpus/evals/comp/README.md) · [边界案例](benchmark/corpus/evals/codex/README.md)。
 - **这个病在开源顶流仓库里真实存在。** 由 14 个知名仓库组成的语料库（react、vscode、n8n、ollama、transformers、dify、supabase、gemini-cli、codex、home-assistant、zed、elasticsearch、cline、ghostty，58k–247k star，以 submodule 固定版本）中 10/14 已有根 `AGENTS.md`，但一次确定性批量扫描仍在 150 个 agent 配置文件中发现 **96 个缺口、44 处指令重叠、15 处声明与代码不一致、3 处同层冲突** —— [语料库与逐仓结果](benchmark/corpus/README.md)。
-- **报告的发现值得信任。** 针对真实仓库的 31 轮验证记录已产出十次误报修复（openai/codex、microsoft/vscode、cline、gemini-cli 等），每次都随回归测试发布；暂缓处理的类别公开记录、绝不隐藏 —— [外部验证日志](EXTERNAL_VALIDATION.md)。
+- **报告的发现值得信任。** 针对真实仓库的 37 轮验证记录已产出十三次误报修复（openai/codex、microsoft/vscode、cline、gemini-cli 等），每次都随回归测试发布；暂缓处理的类别公开记录、绝不隐藏 —— [外部验证日志](EXTERNAL_VALIDATION.md)。
 
 ## 60 秒开始
 

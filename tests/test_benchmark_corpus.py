@@ -98,8 +98,8 @@ class BenchmarkCorpusConsistencyTests(unittest.TestCase):
             self.assertIn(f"`{name}`", text, f"corpus README must document {name}")
 
 
-CODEX_EVAL_DIR = ROOT / "benchmark" / "corpus" / "evals" / "codex"
-CODEX_EVAL_RESULTS = [
+EVALS_DIR = ROOT / "benchmark" / "corpus" / "evals"
+EVAL_RESULTS = [
     "results-before.json",
     "results-before-run2.json",
     "results-after.json",
@@ -107,68 +107,76 @@ CODEX_EVAL_RESULTS = [
 ]
 
 
-class CodexRealRepoEvalConsistencyTests(unittest.TestCase):
-    """Guard the committed openai/codex before/after eval artifacts.
+class RealRepoEvalConsistencyTests(unittest.TestCase):
+    """Guard every committed real-repo before/after eval under evals/.
 
-    Like the corpus guard above, this reads only committed files: the task
-    pack, the four persisted result files, and the eval README must agree with
-    each other and stay host-independent, so a future re-run cannot silently
-    commit data that contradicts the documented (null) result.
+    Like the corpus guard above, this reads only committed files: for each
+    eval directory the task pack, the four persisted result files, and the
+    eval README must agree with each other and stay host-independent, so a
+    future re-run cannot silently commit data that contradicts the documented
+    result (null or positive alike).
     """
 
-    def setUp(self):
-        self.tasks = json.loads((CODEX_EVAL_DIR / "tasks.json").read_text(encoding="utf-8"))
-        self.readme = (CODEX_EVAL_DIR / "README.md").read_text(encoding="utf-8")
+    def eval_dirs(self):
+        dirs = sorted(d for d in EVALS_DIR.iterdir() if d.is_dir())
+        self.assertGreaterEqual(len(dirs), 1, "at least one committed eval expected")
+        return dirs
 
-    def test_task_pack_is_well_formed(self):
-        self.assertGreaterEqual(len(self.tasks), 10)
-        ids = [task["id"] for task in self.tasks]
-        self.assertEqual(len(ids), len(set(ids)), "task ids must be unique")
-        for task in self.tasks:
-            self.assertEqual(task["check"]["type"], "regex", task["id"])
-            re.compile(task["check"]["value"])
+    def test_task_packs_are_well_formed(self):
+        for d in self.eval_dirs():
+            tasks = json.loads((d / "tasks.json").read_text(encoding="utf-8"))
+            self.assertGreaterEqual(len(tasks), 10, d.name)
+            ids = [task["id"] for task in tasks]
+            self.assertEqual(len(ids), len(set(ids)), f"{d.name}: task ids must be unique")
+            for task in tasks:
+                self.assertEqual(task["check"]["type"], "regex", f"{d.name}:{task['id']}")
+                re.compile(task["check"]["value"])
 
     def test_results_cover_exactly_the_task_pack(self):
-        expected_ids = sorted(task["id"] for task in self.tasks)
-        for name in CODEX_EVAL_RESULTS:
-            payload = json.loads((CODEX_EVAL_DIR / "results" / name).read_text(encoding="utf-8"))
-            self.assertTrue(payload["label"].startswith("codex-"), name)
-            self.assertEqual(sorted(t["id"] for t in payload["tasks"]), expected_ids, name)
-            for record in payload["tasks"]:
-                self.assertFalse(record["timed_out"], f"{name}:{record['id']}")
+        for d in self.eval_dirs():
+            tasks = json.loads((d / "tasks.json").read_text(encoding="utf-8"))
+            expected_ids = sorted(task["id"] for task in tasks)
+            for name in EVAL_RESULTS:
+                payload = json.loads((d / "results" / name).read_text(encoding="utf-8"))
+                self.assertTrue(payload["label"].startswith(f"{d.name}-"), f"{d.name}:{name}")
+                self.assertEqual(
+                    sorted(t["id"] for t in payload["tasks"]), expected_ids, f"{d.name}:{name}"
+                )
+                for record in payload["tasks"]:
+                    self.assertFalse(record["timed_out"], f"{d.name}:{name}:{record['id']}")
 
     def test_committed_eval_artifacts_are_host_independent(self):
-        files = [CODEX_EVAL_DIR / "tasks.json", CODEX_EVAL_DIR / "README.md"]
-        files += [CODEX_EVAL_DIR / "results" / name for name in CODEX_EVAL_RESULTS]
-        files.append(CODEX_EVAL_DIR / "results" / "report.md")
-        for path in files:
-            raw = path.read_text(encoding="utf-8")
-            for marker in ("/Users/", "/home/", "C:\\\\", "/private/tmp"):
-                self.assertNotIn(marker, raw, path.name)
+        for d in self.eval_dirs():
+            files = [d / "tasks.json", d / "README.md", d / "results" / "report.md"]
+            files += [d / "results" / name for name in EVAL_RESULTS]
+            for path in files:
+                raw = path.read_text(encoding="utf-8")
+                for marker in ("/Users/", "/home/", "C:\\", "/private/tmp"):
+                    self.assertNotIn(marker, raw, f"{d.name}:{path.name}")
 
     def test_readme_pass_counts_match_committed_results(self):
-        for side in ("before", "after"):
-            passed = 0
-            total = 0
-            for name in CODEX_EVAL_RESULTS:
-                if f"-{side}" not in name:
-                    continue
-                payload = json.loads(
-                    (CODEX_EVAL_DIR / "results" / name).read_text(encoding="utf-8")
+        for d in self.eval_dirs():
+            readme = (d / "README.md").read_text(encoding="utf-8")
+            for side in ("before", "after"):
+                passed = 0
+                total = 0
+                for name in EVAL_RESULTS:
+                    if f"-{side}" not in name:
+                        continue
+                    payload = json.loads((d / "results" / name).read_text(encoding="utf-8"))
+                    passed += sum(1 for t in payload["tasks"] if t["passed"])
+                    total += len(payload["tasks"])
+                self.assertIn(
+                    f"| {side} | {passed}/{total} |",
+                    readme,
+                    f"{d.name}: README table row for `{side}` must match the committed results",
                 )
-                passed += sum(1 for t in payload["tasks"] if t["passed"])
-                total += len(payload["tasks"])
-            self.assertIn(
-                f"| {side} | {passed}/{total} |",
-                self.readme,
-                f"README table row for `{side}` must match the committed results",
-            )
 
-    def test_readme_documents_the_corpus_pin(self):
-        gitmodules = GITMODULES.read_text(encoding="utf-8")
-        self.assertIn("benchmark/corpus/repos/codex", gitmodules)
-        pin = re.search(r"`([0-9a-f]{40})`", self.readme)
-        self.assertIsNotNone(pin, "eval README must state the pinned commit")
+    def test_readme_documents_the_pinned_commit(self):
+        for d in self.eval_dirs():
+            readme = (d / "README.md").read_text(encoding="utf-8")
+            pin = re.search(r"`([0-9a-f]{40})`", readme)
+            self.assertIsNotNone(pin, f"{d.name}: eval README must state the pinned commit")
 
 
 if __name__ == "__main__":
