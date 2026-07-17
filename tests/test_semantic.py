@@ -540,6 +540,22 @@ class SemanticPathTests(unittest.TestCase):
             self.assertFalse(facts.path_resolves_in_subtree(root, "pkg/src/private", index))
             self.assertFalse(facts.path_resolves_in_subtree(root, "external/secret.txt", index))
 
+    def test_nested_repository_boundary_excluded_from_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(root, "package.json", '{"name": "host", "scripts": {"host-build": "x"}}')
+            write(root, "sub/.git", "gitdir: elsewhere\n")
+            write(root, "sub/package.json", '{"name": "other", "scripts": {"other-build": "x"}}')
+            write(root, "sub/src/config/settings.py", "# other repo\n")
+
+            scripts = facts.all_package_scripts(root)
+            self.assertIn("host-build", scripts)
+            self.assertNotIn("other-build", scripts)
+            self.assertNotIn("other", facts.all_package_names(root))
+
+            index = facts.build_subtree_path_index(root)
+            self.assertFalse(facts.path_resolves_in_subtree(root, "src/config", index))
+
     def test_missing_path_flagged(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "src/index.ts", "// exists")

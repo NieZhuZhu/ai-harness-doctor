@@ -1485,6 +1485,17 @@ class NestedAgentsWalkTests(unittest.TestCase):
             self.assertFalse([p for p in found if "node_modules" in p or "dist" in p or ".git" in p])
             self.assertNotIn("AGENTS.md", found)  # root itself excluded
 
+    def test_nested_repository_agents_is_not_a_drift_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            (repo / "sub").mkdir(parents=True)
+            (repo / "sub" / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            (repo / "sub" / "AGENTS.md").write_text("other repo\n", encoding="utf-8")
+            (repo / "pkg").mkdir()
+            (repo / "pkg" / "AGENTS.md").write_text("same repo\n", encoding="utf-8")
+            found = check_drift.nested_agents(repo)
+            self.assertEqual(found, ["pkg/AGENTS.md"])
+
     @unittest.skipUnless(_can_symlink_dirs(), "directory symlinks unsupported on this platform")
     def test_symlink_loop_terminates(self):
         with tempfile.TemporaryDirectory() as td:

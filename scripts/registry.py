@@ -9,6 +9,7 @@ the JSON. Python 3.9 standard library only; no runtime dependencies.
 """
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -31,6 +32,24 @@ STUB_POINTER_MAX_BYTES = 800
 # scan.py (the main scanner) and facts.py (the fact-reader engines) so a
 # repo-wide walk in one module can't drift from the other (TD-02).
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
+
+
+def prune_walk_dirs(dirpath, dirnames):
+    """In-place ``os.walk`` pruning shared by every repository walk.
+
+    Drops ``SKIP_DIRS`` entries and nested-repository boundaries: a
+    subdirectory that carries its own ``.git`` (a submodule working tree or a
+    vendored checkout — ``.git`` is a file in the former, a directory in the
+    latter) is a different repository, so its instruction files, manifests and
+    paths are that repository's harness, not this one's. Scanning a nested
+    repository is still supported by passing it as the ``repo_root`` (its own
+    ``.git`` sits at the root, which this prune never inspects).
+    """
+    dirnames[:] = [
+        d
+        for d in dirnames
+        if d not in SKIP_DIRS and not os.path.lexists(os.path.join(dirpath, d, ".git"))
+    ]
 
 # Single source of truth mapping a committed lockfile name -> the package manager
 # it implies. Shared by semantic.py, check_drift.py and canonicalize.py so the
