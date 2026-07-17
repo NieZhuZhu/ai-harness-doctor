@@ -240,6 +240,12 @@ def render_merge_suggestions(report, root=None):
                 f"keep the shared content in `AGENTS.md` and reduce these files to stubs:"
             )
             for path in (o["a"], o["b"]):
+                if path == "AGENTS.md":
+                    # The canonical single-source-of-truth file is the merge
+                    # TARGET named on the line above ("keep the shared content in
+                    # `AGENTS.md`"), not a file to reduce to an import stub
+                    # pointing at itself. Only its overlap partner is downgraded.
+                    continue
                 if path in nested_canonical_paths:
                     lines.append(
                         f"  - [ ] preserve nested canonical `{path}` and remove only redundant shared content; "

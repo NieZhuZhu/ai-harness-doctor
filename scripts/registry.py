@@ -201,6 +201,38 @@ _BRANCH_PREFIX_RE = re.compile(r"^[A-Za-z][\w.-]*/$")
 # `<remote>/<branch>` ref used for diffs, not a directory named `origin`; see
 # declared_paths.
 _GIT_REMOTE_PREFIXES = ("origin/", "upstream/")
+# Conventional git-flow / GitHub branch-type prefixes. A backtick token whose
+# first segment is one of these AND whose bounded same-line context names a git
+# branch (e.g. "create a feature branch", "checkout -b") is an EXAMPLE branch
+# NAME (`feature/my-new-feature`, `fix/login-bug`), not a repo directory. The
+# bare-prefix form (`feat/`, `fix/`) is already handled by `_BRANCH_PREFIX_RE`;
+# this covers the concrete `<prefix>/<name>` form that slips through because its
+# interior `/` makes it look path-like. Requiring BOTH the prefix and the branch
+# cue keeps real directories that merely share a prefix word (`docs/guide`,
+# `test/fixtures`, `release/notes.md`) checked. See _is_labeled_branch_ref.
+_BRANCH_TYPE_PREFIXES = (
+    "feature/",
+    "feat/",
+    "fix/",
+    "bugfix/",
+    "hotfix/",
+    "release/",
+    "chore/",
+    "refactor/",
+)
+# Same-line cue that a token is being introduced as a git branch name.
+_BRANCH_CONTEXT_RE = re.compile(r"\bbranch(?:es)?\b|\bcheckout\b|\bgit\s+switch\b", re.I)
+# Filesystem cues that force a path classification and override the branch cue
+# (fail-closed toward paths): "edit the `feature/login.tsx` file" is a real path
+# even though the line mentions a branch. Deliberately narrow.
+_BRANCH_PATH_CUE_RE = re.compile(
+    r"\b(?:files?|directory|directories|folder|path|edit|open|modify|source|"
+    r"located|repository|repo)\b",
+    re.I,
+)
+# Bounded window (chars) scanned around the token so section-level prose intent
+# never leaks into the branch classification.
+_BRANCH_LABEL_WINDOW = 40
 # A path segment that looks like a hostname (contains a literal `.`, not a
 # leading one like `.github`) — the first component of a Go import/module
 # path (`github.com/org/pkg`, `charm.land/bubbletea/v2`), never a real
@@ -351,6 +383,30 @@ def _is_labeled_runtime_identifier(line, match):
     return bool(_NONPATH_LABEL_RE.search(window))
 
 
+def _is_labeled_branch_ref(line, match):
+    """True when a backtick token is an example git BRANCH NAME rather than a
+    repo path.
+
+    Requires two independent signals so real directories are never over-
+    suppressed: the token's first segment is a conventional branch-type prefix
+    (`feature/`, `fix/`, ...), AND bounded same-line context names a git branch
+    (`branch`, `checkout`, `git switch`). Reads only a small window around the
+    exact match span so section-level prose never leaks in, and an explicit
+    filesystem cue (file, directory, edit, ...) always wins and keeps the token a
+    path.
+    """
+    token = match.group(1).strip()
+    if "/" not in token or not token.startswith(_BRANCH_TYPE_PREFIXES):
+        return False
+    before = line[max(0, match.start() - _BRANCH_LABEL_WINDOW):match.start()]
+    after = line[match.end():match.end() + _BRANCH_LABEL_WINDOW]
+    window = before + " " + after
+    # Explicit filesystem intent wins over the branch cue (fail-closed to path).
+    if _BRANCH_PATH_CUE_RE.search(window):
+        return False
+    return bool(_BRANCH_CONTEXT_RE.search(window))
+
+
 def declared_paths(text):
     """Return repo-relative paths referenced in inline backticks as ``{path, line}``.
 
@@ -419,6 +475,17 @@ def declared_paths(text):
             # AGENTS.md, which states: "use `dev` or `origin/dev` for diffs" and
             # "do not use ... type prefixes such as `feat/` or `fix/`").
             if _BRANCH_PREFIX_RE.match(token) or token.startswith(_GIT_REMOTE_PREFIXES):
+                continue
+            # The concrete `<branch-type-prefix>/<name>` form (`feature/my-new-
+            # feature`, `fix/login-bug`) is an example branch NAME when the same
+            # line names a git branch, not a repo directory. See
+            # _is_labeled_branch_ref for the two-signal (prefix + branch cue)
+            # guard that keeps real `docs/guide`-style directories checked. Found
+            # running the full chain against mem0ai/mem0, whose AGENTS.md says
+            # "Create a feature branch from `main` (e.g., `feature/my-new-
+            # feature`)" — flagged MISSING by the Phase-0 semantic scan and the
+            # Phase-2 D2 gate even though no such directory should exist.
+            if _is_labeled_branch_ref(line, m):
                 continue
             # Go import/module paths are conventionally `domain.tld/org/pkg`
             # (a "vanity" or SCM-hosted path) — the first segment looks like

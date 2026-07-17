@@ -243,6 +243,28 @@ class CanonicalizeTests(unittest.TestCase):
         output = canonicalize.render_plan(report)
         self.assertIn("**package_manager** (scope `packages/api`)", output)
 
+    def test_plan_never_reduces_canonical_agents_md_to_a_self_stub(self):
+        # The overlap consolidation names AGENTS.md as the merge TARGET ("keep the
+        # shared content in `AGENTS.md`"), so the canonical file itself must never
+        # be listed as a file to "reduce to an import stub pointing at
+        # `AGENTS.md`" — that would tell the user to collapse the single source of
+        # truth into a stub pointing at itself. Only the overlap partner is
+        # downgraded. Found running the plan against langgraph and mem0, whose
+        # AGENTS.md fully overlaps a sibling CLAUDE.md.
+        report = {
+            "files": [
+                {"path": "AGENTS.md", "tool": "AGENTS.md", "bytes": 10, "lines": 1},
+                {"path": "CLAUDE.md", "tool": "CLAUDE.md", "bytes": 10, "lines": 1},
+            ],
+            "overlaps": [{"a": "AGENTS.md", "b": "CLAUDE.md", "percent": 100.0}],
+            "conflicts": [],
+            "instruction_scopes": [{"path": "AGENTS.md", "scope": ".", "parent": None}],
+            "scope_overrides": [],
+        }
+        output = canonicalize.render_plan(report)
+        self.assertIn("reduce `CLAUDE.md` to an import stub pointing at `AGENTS.md`", output)
+        self.assertNotIn("reduce `AGENTS.md` to an import stub", output)
+
     def test_write_stubs_dry_run_prints_diff_and_writes_nothing(self):
         with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"

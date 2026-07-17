@@ -469,6 +469,52 @@ class SharedConstantConsistencyTests(unittest.TestCase):
                 expected,
             )
 
+    def test_example_branch_names_are_not_declared_paths(self):
+        # A concrete `<branch-type-prefix>/<name>` token is an EXAMPLE branch
+        # name, not a repo directory, when the same line names a git branch. The
+        # bare-prefix form (`feat/`) is handled elsewhere; this covers the full
+        # branch name that slips through because its interior `/` makes it look
+        # path-like. Found running the full chain against mem0ai/mem0: "Create a
+        # feature branch from `main` (e.g., `feature/my-new-feature`)".
+        suppressed = [
+            "Create a feature branch from `main` (e.g., `feature/my-new-feature`).",
+            "Run `git checkout -b fix/login-bug` to start.",
+            "Name the branch `bugfix/crash-on-start`.",
+            "Cut a `release/2.0.0` branch before shipping.",
+        ]
+        for text in suppressed:
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"example branch name in {text!r} wrongly classified as a path",
+            )
+            # Both stages share the classifier, so neither the Phase-0 semantic
+            # check nor the Phase-2 D2 gate can flag it.
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # Real directories are never over-suppressed. Two independent signals are
+        # required: a branch-type prefix AND a same-line branch cue. Anything
+        # missing one signal — or carrying an explicit filesystem cue — stays a
+        # checked path.
+        kept = {
+            # branch cue present, but prefix is not a branch-type prefix
+            "The `src/utils` module lives on this branch.": ["src/utils"],
+            # branch-type prefix present, but no branch cue on the line
+            "Edit `release/notes.md` before you ship.": ["release/notes.md"],
+            # both branch-type prefix and branch cue, but an explicit path cue wins
+            "Edit the `feature/login.tsx` file on your branch.": ["feature/login.tsx"],
+        }
+        for text, expected in kept.items():
+            self.assertEqual(
+                [d["path"] for d in registry.declared_paths(text)],
+                expected,
+                f"real path in {text!r} wrongly suppressed as a branch name",
+            )
+            self.assertEqual(
+                [d["path"] for d in semantic.declared_paths(text)],
+                expected,
+            )
+
     def test_fact_readers_single_sourced_across_engines(self):
         # TD-02: the generic repo fact-readers and declaration extractors used to
         # be copy-pasted into both semantic.py (Phase-0) and check_drift.py
