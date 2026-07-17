@@ -9,7 +9,11 @@
 <p><a href="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml"><img align="left" alt="CI" src="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg"></a> <a href="https://www.npmjs.com/package/ai-harness-doctor"><img align="left" alt="npm version" src="https://img.shields.io/npm/v/ai-harness-doctor.svg"></a> <img align="left" alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"> <img align="left" alt="Python 3.9+" src="https://img.shields.io/badge/Python-3.9%2B-blue.svg"> <img align="left" alt="Node &gt;=16" src="https://img.shields.io/badge/Node-%3E%3D16-green.svg"></p>
 <br clear="left">
 
-> 포함된 benchmark에서 canonicalization은 객관식 정답을 **6/28에서 28/28**로 높였고, flip-flop을 제거했으며, 평균 latency를 27%, 기록된 cost를 17% 줄였습니다.
+## 근거
+
+- **harness를 고치면 agent 성능이 측정 가능하게 좋아집니다.** 재현 가능한 before/after 벤치마크에서 모순된 설정을 하나의 정본 `AGENTS.md`로 통합하자 객관식 정답이 **6/28에서 28/28**로 올랐고, flip-flop하던 불안정한 답변 2개가 사라졌으며, 동일 작업에서 평균 latency 27%, 기록된 cost 17%가 줄었습니다 — [방법론과 원본 데이터](benchmark/README.md).
+- **이 문제는 오픈소스 최상위 저장소에서도 실재합니다.** 유명 저장소 14곳의 코퍼스(react, vscode, n8n, ollama, transformers, dify, supabase, gemini-cli, codex, home-assistant, zed, elasticsearch, cline, ghostty — 58k–247k 스타, submodule로 고정)에서 10/14이 이미 루트 `AGENTS.md`를 갖추고 있음에도, 결정론적 일괄 스캔 한 번으로 agent 설정 파일 150개에서 **갭 96건, 지침 중복 44건, 선언-코드 불일치 15건, 동일 범위 충돌 3건**이 드러났습니다 — [코퍼스와 저장소별 결과](benchmark/corpus/README.md).
+- **신뢰할 수 있는 결과.** 실제 저장소 대상 31회의 검증 라운드 기록에서 오탐 수정 10건(openai/codex, microsoft/vscode, cline, gemini-cli 등)이 회귀 테스트와 함께 릴리스되었고, 보류된 유형도 숨기지 않고 공개 기록합니다 — [외부 검증 로그](EXTERNAL_VALIDATION.md).
 
 ## 60초 만에 시작
 

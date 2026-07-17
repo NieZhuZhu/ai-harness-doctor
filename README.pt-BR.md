@@ -9,7 +9,11 @@ Ele encontra o drift antes de um PR quebrado, consolida orientações em um `AGE
 <p><a href="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml"><img align="left" alt="CI" src="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg"></a> <a href="https://www.npmjs.com/package/ai-harness-doctor"><img align="left" alt="npm version" src="https://img.shields.io/npm/v/ai-harness-doctor.svg"></a> <img align="left" alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"> <img align="left" alt="Python 3.9+" src="https://img.shields.io/badge/Python-3.9%2B-blue.svg"> <img align="left" alt="Node &gt;=16" src="https://img.shields.io/badge/Node-%3E%3D16-green.svg"></p>
 <br clear="left">
 
-> No benchmark incluído, a canonicalização elevou as respostas corretas de **6/28 para 28/28**, eliminou oscilações, reduziu a latência média em 27% e o custo registrado em 17%.
+## Evidências
+
+- **Consertar o harness melhora o agente de forma mensurável.** No benchmark reproduzível antes/depois, consolidar uma configuração contraditória em um único `AGENTS.md` canônico elevou as respostas objetivas corretas de **6/28 para 28/28**, eliminou as duas respostas instáveis e reduziu a latência média em 27% e o custo registrado em 17% em tarefas idênticas — [metodologia e dados brutos](benchmark/README.md).
+- **A doença é real na elite do open source.** Um corpus de 14 repositórios conhecidos (react, vscode, n8n, ollama, transformers, dify, supabase, gemini-cli, codex, home-assistant, zed, elasticsearch, cline, ghostty — 58k–247k estrelas, fixados como submodules) mostra que 10/14 já trazem um `AGENTS.md` raiz e, ainda assim, uma única varredura determinística em lote revela **96 lacunas, 44 arquivos de instruções sobrepostos, 15 divergências declaração-código e 3 conflitos de mesmo escopo** em 150 arquivos de configuração de agentes — [corpus e resultados por repo](benchmark/corpus/README.md).
+- **Descobertas confiáveis.** 31 rodadas de validação registradas contra repositórios reais produziram dez correções de falsos positivos (openai/codex, microsoft/vscode, cline, gemini-cli, …), cada uma lançada com testes de regressão; classes adiadas são registradas abertamente, nunca escondidas — [registro de validação externa](EXTERNAL_VALIDATION.md).
 
 ## Comece em 60 segundos
 
