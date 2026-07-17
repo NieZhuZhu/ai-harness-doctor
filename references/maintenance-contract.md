@@ -68,6 +68,8 @@ when changing GitHub integration, baselines, CI, release, or installer state.
   self copies together.
 - Privileged workflow inputs enter scripts only through `env`, are validated,
   and remain quoted.
+- Action/workflow/release changes must pass `actionlint` and never suppress
+  failures.
 - Release tags must be on `origin/main`. An existing npm version is skipped only
   when registry `gitHead` and packed tarball shasum match the exact tag.
 - Feature = minor, bugfix-only = patch, breaking = major. Stable moves
@@ -86,5 +88,5 @@ when changing GitHub integration, baselines, CI, release, or installer state.
   cleaned within the transactions root. Present-but-malformed/unsafe journals,
   tampered backups, or post-crash external edits fail closed with evidence
   retained.
-- Preserve user content and unowned collisions. Tests always use isolated
-  `HOME`; never write real agent config directories.
+- Preserve user content and unowned collisions. Installer tests always use an
+  isolated temporary `HOME`; never write to real agent config directories.

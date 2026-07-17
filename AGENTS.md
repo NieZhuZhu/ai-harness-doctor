@@ -43,35 +43,29 @@ node bin/cli.js help
 - Instruction scope is lexical: same-scope differences conflict; descendant differences are non-blocking overrides. Structured applicability stays registry-sourced, bounded/fail-closed, and full-byte security scanned; conditional/manual/invalid/ignored stays diagnostic. Never infer prose scopes or grant mutation authority from recursive discovery.
 - Explain reuses scan scope/containment: canonical files form the chain; modeled rules may apply automatically, while unmodeled sources stay diagnostic. Keep CLI/MCP/adapter contracts synchronized.
 - Path truth is repository-owned: contained `.gitignore` rules may explain absence; synthetic Git metadata excludes host state and fails closed. Nested D1/D2/D6 use `facts.ancestor_dirs` nearest-first without sibling leakage; D7 stays file-relative.
-- Baselines are visible debt registers, not ignores: HIGH security is ineligible; identity is line-independent; classify new/known/resolved debt; exit 9 checks repaired entries; prune only subtracts resolved entries. See `references/maintenance-contract.md`.
-- SARIF/Action is single-run and self-describing. Preserve fingerprints/categories, `findings > maintenance > ok`, exact exits, and real `uses: ./` tests. `action-run.js` owns bounded no-shell argv; `action-report.js` owns outputs. See `references/maintenance-contract.md`.
-- PR/batch feedback and GitHub guard lifecycle follow `references/maintenance-contract.md`; never leak host-resolved paths or post baselined debt as active.
+See `references/maintenance-contract.md`.
+- Baseline: HIGH security ineligible; repaired debt: exit 9.
+- Action: `findings > maintenance > ok`; `action-run.js`: bounded `args-json`/legacy `shell:false` argv; `action-report.js` owns outputs; bundled scan/drift + exact npm pre/post-publish.
+- Guard/PR sync; exact-title issue upsert; recovery comment/close; unrelated issues untouched; never expose host paths/baselined debt.
+- CI/release: `npm ci --ignore-scripts`; committed `package-lock.json`/`registry.npmjs.org`; lint/tests/packed candidate; reruns: `gitHead`/packed shasum; secret scanning/push protection; required checks/resolved conversations; admin bypass: self-approval, never red/pending.
+- Installer state authorizes deletion; parsing fails closed; replacement is atomic.
 - Eval validates tasks/results before side effects; runner and explicit judge exit 0 are prerequisites for a passing record; failed runner output is never judged. Derive health from records, require cached agreement, then verify evidence freshness before gates. Refresh committed results honestly.
 - Validate the complete eval task pack before any runner, judge, evidence hash, or write. Task-declared evidence joins explicit evidence automatically: files bind exact hashes, directories bind existence/type, all before trusting health.
 - Targeted eval reuses explain scope/containment. Keep root IDs; use local scripts/deps, nearest clear manager/runtime, inherited canonical rules, relative evidence, and no automatic all-scope expansion.
 - Root/scoped eval and Treat draft share `facts.py` containment and ambiguity semantics; external symlinks never supply facts, contained symlinks keep lexical evidence, and competing managers cause abstention.
 - MCP tools stay read-only. Sync negotiated-version wire shapes, required/closed schemas, exit policies, stdio tests, and docs; findings are not operational failures, and legacy clients must not receive modern-only fields.
-- English is the canonical README. Every README change must update all required translations listed in `scripts/check_readme_sync.py` in the same PR. `npm run lint:docs` enforces identical heading levels, fenced code, table shape, and link targets; translate prose only.
-- Keep `assets/guard/` and adapted self-bootstrap workflows synchronized; detailed GitHub guard/issue contracts live in `references/maintenance-contract.md`.
+- English is canonical; sync zh-CN, ja, es, ko, pt-BR, and fr via `scripts/check_readme_sync.py` per PR. `npm run lint:docs` enforces heading levels, fenced code, table shape, and link targets; translate prose only.
 - Shipped guards/pre-commit hooks call only packaged public CLI commands usable without a local `scripts/` tree; behavior changes need an end-to-end consumer fixture. Self-bootstrap copies may use local code only when labeled.
-- CI/release/repository operations follow `references/maintenance-contract.md`: locked npm install, vetted Action SHAs, env-only privileged inputs, release identity checks, public lockfile sources, and admin bypass only for sole-maintainer self-approval—not red/pending CI.
-- Required lint uses `npm ci --ignore-scripts` over committed `package-lock.json`; public lockfile sources use `registry.npmjs.org`.
-- Local all-green `npm run check` runs lint, tests, then the packed npm candidate; CI keeps Python 3.9–3.12 and Node 16–22 matrix coverage.
-- Release reruns skip an existing npm version only when registry `gitHead` and packed tarball shasum match. PR/release Action proof covers bundled scan+drift, exact npm override, and stable post-publish verification.
-- Repository operations require secret scanning, push protection, required checks, and resolved conversations. Admin bypass is only for the sole-maintainer self-approval deadlock, never red/pending CI.
-- Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.
 
 # Testing requirements
 
 - Any change to `scripts/*.py` or `bin/cli.js` must ship with matching tests in the same commit; do not land behavior changes without test coverage.
 - Test fixtures live under `tests/fixtures/` and are read-only inputs — never modify or regenerate them to make a test pass.
-- Installer smoke tests must run against an isolated `HOME` temp directory so they never touch the real user environment (see Safety).
+- Installer tests follow Safety's isolated-HOME rule.
 
 # Safety
 
-- The installer must never write into the real `~/.claude`, `~/.codex`, or other user config directories; always target an isolated `HOME` during tests.
-- Installer state is authorization evidence; follow the lock/journal/recovery contract in `references/maintenance-contract.md` and test only with isolated HOME.
-- Installer manifest/state parsing fails closed and replacement is atomic; preserve ownership evidence and user content.
+- Installer tests: isolated temporary `HOME`; never write real agent config dirs.
 - Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
 - Repository-derived reads/probes/mutations use `scripts/facts.py` or the matching `bin/cli.js` guard helper. External symlinks neither affect output nor receive writes; mutations refuse symlinked files/parents. Only documented explicit inputs/outputs may be external.
 - Never commit secrets, tokens, or credentials.
@@ -97,5 +91,3 @@ Four repeatable loops reproduce repository maintenance through one gate/release 
 - Every behavior change to `scripts/*.py` or `bin/cli.js` must ship with matching tests in the same commit/PR (see Testing requirements).
 - Before opening a PR, run the full test suite (see Build & test) and a self-checkup with `python3 scripts/scan.py .` and `python3 scripts/check_drift.py .`; keep the drift health score at grade A.
 - Keep every required README listed in `scripts/check_readme_sync.py` synchronized in the same PR whenever public behavior or README content changes.
-- Action/workflow/release changes must satisfy `references/maintenance-contract.md`, update structural tests, pass real composite self-tests plus `actionlint`, and never suppress failures.
-- Weekly checkup failure opens/updates one exact-title issue; recovery comments and closes it; unrelated issues remain untouched.

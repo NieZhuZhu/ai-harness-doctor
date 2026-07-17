@@ -30,6 +30,13 @@ SUPPORT = ROOT / "SUPPORT.md"
 ISSUE_TEMPLATES = ROOT / ".github" / "ISSUE_TEMPLATE"
 PULL_REQUEST_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
 
+AGENTS = ROOT / "AGENTS.md"
+MAINTENANCE_CONTRACT = ROOT / "references" / "maintenance-contract.md"
+
+# AGENTS.md must stay under the progressive-disclosure budget so an agent
+# reading it on every turn pays bounded context cost.
+AGENTS_BUDGET_BYTES = 10240
+
 ACTION_PINS = {
     "actions/checkout": ("9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", "v7"),
     "actions/setup-node": ("820762786026740c76f36085b0efc47a31fe5020", "v7"),
@@ -1036,6 +1043,320 @@ class ActionMetadataTests(unittest.TestCase):
         self.assertIn("floating major tag", release_docs)
         self.assertIn("`1.x` -> `v1`", release_docs)
         self.assertIn("Marketplace", release_docs)
+
+    def _split_sections_by_heading(self, text, heading_prefix):
+        """Split text into sections by heading lines with the given prefix.
+
+        Returns a dict mapping heading text (with prefix stripped) to the
+        section body text (from the heading line's end to the next heading
+        with the same prefix). DOTALL is valid only within a section body.
+        """
+        lines = text.splitlines(keepends=True)
+        sections = {}
+        current_heading = None
+        current_body = []
+        for line in lines:
+            stripped = line.rstrip("\n\r")
+            if stripped.startswith(
+                heading_prefix + " "
+            ) and not stripped.startswith(
+                heading_prefix + heading_prefix[0] + " "
+            ):
+                # Heading with exactly this level (e.g. "# " but not "## ")
+                if current_heading is not None:
+                    sections[current_heading] = "".join(current_body)
+                current_heading = stripped[len(heading_prefix) + 1 :].strip()
+                current_body = []
+            else:
+                if current_heading is not None:
+                    current_body.append(line)
+        if current_heading is not None:
+            sections[current_heading] = "".join(current_body)
+        return sections
+
+    def test_agents_progressive_disclosure_budget_and_semantics(self):
+        """AGENTS.md stays under budget with exact headings, the
+        maintenance-contract route line, and root + contract invariants.
+
+        Final mode (under budget):  Conventions has the exact standalone
+        "See references/maintenance-contract.md." route + five summary
+        bullets (C1..C5).  Each requirement is scoped to its own bullet —
+        no root-wide DOTALL.
+
+        Legacy mode (over budget):  whole-file DOTALL assertions so the
+        parent fails ONLY on budget, not on structure/semantics.
+
+        Budget asserts last so wording/structure failures always surface.
+        Each mechanic is independent under subTest.
+        """
+        agents_text = AGENTS.read_text(encoding="utf-8")
+        agents_lines = agents_text.splitlines()
+        agents_bytes = len(agents_text.encode("utf-8"))
+
+        # Exact 8 heading sequence
+        self.assertEqual(
+            [
+                line
+                for line in agents_lines
+                if line.startswith("# ") and not line.startswith("## ")
+            ],
+            [
+                "# Project overview",
+                "# Project structure",
+                "# Build & test",
+                "# Conventions",
+                "# Testing requirements",
+                "# Safety",
+                "# Operational workflows",
+                "# Commit & PR",
+            ],
+            "AGENTS.md must have exactly the eight agreed top-level headings in order",
+        )
+
+        # Split into top-level sections
+        sections = self._split_sections_by_heading(agents_text, "#")
+        self.assertIn("Conventions", sections, "Conventions section must exist")
+        conventions_body = sections["Conventions"]
+        conventions_lines = conventions_body.splitlines()
+
+        # Exact standalone route line detection
+        EXACT_ROUTE_MARKER = "See `references/maintenance-contract.md`."
+        exact_route_index = None
+        for i, line in enumerate(conventions_lines):
+            if line.strip() == EXACT_ROUTE_MARKER:
+                exact_route_index = i
+                break
+
+        has_exact_route = exact_route_index is not None
+        under_budget = agents_bytes <= AGENTS_BUDGET_BYTES
+
+        # final <=budget → exact route mandatory; legacy >budget → route may be embedded
+        if under_budget and not has_exact_route:
+            self.fail(
+                "AGENTS.md is under budget but missing the exact standalone "
+                "`See references/maintenance-contract.md.` route line in Conventions"
+            )
+
+        # ROOT_REQUIREMENTS — unified (label, bullet_idx, final_pattern, legacy_pattern).
+        # legacy_pattern=None reuses final; bullet_idx=None means legacy-only.
+        # Final mode: per-bullet, no DOTALL.  Legacy mode: whole-file DOTALL.
+        ROOT_REQUIREMENTS = (
+            # C1 — Baselines (0)
+            ("C1 HIGH security ineligible", 0, r"HIGH security (?:is )?ineligible", None),
+            ("C1 repaired debt exits 9", 0, r"repaired.*exit(?:s)? 9|exit(?:s)? 9.*repaired", None),
+            # C2 — Action (1)
+            ("C2 findings > maintenance > ok", 1, r"findings > maintenance > ok", None),
+            ("C2 action-run bounded argv", 1,
+             r"action-run\.js.*bounded.*(?:no-shell|args-json|shell:false)",
+             r"action-run\.js.*bounded.*(?:no-shell|args-json)"),
+            ("C2 action-report owns outputs", 1,
+             r"action-report\.js.*owns.*outputs?|outputs.*action-report\.js",
+             r"action-report\.js.*(?:owns|outputs)"),
+            ("C2 bundled scan/drift + exact npm", 1, r"bundled.*scan.*drift.*exact npm", None),
+            # C3 — Guard/PR (2)
+            ("C3 guard/PR copies sync", 2, r"guard.*sync|copies sync|synchroni", None),
+            ("C3 exact-title issue upsert on failure", 2,
+             r"(?:failure|failures).*upsert.*exact.title.*issue|exact.title.*issue.*upsert",
+             r"Weekly checkup failure opens/updates one exact-title issue"),
+            ("C3 recovery comments and closes", 2, r"recovery.*comment.*close", None),
+            ("C3 unrelated issues untouched", 2,
+             r"unrelated.*(?:untouched|never touch)", None),
+            ("C3 host paths never leak", 2,
+             r"host.*path.*(?:never|not).*(?:leak|expose)|never.*(?:leak|expose).*host", None),
+            ("C3 baselined debt never exposed", 2,
+             r"baselined.*(?:not|never).*(?:active|leak|expose|post)|never.*(?:expose|post).*baselined", None),
+            # C4 — CI/release/repo (3)
+            ("C4 npm ci --ignore-scripts", 3, r"npm ci.*--ignore-scripts", None),
+            ("C4 committed package-lock + registry", 3,
+             r"committed.*package-lock\.json.*registry\.npmjs\.org|registry\.npmjs\.org.*package-lock", None),
+            ("C4 local lint/tests/packed candidate", 3,
+             r"lint.*test.*packed.*candidate|all-green.*lint.*tests.*packed", None),
+            ("C4 gitHead + packed shasum", 3, r"gitHead.*(?:packed|shasum)|shasum.*gitHead", None),
+            ("C4 secret scanning + push protection", 3, r"secret scanning.*push protection", None),
+            ("C4 required checks + resolved conversations", 3,
+             r"required checks.*conversation|conversation.*required checks", None),
+            ("C4 admin bypass self-approval never red/pending", 3,
+             r"admin bypass.*self.approval.*never.*red|self.approval.*admin.*bypass.*not.*red", None),
+            # C5 — Installer (4)
+            ("C5 state authorizes deletion", 4,
+             r"state.*authorizes? deletion|state is authorization evidence", None),
+            ("C5 fail-closed parse", 4,
+             r"fail[- ]closed.*(?:parse|parsing)|parsing fails closed", None),
+            ("C5 atomic replace/replacement", 4,
+             r"atomic.*(?:replace|replacement)|(?:replace|replacement).*atomic", None),
+            # Legacy-only: embedded route reference.
+            ("legacy: at least one maintenance-contract reference", None, None,
+             r"maintenance-contract\.md"),
+        )
+
+        if has_exact_route:
+            # FINAL MODE: scope C1..C5 to the five bullets after the route line.
+            bullet_lines = []
+            for line in conventions_lines[exact_route_index + 1 :]:
+                s = line.strip()
+                if not s:
+                    continue
+                if s.startswith("- "):
+                    bullet_lines.append(s[2:])
+                    if len(bullet_lines) == 5:
+                        break
+                else:
+                    break  # non-bullet, non-empty line ends the list
+
+            self.assertEqual(
+                len(bullet_lines), 5,
+                f"Expected exactly 5 summary bullets after the route line, found {len(bullet_lines)}",
+            )
+
+            # Per-bullet scoped assertions — no DOTALL, no cross-bullet leakage.
+            _LF = re.IGNORECASE
+            for label, bidx, pat, _l in ROOT_REQUIREMENTS:
+                if pat is None:
+                    continue
+                with self.subTest(root=label):
+                    self.assertRegex(
+                        bullet_lines[bidx], re.compile(pat, _LF),
+                        f"Bullet C{bidx + 1} missing: {label}",
+                    )
+        else:
+            # LEGACY MODE: parent RED (>budget), whole-file DOTALL assertions.
+            _F = re.IGNORECASE | re.DOTALL
+            for label, _i, fpat, lpat in ROOT_REQUIREMENTS:
+                pat = lpat if lpat is not None else fpat
+                if pat is None:
+                    continue
+                with self.subTest(root=label):
+                    self.assertRegex(agents_text, re.compile(pat, _F))
+
+        if under_budget:
+            self.assertIn("Testing requirements", sections)
+            self.assertIn("Safety", sections)
+            testing_body = sections["Testing requirements"]
+            safety_body = sections["Safety"]
+            with self.subTest(root="Safety detailed isolated temporary HOME rule"):
+                self.assertRegex(
+                    safety_body,
+                    re.compile(
+                        r"installer tests.*isolated temporary `HOME`.*"
+                        r"never write.*real agent config dir",
+                        re.IGNORECASE | re.DOTALL,
+                    ),
+                )
+            with self.subTest(root="Testing references Safety isolated HOME rule"):
+                self.assertRegex(
+                    testing_body,
+                    re.compile(
+                        r"installer tests.*Safety.*isolated.?HOME rule",
+                        re.IGNORECASE,
+                    ),
+                )
+            with self.subTest(root="Testing does not repeat real-dir prohibition"):
+                self.assertNotRegex(
+                    testing_body,
+                    re.compile(r"never (?:write|touch).*real", re.IGNORECASE),
+                )
+            with self.subTest(root="Conventions excludes isolated HOME mechanics"):
+                self.assertNotRegex(
+                    conventions_body,
+                    re.compile(r"isolated.*HOME|HOME.*(?:real|agent).*dir", re.IGNORECASE),
+                )
+
+        # Maintenance contract: exact 5 heading sequence.
+        mc_text = MAINTENANCE_CONTRACT.read_text(encoding="utf-8")
+        mc_lines = mc_text.splitlines()
+        self.assertEqual(
+            [
+                line
+                for line in mc_lines
+                if line.startswith("## ") and not line.startswith("### ")
+            ],
+            [
+                "## Baseline lifecycle",
+                "## SARIF and Marketplace Action",
+                "## GitHub guard and feedback",
+                "## CI, release, and repository operations",
+                "## Installer recovery",
+            ],
+            "maintenance-contract.md must have exactly the five agreed second-level headings",
+        )
+
+        # Section-scoped contract requirements — DOTALL only within each section.
+        mc_sections = self._split_sections_by_heading(mc_text, "##")
+        CONTRACT_REQUIREMENTS = {
+            "Baseline lifecycle": (
+                ("MC baseline: security findings ineligible", r"security findings.*ineligible"),
+                ("MC baseline: line-independent identity", r"Stable identities exclude line"),
+                ("MC baseline: exit 9 for repaired entries", r"exit.*9.*repaired"),
+                ("MC baseline: prune only subtracts repaired", r"prune.*(?:only|atomically).*repaired"),
+            ),
+            "SARIF and Marketplace Action": (
+                ("MC SARIF: partialFingerprints", r"partialFingerprints"),
+                ("MC SARIF: automation categories", r"automationDetails.*categor"),
+                ("MC action-run + args-json + legacy args", r"action-run\.js.*args.json.*legacy"),
+                ("MC action-run shell:false", r"shell:false"),
+                ("MC action-report only parser", r"action-report\.js.*only.*(?:parser|output)"),
+                ("MC action precedence findings > maintenance > ok", r"findings > maintenance > ok"),
+                ("MC dogfood uses ./ Action", r"uses: \./"),
+                ("MC bundled scan/drift + exact npm", r"bundled scan/drift.*exact.*npm"),
+            ),
+            "GitHub guard and feedback": (
+                ("MC guard: copies synchronized", r"guard.*sync|synchroni"),
+                ("MC guard: every PR no path filter", r"every PR.*path.*filter"),
+                ("MC guard: exact-title issue opens/updates", r"opens/updates.*exact.title|exact.title.*opens"),
+                ("MC guard: recovery comments and closes", r"recovery.*comment.*close"),
+                ("MC guard: unrelated issues untouched", r"unrelated.*untouched"),
+                ("MC guard: host resolved paths never leak", r"host.*resolved.*path.*never.*leak"),
+            ),
+            "CI, release, and repository operations": (
+                ("MC CI: required checks matrix", r"required checks cover"),
+                ("MC CI: npm ci --ignore-scripts", r"npm ci.*--ignore-scripts"),
+                ("MC CI: gitHead + packed shasum", r"gitHead.*shasum"),
+                ("MC CI: semver feature/bugfix/breaking", r"Feature = minor"),
+                ("MC CI: secret scanning + push protection", r"secret scanning.*push protection"),
+                ("MC CI: required contexts + conversation resolution", r"required.*context.*conversation"),
+                ("MC CI: admin bypass self-approval never red/pending", r"admin bypass.*never red/pending"),
+            ),
+            "Installer recovery": (
+                ("MC installer: state authorizes deletion", r"state authorizes deletion"),
+                ("MC installer: owned lock", r"owned lock"),
+                ("MC installer: journal", r"journal"),
+                ("MC installer: atomic replace", r"atomically replace"),
+                ("MC installer: recovery by digest", r"recover.*digest"),
+                ("MC installer: fail closed", r"fail closed"),
+                ("MC installer: isolated HOME", r"isolated.*HOME"),
+                ("MC installer: never real agent config dirs", r"never write.*real.*agent.*(?:config|dir)"),
+            ),
+        }
+        if under_budget:
+            CONTRACT_REQUIREMENTS["CI, release, and repository operations"] += (
+                ("MC CI: Action/workflow/release changes pass actionlint",
+                 r"Action/workflow/release changes\s+must pass `actionlint`"),
+                ("MC CI: Action/workflow/release changes never suppress failures",
+                 r"Action/workflow/release changes.*never suppress\s+failures"),
+            )
+            CONTRACT_REQUIREMENTS["Installer recovery"] += (
+                ("MC installer: tests use isolated temporary HOME",
+                 r"Installer tests always use an\s+isolated temporary `HOME`"),
+            )
+        _MCF = re.IGNORECASE | re.DOTALL
+        for section_name, requirements in CONTRACT_REQUIREMENTS.items():
+            self.assertIn(
+                section_name, mc_sections,
+                f"maintenance-contract.md missing section: {section_name}",
+            )
+            for label, pattern in requirements:
+                with self.subTest(contract=label):
+                    self.assertRegex(
+                        mc_sections[section_name], re.compile(pattern, _MCF),
+                        f"Section '{section_name}' missing: {label}",
+                    )
+
+        # Budget LAST — so semantic/structure failures always surface first.
+        self.assertLessEqual(
+            agents_bytes, AGENTS_BUDGET_BYTES,
+            f"AGENTS.md is {agents_bytes} bytes, exceeds "
+            f"progressive-disclosure budget of {AGENTS_BUDGET_BYTES} bytes",
+        )
 
 
 if __name__ == "__main__":

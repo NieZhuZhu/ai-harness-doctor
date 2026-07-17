@@ -11,14 +11,19 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
+The current Plan 061 maintenance-pack answers are **manually maintained by an AI
+implementation workflow** directly from `AGENTS.md`. No `eval_run.py` runner or
+judge model call was performed; the offline regex regrade is evidence-bounded,
+**not an independent model benchmark**.
+
 - `tasks.json` — 39 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
   evidence freshness, repository operations, path truth, nested package facts,
   Action argv safety, the deep-improve loop, and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
-- `results-after.json` — manual-protocol answers refreshed on 2026-07-17 (the
-  `local-all-green` task was added on 2026-07-18) from the current `AGENTS.md`,
-  with no repository browsing or external model call.
+- `results-after.json` — current Plan 061 manual-protocol answers maintained
+  by AI implementation workflow from the current `AGENTS.md`; no `eval_run.py`
+  runner or judge model call.
 - `*-graded.json` — the same files after `--regrade` (adds `passed`/`answer`).
 - `results-after-graded.json` additionally binds the exact `tasks.json` and
   `AGENTS.md` bytes through a deterministic evidence manifest. Task-declared
@@ -106,3 +111,9 @@ The `local-all-green` task checks the local/CI parity invariant: the local
 all-green `npm run check` runs lint, tests, then packed npm candidate
 verification, while CI remains responsible for the Python 3.9–3.12 and
 Node 16–22 matrix coverage.
+
+The Plan 061 refresh expands `doc-languages` to seven required locales
+(English, zh-CN, ja, es, ko, pt-BR, fr) and adds a progressive-disclosure
+budget + semantics contract test that keeps `AGENTS.md` under 10 240 bytes
+while preserving root-level semantic invariants across both the expanded
+parent wording and the compact final version.
