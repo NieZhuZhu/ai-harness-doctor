@@ -30,7 +30,41 @@
   candidate; its AGENTS invariant must survive compaction)
 - **Category**: docs / repository contract / maintenance headroom
 - **Planned at**: commit `8034dc4`, 2026-07-18
-- **Status**: TODO
+- **Status**: DONE — implemented on `docs/061-agents-progressive-disclosure`
+  and merged via PR
+  [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270)
+  (reviewed head `b7a759e8aa461a6cfb0be7272a93fa0f53db44e7`, squash merge
+  `380085cd04428d7fb89cc50a82e81cce45884cb5`), closeout recorded
+  2026-07-18; the remote implementation branch was deleted.
+
+## Implementation and verification evidence (closeout, 2026-07-18)
+
+- **Plan-first sequence**: plan-only PR
+  [#269](https://github.com/NieZhuZhu/ai-harness-doctor/pull/269) passed 9/9
+  required checks before merging as
+  `1d6b1f8c850c5bc19ff4b044f8fce4c755f82daa`; implementation then proceeded
+  in PR [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270).
+- **Implementation review and merge**: the final reviewed head
+  `b7a759e8aa461a6cfb0be7272a93fa0f53db44e7` had 9/9 required checks
+  SUCCESS and zero unresolved review threads. Standards review was PASS.
+  Spec review initially found two medium issues; both were corrected, code
+  re-review passed, and the PR body gained the required fine-grained
+  cluster-to-destination mapping. Admin bypass was used only for the
+  sole-maintainer self-approval deadlock, never over red or pending CI.
+- **Budget and identity**: `AGENTS.md` is 10,227 bytes with 2,061 bytes of
+  strict-D4 headroom; its SHA-256 is
+  `f93e71ec4eb711818cf74b197ef78873a4aa43e0a1bce419c78e27f0dbf76902`.
+- **RED/GREEN and tests**: the parent RED had exactly one failure,
+  `12231 > 10240`; final focused metadata tests passed 38/38, mutation probes
+  passed 16/16, the full Python suite passed 845 tests, and Node passed 51/51.
+  `npm run check` was green, including the packed package candidate.
+- **Repository and efficacy gates**: self scan exited 0; strict drift scored
+  100/Grade A; self-eval passed 39/39 at 100/Grade A with the current
+  `AGENTS.md` hash; README synchronization passed 7/7.
+- **Scope proof**: product D4 source, package manifests/inventory, all public
+  READMEs, and `SKILL.md` were unchanged. The maintenance-contract prose was
+  the intended packaged-content delta and passed packed-candidate
+  verification.
 
 ## Why this matters
 
@@ -508,24 +542,27 @@ delete the branch, then land the plans closeout.
 
 ## Done criteria
 
-- [ ] `AGENTS.md` ≤ 10,240 bytes (≥ 2,048 bytes strict-D4 headroom).
-- [ ] Deterministic repository-contract test in place; byte budget + section/
-      routing/relocation assertions; RED-before/GREEN-after recorded.
-- [ ] Removal map (cluster → destination) present in the implementation PR.
-- [ ] All 39 self-eval tasks pass; evidence hashes current; 100/Grade A.
-- [ ] `references/maintenance-contract.md` owns every relocated detail; root
-      routing links intact.
-- [ ] Product D4 code byte-identical; strict drift 100/A; scan gates green.
-- [ ] `npm run check` and full test suites green; nine required CI contexts
-      green on the implementation PR.
-- [ ] No public README/SKILL change and no package manifest/inventory change
-      (`check_readme_sync` untouched targets still aligned); the shipped
-      `references/maintenance-contract.md` prose is the only package-content
-      delta, and the packed-candidate check in `npm run check` passes on it.
-- [ ] Self-eval artifact notes carry the accurate protocol statement from
-      Design §6 (no `eval_run.py` runner/judge model call; manually
-      maintained answers; offline regrade is not a fresh independent model
-      benchmark).
+- [x] `AGENTS.md` is 10,227 bytes, leaving 2,061 bytes of strict-D4
+      headroom.
+- [x] Deterministic repository-contract coverage is in place: budget,
+      sections, routing, and relocation assertions; parent RED was the sole
+      `12231 > 10240` failure and final focused tests passed 38/38.
+- [x] The fine-grained removal map (cluster → retained requirement and detail
+      owner) is present in implementation PR #270.
+- [x] All 39 self-eval tasks pass at 100/Grade A with current
+      `AGENTS.md` hash `f93e71ec…`.
+- [x] `references/maintenance-contract.md` owns every relocated detail and
+      root routing links remain covered by deterministic tests.
+- [x] Product D4 code is byte-identical; strict drift is 100/A and self scan
+      exits 0.
+- [x] `npm run check`, 845 Python tests, 51 Node tests, and all 9/9 required
+      CI contexts passed on implementation PR #270.
+- [x] Public READMEs, `SKILL.md`, and package manifests/inventory are
+      unchanged; README sync passed 7/7, and the intended packaged
+      maintenance-contract prose delta passed the package-candidate gate.
+- [x] Self-eval artifact notes state that no `eval_run.py` runner/judge model
+      call was made, answers were manually maintained, and offline regrade is
+      not a fresh independent model benchmark.
 
 ## STOP conditions
 
