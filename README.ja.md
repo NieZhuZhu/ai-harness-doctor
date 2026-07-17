@@ -31,6 +31,12 @@ Node と Python runtime を確認：
 npx ai-harness-doctor doctor --self-test
 ```
 
+npx が解決したバージョンを確認：
+
+```bash
+npx ai-harness-doctor --version
+```
+
 これらのコマンドは監査対象リポジトリを変更しません。
 
 ## チェック内容

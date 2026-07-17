@@ -31,6 +31,12 @@ Node와 Python runtime을 확인합니다:
 npx ai-harness-doctor doctor --self-test
 ```
 
+npx가 확인한 버전을 확인합니다:
+
+```bash
+npx ai-harness-doctor --version
+```
+
 위 명령은 감사 대상 저장소를 변경하지 않습니다.
 
 ## 검사 항목

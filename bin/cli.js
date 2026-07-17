@@ -53,6 +53,7 @@ Usage:
   ai-harness-doctor doctor [--self-test] [--json]
   ai-harness-doctor guard [target-repo] [--apply] [--remove] [--provider github|gitlab|codebase|auto]
   ai-harness-doctor help
+  ai-harness-doctor --version
 
 Examples:
   npx ai-harness-doctor install
@@ -2728,6 +2729,10 @@ function main() {
   const [command, ...rest] = process.argv.slice(2);
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     usage();
+    return;
+  }
+  if (command === '--version' || command === '-v' || command === 'version') {
+    console.log(PACKAGE_VERSION);
     return;
   }
   maybeCheckForUpdate();

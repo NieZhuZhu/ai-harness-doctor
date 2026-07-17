@@ -31,6 +31,12 @@ npx ai-harness-doctor explain . packages/api/src/handler.ts
 npx ai-harness-doctor doctor --self-test
 ```
 
+查看 npx 解析到的版本：
+
+```bash
+npx ai-harness-doctor --version
+```
+
 以上命令都不会修改被审计的仓库。
 
 ## 检查内容

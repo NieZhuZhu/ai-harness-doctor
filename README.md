@@ -31,6 +31,12 @@ Verify the Node and Python runtime:
 npx ai-harness-doctor doctor --self-test
 ```
 
+Check which version npx resolved:
+
+```bash
+npx ai-harness-doctor --version
+```
+
 Nothing above changes the audited repository.
 
 ## What it checks
