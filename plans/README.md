@@ -27,6 +27,7 @@ Generated and reconciled across the deep `improve` audit batches below:
 - 2026-07-17 at commit `30675ba` (plan 057).
 - 2026-07-17 at commit `8b0d19e` (plans 058–060).
 - 2026-07-18 at commit `8034dc4` (plan 061).
+- 2026-07-18 at commit `11e3a71` (plan 062).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -571,6 +572,29 @@ verification gate, and update its status here.
    scan, strict drift 100/A, self-eval 39/39 at 100/A with current evidence,
    and README sync 7/7.
 
+### 2026-07-18 post-Plan-061 independent deep research round
+
+1. **MCP inventory republishes credentials the scanner already detects** —
+   independently re-audited all nine categories at `11e3a71`, reconciled every
+   prior plan, and reproduced the top security finding with a runtime-generated
+   sentinel in `.mcp.json`. The scanner correctly produced two HIGH secret
+   findings whose messages contained no value, but the same value remained in
+   `surface.mcp_servers[].command` and `.url`, serialized scan JSON, rendered
+   Markdown/stdout, and the default 0600 temporary full report. Plans 049 and
+   051 protect hook inventory and eval artifacts respectively; neither protects
+   MCP command/URL inventory. Plan 062 keeps raw MCP data for detection, reuses
+   the shared high-confidence redactor plus Markdown neutralization for a
+   report-safe copy, and pins the guarantee across final artifacts.
+
+   Vetted runner-up findings are retained below rather than mixed into the
+   smallest security patch: guard install/remove lacks multi-file rollback;
+   eval `usage` strings and contradictory stored runner/judge exits can bypass
+   existing artifact/integrity contracts; root-generated eval evidence and
+   runtime ambiguity diverge from scoped behavior; `actionlint` and exact local
+   self-checkup parity are documented but not gated; current formatter scope,
+   release/version docs, EOL runtimes, and several provider/MCP/report product
+   directions need their own policy or compatibility decisions.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -636,6 +660,7 @@ verification gate, and update its status here.
 | 059 | Distinguish Docker and RPC identifiers from repository paths | P1 | M | 014, 018, 052, 053 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 060 | Reject unsupported batch SARIF instead of emitting Markdown | P1 | S | 012, 032, 042 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 061 | Restore AGENTS.md progressive-disclosure headroom | P1 | M | 058 | DONE — PR [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270), merge `380085c`, 9/9 required checks |
+| 062 | Redact MCP credentials from every scan-report surface | P0 | S–M | 049, 051 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -1413,3 +1438,71 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   generated adapters, synchronized READMEs, and workflow twins remains a
   policy/migration decision. No other candidate this round produced a
   reproduced defect that outranked these two.
+- **Guard apply/remove is not a multi-file transaction** (2026-07-18 round B)
+  — independently reproduced at `11e3a71`: with the Git hook directory
+  writable and the repository root non-writable, `guard --apply --provider
+  github` exits on the first workflow-directory write after it has already
+  installed `.git/hooks/pre-commit`; workflows and the AGENTS maintenance
+  contract remain absent. This is a HIGH-confidence correctness finding and a
+  likely future M-sized rollback plan, but it ranks behind Plan 062's default
+  scan credential persistence because guard mutation is explicit opt-in and a
+  safe rollback must preserve prior bytes, modes, absent paths, and user edits
+  across repository and Git-common-dir boundaries.
+- **Eval result metadata still has two artifact/integrity gaps** (2026-07-18
+  round B) — verified separately, not folded into Plan 062. First, Plan 051
+  redacts runner/judge text fields but `maybe_usage()` copies arbitrary string
+  leaves under `usage`/`cost`/token metadata into persisted single/round/matrix
+  records. Second, the stored-result validator accepts an explicit
+  `passed: true` record even when its present runner or judge `exit_code` is
+  non-zero; a current-evidence score gate can still report 100/A. Both are
+  small, high-confidence follow-ups with compatibility constraints (historical
+  manual records omit exit evidence), but the MCP leak affects ordinary scan
+  output and has the smaller established redaction seam.
+- **Generated eval provenance/runtime parity remains asymmetric** (2026-07-18
+  round B) — verified in `eval_run.generate_tasks`: fact constructors pass
+  `evidence`, but the shared `add()` publishes it only for scoped target tasks,
+  leaving root-generated results unable to build automatic evidence manifests.
+  Root Node inference also prefers `.nvmrc` over a conflicting
+  `engines.node`, while scoped inference abstains. Keep these as a dedicated
+  shared-facts/eval plan; do not mix their public task-shape and abstention
+  changes into report redaction.
+- **`actionlint` and local self-checkup parity are documented but not required**
+  (2026-07-18 round B) — revalidated. `references/maintenance-contract.md`
+  requires `actionlint`, yet neither `npm run check` nor required CI invokes it;
+  `CONTRIBUTING.md` also runs scan/drift without the baseline fail flags and
+  strict mode used by required CI. This is a high-confidence S-sized
+  verification/DX follow-up. It does not outrank a current secret leak and
+  needs a pinned, reproducible actionlint installation decision.
+- **Formatter ownership is still unresolved after Plan 061** (2026-07-18 round
+  B) — correctly rerun at `11e3a71` in a disposable worktree. `prettier --check
+  .` reports 130 tracked files; `npm run format` rewrites 6,432/6,590 lines
+  across 57 plans, 31 benchmark files, 10 GitHub files, 8 Node files, 6 assets,
+  6 commands, one scan baseline, and 11 root files. It also changes AGENTS and
+  task bytes without refreshing `results-after-graded.json`, so strict eval
+  evidence exits 7 even though README/adapters/drift checks stay green. This is
+  a real DX footgun, but the correct ownership policy (ignore historical
+  evidence and single sources versus adopt one mass migration) remains a
+  separate plan rather than a drive-by `.prettierignore`.
+- **Published-version and release-process docs are not current operational
+  truth** (2026-07-18 round B) — live read-back showed npm/GitHub latest at
+  `v1.13.0`, while README pre-commit examples pin `v1.13.1`; the `v1.13.1`
+  release run failed, no `v1.12.2` tag exists despite one validation-log claim,
+  and `RELEASING.md`'s `npm version` + `git push --follow-tags` sequence
+  conflicts with PR-only main governance/off-main tag rejection. Also,
+  `SKILL.md`'s custom-rule example omits required `--allow-plugins`, Cursor
+  `.md` support prose contradicts diagnostic-only registry semantics, and an
+  obsolete v2 boundary describes already-shipped CLI gates as future work.
+  These are verified S-sized documentation fixes, but should be handled as an
+  operational-truth patch after the higher-impact credential leak.
+- **Node 16/20 and Python 3.9 support lines are EOL** (2026-07-18 round B) —
+  verified against official release schedules. Move maintenance workflows off
+  Node 20 independently; raising public `engines.node` and Python minimums is a
+  breaking compatibility/major-release decision and is not appropriate inside
+  Plan 062.
+- **Post-Plan-061 product directions** (2026-07-18 round B) — grounded options
+  retained for future feature selection: one committed provider-neutral eval
+  gate config that binds score to current evidence; provider-neutral Markdown
+  findings output reusing `pr_review.collect_findings`; a strictly read-only MCP
+  tool to verify existing eval results (never run paid agents/judges); and
+  additive `schema_version` identities for scan/drift/validate public JSON.
+  These are not bugfix substitutes and require public API/docs work.
