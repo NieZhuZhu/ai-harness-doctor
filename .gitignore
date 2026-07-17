@@ -5,4 +5,5 @@ node_modules/
 *.tgz
 .DS_Store
 results-*.json
+!benchmark/corpus/evals/*/results/results-*.json
 eval-report.md

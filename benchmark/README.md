@@ -72,6 +72,17 @@ git submodules and scanned in one deterministic `scan.py --repos-file` batch. Th
 measures the Phase-0 checkup against real, diverse harness surfaces at exact commits; it
 involves no agent calls and does not change the headline numbers below.
 
+## Real-repo eval (boundary companion)
+
+One corpus repository — openai/codex — has additionally been put through this same
+before/after eval protocol at its pinned commit, with the treatment reduced to exactly
+the 4 stale-path fixes `scan.py` flags in its otherwise healthy `AGENTS.md`. The outcome
+is an honestly published **null result** (24/24 vs 24/24, no flip-flops): a strong
+self-verifying runner heals stale *path* references on its own, while the controlled
+pair below shows the large effect comes from docs that are wrong about *conventions and
+commands*. Together they bracket where the efficacy story does and does not apply. See
+[`corpus/evals/codex/`](corpus/evals/codex/README.md).
+
 ## Actual results
 
 | Side | Runs | Passed | Flip-flop tasks | Avg duration/task | Total captured cost (USD) |
