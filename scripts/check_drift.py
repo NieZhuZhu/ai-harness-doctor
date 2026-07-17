@@ -990,11 +990,8 @@ def run_fix(root, max_bytes, apply, strict=False, rules_dirs=None, allow_plugins
             )
     if unsafe:
         skipped.extend(unsafe)
-        d3 = [
-            f
-            for f in d3
-            if canonical_stub_content(root, f["path"]) is None
-        ]
+        unsafe_paths = {f["path"] for f in unsafe}
+        d3 = [f for f in d3 if f["path"] not in unsafe_paths]
     for f in d3:
         rel_path = f["path"]
         path = root / rel_path

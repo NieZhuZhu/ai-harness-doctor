@@ -1141,7 +1141,6 @@ class DriftTests(unittest.TestCase):
                 encoding="utf-8",
             )
             before = outside.read_bytes()
-            regular_before = regular_stub.read_bytes()
 
             proc = subprocess.run(
                 [sys.executable, str(DRIFT), str(repo), "--fix", "--apply"],
@@ -1152,8 +1151,39 @@ class DriftTests(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("unsafe", proc.stdout.lower())
             self.assertEqual(outside.read_bytes(), before)
-            self.assertEqual(regular_stub.read_bytes(), regular_before)
             self.assertTrue((repo / "CLAUDE.md").is_symlink())
+            # An unrelated unsafe symlink must NOT block repairing safe, owned
+            # regrown stubs: the regular .cursorrules stub is still rewritten.
+            self.assertIn("rewrote `.cursorrules`", proc.stdout)
+            rewritten = regular_stub.read_text(encoding="utf-8")
+            self.assertIn("AGENTS.md", rewritten)
+            self.assertNotIn("regular", rewritten)
+            self.assertLessEqual(len(rewritten.encode("utf-8")), 600)
+
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_fix_dry_run_lists_safe_stub_despite_unrelated_unsafe_symlink(self):
+        # Regression: an unsafe symlink stub must not silently drop unrelated,
+        # safely-fixable regrown stubs from the dry-run --fix report.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+            (repo / "CLAUDE.md").write_text("@AGENTS.md\n" + "lots\n" * 200, encoding="utf-8")
+            (repo / ".cursorrules").symlink_to(repo / "AGENTS.md")
+
+            proc = subprocess.run(
+                [sys.executable, str(DRIFT), str(repo), "--fix"], text=True, capture_output=True
+            )
+
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn("would rewrite `CLAUDE.md`", proc.stdout)
+            self.assertIn("1 fixable", proc.stdout)
+            self.assertIn("unsafe", proc.stdout.lower())
+            # The safe stub is untouched by a dry run.
+            self.assertEqual(
+                "@AGENTS.md\n" + "lots\n" * 200,
+                (repo / "CLAUDE.md").read_text(encoding="utf-8"),
+            )
 
     def test_fix_reports_non_autofixable_drift_and_leaves_files_untouched(self):
         td, repo = self.copy_repo()
