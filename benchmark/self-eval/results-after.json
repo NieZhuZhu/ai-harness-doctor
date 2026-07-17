@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-17 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-17 (local-all-green added 2026-07-18) using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
   "tasks": [
     {"id": "test-suite", "stdout": "python3 -m unittest discover -s tests -v"},
     {"id": "python-version", "stdout": "3.9+"},
@@ -40,6 +40,7 @@
     {"id": "gitignored-path-truth", "stdout": "Missing paths covered by contained .gitignore rules are deliberate; synthetic Git metadata excludes host state and fails closed."},
     {"id": "nested-drift-ancestors", "stdout": "Nested D1/D2/D6 use facts.ancestor_dirs nearest-first with no sibling leakage; D7 remains file-relative."},
     {"id": "action-argv-contract", "stdout": "action-run.js owns bounded args-json and legacy argv with shell:false; action-report.js alone owns SARIF outputs."},
-    {"id": "deep-improve-loop", "stdout": "Independently audit all nine categories on current main; land plan-only, wait for nine green contexts, implement test-first, run Standards/Spec review plus real evidence, wait for nine green, squash/delete, close out the plan in a green docs PR, and revalidate every candidate each round."}
+    {"id": "deep-improve-loop", "stdout": "Independently audit all nine categories on current main; land plan-only, wait for nine green contexts, implement test-first, run Standards/Spec review plus real evidence, wait for nine green, squash/delete, close out the plan in a green docs PR, and revalidate every candidate each round."},
+    {"id": "local-all-green", "stdout": "Local all-green npm run check runs lint, tests, then the packed npm candidate; CI keeps Python 3.9-3.12 and Node 16-22 matrix coverage."}
   ]
 }

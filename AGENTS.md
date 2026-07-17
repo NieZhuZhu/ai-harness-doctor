@@ -56,6 +56,7 @@ node bin/cli.js help
 - Shipped guards/pre-commit hooks call only packaged public CLI commands usable without a local `scripts/` tree; behavior changes need an end-to-end consumer fixture. Self-bootstrap copies may use local code only when labeled.
 - CI/release/repository operations follow `references/maintenance-contract.md`: locked npm install, vetted Action SHAs, env-only privileged inputs, release identity checks, public lockfile sources, and admin bypass only for sole-maintainer self-approval—not red/pending CI.
 - Required lint uses `npm ci --ignore-scripts` over committed `package-lock.json`; public lockfile sources use `registry.npmjs.org`.
+- Local all-green `npm run check` runs lint, tests, then the packed npm candidate; CI keeps Python 3.9–3.12 and Node 16–22 matrix coverage.
 - Release reruns skip an existing npm version only when registry `gitHead` and packed tarball shasum match. PR/release Action proof covers bundled scan+drift, exact npm override, and stable post-publish verification.
 - Repository operations require secret scanning, push protection, required checks, and resolved conversations. Admin bypass is only for the sole-maintainer self-approval deadlock, never red/pending CI.
 - Installer smoke tests must use an isolated `HOME` temp directory and must never write into the real `~/.claude`, `~/.codex`, or other user config directories.

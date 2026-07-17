@@ -79,6 +79,19 @@ class ActionMetadataTests(unittest.TestCase):
         end = text.find("\n      - ", start + len(marker))
         return text[start : end if end != -1 else len(text)]
 
+    def _job_block(self, path, job):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        try:
+            start = lines.index(f"  {job}:", lines.index("jobs:"))
+        except ValueError:
+            self.fail(f"{path} must define job {job!r}")
+        body = []
+        for line in lines[start + 1 :]:
+            if line and not line.startswith("    "):
+                break
+            body.append(line)
+        return "\n".join(body)
+
     def _run_script(self, path, name):
         block = self._named_step_block(path, name)
         match = re.search(r"(?ms)^        run: \|\n(?P<body>.*)$", block)
@@ -441,8 +454,31 @@ class ActionMetadataTests(unittest.TestCase):
             package["scripts"].get("check:package"),
             "python3 scripts/check_package_candidate.py",
         )
-        self.assertEqual(package["scripts"]["check"], "npm run lint && npm test")
+        self.assertEqual(
+            package["scripts"]["check"],
+            "npm run lint && npm test && npm run check:package",
+        )
         self.assertIn("!scripts/check_package_candidate.py", package["files"])
+
+    def test_local_all_green_check_includes_the_packed_candidate(self):
+        package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            package["scripts"]["check"],
+            "npm run lint && npm test && npm run check:package",
+        )
+        self.assertEqual(
+            package["scripts"].get("check:package"),
+            "python3 scripts/check_package_candidate.py",
+        )
+
+        text = TEST_WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(text.count("npm run check:package"), 1)
+        self.assertIn("run: npm run check:package", self._job_block(TEST_WORKFLOW, "lint"))
+        for job in ("unittest", "node"):
+            with self.subTest(job=job):
+                # "npm run check" also matches "npm run check:package", so this
+                # keeps the matrix jobs free of both entry points at once.
+                self.assertNotIn("npm run check", self._job_block(TEST_WORKFLOW, job))
 
     def test_dependabot_updates_github_action_pins_weekly(self):
         text = DEPENDABOT.read_text(encoding="utf-8")

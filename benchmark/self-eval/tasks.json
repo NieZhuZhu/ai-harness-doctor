@@ -226,5 +226,11 @@
     "prompt": "What is the required deep improve round workflow from audit through plan, implementation, CI, review/evidence, and closeout? Answer briefly.",
     "timeout_s": 120,
     "check": {"type": "regex", "value": "(?i)(?=.*audit.*nine.*categor)(?=.*plan.?only)(?=.*nine.*green)(?=.*test.?first)(?=.*Standards/Spec)(?=.*real.*evidence)(?=.*squash)(?=.*close.*plan)(?=.*revalid)"}
+  },
+  {
+    "id": "local-all-green",
+    "prompt": "What does the local all-green npm run check verify? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)(?=.*lint)(?=.*test)(?=.*pack(ed)?.*candidate)"}
   }
 ]

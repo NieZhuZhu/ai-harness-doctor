@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-17 using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-17 (local-all-green added 2026-07-18) using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
   "tasks": [
     {
       "id": "test-suite",
@@ -268,13 +268,20 @@
       "answer": "Independently audit all nine categories on current main; land plan-only, wait for nine green contexts, implement test-first, run Standards/Spec review plus real evidence, wait for nine green, squash/delete, close out the plan in a green docs PR, and revalidate every candidate each round.",
       "passed": true,
       "regraded": true
+    },
+    {
+      "id": "local-all-green",
+      "stdout": "Local all-green npm run check runs lint, tests, then the packed npm candidate; CI keeps Python 3.9-3.12 and Node 16-22 matrix coverage.",
+      "answer": "Local all-green npm run check runs lint, tests, then the packed npm candidate; CI keeps Python 3.9-3.12 and Node 16-22 matrix coverage.",
+      "passed": true,
+      "regraded": true
     }
   ],
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 38,
-    "total": 38,
+    "passed": 39,
+    "total": 39,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -282,12 +289,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "ef681a4831d784394bd401e32bf68397d09a08761371f4de08a7f3116ad49140"
+      "sha256": "e960774b1fb580449fc630412fea033fadbd783a61c4b5b07833a51d3d7f61fd"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "120e648e83c7e61d59ac758b5e8e9a91c785e1d3e90d525a2d7760cf9d18869a"
+        "sha256": "df8459b607630c3873908bc2fa372a9dd31286929889f8690270a9009cfb62f5"
       }
     ]
   }
