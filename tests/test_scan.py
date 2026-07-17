@@ -2767,6 +2767,53 @@ class ReposFileTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertNotIn("Full JSON report", proc.stdout)
 
+    def test_batch_sarif_is_rejected_instead_of_emitting_markdown(self):
+        # scan advertises a global --sarif, but batch mode returns before the
+        # SARIF renderer and would otherwise exit 0 while writing a Markdown
+        # table to stdout, silently misleading automation that expects SARIF.
+        with tempfile.TemporaryDirectory() as td:
+            repo_a, _repo_b = self._build_two_repos(td)
+            repos_file = self._write_repos_file(td, [str(repo_a)])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--sarif", "--no-report-file"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("--repos-file cannot be combined with --sarif", proc.stderr)
+            self.assertIn("--json", proc.stderr)
+            self.assertIn("per-repository SARIF is not currently emitted", proc.stderr)
+
+    def test_batch_json_and_sarif_together_are_rejected(self):
+        # --sarif must not be silently ignored (nor take precedence) when --json
+        # is also present in batch mode.
+        with tempfile.TemporaryDirectory() as td:
+            repo_a, _repo_b = self._build_two_repos(td)
+            repos_file = self._write_repos_file(td, [str(repo_a)])
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--json", "--sarif"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("--repos-file cannot be combined with --sarif", proc.stderr)
+
+    def test_batch_sarif_rejection_precedes_reading_repos_file(self):
+        # The rejection must happen before any repository is read or scanned:
+        # a nonexistent --repos-file still fails with the SARIF error, not the
+        # "could not read" file error, proving no scan/plugin side effect runs.
+        proc = subprocess.run(
+            [sys.executable, str(SCAN), "--repos-file", "/nonexistent-repos-file.txt", "--sarif"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        self.assertEqual(proc.stdout, "")
+        self.assertIn("--repos-file cannot be combined with --sarif", proc.stderr)
+        self.assertNotIn("could not read", proc.stderr)
+
     def test_batch_exit_precedence_unit(self):
         args = argparse.Namespace(
             fail_on_security=True,

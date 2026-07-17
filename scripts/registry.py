@@ -292,6 +292,65 @@ def negated_spans(line):
     return [m.span() for m in _NEGATED_CLAUSE_RE.finditer(line)]
 
 
+# A slash-bearing `org/name` backtick token has the same lexical shape whether
+# it names a repo-relative directory, a Docker/OCI image, or an RPC/API method.
+# Real harness docs use all three (found scanning Letta's `letta/letta` Docker
+# image and OpenAI Codex's `thread/read` / `app/list` RPC-method examples, all
+# falsely reported MISSING). A bounded, evidence-based context check — NOT a
+# blanket `org/name` exclusion — decides when the token is a runtime identifier
+# instead of a path, because repositories legitimately contain two-segment
+# directories such as `src/service`. Ambiguity stays fail-closed (treated as a
+# path) and an explicit file/directory/edit cue always wins.
+
+# Only a plain two-segment token (exactly one "/", no dot in either segment, no
+# leading dot or relative marker) is eligible: anything with an extension, a
+# leading dot, or three or more components is a filesystem path regardless of
+# nearby prose — so a Docker Compose file like `docker/compose.yml` is never
+# suppressed merely because the word "Docker" appears on the line.
+_RUNTIME_ID_SHAPE_RE = re.compile(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+")
+
+# Bounded window (chars) scanned immediately before/after the backtick token so
+# section-level prose intent never leaks into the classification.
+_LABEL_WINDOW = 40
+
+# Explicit filesystem cues: when present next to the token they force a path
+# classification and win over any runtime-identifier word (fail-closed toward
+# paths). Deliberately excludes broad words such as "service" or "app".
+_PATH_LABEL_RE = re.compile(
+    r"\b(?:files?|directory|directories|folder|path|edit|open|modify|"
+    r"source|located\s+under|repository|repo)\b",
+    re.I,
+)
+
+# Explicit runtime-identifier cues that mark the token as NOT a filesystem path.
+_NONPATH_LABEL_RE = re.compile(
+    r"\b(?:docker\s+image|container\s+image|image|"
+    r"rpc\s+method|method|endpoint|operation|route)\b",
+    re.I,
+)
+
+
+def _is_labeled_runtime_identifier(line, match):
+    """True when bounded same-line context explicitly labels the backtick token
+    as a Docker/OCI image or an RPC/API method rather than a repo path.
+
+    Uses only a small character window immediately before/after the exact match
+    span, so section-level prose never leaks in. Precedence is deterministic and
+    conservative: an explicit filesystem cue (file, directory, edit, ...) always
+    wins, and an unlabeled token stays a path.
+    """
+    token = match.group(1).strip()
+    if not _RUNTIME_ID_SHAPE_RE.fullmatch(token):
+        return False
+    before = line[max(0, match.start() - _LABEL_WINDOW):match.start()]
+    after = line[match.end():match.end() + _LABEL_WINDOW]
+    window = before + " " + after
+    # Explicit filesystem intent wins over any runtime-identifier word.
+    if _PATH_LABEL_RE.search(window):
+        return False
+    return bool(_NONPATH_LABEL_RE.search(window))
+
+
 def declared_paths(text):
     """Return repo-relative paths referenced in inline backticks as ``{path, line}``.
 
@@ -372,6 +431,14 @@ def declared_paths(text):
             # filename like `go.mod` or `Cargo.toml` (single-segment tokens
             # are handled entirely by the KNOWN_ROOT_FILES check below).
             if "/" in token and _GO_IMPORT_HOST_RE.match(token.split("/", 1)[0]):
+                continue
+            # A two-segment `org/name` token explicitly labeled as a Docker/OCI
+            # image or an RPC/API method by adjacent same-line context is a
+            # runtime identifier, not a repo-relative path. Bounded and
+            # fail-closed: an explicit file/directory/edit cue keeps it a path,
+            # and an unlabeled token stays a path (see
+            # ``_is_labeled_runtime_identifier``).
+            if _is_labeled_runtime_identifier(line, m):
                 continue
             # A conventional runtime dotenv file (`.env`, `frontend/.env`,
             # `.env.local`, `.env.production`, ...) is deliberately gitignored

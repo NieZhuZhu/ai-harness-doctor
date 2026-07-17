@@ -418,6 +418,57 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             ["src/generated/index.ts", "docs/guide/"],
         )
 
+    def test_labeled_runtime_identifiers_are_not_declared_paths(self):
+        # A two-segment `org/name` token shares its shape with a repo directory,
+        # a Docker/OCI image, and an RPC/API method. When bounded same-line
+        # context explicitly labels it as an image or method, it is a runtime
+        # identifier, not a path. Found scanning Letta's `letta/letta` Docker
+        # image and OpenAI Codex's `thread/read` / `app/list` RPC-method
+        # examples, all falsely reported MISSING by Phase-0 and Phase-2 D2.
+        runtime_lines = [
+            "Run the `letta/letta` image locally.",
+            "Use the `letta/letta` Docker image for the server.",
+            "Pull the container image `letta/letta` first.",
+            "Call RPC method `thread/read` to stream.",
+            "The `app/list` endpoint returns sessions.",
+            "Invoke the `app/list` operation from the client.",
+        ]
+        for line in runtime_lines:
+            text = line + "\n"
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"runtime identifier in {line!r} wrongly classified as a path",
+            )
+            # Both stages go through the shared classifier, so neither the
+            # Phase-0 semantic check nor the Phase-2 D2 gate can flag it.
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # Real filesystem references keep being checked. Ambiguity is
+        # fail-closed (a bare `org/service` stays a path), an explicit
+        # file/directory/edit cue wins over any runtime word, and a token with
+        # an extension or three+ segments is always a path — so a Docker Compose
+        # file is not suppressed merely because "Docker" is on the line.
+        path_lines = [
+            ("Edit the real repository `src/service` now.", ["src/service"]),
+            ("The `org/service` directory contains code.", ["org/service"]),
+            ("Open the file `pkg/mod` in the editor.", ["pkg/mod"]),
+            ("The bare `team/module` token stays a path.", ["team/module"]),
+            ("Set the Docker image name in `docker/compose.yml`.", ["docker/compose.yml"]),
+            ("See the `api/v1/list` endpoint route file.", ["api/v1/list"]),
+        ]
+        for line, expected in path_lines:
+            text = line + "\n"
+            self.assertEqual(
+                [d["path"] for d in registry.declared_paths(text)],
+                expected,
+                f"path reference in {line!r} was wrongly suppressed",
+            )
+            self.assertEqual(
+                [d["path"] for d in semantic.declared_paths(text)],
+                expected,
+            )
+
     def test_fact_readers_single_sourced_across_engines(self):
         # TD-02: the generic repo fact-readers and declaration extractors used to
         # be copy-pasted into both semantic.py (Phase-0) and check_drift.py

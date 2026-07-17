@@ -195,6 +195,7 @@ Adapters não Claude são deliberadamente finos. Distribuição ampla cabe ao Ru
 
 - Scan é somente leitura e exclui symlinks externos derivados do repositório.
 - Caminhos ausentes ignorados pelo `.gitignore` do repositório são runtime intencional; metadata Git sintética exclui regras locais/globais e falha do Git preserva o finding.
+- Um `org/name` em backticks que palavras adjacentes rotulam como imagem Docker/OCI ou método RPC/API é tratado como runtime identifier, não como caminho verificado; a exclusão é fail-closed e tokens com extensão ou de três ou mais segmentos continuam sendo caminhos.
 - Nested drift resolve commands, paths e facts de runtime/package manager pelos ancestors lexicais sem buscar pacotes irmãos; links Markdown continuam relativos ao arquivo.
 - Caminhos de escrita rejeitam arquivos ou pais symlinked.
 - Plugins só são ativados com `--allow-plugins`.

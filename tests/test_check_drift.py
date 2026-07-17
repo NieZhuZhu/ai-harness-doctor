@@ -620,6 +620,26 @@ class DriftTests(unittest.TestCase):
 
             self.assertEqual(missing, {"src/missing.ts"})
 
+    def test_labeled_runtime_identifiers_do_not_trigger_d2(self):
+        # Phase-2 D2 shares the classifier with Phase-0, so a Docker image or an
+        # RPC/API method labeled by same-line context must not be reported as a
+        # missing path, while real filesystem references stay checked.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pkg" / "mod").mkdir(parents=True)
+            text = (
+                "Run the `letta/letta` image locally.\n"
+                "Call RPC method `thread/read` to stream.\n"
+                "The `app/list` endpoint returns sessions.\n"
+                "Edit the file `src/gone.ts` now.\n"
+                "See the `pkg/mod` directory.\n"
+            )
+            missing = {
+                finding["message"].split("`")[1]
+                for finding in check_drift.d2_path_drift(root, text)
+            }
+            self.assertEqual(missing, {"src/gone.ts"})
+
     def test_fully_missing_path_still_triggers_d2_with_subtrees_present(self):
         # Subtree leniency must not mask genuine drift merely because the repo
         # has nested packages; only an exact trailing-path match is accepted.

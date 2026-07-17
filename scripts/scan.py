@@ -2717,6 +2717,14 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 1
+        if args.sarif:
+            print(
+                "error: --repos-file cannot be combined with --sarif; "
+                "use --json for the aggregate machine-readable batch report; "
+                "per-repository SARIF is not currently emitted",
+                file=sys.stderr,
+            )
+            return 1
         return _run_repos_file(args)
     root = Path(args.repo_root).resolve()
     if not root.is_dir():

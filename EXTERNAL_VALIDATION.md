@@ -47,8 +47,9 @@ AGENTS.md yet" are not actionable and are logged as clean runs.
 | 29 | [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code) | 2026-07-17 | Revisit the five round-28 `.qwen/*` runtime-scratch false positives against the current committed ignore/re-inclusion rules | Read-only dev `scan --json --no-monorepo` + `drift --json` on clean shallow checkout `f8e6e893166d567df94e82e1d53745e4862f6e38`: semantic checked 34 declarations with 0 mismatches and no path finding; D2 retained only genuine `scripts/copy-assets.ts` drift. All five ignored runtime paths disappeared, while `.qwen/commands`, skills, agents, and team-memory re-inclusions were not broadly suppressed. Target HEAD and the empty `git status --porcelain` SHA-256 stayed byte-identical. Scan + Drift only; no Treat, plugin, agent, judge, or Eval ran. | This PR |
 | 30 | [langgenius/dify](https://github.com/langgenius/dify) | 2026-07-17 | Revisit round-28 package-root-relative nested drift against a current deep `cli/src/commands/AGENTS.md` scope | Read-only dev `drift --json` on clean sparse checkout `96e34e7b24a2f6b7acabb500ef847443405f4b59`: lexical ancestor resolution removed exactly seven old findings and added none — two duplicate-line `tree:gen` D1 occurrences collapse to one fingerprint, five package-relative D2 findings under `cli/src/commands`, plus the same class under `e2e/features/agent-v2`. The remaining 70 findings and 0/F health are bounded by the sparse checkout and include genuine/other deferred classes; this round proves only the seven-finding delta. Target HEAD and empty status hash stayed unchanged. Drift only; no Scan, Treat, plugin, agent, judge, or Eval ran. | This PR |
 | 31 | [microsoft/vscode](https://github.com/microsoft/vscode) (+ 13 more via the new `benchmark/corpus/`) | 2026-07-17 | First benchmark-corpus batch: `scan --repos-file` over 14 well-known repos (react, n8n, vscode, ollama, transformers, dify, supabase, gemini-cli, codex, home-assistant, zed, elasticsearch, cline, ghostty) pinned as shallow submodules; vscode pinned at `e1b183798f02` | 1 false positive found and fixed (see below): the whole 14-repo batch reported exactly one HIGH security finding, and it was the TypeScript signature `handle(..., token: CancellationToken)` in vscode's Copilot-extension `AGENTS.md` misread as a `Generic hardcoded secret`. Post-fix re-scan: 0 HIGH findings across all 14 repos, every other aggregate number unchanged (150 config files, 96 gaps, 44 overlaps, 3 conflicts, 15 semantic mismatches, 10/14 repos with root `AGENTS.md`). Committed results live in `benchmark/corpus/results/`. | [#255](https://github.com/NieZhuZhu/ai-harness-doctor/pull/255) |
+| 32 | [letta/letta](https://github.com/letta-ai/letta) (round 28) + [openai/codex](https://github.com/openai/codex) (round 14/31 retained corpus evidence) | 2026-07-17 | Adjudicate and fix the previously-logged `org/name` runtime-identifier false-positive class: Letta's `letta/letta` Docker image and Codex's `thread/read` / `app/list` RPC-method tokens reported MISSING by Phase-0 and Phase-2 D2 | Bugfix (see below): a bounded same-line context classifier now excludes tokens explicitly labeled as Docker/OCI images or RPC/API methods while keeping every real filesystem reference checked; ambiguity stays fail-closed and extensioned/three-plus-segment tokens are always paths. Regression tests across `tests/test_registry_consistency.py`, `tests/test_semantic.py`, and `tests/test_check_drift.py`; full `npm run check` green and self-checkup grade A unchanged. | (this PR) → v1.12.1 |
 
-**Loop status:** rounds 1-31 complete. Round 11 (v0.15.2) added a dotenv false-positive fix found by running the full four-stage chain against OpenHands; rounds 12-13 (litellm, openai-agents-python) came back clean; rounds 14-15 (v0.15.3) fixed one shared subdirectory-scoped-path false-positive class found across openai/codex and sst/opencode. Round 16 (v1.1.2) fixed two conflict-detection false-positive classes — the complementary ESLint+Prettier formatter pair (google-gemini/gemini-cli, block/goose) and existence-negated tool names (cline/cline). Rounds 17–19 validate nested scan scope, nested drift, and target-path explain semantics against current Mastra; round 20 validates complete identity/security coverage plus honest bounded-semantic evidence on a real oversize AGENTS.md; round 21 validates bounded explicit-scope efficacy generation on current Mastra; round 22 proves generated fact sources are automatically freshness-bound; round 23 proves the complete task pack fails before any paid runner side effect; round 24 proves batch coverage stays complete but cannot return a false green when one listed repo is absent; round 25 validates deterministic path/conditional applicability and target explain behavior on current first-party GitHub and VS Code rule sets; rounds 26–27 validate Claude Code block-list and always-on project rules on current Bitwarden and Algolia checkouts. Round 28 (v1.9.1) fixed a `test_command` conflict false positive — a package-manager test command (`npm`/`pnpm test`) plus the framework it invokes (`vitest`) — reproduced by running the full four-stage chain across QwenLM/qwen-code and langgenius/dify. Round 29 closes the deferred Qwen gitignored-runtime-path class while preserving the independent `scripts/copy-assets.ts` drift; round 30 closes Dify's lexical package-ancestor class without changing unrelated sparse findings.
+**Loop status:** rounds 1-32 complete. Round 11 (v0.15.2) added a dotenv false-positive fix found by running the full four-stage chain against OpenHands; rounds 12-13 (litellm, openai-agents-python) came back clean; rounds 14-15 (v0.15.3) fixed one shared subdirectory-scoped-path false-positive class found across openai/codex and sst/opencode. Round 16 (v1.1.2) fixed two conflict-detection false-positive classes — the complementary ESLint+Prettier formatter pair (google-gemini/gemini-cli, block/goose) and existence-negated tool names (cline/cline). Rounds 17–19 validate nested scan scope, nested drift, and target-path explain semantics against current Mastra; round 20 validates complete identity/security coverage plus honest bounded-semantic evidence on a real oversize AGENTS.md; round 21 validates bounded explicit-scope efficacy generation on current Mastra; round 22 proves generated fact sources are automatically freshness-bound; round 23 proves the complete task pack fails before any paid runner side effect; round 24 proves batch coverage stays complete but cannot return a false green when one listed repo is absent; round 25 validates deterministic path/conditional applicability and target explain behavior on current first-party GitHub and VS Code rule sets; rounds 26–27 validate Claude Code block-list and always-on project rules on current Bitwarden and Algolia checkouts. Round 28 (v1.9.1) fixed a `test_command` conflict false positive — a package-manager test command (`npm`/`pnpm test`) plus the framework it invokes (`vitest`) — reproduced by running the full four-stage chain across QwenLM/qwen-code and langgenius/dify. Round 29 closes the deferred Qwen gitignored-runtime-path class while preserving the independent `scripts/copy-assets.ts` drift; round 30 closes Dify's lexical package-ancestor class without changing unrelated sparse findings. Round 32 (bugfix) closes the previously-logged `org/name` runtime-identifier class — Letta's `letta/letta` Docker image (logged in round 28) and OpenAI Codex's `thread/read` / `app/list` RPC-method examples (retained from round 14/31) — via one bounded same-line context classifier shared by Phase-0 and Phase-2 D2.
 
 ## Round 1 detail — continuedev/continue
 
@@ -183,3 +184,43 @@ gaps, 44 overlaps, 3 conflicts, 15 semantic mismatches — including codex's kno
 RPC-method-token class from round 14) are committed as unadjudicated evidence in
 `benchmark/corpus/results/` for future rounds; this round only claims the vscode secret
 FP and its fix.
+
+## Round 32 detail — letta/letta (round 28) + openai/codex (round 14/31) runtime-identifier class
+
+Closes the `org/name` runtime-identifier false-positive class that was reproduced
+and explicitly logged across earlier rounds but deferred to keep those patches
+tight:
+
+- **Docker/OCI image misread as a path (letta).** Round 28 logged that Letta's
+  `AGENTS.md` mentions "the `letta/letta` image"; `letta/letta` is a Docker image
+  reference, not a filesystem path, yet both the Phase-0 semantic check and the
+  Phase-2 D2 gate reported it MISSING.
+- **RPC/API method tokens misread as paths (openai/codex).** The codex corpus
+  evidence retained in round 31 includes two-segment method tokens such as
+  `thread/read` and `app/list` from the app-server RPC docs, same lexical shape,
+  same false MISSING result.
+
+**Root cause.** A backtick token like `org/name` is lexically identical whether
+it names a repo-relative directory (`src/service`), a Docker image, or an RPC
+method. The shared `registry.declared_paths` classifier had no way to tell them
+apart, so every such token became a path-existence candidate.
+
+**Fix.** `registry._is_labeled_runtime_identifier` adds a bounded, same-line
+context check used by the single shared classifier (so Phase-0 and Phase-2 D2
+stay in lockstep). Only a plain two-segment token (exactly one `/`, no dot, no
+leading dot, no relative marker) is eligible; a token explicitly labeled by
+adjacent words as a Docker/OCI image (`image`, `docker image`, `container
+image`) or an RPC/API method (`rpc method`, `method`, `endpoint`, `operation`,
+`route`) is treated as a runtime identifier and excluded. The check is
+fail-closed: an explicit filesystem cue (`file`, `directory`, `folder`, `path`,
+`edit`, `open`, `modify`, `repository`, ...) always wins, an unlabeled
+`org/name` stays a path, and any token with an extension or three-plus segments
+(e.g. a `docker/compose.yml` Compose file) is always a path regardless of nearby
+prose.
+
+**Recall guards.** Genuine missing filesystem paths still flag: `src/service`
+under an "edit"/"repository" cue, a bare unlabeled `team/module`, extensioned
+files, and three-plus-segment paths all remain checked. Regression tests live in
+`tests/test_registry_consistency.py` (classifier + cross-stage parity),
+`tests/test_semantic.py` (Phase-0 existence), and `tests/test_check_drift.py`
+(Phase-2 D2).

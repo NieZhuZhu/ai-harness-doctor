@@ -440,6 +440,31 @@ class SemanticPathTests(unittest.TestCase):
             self.assertEqual(missing, {"src/missing.ts"})
             self.assertEqual(result["checked"], 2)
 
+    def test_labeled_runtime_identifiers_are_not_missing_paths(self):
+        # Phase-0 must not report a Docker image or RPC/API method as a missing
+        # path. Real filesystem references (existing and missing) are still
+        # checked. Mirrors Letta's `letta/letta` image and Codex's `thread/read`
+        # method being falsely flagged MISSING.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(root, "pkg/mod/keep.txt", "x\n")
+            text = (
+                "Run the `letta/letta` image locally.\n"
+                "Call RPC method `thread/read` to stream.\n"
+                "Edit the file `src/gone.ts` now.\n"
+                "See the `pkg/mod` directory.\n"
+            )
+            result = semantic.analyze(root, text)
+            missing = {
+                finding["declared"]
+                for finding in result["findings"]
+                if finding["category"] == "path"
+            }
+            self.assertEqual(missing, {"src/gone.ts"})
+            # Only the two real filesystem references are checked; the runtime
+            # identifiers are excluded before existence checking.
+            self.assertEqual(result["checked"], 2)
+
     def test_unrelated_repository_root_cannot_supply_ignore_rules(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)

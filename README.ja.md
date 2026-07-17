@@ -195,6 +195,7 @@ Non-Claude adapter は意図的に薄い設計です。広範な rule distributi
 
 - Scan は read-only で、repository-derived external symlink を除外します。
 - Repository の `.gitignore` が除外する missing path は意図的な runtime path とみなします。Synthetic Git metadata は local/global rule を排除し、Git failure 時は finding を維持します。
+- 隣接する語が backtick `org/name` を Docker/OCI image または RPC/API method と明示的にラベル付けする場合は runtime identifier とみなし、checked path とはしません。除外は fail-closed で、拡張子付きや三段以上の token は path のまま扱います。
 - Nested drift は command、path、runtime/package-manager fact を lexical package ancestor から解決し、sibling package は検索しません。Markdown link は file-relative のままです。
 - Write path は symlinked file または既存 parent directory を拒否します。
 - Plugin は `--allow-plugins` を明示した場合だけ有効です。
