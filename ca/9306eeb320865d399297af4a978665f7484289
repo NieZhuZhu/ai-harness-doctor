@@ -1,0 +1,27 @@
+plans/058-make-local-check-match-required-ci.md
+  s_c6bd186cb16d77::t_77df1790722237 1-336
+plans/059-distinguish-runtime-identifiers-from-paths.md
+  s_c6bd186cb16d77::t_144904f631fa56 1-297
+plans/060-reject-batch-sarif-format-mismatch.md
+  s_c6bd186cb16d77::t_77b47879ce4f58 1-286
+plans/README.md
+  s_c6bd186cb16d77::t_1ed2d7581f0f61 28,506-524,586-588,856-878
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ca9306eeb320865d399297af4a978665f7484289",
+  "prompts": {},
+  "sessions": {
+    "s_c6bd186cb16d77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "87ffe3f4-f60b-4d1a-a87d-f7e36c9c60ee",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
