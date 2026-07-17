@@ -198,3 +198,29 @@ test('doctor --json reports ok with the real runtime present', () => {
   assert.strictEqual(report.ok, true);
   assert.ok(Array.isArray(report.checks));
 });
+
+// Feature: expose the installed version so users can confirm which build npx
+// resolved (npx caches aggressively). Every alias prints the package.json
+// version, exits 0, and must not trigger the network update check.
+const PACKAGE_VERSION = require('../package.json').version;
+
+for (const alias of ['--version', '-v', 'version']) {
+  test(`\`${alias}\` prints the package version and exits 0`, () => {
+    const result = childProcess.spawnSync(process.execPath, [CLI, alias], {
+      encoding: 'utf8',
+      env: { ...process.env },
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+    assert.strictEqual(result.stdout.trim(), PACKAGE_VERSION);
+    assert.strictEqual(result.stderr, '');
+  });
+}
+
+test('help output lists the --version flag', () => {
+  const result = childProcess.spawnSync(process.execPath, [CLI, 'help'], {
+    encoding: 'utf8',
+    env: { ...process.env, AI_HARNESS_DOCTOR_NO_UPDATE_CHECK: '1' },
+  });
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.match(result.stdout, /ai-harness-doctor --version/);
+});
