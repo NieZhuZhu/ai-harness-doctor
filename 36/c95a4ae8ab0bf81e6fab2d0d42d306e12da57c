@@ -1,0 +1,23 @@
+plans/README.md
+  s_c6bd186cb16d77::t_2b63a70ee55638 3,29,526-562,627,1379-1404
+plans/061-restore-agents-progressive-disclosure-headroom.md
+  s_c6bd186cb16d77::t_93d9cd2343f60d 1-560
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "36c95a4ae8ab0bf81e6fab2d0d42d306e12da57c",
+  "prompts": {},
+  "sessions": {
+    "s_c6bd186cb16d77": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "87ffe3f4-f60b-4d1a-a87d-f7e36c9c60ee",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
