@@ -1,0 +1,5471 @@
+{
+  "summary": {
+    "repo_count": 14,
+    "error_count": 0,
+    "aggregate": {
+      "files": 150,
+      "gaps": 96,
+      "security_high": 0,
+      "overlaps": 44,
+      "conflicts": 3,
+      "semantic_mismatches": 15,
+      "repos_with_agents_md": 10
+    }
+  },
+  "repos": [
+    {
+      "path": "benchmark/corpus/repos/react",
+      "name": null,
+      "has_agents_md": false,
+      "summary": {
+        "files": 2,
+        "gaps": 3,
+        "security_high": 0,
+        "overlaps": 0,
+        "conflicts": 0,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 359,
+            "lines": 13,
+            "sha256": "01bfd26b915b",
+            "analyzed_bytes": 359,
+            "truncated": false,
+            "security_scanned_bytes": 359
+          },
+          {
+            "path": "compiler/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 10343,
+            "lines": 276,
+            "sha256": "2f758cf38b8a",
+            "analyzed_bytes": 10343,
+            "truncated": false,
+            "security_scanned_bytes": 10343
+          }
+        ],
+        "warnings": [],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [],
+        "conflicts": [],
+        "instruction_scopes": [],
+        "scope_overrides": [],
+        "nested": [],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [
+            {
+              "config": ".claude/settings.json",
+              "event": "SessionStart",
+              "command": "if [[ \"$PWD\" != */compiler* ]]; then cat .claude/instructions.md 2>/dev/null || true; fi"
+            }
+          ],
+          "permissions": [
+            {
+              "config": ".claude/settings.json",
+              "allow": [
+                "Skill(extract-errors)",
+                "Skill(feature-flags)",
+                "Skill(fix)",
+                "Skill(flags)",
+                "Skill(flow)",
+                "Skill(test)",
+                "Skill(verify)",
+                "Bash(yarn test:*)",
+                "Bash(yarn test-www:*)",
+                "Bash(yarn test-classic:*)",
+                "Bash(yarn test-stable:*)",
+                "Bash(yarn linc:*)",
+                "Bash(yarn lint:*)",
+                "Bash(yarn flow:*)",
+                "Bash(yarn prettier:*)",
+                "Bash(yarn build:*)",
+                "Bash(yarn extract-errors:*)",
+                "Bash(yarn flags:*)"
+              ],
+              "deny": [
+                "Bash(yarn download-build:*)",
+                "Bash(yarn download-build-for-head:*)",
+                "Bash(npm:*)",
+                "Bash(pnpm:*)",
+                "Bash(bun:*)",
+                "Bash(npx:*)"
+              ]
+            }
+          ]
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/compiler_discord_notify.yml",
+              ".github/workflows/compiler_playground.yml",
+              ".github/workflows/compiler_prereleases.yml",
+              ".github/workflows/compiler_prereleases_manual.yml",
+              ".github/workflows/compiler_prereleases_nightly.yml",
+              ".github/workflows/compiler_rust.yml",
+              ".github/workflows/compiler_typescript.yml",
+              ".github/workflows/devtools_discord_notify.yml",
+              ".github/workflows/devtools_regression_tests.yml",
+              ".github/workflows/runtime_build_and_test.yml",
+              ".github/workflows/runtime_commit_artifacts.yml",
+              ".github/workflows/runtime_discord_notify.yml",
+              ".github/workflows/runtime_eslint_plugin_e2e.yml",
+              ".github/workflows/runtime_fuzz_tests.yml",
+              ".github/workflows/runtime_release_from_ci.yml",
+              ".github/workflows/shared_check_maintainer.yml",
+              ".github/workflows/shared_cleanup_merged_branch_caches.yml",
+              ".github/workflows/shared_cleanup_stale_branch_caches.yml",
+              ".github/workflows/shared_close_direct_sync_branch_prs.yml",
+              ".github/workflows/shared_label_core_team_prs.yml",
+              ".github/workflows/shared_lint.yml",
+              ".github/workflows/shared_stale.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".editorconfig",
+              ".eslintrc.js",
+              ".prettierrc.js"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": true
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 0,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G1",
+            "level": "ERROR",
+            "item": "Root AGENTS.md",
+            "message": "No canonical `AGENTS.md` at the repository root.",
+            "suggestion": "Create a root AGENTS.md (see assets/AGENTS.template.md), then run canonicalize.py --write-stubs."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/n8n",
+      "name": "n8n-monorepo",
+      "has_agents_md": true,
+      "summary": {
+        "files": 21,
+        "gaps": 7,
+        "security_high": 0,
+        "overlaps": 15,
+        "conflicts": 1,
+        "semantic_mismatches": 3
+      },
+      "report": {
+        "files": [
+          {
+            "path": ".agents/skills/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1952,
+            "lines": 39,
+            "sha256": "a0601a6555e1",
+            "analyzed_bytes": 1952,
+            "truncated": false,
+            "security_scanned_bytes": 1952
+          },
+          {
+            "path": ".github/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 1121,
+            "lines": 43,
+            "sha256": "0bbf37353cf8",
+            "analyzed_bytes": 1121,
+            "truncated": false,
+            "security_scanned_bytes": 1121
+          },
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 14775,
+            "lines": 294,
+            "sha256": "e6b25ee79a78",
+            "analyzed_bytes": 14775,
+            "truncated": false,
+            "security_scanned_bytes": 14775
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "packages/@n8n/agents/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 6310,
+            "lines": 155,
+            "sha256": "a4f26d5a62e6",
+            "analyzed_bytes": 6310,
+            "truncated": false,
+            "security_scanned_bytes": 6310
+          },
+          {
+            "path": "packages/@n8n/ai-workflow-builder.ee/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1308,
+            "lines": 45,
+            "sha256": "1a55b847b433",
+            "analyzed_bytes": 1308,
+            "truncated": false,
+            "security_scanned_bytes": 1308
+          },
+          {
+            "path": "packages/@n8n/ai-workflow-builder.ee/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "packages/@n8n/db/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 679,
+            "lines": 15,
+            "sha256": "f78abb6d8087",
+            "analyzed_bytes": 679,
+            "truncated": false,
+            "security_scanned_bytes": 679
+          },
+          {
+            "path": "packages/@n8n/instance-ai/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 3266,
+            "lines": 71,
+            "sha256": "320bcf464fd7",
+            "analyzed_bytes": 3266,
+            "truncated": false,
+            "security_scanned_bytes": 3266
+          },
+          {
+            "path": "packages/@n8n/node-cli/src/template/templates/shared/default/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 5052,
+            "lines": 102,
+            "sha256": "b99a3522277b",
+            "analyzed_bytes": 5052,
+            "truncated": false,
+            "security_scanned_bytes": 5052
+          },
+          {
+            "path": "packages/@n8n/node-cli/src/template/templates/shared/default/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "packages/cli/src/modules/n8n-packages/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 4954,
+            "lines": 84,
+            "sha256": "4b14c2169171",
+            "analyzed_bytes": 4954,
+            "truncated": false,
+            "security_scanned_bytes": 4954
+          },
+          {
+            "path": "packages/frontend/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1325,
+            "lines": 21,
+            "sha256": "0be96bf4e8fa",
+            "analyzed_bytes": 1325,
+            "truncated": false,
+            "security_scanned_bytes": 1325
+          },
+          {
+            "path": "packages/frontend/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "packages/frontend/editor-ui/src/app/stores/workflowDocument/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 3894,
+            "lines": 102,
+            "sha256": "ddc8e87b2a43",
+            "analyzed_bytes": 3894,
+            "truncated": false,
+            "security_scanned_bytes": 3894
+          },
+          {
+            "path": "packages/nodes-base/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 5362,
+            "lines": 145,
+            "sha256": "9f534d473b30",
+            "analyzed_bytes": 5362,
+            "truncated": false,
+            "security_scanned_bytes": 5362
+          },
+          {
+            "path": "packages/nodes-base/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "packages/testing/janitor/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "1e2727aa678c",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "packages/testing/playwright/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 14615,
+            "lines": 428,
+            "sha256": "d8b9fbf586d8",
+            "analyzed_bytes": 14615,
+            "truncated": false,
+            "security_scanned_bytes": 14615
+          },
+          {
+            "path": "packages/testing/playwright/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "scripts/instance-seeding/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 8275,
+            "lines": 181,
+            "sha256": "88693b65f91c",
+            "analyzed_bytes": 8275,
+            "truncated": false,
+            "security_scanned_bytes": 8275
+          }
+        ],
+        "warnings": [
+          {
+            "level": "NOTICE",
+            "path": "AGENTS.md",
+            "message": "AGENTS.md is 14775 bytes; this may cause context bloat."
+          },
+          {
+            "level": "NOTICE",
+            "path": "packages/testing/playwright/AGENTS.md",
+            "message": "packages/testing/playwright/AGENTS.md is 14615 bytes; this may cause context bloat."
+          }
+        ],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": "CLAUDE.md",
+            "b": "packages/@n8n/ai-workflow-builder.ee/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "packages/@n8n/node-cli/src/template/templates/shared/default/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "packages/frontend/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "packages/nodes-base/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "packages/testing/playwright/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/@n8n/ai-workflow-builder.ee/CLAUDE.md",
+            "b": "packages/@n8n/node-cli/src/template/templates/shared/default/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/@n8n/ai-workflow-builder.ee/CLAUDE.md",
+            "b": "packages/frontend/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/@n8n/ai-workflow-builder.ee/CLAUDE.md",
+            "b": "packages/nodes-base/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/@n8n/ai-workflow-builder.ee/CLAUDE.md",
+            "b": "packages/testing/playwright/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/@n8n/node-cli/src/template/templates/shared/default/CLAUDE.md",
+            "b": "packages/frontend/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/@n8n/node-cli/src/template/templates/shared/default/CLAUDE.md",
+            "b": "packages/nodes-base/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/@n8n/node-cli/src/template/templates/shared/default/CLAUDE.md",
+            "b": "packages/testing/playwright/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/frontend/CLAUDE.md",
+            "b": "packages/nodes-base/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/frontend/CLAUDE.md",
+            "b": "packages/testing/playwright/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "packages/nodes-base/CLAUDE.md",
+            "b": "packages/testing/playwright/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          }
+        ],
+        "conflicts": [
+          {
+            "signal": "formatter",
+            "values": {
+              "biome": [
+                {
+                  "signal": "formatter",
+                  "value": "biome",
+                  "path": "AGENTS.md",
+                  "line": 136,
+                  "evidence": "- **Code Quality:** Biome (for formatting) + ESLint + lefthook git hooks"
+                }
+              ],
+              "eslint": [
+                {
+                  "signal": "formatter",
+                  "value": "eslint",
+                  "path": "AGENTS.md",
+                  "line": 136,
+                  "evidence": "- **Code Quality:** Biome (for formatting) + ESLint + lefthook git hooks"
+                }
+              ]
+            }
+          }
+        ],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": ".agents/skills/AGENTS.md",
+            "scope": ".agents/skills",
+            "parent": "."
+          },
+          {
+            "path": "packages/frontend/AGENTS.md",
+            "scope": "packages/frontend",
+            "parent": "."
+          },
+          {
+            "path": "packages/nodes-base/AGENTS.md",
+            "scope": "packages/nodes-base",
+            "parent": "."
+          },
+          {
+            "path": "scripts/instance-seeding/AGENTS.md",
+            "scope": "scripts/instance-seeding",
+            "parent": "."
+          },
+          {
+            "path": "packages/@n8n/agents/AGENTS.md",
+            "scope": "packages/@n8n/agents",
+            "parent": "."
+          },
+          {
+            "path": "packages/@n8n/ai-workflow-builder.ee/AGENTS.md",
+            "scope": "packages/@n8n/ai-workflow-builder.ee",
+            "parent": "."
+          },
+          {
+            "path": "packages/@n8n/db/AGENTS.md",
+            "scope": "packages/@n8n/db",
+            "parent": "."
+          },
+          {
+            "path": "packages/testing/playwright/AGENTS.md",
+            "scope": "packages/testing/playwright",
+            "parent": "."
+          },
+          {
+            "path": "packages/@n8n/node-cli/src/template/templates/shared/default/AGENTS.md",
+            "scope": "packages/@n8n/node-cli/src/template/templates/shared/default",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [
+          {
+            "signal": "package_manager",
+            "parent_scope": ".",
+            "scope": "packages/@n8n/node-cli/src/template/templates/shared/default",
+            "parent_values": [
+              "pnpm"
+            ],
+            "values": [
+              "npm"
+            ],
+            "evidence": [
+              {
+                "signal": "package_manager",
+                "value": "npm",
+                "path": "packages/@n8n/node-cli/src/template/templates/shared/default/AGENTS.md",
+                "line": 80,
+                "evidence": "- If you are updating the npm package version, make sure to **update"
+              }
+            ]
+          }
+        ],
+        "nested": [
+          ".agents/skills/AGENTS.md",
+          "packages/@n8n/agents/AGENTS.md",
+          "packages/@n8n/ai-workflow-builder.ee/AGENTS.md",
+          "packages/@n8n/db/AGENTS.md",
+          "packages/@n8n/node-cli/src/template/templates/shared/default/AGENTS.md",
+          "packages/frontend/AGENTS.md",
+          "packages/nodes-base/AGENTS.md",
+          "packages/testing/playwright/AGENTS.md",
+          "scripts/instance-seeding/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [
+            {
+              "config": ".claude/settings.json",
+              "event": "PostToolUse",
+              "command": "node .claude/plugins/n8n/scripts/track-skill-usage.mjs"
+            }
+          ],
+          "permissions": [
+            {
+              "config": ".claude/settings.json",
+              "allow": [
+                "Bash(git log:*)",
+                "Bash(git show:*)",
+                "Bash(grep:*)",
+                "Bash(ls:*)",
+                "Bash(pnpm build)",
+                "Bash(pnpm lint:*)",
+                "Bash(pnpm test:*)",
+                "Bash(pnpm typecheck:*)",
+                "Bash(popd)",
+                "Bash(pushd:*)",
+                "Bash(mkdir -p .claude/plans)",
+                "Write(.claude/plans/*)"
+              ]
+            }
+          ]
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/backport.yml",
+              ".github/workflows/build-base-image.yml",
+              ".github/workflows/build-benchmark-image.yml",
+              ".github/workflows/build-v3-nightly.yml",
+              ".github/workflows/build-windows.yml",
+              ".github/workflows/ci-check-pr-title.yml",
+              ".github/workflows/ci-check-release-from-fork.yml",
+              ".github/workflows/ci-cla-check.yml",
+              ".github/workflows/ci-codeowners-validation.yml",
+              ".github/workflows/ci-detect-new-packages.yml",
+              ".github/workflows/ci-instance-ai-evals.yml",
+              ".github/workflows/ci-master.yml",
+              ".github/workflows/ci-mcp-evals.yml",
+              ".github/workflows/ci-owners-assign-reviewers.yml",
+              ".github/workflows/ci-owners-review-recommendations.yml",
+              ".github/workflows/ci-pr-quality.yml",
+              ".github/workflows/ci-pull-request-review.yml",
+              ".github/workflows/ci-pull-requests.yml",
+              ".github/workflows/ci-python.yml",
+              ".github/workflows/ci-restrict-private-merges.yml",
+              ".github/workflows/clean-stale-branches.yml",
+              ".github/workflows/community-pr-close-stale.yml",
+              ".github/workflows/docker-build-push.yml",
+              ".github/workflows/docker-build-smoke.yml",
+              ".github/workflows/mutation-health-nightly.yml",
+              ".github/workflows/prepare-docker-reusable.yml",
+              ".github/workflows/release-build-daytona-snapshot.yml",
+              ".github/workflows/release-chromatic.yml",
+              ".github/workflows/release-create-experiment.yml",
+              ".github/workflows/release-create-github-releases.yml",
+              ".github/workflows/release-create-minor-pr.yml",
+              ".github/workflows/release-create-patch-pr.yml",
+              ".github/workflows/release-create-pr.yml",
+              ".github/workflows/release-merge-tag-to-branch.yml",
+              ".github/workflows/release-populate-cloud-with-releases.yml",
+              ".github/workflows/release-promote-backport-labels.yml",
+              ".github/workflows/release-promote-github-release.yml",
+              ".github/workflows/release-publish-new-package.yml",
+              ".github/workflows/release-publish-post-release.yml",
+              ".github/workflows/release-publish.yml",
+              ".github/workflows/release-push-to-channel.yml",
+              ".github/workflows/release-schedule-patch-prs.yml",
+              ".github/workflows/release-set-stable-npm-packages-to-latest.yml",
+              ".github/workflows/release-standalone-package.yml",
+              ".github/workflows/release-storybook.yml",
+              ".github/workflows/release-update-pointer-tag.yml",
+              ".github/workflows/release-version-release-notification.yml",
+              ".github/workflows/sbom-generation-callable.yml",
+              ".github/workflows/sec-ci-reusable.yml",
+              ".github/workflows/sec-poutine-reusable.yml",
+              ".github/workflows/sec-publish-fix-1x.yml",
+              ".github/workflows/sec-publish-fix.yml",
+              ".github/workflows/sec-sync-public-to-private.yml",
+              ".github/workflows/sec-zizmor-reusable.yml",
+              ".github/workflows/security-trivy-scan-callable.yml",
+              ".github/workflows/test-bench-reusable.yml",
+              ".github/workflows/test-benchmark-destroy-nightly.yml",
+              ".github/workflows/test-benchmark-nightly.yml",
+              ".github/workflows/test-db-reusable.yml",
+              ".github/workflows/test-dev-server-smoke-reusable.yml",
+              ".github/workflows/test-e2e-coverage-nightly.yml",
+              ".github/workflows/test-e2e-helm.yml",
+              ".github/workflows/test-e2e-infrastructure-reusable.yml",
+              ".github/workflows/test-e2e-performance-reusable.yml",
+              ".github/workflows/test-e2e-reusable.yml",
+              ".github/workflows/test-e2e-vm-expressions-nightly.yml",
+              ".github/workflows/test-evals-ai-release.yml",
+              ".github/workflows/test-evals-ai-reusable.yml",
+              ".github/workflows/test-evals-ai.yml",
+              ".github/workflows/test-evals-discovery.yml",
+              ".github/workflows/test-evals-instance-ai.yml",
+              ".github/workflows/test-evals-mcp.yml",
+              ".github/workflows/test-evals-python.yml",
+              ".github/workflows/test-linting-reusable.yml",
+              ".github/workflows/test-unit-reusable.yml",
+              ".github/workflows/test-workflow-scripts-reusable.yml",
+              ".github/workflows/test-workflows-callable.yml",
+              ".github/workflows/test-workflows-nightly.yml",
+              ".github/workflows/test-workflows-pr-comment.yml",
+              ".github/workflows/util-approve-and-set-automerge.yml",
+              ".github/workflows/util-backport-bundle.yml",
+              ".github/workflows/util-claude-task.yml",
+              ".github/workflows/util-cleanup-abandoned-release-branches.yml",
+              ".github/workflows/util-cleanup-pr-images.yml",
+              ".github/workflows/util-data-tooling.yml",
+              ".github/workflows/util-determine-current-version.yml",
+              ".github/workflows/util-ensure-release-candidate-branches.yml",
+              ".github/workflows/util-notify-pr-status.yml",
+              ".github/workflows/util-qa-metrics-comment-reusable.yml",
+              ".github/workflows/util-sync-api-docs.yml",
+              ".github/workflows/util-sync-master-to-3x.yml",
+              ".github/workflows/util-update-node-popularity.yml"
+            ],
+            "hooks": [
+              "lefthook.yml"
+            ],
+            "lint_format": [
+              ".editorconfig",
+              ".prettierrc.js",
+              "biome.jsonc"
+            ],
+            "typecheck": [
+              "tsconfig.json"
+            ],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "AGENTS.md"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": true
+        },
+        "semantic": {
+          "findings": [
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `packages/editor-ui` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "packages/editor-ui",
+              "actual": "path not found",
+              "line": 122
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `packages/@n8n/i18n` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "packages/@n8n/i18n",
+              "actual": "path not found",
+              "line": 123
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `.../N8N-1234/fix-ssrf-vulnerability` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": ".../N8N-1234/fix-ssrf-vulnerability",
+              "actual": "path not found",
+              "line": 272
+            }
+          ],
+          "checked": 39,
+          "mismatches": 3
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Conventions",
+            "message": "AGENTS.md is missing the `Conventions` section.",
+            "suggestion": "Add a `# Conventions` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/vscode",
+      "name": "code-oss-dev",
+      "has_agents_md": true,
+      "summary": {
+        "files": 33,
+        "gaps": 9,
+        "security_high": 0,
+        "overlaps": 0,
+        "conflicts": 1,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": ".github/copilot-instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 11080,
+            "lines": 157,
+            "sha256": "924d4069f666",
+            "analyzed_bytes": 11080,
+            "truncated": false,
+            "security_scanned_bytes": 11080
+          },
+          {
+            "path": ".github/instructions/accessibility.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 2864,
+            "lines": 79,
+            "sha256": "ecfa3dd0d6f6",
+            "analyzed_bytes": 2864,
+            "truncated": false,
+            "security_scanned_bytes": 2864,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/agentHostTesting.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 2325,
+            "lines": 27,
+            "sha256": "f40c1be02c03",
+            "analyzed_bytes": 2325,
+            "truncated": false,
+            "security_scanned_bytes": 2325,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/platform/agentHost/**"
+              ],
+              "match_count": 1255
+            }
+          },
+          {
+            "path": ".github/instructions/ai-customization.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 7635,
+            "lines": 224,
+            "sha256": "8f953b736981",
+            "analyzed_bytes": 7635,
+            "truncated": false,
+            "security_scanned_bytes": 7635,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/workbench/contrib/chat/browser/aiCustomization/**"
+              ],
+              "match_count": 29
+            }
+          },
+          {
+            "path": ".github/instructions/best-practices.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 5258,
+            "lines": 40,
+            "sha256": "5ac1e670f326",
+            "analyzed_bytes": 5258,
+            "truncated": false,
+            "security_scanned_bytes": 5258,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/**"
+              ],
+              "match_count": 8742
+            }
+          },
+          {
+            "path": ".github/instructions/buildNext.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 26750,
+            "lines": 333,
+            "sha256": "c64d38e07d9f",
+            "analyzed_bytes": 26750,
+            "truncated": false,
+            "security_scanned_bytes": 26750,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "build/next/**"
+              ],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/chat.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 1275,
+            "lines": 21,
+            "sha256": "fb97819738cd",
+            "analyzed_bytes": 1275,
+            "truncated": false,
+            "security_scanned_bytes": 1275,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/coding-guidelines.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 4190,
+            "lines": 69,
+            "sha256": "0cd79cd3affd",
+            "analyzed_bytes": 4190,
+            "truncated": false,
+            "security_scanned_bytes": 4190,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/**"
+              ],
+              "match_count": 8742
+            }
+          },
+          {
+            "path": ".github/instructions/committing.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 494,
+            "lines": 11,
+            "sha256": "a9a9dfcd0504",
+            "analyzed_bytes": 494,
+            "truncated": false,
+            "security_scanned_bytes": 494,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "**"
+              ],
+              "match_count": 16132
+            }
+          },
+          {
+            "path": ".github/instructions/design-philosophy.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 2291,
+            "lines": 36,
+            "sha256": "6a326096f71e",
+            "analyzed_bytes": 2291,
+            "truncated": false,
+            "security_scanned_bytes": 2291,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/**/browser/**/*.ts",
+                "src/vs/**/browser/**/*.css"
+              ],
+              "match_count": 4094
+            }
+          },
+          {
+            "path": ".github/instructions/design-tokens.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 9310,
+            "lines": 199,
+            "sha256": "b5f635e3350c",
+            "analyzed_bytes": 9310,
+            "truncated": false,
+            "security_scanned_bytes": 9310,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/**/*.css"
+              ],
+              "match_count": 417
+            }
+          },
+          {
+            "path": ".github/instructions/disposable.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 890,
+            "lines": 20,
+            "sha256": "69f993694068",
+            "analyzed_bytes": 890,
+            "truncated": false,
+            "security_scanned_bytes": 890,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/interactive.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 4930,
+            "lines": 50,
+            "sha256": "26ddeb782fd4",
+            "analyzed_bytes": 4930,
+            "truncated": false,
+            "security_scanned_bytes": 4930,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/kusto.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 994,
+            "lines": 19,
+            "sha256": "609bde2e8a76",
+            "analyzed_bytes": 994,
+            "truncated": false,
+            "security_scanned_bytes": 994,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/learnings.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 974,
+            "lines": 27,
+            "sha256": "9c9af2e42865",
+            "analyzed_bytes": 974,
+            "truncated": false,
+            "security_scanned_bytes": 974,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/notebook.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 5218,
+            "lines": 108,
+            "sha256": "f8f6b89cd062",
+            "analyzed_bytes": 5218,
+            "truncated": false,
+            "security_scanned_bytes": 5218,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/observables.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3177,
+            "lines": 72,
+            "sha256": "01f0d85ea4e3",
+            "analyzed_bytes": 3177,
+            "truncated": false,
+            "security_scanned_bytes": 3177,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/oss-third-party-notices.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 21437,
+            "lines": 362,
+            "sha256": "4c033d9febc2",
+            "analyzed_bytes": 21437,
+            "truncated": false,
+            "security_scanned_bytes": 21437,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "build/azure-pipelines/oss/**",
+                "build/azure-pipelines/common/downloadNotice.ts",
+                "build/azure-pipelines/win32/steps/product-build-*-compile.yml",
+                "build/azure-pipelines/linux/steps/product-build-*-compile.yml",
+                "build/azure-pipelines/darwin/steps/product-build-*-compile.yml"
+              ],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/oss.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 1334,
+            "lines": 34,
+            "sha256": "fe4dfb436f27",
+            "analyzed_bytes": 1334,
+            "truncated": false,
+            "security_scanned_bytes": 1334,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "ThirdPartyNotices.txt",
+                "cli/ThirdPartyNotices.txt",
+                "cglicenses.json",
+                "cgmanifest.json"
+              ],
+              "match_count": 4
+            }
+          },
+          {
+            "path": ".github/instructions/sessions.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 9876,
+            "lines": 127,
+            "sha256": "12e8d8292a7a",
+            "analyzed_bytes": 9876,
+            "truncated": false,
+            "security_scanned_bytes": 9876,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/sessions/**"
+              ],
+              "match_count": 622
+            }
+          },
+          {
+            "path": ".github/instructions/source-code-organization.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 2667,
+            "lines": 67,
+            "sha256": "4face51db9a1",
+            "analyzed_bytes": 2667,
+            "truncated": false,
+            "security_scanned_bytes": 2667,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/**"
+              ],
+              "match_count": 8742
+            }
+          },
+          {
+            "path": ".github/instructions/telemetry.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 4326,
+            "lines": 113,
+            "sha256": "f5956e1fc706",
+            "analyzed_bytes": 4326,
+            "truncated": false,
+            "security_scanned_bytes": 4326,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/tree-widgets.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 6940,
+            "lines": 157,
+            "sha256": "8c700772d745",
+            "analyzed_bytes": 6940,
+            "truncated": false,
+            "security_scanned_bytes": 6940,
+            "applicability": {
+              "mode": "conditional",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0
+            }
+          },
+          {
+            "path": ".github/instructions/writing-tests.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 2266,
+            "lines": 56,
+            "sha256": "7e5748d8fe12",
+            "analyzed_bytes": 2266,
+            "truncated": false,
+            "security_scanned_bytes": 2266,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "src/vs/**/test/**",
+                "src/vs/**/*.test.ts",
+                "src/vs/**/*.integrationTest.ts"
+              ],
+              "match_count": 2188
+            }
+          },
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 271,
+            "lines": 5,
+            "sha256": "aa9b8989ec53",
+            "analyzed_bytes": 271,
+            "truncated": false,
+            "security_scanned_bytes": 271
+          },
+          {
+            "path": "extensions/copilot/src/extension/chatSessions/claude/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 35193,
+            "lines": 578,
+            "sha256": "fd6f7f8475db",
+            "analyzed_bytes": 32768,
+            "truncated": true,
+            "security_scanned_bytes": 35193
+          },
+          {
+            "path": "extensions/copilot/src/extension/chatSessions/copilotcli/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 21168,
+            "lines": 362,
+            "sha256": "505f139326d8",
+            "analyzed_bytes": 21168,
+            "truncated": false,
+            "security_scanned_bytes": 21168
+          },
+          {
+            "path": "extensions/copilot/src/platform/authentication/common/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 4049,
+            "lines": 88,
+            "sha256": "44a428229254",
+            "analyzed_bytes": 4049,
+            "truncated": false,
+            "security_scanned_bytes": 4049
+          },
+          {
+            "path": "src/vs/platform/agentHost/common/state/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 4299,
+            "lines": 92,
+            "sha256": "311dbdb2da7a",
+            "analyzed_bytes": 4299,
+            "truncated": false,
+            "security_scanned_bytes": 4299
+          },
+          {
+            "path": "src/vs/platform/agentHost/node/copilot/prompts/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 7308,
+            "lines": 139,
+            "sha256": "95d8d293c6e5",
+            "analyzed_bytes": 7308,
+            "truncated": false,
+            "security_scanned_bytes": 7308
+          },
+          {
+            "path": "src/vs/platform/agentHost/test/node/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 232,
+            "lines": 3,
+            "sha256": "f56f7e34b6e5",
+            "analyzed_bytes": 232,
+            "truncated": false,
+            "security_scanned_bytes": 232
+          },
+          {
+            "path": "src/vs/sessions/browser/parts/mobile/contributions/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 5283,
+            "lines": 84,
+            "sha256": "8bcb8cb7aa76",
+            "analyzed_bytes": 5283,
+            "truncated": false,
+            "security_scanned_bytes": 5283
+          },
+          {
+            "path": "src/vs/workbench/contrib/imageCarousel/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 4630,
+            "lines": 69,
+            "sha256": "8ada3765620a",
+            "analyzed_bytes": 4630,
+            "truncated": false,
+            "security_scanned_bytes": 4630
+          }
+        ],
+        "warnings": [
+          {
+            "level": "NOTICE",
+            "path": ".github/instructions/buildNext.instructions.md",
+            "message": ".github/instructions/buildNext.instructions.md is 26750 bytes; this may cause context bloat."
+          },
+          {
+            "level": "NOTICE",
+            "path": ".github/instructions/oss-third-party-notices.instructions.md",
+            "message": ".github/instructions/oss-third-party-notices.instructions.md is 21437 bytes; this may cause context bloat."
+          },
+          {
+            "level": "WARN",
+            "path": "extensions/copilot/src/extension/chatSessions/claude/AGENTS.md",
+            "message": "extensions/copilot/src/extension/chatSessions/claude/AGENTS.md is 35193 bytes, above 32768; Codex project_doc_max_bytes defaults to 32KB and may silently truncate context."
+          },
+          {
+            "level": "NOTICE",
+            "path": "extensions/copilot/src/extension/chatSessions/copilotcli/AGENTS.md",
+            "message": "extensions/copilot/src/extension/chatSessions/copilotcli/AGENTS.md is 21168 bytes; this may cause context bloat."
+          }
+        ],
+        "applicability": [
+          {
+            "path": ".github/instructions/accessibility.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/agentHostTesting.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/platform/agentHost/**"
+            ],
+            "match_count": 1255
+          },
+          {
+            "path": ".github/instructions/ai-customization.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/workbench/contrib/chat/browser/aiCustomization/**"
+            ],
+            "match_count": 29
+          },
+          {
+            "path": ".github/instructions/best-practices.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/**"
+            ],
+            "match_count": 8742
+          },
+          {
+            "path": ".github/instructions/buildNext.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "build/next/**"
+            ],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/chat.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/coding-guidelines.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/**"
+            ],
+            "match_count": 8742
+          },
+          {
+            "path": ".github/instructions/committing.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "**"
+            ],
+            "match_count": 16132
+          },
+          {
+            "path": ".github/instructions/design-philosophy.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/**/browser/**/*.ts",
+              "src/vs/**/browser/**/*.css"
+            ],
+            "match_count": 4094
+          },
+          {
+            "path": ".github/instructions/design-tokens.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/**/*.css"
+            ],
+            "match_count": 417
+          },
+          {
+            "path": ".github/instructions/disposable.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/interactive.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/kusto.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/learnings.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/notebook.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/observables.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/oss-third-party-notices.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "build/azure-pipelines/oss/**",
+              "build/azure-pipelines/common/downloadNotice.ts",
+              "build/azure-pipelines/win32/steps/product-build-*-compile.yml",
+              "build/azure-pipelines/linux/steps/product-build-*-compile.yml",
+              "build/azure-pipelines/darwin/steps/product-build-*-compile.yml"
+            ],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/oss.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "ThirdPartyNotices.txt",
+              "cli/ThirdPartyNotices.txt",
+              "cglicenses.json",
+              "cgmanifest.json"
+            ],
+            "match_count": 4
+          },
+          {
+            "path": ".github/instructions/sessions.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/sessions/**"
+            ],
+            "match_count": 622
+          },
+          {
+            "path": ".github/instructions/source-code-organization.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/**"
+            ],
+            "match_count": 8742
+          },
+          {
+            "path": ".github/instructions/telemetry.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/tree-widgets.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "conditional",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0
+          },
+          {
+            "path": ".github/instructions/writing-tests.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "src/vs/**/test/**",
+              "src/vs/**/*.test.ts",
+              "src/vs/**/*.integrationTest.ts"
+            ],
+            "match_count": 2188
+          }
+        ],
+        "applicability_warnings": [
+          {
+            "category": "no-current-match",
+            "level": "NOTICE",
+            "path": ".github/instructions/buildNext.instructions.md",
+            "line": 1,
+            "message": "Structured rule matches no current contained repository path.",
+            "suggestion": "Review the glob for staleness; it may still target a future file, so this notice is non-blocking."
+          },
+          {
+            "category": "no-current-match",
+            "level": "NOTICE",
+            "path": ".github/instructions/oss-third-party-notices.instructions.md",
+            "line": 1,
+            "message": "Structured rule matches no current contained repository path.",
+            "suggestion": "Review the glob for staleness; it may still target a future file, so this notice is non-blocking."
+          }
+        ],
+        "analysis_limits": [
+          {
+            "path": "extensions/copilot/src/extension/chatSessions/claude/AGENTS.md",
+            "bytes": 35193,
+            "analyzed_bytes": 32768,
+            "security_scanned_bytes": 35193,
+            "affected": [
+              "applicability",
+              "conflicts",
+              "overlaps",
+              "scope_overrides",
+              "semantic",
+              "gaps",
+              "project_snapshot",
+              "custom"
+            ]
+          }
+        ],
+        "overlaps": [],
+        "conflicts": [
+          {
+            "signal": "quote_style",
+            "values": {
+              "double": [
+                {
+                  "signal": "quote_style",
+                  "value": "double",
+                  "path": ".github/copilot-instructions.md",
+                  "line": 93,
+                  "evidence": "- Use \"double quotes\" for strings shown to the user that need to be externalized (localized)"
+                },
+                {
+                  "signal": "quote_style",
+                  "value": "double",
+                  "path": ".github/instructions/coding-guidelines.instructions.md",
+                  "line": 39,
+                  "evidence": "- `\"double quotes\"` for user-visible strings that need localization"
+                }
+              ],
+              "single": [
+                {
+                  "signal": "quote_style",
+                  "value": "single",
+                  "path": ".github/copilot-instructions.md",
+                  "line": 94,
+                  "evidence": "- Use 'single quotes' otherwise"
+                },
+                {
+                  "signal": "quote_style",
+                  "value": "single",
+                  "path": ".github/instructions/coding-guidelines.instructions.md",
+                  "line": 40,
+                  "evidence": "- `'single quotes'` for everything else"
+                }
+              ]
+            }
+          }
+        ],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": "src/vs/workbench/contrib/imageCarousel/AGENTS.md",
+            "scope": "src/vs/workbench/contrib/imageCarousel",
+            "parent": "."
+          },
+          {
+            "path": "extensions/copilot/src/extension/chatSessions/claude/AGENTS.md",
+            "scope": "extensions/copilot/src/extension/chatSessions/claude",
+            "parent": "."
+          },
+          {
+            "path": "extensions/copilot/src/extension/chatSessions/copilotcli/AGENTS.md",
+            "scope": "extensions/copilot/src/extension/chatSessions/copilotcli",
+            "parent": "."
+          },
+          {
+            "path": "extensions/copilot/src/platform/authentication/common/AGENTS.md",
+            "scope": "extensions/copilot/src/platform/authentication/common",
+            "parent": "."
+          },
+          {
+            "path": "src/vs/platform/agentHost/common/state/AGENTS.md",
+            "scope": "src/vs/platform/agentHost/common/state",
+            "parent": "."
+          },
+          {
+            "path": "src/vs/platform/agentHost/test/node/AGENTS.md",
+            "scope": "src/vs/platform/agentHost/test/node",
+            "parent": "."
+          },
+          {
+            "path": "src/vs/platform/agentHost/node/copilot/prompts/AGENTS.md",
+            "scope": "src/vs/platform/agentHost/node/copilot/prompts",
+            "parent": "."
+          },
+          {
+            "path": "src/vs/sessions/browser/parts/mobile/contributions/AGENTS.md",
+            "scope": "src/vs/sessions/browser/parts/mobile/contributions",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          "extensions/copilot/src/extension/chatSessions/claude/AGENTS.md",
+          "extensions/copilot/src/extension/chatSessions/copilotcli/AGENTS.md",
+          "extensions/copilot/src/platform/authentication/common/AGENTS.md",
+          "src/vs/platform/agentHost/common/state/AGENTS.md",
+          "src/vs/platform/agentHost/node/copilot/prompts/AGENTS.md",
+          "src/vs/platform/agentHost/test/node/AGENTS.md",
+          "src/vs/sessions/browser/parts/mobile/contributions/AGENTS.md",
+          "src/vs/workbench/contrib/imageCarousel/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [
+            {
+              "config": ".vscode/mcp.json",
+              "name": "vscode-automation-mcp",
+              "transport": "stdio",
+              "command": "npm",
+              "url": "",
+              "env_keys": []
+            },
+            {
+              "config": ".vscode/mcp.json",
+              "name": "component-explorer",
+              "transport": "stdio",
+              "command": "npm",
+              "url": "",
+              "env_keys": []
+            }
+          ],
+          "subagents": [],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/chat-lib-package.yml",
+              ".github/workflows/chat-perf.yml",
+              ".github/workflows/component-fixtures.yml",
+              ".github/workflows/copilot-setup-steps.yml",
+              ".github/workflows/css-order-scan.yml",
+              ".github/workflows/monaco-editor.yml",
+              ".github/workflows/no-engineering-system-changes.yml",
+              ".github/workflows/pr-darwin-test.yml",
+              ".github/workflows/pr-linux-cli-test.yml",
+              ".github/workflows/pr-linux-test.yml",
+              ".github/workflows/pr-node-modules.yml",
+              ".github/workflows/pr-win32-test.yml",
+              ".github/workflows/pr.yml",
+              ".github/workflows/require-commit-trailer.yml",
+              ".github/workflows/sessions-e2e.yml",
+              ".github/workflows/telemetry.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".editorconfig",
+              "eslint.config.js"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "VS Code Agents Instructions"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [
+            "vscode-automation-mcp",
+            "component-explorer"
+          ],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 0,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Conventions",
+            "message": "AGENTS.md is missing the `Conventions` section.",
+            "suggestion": "Add a `# Conventions` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: .github/copilot-instructions.md",
+            "message": "`.github/copilot-instructions.md` exists but is not a minimal pointer to AGENTS.md (11080 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/ollama",
+      "name": null,
+      "has_agents_md": true,
+      "summary": {
+        "files": 2,
+        "gaps": 8,
+        "security_high": 0,
+        "overlaps": 0,
+        "conflicts": 0,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 358,
+            "lines": 21,
+            "sha256": "9cd30b469bc6",
+            "analyzed_bytes": 358,
+            "truncated": false,
+            "security_scanned_bytes": 358
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 84,
+            "lines": 3,
+            "sha256": "a24ffa1e08f9",
+            "analyzed_bytes": 84,
+            "truncated": false,
+            "security_scanned_bytes": 84
+          }
+        ],
+        "warnings": [],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Go",
+              "markers": [
+                "go.mod",
+                "go.sum"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/latest.yaml",
+              ".github/workflows/release.yaml",
+              ".github/workflows/test-install.yaml",
+              ".github/workflows/test-llamacpp-update.yaml",
+              ".github/workflows/test.yaml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".golangci.yaml"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "AGENTS.md"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 2,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Conventions",
+            "message": "AGENTS.md is missing the `Conventions` section.",
+            "suggestion": "Add a `# Conventions` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/transformers",
+      "name": null,
+      "has_agents_md": true,
+      "summary": {
+        "files": 4,
+        "gaps": 10,
+        "security_high": 0,
+        "overlaps": 3,
+        "conflicts": 0,
+        "semantic_mismatches": 2
+      },
+      "report": {
+        "files": [
+          {
+            "path": ".ai/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 3599,
+            "lines": 49,
+            "sha256": "036cfe8c90c3",
+            "analyzed_bytes": 3599,
+            "truncated": false,
+            "security_scanned_bytes": 3599
+          },
+          {
+            "path": ".github/copilot-instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3529,
+            "lines": 39,
+            "sha256": "51d12faef435",
+            "analyzed_bytes": 3529,
+            "truncated": false,
+            "security_scanned_bytes": 3529
+          },
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 3599,
+            "lines": 49,
+            "sha256": "036cfe8c90c3",
+            "analyzed_bytes": 3599,
+            "truncated": false,
+            "security_scanned_bytes": 3599
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 3599,
+            "lines": 49,
+            "sha256": "036cfe8c90c3",
+            "analyzed_bytes": 3599,
+            "truncated": false,
+            "security_scanned_bytes": 3599
+          }
+        ],
+        "warnings": [],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": ".ai/AGENTS.md",
+            "b": "AGENTS.md",
+            "shared_lines": 35,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": ".ai/AGENTS.md",
+            "b": "CLAUDE.md",
+            "shared_lines": 35,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "AGENTS.md",
+            "b": "CLAUDE.md",
+            "shared_lines": 35,
+            "ratio": 1.0,
+            "percent": 100.0
+          }
+        ],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": ".ai/AGENTS.md",
+            "scope": ".ai",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          ".ai/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Python",
+              "markers": [
+                "pyproject.toml",
+                "setup.py"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".circleci/config.yml",
+              ".github/workflows/add-model-like.yml",
+              ".github/workflows/anti-slop.yml",
+              ".github/workflows/assign-reviewers.yml",
+              ".github/workflows/benchmark.yml",
+              ".github/workflows/benchmark_v2.yml",
+              ".github/workflows/benchmark_v2_a10_caller.yml",
+              ".github/workflows/benchmark_v2_mi300_caller.yml",
+              ".github/workflows/build-ci-docker-images.yml",
+              ".github/workflows/build-docker-images.yml",
+              ".github/workflows/build-nightly-ci-docker-images.yml",
+              ".github/workflows/build-past-ci-docker-images.yml",
+              ".github/workflows/build_documentation.yml",
+              ".github/workflows/build_pr_documentation.yml",
+              ".github/workflows/check-workflow-permissions.yml",
+              ".github/workflows/check_failed_tests.yml",
+              ".github/workflows/check_tiny_models.yml",
+              ".github/workflows/codeql.yml",
+              ".github/workflows/collated-reports.yml",
+              ".github/workflows/dependents-smoke-test.yml",
+              ".github/workflows/doctest_job.yml",
+              ".github/workflows/doctests.yml",
+              ".github/workflows/extras-smoke-test.yml",
+              ".github/workflows/get-pr-info.yml",
+              ".github/workflows/get-pr-number.yml",
+              ".github/workflows/model_jobs.yml",
+              ".github/workflows/model_jobs_intel_gaudi.yml",
+              ".github/workflows/new_model_pr_merged_notification.yml",
+              ".github/workflows/nightly-integration-failure-triage-caller.yml",
+              ".github/workflows/pr-ci-caller.yml",
+              ".github/workflows/pr-ci-post-dashboard-link.yml",
+              ".github/workflows/pr-ci-security-gate.yml",
+              ".github/workflows/pr-repo-consistency-bot.yml",
+              ".github/workflows/pr_build_doc_with_comment.yml",
+              ".github/workflows/pr_slow_ci_suggestion.yml",
+              ".github/workflows/push-important-models.yml",
+              ".github/workflows/release-conda.yml",
+              ".github/workflows/release.yml",
+              ".github/workflows/self-comment-ci.yml",
+              ".github/workflows/self-nightly-caller.yml",
+              ".github/workflows/self-nightly-past-ci-caller.yml",
+              ".github/workflows/self-past-caller.yml",
+              ".github/workflows/self-scheduled-amd-caller.yml",
+              ".github/workflows/self-scheduled-amd-mi250-caller.yml",
+              ".github/workflows/self-scheduled-amd-mi300-caller.yml",
+              ".github/workflows/self-scheduled-amd-mi355-caller.yml",
+              ".github/workflows/self-scheduled-caller.yml",
+              ".github/workflows/self-scheduled-flash-attn-caller.yml",
+              ".github/workflows/self-scheduled-intel-gaudi.yml",
+              ".github/workflows/self-scheduled-intel-gaudi3-caller.yml",
+              ".github/workflows/self-scheduled.yml",
+              ".github/workflows/slack-report.yml",
+              ".github/workflows/ssh-runner.yml",
+              ".github/workflows/stale.yml",
+              ".github/workflows/trl-ci-bot.yml",
+              ".github/workflows/trufflehog.yml",
+              ".github/workflows/update_metdata.yml",
+              ".github/workflows/upload_pr_documentation.yml"
+            ],
+            "hooks": [],
+            "lint_format": [],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `.agents/` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": ".agents/",
+              "actual": "path not found",
+              "line": 13
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `.claude/` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": ".claude/",
+              "actual": "path not found",
+              "line": 14
+            }
+          ],
+          "checked": 15,
+          "mismatches": 2
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Conventions",
+            "message": "AGENTS.md is missing the `Conventions` section.",
+            "suggestion": "Add a `# Conventions` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: CLAUDE.md",
+            "message": "`CLAUDE.md` exists but is not a minimal pointer to AGENTS.md (3599 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: .github/copilot-instructions.md",
+            "message": "`.github/copilot-instructions.md` exists but is not a minimal pointer to AGENTS.md (3529 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/dify",
+      "name": "dify",
+      "has_agents_md": true,
+      "summary": {
+        "files": 12,
+        "gaps": 7,
+        "security_high": 0,
+        "overlaps": 3,
+        "conflicts": 1,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 2019,
+            "lines": 46,
+            "sha256": "14dc7515e4d0",
+            "analyzed_bytes": 2019,
+            "truncated": false,
+            "security_scanned_bytes": 2019
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 2019,
+            "lines": 46,
+            "sha256": "14dc7515e4d0",
+            "analyzed_bytes": 2019,
+            "truncated": false,
+            "security_scanned_bytes": 2019
+          },
+          {
+            "path": "api/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 10446,
+            "lines": 221,
+            "sha256": "6a3373194b7a",
+            "analyzed_bytes": 10446,
+            "truncated": false,
+            "security_scanned_bytes": 10446
+          },
+          {
+            "path": "cli/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 7648,
+            "lines": 99,
+            "sha256": "ed1b3e3f80ed",
+            "analyzed_bytes": 7648,
+            "truncated": false,
+            "security_scanned_bytes": 7648
+          },
+          {
+            "path": "cli/src/commands/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 2407,
+            "lines": 68,
+            "sha256": "2804555b8618",
+            "analyzed_bytes": 2407,
+            "truncated": false,
+            "security_scanned_bytes": 2407
+          },
+          {
+            "path": "dify-agent/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 9685,
+            "lines": 184,
+            "sha256": "26627aeea08b",
+            "analyzed_bytes": 9685,
+            "truncated": false,
+            "security_scanned_bytes": 9685
+          },
+          {
+            "path": "e2e/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 16715,
+            "lines": 351,
+            "sha256": "860034829363",
+            "analyzed_bytes": 16715,
+            "truncated": false,
+            "security_scanned_bytes": 16715
+          },
+          {
+            "path": "e2e/features/agent-v2/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 6639,
+            "lines": 96,
+            "sha256": "f4dc697420ad",
+            "analyzed_bytes": 6639,
+            "truncated": false,
+            "security_scanned_bytes": 6639
+          },
+          {
+            "path": "packages/dify-ui/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 8200,
+            "lines": 89,
+            "sha256": "56e11fce8df2",
+            "analyzed_bytes": 8200,
+            "truncated": false,
+            "security_scanned_bytes": 8200
+          },
+          {
+            "path": "web/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 3967,
+            "lines": 53,
+            "sha256": "f63e783207df",
+            "analyzed_bytes": 3967,
+            "truncated": false,
+            "security_scanned_bytes": 3967
+          },
+          {
+            "path": "web/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 3967,
+            "lines": 53,
+            "sha256": "f63e783207df",
+            "analyzed_bytes": 3967,
+            "truncated": false,
+            "security_scanned_bytes": 3967
+          },
+          {
+            "path": "web/features/agent-v2/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 371,
+            "lines": 3,
+            "sha256": "124a9f650171",
+            "analyzed_bytes": 371,
+            "truncated": false,
+            "security_scanned_bytes": 371
+          }
+        ],
+        "warnings": [
+          {
+            "level": "NOTICE",
+            "path": "e2e/AGENTS.md",
+            "message": "e2e/AGENTS.md is 16715 bytes; this may cause context bloat."
+          }
+        ],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": "AGENTS.md",
+            "b": "CLAUDE.md",
+            "shared_lines": 30,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "web/AGENTS.md",
+            "b": "web/CLAUDE.md",
+            "shared_lines": 36,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "api/AGENTS.md",
+            "b": "dify-agent/AGENTS.md",
+            "shared_lines": 89,
+            "ratio": 0.7236,
+            "percent": 72.4
+          }
+        ],
+        "conflicts": [
+          {
+            "signal": "package_manager",
+            "values": {
+              "uv": [
+                {
+                  "signal": "package_manager",
+                  "value": "uv",
+                  "path": "AGENTS.md",
+                  "line": 17,
+                  "evidence": "- Run backend CLI commands through `uv run --project api <command>`."
+                },
+                {
+                  "signal": "package_manager",
+                  "value": "uv",
+                  "path": "CLAUDE.md",
+                  "line": 17,
+                  "evidence": "- Run backend CLI commands through `uv run --project api <command>`."
+                }
+              ],
+              "pnpm": [
+                {
+                  "signal": "package_manager",
+                  "value": "pnpm",
+                  "path": "AGENTS.md",
+                  "line": 34,
+                  "evidence": "- **TypeScript**: Use the strict config, run `pnpm check` for formatting, Oxlint, ESLint non-code checks, and type checking, and avoid `any` types."
+                },
+                {
+                  "signal": "package_manager",
+                  "value": "pnpm",
+                  "path": "CLAUDE.md",
+                  "line": 34,
+                  "evidence": "- **TypeScript**: Use the strict config, run `pnpm check` for formatting, Oxlint, ESLint non-code checks, and type checking, and avoid `any` types."
+                }
+              ]
+            }
+          }
+        ],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": "api/AGENTS.md",
+            "scope": "api",
+            "parent": "."
+          },
+          {
+            "path": "cli/AGENTS.md",
+            "scope": "cli",
+            "parent": "."
+          },
+          {
+            "path": "dify-agent/AGENTS.md",
+            "scope": "dify-agent",
+            "parent": "."
+          },
+          {
+            "path": "e2e/AGENTS.md",
+            "scope": "e2e",
+            "parent": "."
+          },
+          {
+            "path": "web/AGENTS.md",
+            "scope": "web",
+            "parent": "."
+          },
+          {
+            "path": "packages/dify-ui/AGENTS.md",
+            "scope": "packages/dify-ui",
+            "parent": "."
+          },
+          {
+            "path": "cli/src/commands/AGENTS.md",
+            "scope": "cli/src/commands",
+            "parent": "cli"
+          },
+          {
+            "path": "e2e/features/agent-v2/AGENTS.md",
+            "scope": "e2e/features/agent-v2",
+            "parent": "e2e"
+          },
+          {
+            "path": "web/features/agent-v2/AGENTS.md",
+            "scope": "web/features/agent-v2",
+            "parent": "web"
+          }
+        ],
+        "scope_overrides": [
+          {
+            "signal": "test_command",
+            "parent_scope": ".",
+            "scope": "cli",
+            "parent_values": [
+              "pytest"
+            ],
+            "values": [
+              "pnpm test",
+              "vitest"
+            ],
+            "evidence": [
+              {
+                "signal": "test_command",
+                "value": "vitest",
+                "path": "cli/AGENTS.md",
+                "line": 58,
+                "evidence": "pnpm test                                      # vitest"
+              },
+              {
+                "signal": "test_command",
+                "value": "pnpm test",
+                "path": "cli/AGENTS.md",
+                "line": 59,
+                "evidence": "pnpm test:coverage                             # with coverage"
+              }
+            ]
+          },
+          {
+            "signal": "formatter",
+            "parent_scope": ".",
+            "scope": "cli/src/commands",
+            "parent_values": [
+              "eslint"
+            ],
+            "values": [
+              "prettier"
+            ],
+            "evidence": [
+              {
+                "signal": "formatter",
+                "value": "prettier",
+                "path": "cli/src/commands/AGENTS.md",
+                "line": 41,
+                "evidence": "<!-- prettier-ignore -->"
+              }
+            ]
+          }
+        ],
+        "nested": [
+          "api/AGENTS.md",
+          "cli/AGENTS.md",
+          "cli/src/commands/AGENTS.md",
+          "dify-agent/AGENTS.md",
+          "e2e/AGENTS.md",
+          "e2e/features/agent-v2/AGENTS.md",
+          "packages/dify-ui/AGENTS.md",
+          "web/AGENTS.md",
+          "web/features/agent-v2/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [
+            {
+              "config": ".claude/settings.json",
+              "event": "PreToolUse",
+              "command": "npx -y block-no-verify@1.1.1"
+            }
+          ],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/api-tests.yml",
+              ".github/workflows/autofix.yml",
+              ".github/workflows/build-push.yml",
+              ".github/workflows/cli-e2e.yml",
+              ".github/workflows/cli-edge.yml",
+              ".github/workflows/cli-release.yml",
+              ".github/workflows/cli-smoke.yml",
+              ".github/workflows/cli-tests.yml",
+              ".github/workflows/db-migration-test.yml",
+              ".github/workflows/deploy-agent.yml",
+              ".github/workflows/deploy-dev.yml",
+              ".github/workflows/deploy-enterprise.yml",
+              ".github/workflows/deploy-saas.yml",
+              ".github/workflows/docker-build.yml",
+              ".github/workflows/hotfix-cherry-pick.yml",
+              ".github/workflows/labeler.yml",
+              ".github/workflows/main-ci.yml",
+              ".github/workflows/post-merge.yml",
+              ".github/workflows/pyrefly-diff-comment.yml",
+              ".github/workflows/pyrefly-diff.yml",
+              ".github/workflows/pyrefly-type-coverage-comment.yml",
+              ".github/workflows/pyrefly-type-coverage.yml",
+              ".github/workflows/sandbox-runtime-tests.yml",
+              ".github/workflows/semantic-pull-request.yml",
+              ".github/workflows/stale.yml",
+              ".github/workflows/style.yml",
+              ".github/workflows/tool-test-sdks.yaml",
+              ".github/workflows/translate-i18n-claude.yml",
+              ".github/workflows/trigger-i18n-sync.yml",
+              ".github/workflows/vdb-tests-full.yml",
+              ".github/workflows/vdb-tests.yml",
+              ".github/workflows/web-e2e.yml",
+              ".github/workflows/web-tests.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".editorconfig",
+              "eslint.config.mjs"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "AGENTS.md"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 6,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: CLAUDE.md",
+            "message": "`CLAUDE.md` exists but is not a minimal pointer to AGENTS.md (2019 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/supabase",
+      "name": "supabase",
+      "has_agents_md": false,
+      "summary": {
+        "files": 14,
+        "gaps": 3,
+        "security_high": 0,
+        "overlaps": 1,
+        "conflicts": 0,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": ".claude/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 2032,
+            "lines": 42,
+            "sha256": "13c127361e6a",
+            "analyzed_bytes": 2032,
+            "truncated": false,
+            "security_scanned_bytes": 2032
+          },
+          {
+            "path": ".claude/skills/vercel-composition-patterns/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 22627,
+            "lines": 946,
+            "sha256": "89e3ddd58fcf",
+            "analyzed_bytes": 22627,
+            "truncated": false,
+            "security_scanned_bytes": 22627
+          },
+          {
+            "path": ".cursor/rules/docs/docs-embeddings-generation/RULE.md",
+            "tool": "Cursor",
+            "bytes": 2919,
+            "lines": 68,
+            "sha256": "138003c456f0",
+            "analyzed_bytes": 2919,
+            "truncated": false,
+            "security_scanned_bytes": 2919,
+            "applicability": {
+              "mode": "ignored",
+              "format": "cursor-ignored-md",
+              "patterns": [],
+              "match_count": 0,
+              "reason": "Cursor project rules require the .mdc extension"
+            }
+          },
+          {
+            "path": ".cursor/rules/docs/docs-graphql/RULE.md",
+            "tool": "Cursor",
+            "bytes": 4078,
+            "lines": 132,
+            "sha256": "1415d501f19b",
+            "analyzed_bytes": 4078,
+            "truncated": false,
+            "security_scanned_bytes": 4078,
+            "applicability": {
+              "mode": "ignored",
+              "format": "cursor-ignored-md",
+              "patterns": [],
+              "match_count": 0,
+              "reason": "Cursor project rules require the .mdc extension"
+            }
+          },
+          {
+            "path": ".cursor/rules/docs/docs-test-requirements/RULE.md",
+            "tool": "Cursor",
+            "bytes": 606,
+            "lines": 25,
+            "sha256": "581bc1294f0a",
+            "analyzed_bytes": 606,
+            "truncated": false,
+            "security_scanned_bytes": 606,
+            "applicability": {
+              "mode": "ignored",
+              "format": "cursor-ignored-md",
+              "patterns": [],
+              "match_count": 0,
+              "reason": "Cursor project rules require the .mdc extension"
+            }
+          },
+          {
+            "path": ".github/copilot-instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3687,
+            "lines": 61,
+            "sha256": "d80edb92163d",
+            "analyzed_bytes": 3687,
+            "truncated": false,
+            "security_scanned_bytes": 3687
+          },
+          {
+            "path": ".github/instructions/studio-composition-patterns.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 2601,
+            "lines": 93,
+            "sha256": "75f8af463aab",
+            "analyzed_bytes": 2601,
+            "truncated": false,
+            "security_scanned_bytes": 2601,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "apps/studio/**"
+              ],
+              "match_count": 4622
+            }
+          },
+          {
+            "path": ".github/instructions/studio-copy.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 366,
+            "lines": 13,
+            "sha256": "fe0e03095ed2",
+            "analyzed_bytes": 366,
+            "truncated": false,
+            "security_scanned_bytes": 366,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "apps/studio/**"
+              ],
+              "match_count": 4622
+            }
+          },
+          {
+            "path": ".github/instructions/studio-e2e-tests.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 2256,
+            "lines": 86,
+            "sha256": "2202cd53255b",
+            "analyzed_bytes": 2256,
+            "truncated": false,
+            "security_scanned_bytes": 2256,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "e2e/studio/**",
+                "apps/studio/**"
+              ],
+              "match_count": 4701
+            }
+          },
+          {
+            "path": ".github/instructions/studio-error-handling.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 1556,
+            "lines": 43,
+            "sha256": "8f84d8b4b047",
+            "analyzed_bytes": 1556,
+            "truncated": false,
+            "security_scanned_bytes": 1556,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "apps/studio/**"
+              ],
+              "match_count": 4622
+            }
+          },
+          {
+            "path": ".github/instructions/studio-shadcn-components.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3205,
+            "lines": 53,
+            "sha256": "bc5f8c74a38f",
+            "analyzed_bytes": 3205,
+            "truncated": false,
+            "security_scanned_bytes": 3205,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "apps/studio/**"
+              ],
+              "match_count": 4622
+            }
+          },
+          {
+            "path": ".github/instructions/studio-shortcuts.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3106,
+            "lines": 56,
+            "sha256": "23534e06e819",
+            "analyzed_bytes": 3106,
+            "truncated": false,
+            "security_scanned_bytes": 3106,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "apps/studio/**"
+              ],
+              "match_count": 4622
+            }
+          },
+          {
+            "path": ".github/instructions/studio-telemetry.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3345,
+            "lines": 60,
+            "sha256": "d2d83a1dbf9a",
+            "analyzed_bytes": 3345,
+            "truncated": false,
+            "security_scanned_bytes": 3345,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "apps/studio/**",
+                "packages/common/telemetry*"
+              ],
+              "match_count": 4627
+            }
+          },
+          {
+            "path": ".github/instructions/studio-testing.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 1228,
+            "lines": 29,
+            "sha256": "bb1df0ee0b0e",
+            "analyzed_bytes": 1228,
+            "truncated": false,
+            "security_scanned_bytes": 1228,
+            "applicability": {
+              "mode": "path",
+              "format": "copilot-instructions",
+              "patterns": [
+                "apps/studio/**"
+              ],
+              "match_count": 4622
+            }
+          }
+        ],
+        "warnings": [
+          {
+            "level": "NOTICE",
+            "path": ".claude/skills/vercel-composition-patterns/AGENTS.md",
+            "message": ".claude/skills/vercel-composition-patterns/AGENTS.md is 22627 bytes; this may cause context bloat."
+          }
+        ],
+        "applicability": [
+          {
+            "path": ".cursor/rules/docs/docs-embeddings-generation/RULE.md",
+            "tool": "Cursor",
+            "mode": "ignored",
+            "format": "cursor-ignored-md",
+            "patterns": [],
+            "match_count": 0,
+            "reason": "Cursor project rules require the .mdc extension"
+          },
+          {
+            "path": ".cursor/rules/docs/docs-graphql/RULE.md",
+            "tool": "Cursor",
+            "mode": "ignored",
+            "format": "cursor-ignored-md",
+            "patterns": [],
+            "match_count": 0,
+            "reason": "Cursor project rules require the .mdc extension"
+          },
+          {
+            "path": ".cursor/rules/docs/docs-test-requirements/RULE.md",
+            "tool": "Cursor",
+            "mode": "ignored",
+            "format": "cursor-ignored-md",
+            "patterns": [],
+            "match_count": 0,
+            "reason": "Cursor project rules require the .mdc extension"
+          },
+          {
+            "path": ".github/instructions/studio-composition-patterns.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "apps/studio/**"
+            ],
+            "match_count": 4622
+          },
+          {
+            "path": ".github/instructions/studio-copy.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "apps/studio/**"
+            ],
+            "match_count": 4622
+          },
+          {
+            "path": ".github/instructions/studio-e2e-tests.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "e2e/studio/**",
+              "apps/studio/**"
+            ],
+            "match_count": 4701
+          },
+          {
+            "path": ".github/instructions/studio-error-handling.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "apps/studio/**"
+            ],
+            "match_count": 4622
+          },
+          {
+            "path": ".github/instructions/studio-shadcn-components.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "apps/studio/**"
+            ],
+            "match_count": 4622
+          },
+          {
+            "path": ".github/instructions/studio-shortcuts.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "apps/studio/**"
+            ],
+            "match_count": 4622
+          },
+          {
+            "path": ".github/instructions/studio-telemetry.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "apps/studio/**",
+              "packages/common/telemetry*"
+            ],
+            "match_count": 4627
+          },
+          {
+            "path": ".github/instructions/studio-testing.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "path",
+            "format": "copilot-instructions",
+            "patterns": [
+              "apps/studio/**"
+            ],
+            "match_count": 4622
+          }
+        ],
+        "applicability_warnings": [
+          {
+            "category": "ignored",
+            "level": "WARN",
+            "path": ".cursor/rules/docs/docs-embeddings-generation/RULE.md",
+            "line": 1,
+            "message": "Structured rule is ignored: Cursor project rules require the .mdc extension",
+            "suggestion": "Use the documented rule extension and scalar frontmatter so applicability can be verified."
+          },
+          {
+            "category": "ignored",
+            "level": "WARN",
+            "path": ".cursor/rules/docs/docs-graphql/RULE.md",
+            "line": 1,
+            "message": "Structured rule is ignored: Cursor project rules require the .mdc extension",
+            "suggestion": "Use the documented rule extension and scalar frontmatter so applicability can be verified."
+          },
+          {
+            "category": "ignored",
+            "level": "WARN",
+            "path": ".cursor/rules/docs/docs-test-requirements/RULE.md",
+            "line": 1,
+            "message": "Structured rule is ignored: Cursor project rules require the .mdc extension",
+            "suggestion": "Use the documented rule extension and scalar frontmatter so applicability can be verified."
+          }
+        ],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": ".github/instructions/studio-copy.instructions.md",
+            "b": ".github/instructions/studio-shortcuts.instructions.md",
+            "shared_lines": 2,
+            "ratio": 0.3333,
+            "percent": 33.3
+          }
+        ],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": ".claude/skills/vercel-composition-patterns/AGENTS.md",
+            "scope": ".claude/skills/vercel-composition-patterns",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          ".claude/skills/vercel-composition-patterns/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [
+            {
+              "config": ".mcp.json",
+              "name": "supabase",
+              "transport": "http",
+              "command": "",
+              "url": "https://mcp.supabase.com/mcp",
+              "env_keys": []
+            }
+          ],
+          "subagents": [],
+          "commands": [],
+          "hooks": [
+            {
+              "config": ".claude/settings.json",
+              "event": "SessionStart",
+              "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/scripts/install_pkgs.sh"
+            },
+            {
+              "config": ".claude/settings.json",
+              "event": "PostToolUse",
+              "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/scripts/format_and_lint.sh"
+            }
+          ],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/ai-tests.yml",
+              ".github/workflows/authorize-vercel-deploys.yml",
+              ".github/workflows/auto-label-issues.yml",
+              ".github/workflows/autofix_linters.yml",
+              ".github/workflows/avoid-typos.yml",
+              ".github/workflows/braintrust-evals.yml",
+              ".github/workflows/braintrust-preview-scorers-cleanup.yml",
+              ".github/workflows/braintrust-preview-scorers-deploy.yml",
+              ".github/workflows/braintrust-scorers-deploy.yml",
+              ".github/workflows/dashboard-pr-reminder.yml",
+              ".github/workflows/docs-js-libs-update.yml",
+              ".github/workflows/docs-last-changed.yml",
+              ".github/workflows/docs-lint-v2-comment.yml",
+              ".github/workflows/docs-lint-v2-scheduled.yml",
+              ".github/workflows/docs-lint-v2.yml",
+              ".github/workflows/docs-mgmt-api-update.yml",
+              ".github/workflows/docs-sync-auto-troubleshooting.yml",
+              ".github/workflows/docs-sync-troubleshooting.yml",
+              ".github/workflows/docs-sync.yml",
+              ".github/workflows/docs-tests-smoke.yml",
+              ".github/workflows/docs-tests.yml",
+              ".github/workflows/external-pr-comment.yml",
+              ".github/workflows/fix-typos.yml",
+              ".github/workflows/label_prs.yml",
+              ".github/workflows/mirror.yml",
+              ".github/workflows/og_images.yml",
+              ".github/workflows/pg-meta-tests.yml",
+              ".github/workflows/prettier.yml",
+              ".github/workflows/publish_image.yml",
+              ".github/workflows/search.yml",
+              ".github/workflows/self-host-tests-smoke.yml",
+              ".github/workflows/stale.yml",
+              ".github/workflows/studio-docker-build.yml",
+              ".github/workflows/studio-e2e-test.yml",
+              ".github/workflows/studio-lint-ratchet-decrease.yml",
+              ".github/workflows/studio-lint-ratchet.yml",
+              ".github/workflows/studio-master-alert.yml",
+              ".github/workflows/studio-unit-tests.yml",
+              ".github/workflows/trigger-nimbus-sync.yml",
+              ".github/workflows/typecheck.yml",
+              ".github/workflows/ui-patterns-tests.yml",
+              ".github/workflows/ui-tests.yml",
+              ".github/workflows/update-js-libs.yml",
+              ".github/workflows/update-ssr.yml",
+              ".github/workflows/validate-pr.yml",
+              ".github/workflows/www-tests.yml",
+              ".github/workflows/zizmor.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              "prettier.config.mjs"
+            ],
+            "typecheck": [
+              "tsconfig.json"
+            ],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [],
+          "maintenance_contract": false,
+          "mcp_tools": [
+            "supabase"
+          ],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 0,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G1",
+            "level": "ERROR",
+            "item": "Root AGENTS.md",
+            "message": "No canonical `AGENTS.md` at the repository root.",
+            "suggestion": "Create a root AGENTS.md (see assets/AGENTS.template.md), then run canonicalize.py --write-stubs."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/gemini-cli",
+      "name": "@google/gemini-cli",
+      "has_agents_md": false,
+      "summary": {
+        "files": 8,
+        "gaps": 3,
+        "security_high": 0,
+        "overlaps": 0,
+        "conflicts": 0,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": "GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 4610,
+            "lines": 96,
+            "sha256": "74dab8e16a1a",
+            "analyzed_bytes": 4610,
+            "truncated": false,
+            "security_scanned_bytes": 4610
+          },
+          {
+            "path": "packages/a2a-server/GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 682,
+            "lines": 22,
+            "sha256": "651ac26c9c7b",
+            "analyzed_bytes": 682,
+            "truncated": false,
+            "security_scanned_bytes": 682
+          },
+          {
+            "path": "packages/cli/GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 1465,
+            "lines": 28,
+            "sha256": "0493bdb65816",
+            "analyzed_bytes": 1465,
+            "truncated": false,
+            "security_scanned_bytes": 1465
+          },
+          {
+            "path": "packages/core/GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 2056,
+            "lines": 47,
+            "sha256": "cc468f1b903a",
+            "analyzed_bytes": 2056,
+            "truncated": false,
+            "security_scanned_bytes": 2056
+          },
+          {
+            "path": "packages/devtools/GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 3078,
+            "lines": 86,
+            "sha256": "4ae767284da9",
+            "analyzed_bytes": 3078,
+            "truncated": false,
+            "security_scanned_bytes": 3078
+          },
+          {
+            "path": "packages/sdk/GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 592,
+            "lines": 18,
+            "sha256": "098786bbdeef",
+            "analyzed_bytes": 592,
+            "truncated": false,
+            "security_scanned_bytes": 592
+          },
+          {
+            "path": "packages/test-utils/GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 1933,
+            "lines": 68,
+            "sha256": "fedef3c9b8fa",
+            "analyzed_bytes": 1933,
+            "truncated": false,
+            "security_scanned_bytes": 1933
+          },
+          {
+            "path": "packages/vscode-ide-companion/GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 772,
+            "lines": 23,
+            "sha256": "9b7445a6c524",
+            "analyzed_bytes": 772,
+            "truncated": false,
+            "security_scanned_bytes": 772
+          }
+        ],
+        "warnings": [],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [],
+        "conflicts": [],
+        "instruction_scopes": [],
+        "scope_overrides": [],
+        "nested": [],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [
+            ".gemini/commands/code-guide.toml",
+            ".gemini/commands/core.toml",
+            ".gemini/commands/find-docs.toml",
+            ".gemini/commands/frontend.toml",
+            ".gemini/commands/full-context.toml",
+            ".gemini/commands/github/cleanup-back-to-main.toml",
+            ".gemini/commands/introspect.toml",
+            ".gemini/commands/oncall/pr-review.toml",
+            ".gemini/commands/prompt-suggest.toml",
+            ".gemini/commands/review-and-fix.toml",
+            ".gemini/commands/review-frontend.toml"
+          ],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/agent-session-drift-check.yml",
+              ".github/workflows/build-unsigned-mac-binaries.yml",
+              ".github/workflows/chained_e2e.yml",
+              ".github/workflows/ci.yml",
+              ".github/workflows/community-report.yml",
+              ".github/workflows/deflake.yml",
+              ".github/workflows/docs-audit.yml",
+              ".github/workflows/docs-page-action.yml",
+              ".github/workflows/docs-rebuild.yml",
+              ".github/workflows/eval-pr.yml",
+              ".github/workflows/eval.yml",
+              ".github/workflows/evals-nightly.yml",
+              ".github/workflows/gemini-automated-issue-dedup.yml",
+              ".github/workflows/gemini-automated-issue-triage.yml",
+              ".github/workflows/gemini-cli-bot-brain.yml",
+              ".github/workflows/gemini-cli-bot-pulse.yml",
+              ".github/workflows/gemini-lifecycle-manager.yml",
+              ".github/workflows/gemini-scheduled-issue-dedup.yml",
+              ".github/workflows/gemini-scheduled-issue-triage.yml",
+              ".github/workflows/gemini-scheduled-pr-triage.yml",
+              ".github/workflows/gemini-self-assign-issue.yml",
+              ".github/workflows/issue-opened-labeler.yml",
+              ".github/workflows/label-backlog-child-issues.yml",
+              ".github/workflows/label-workstream-rollup.yml",
+              ".github/workflows/links.yml",
+              ".github/workflows/memory-nightly.yml",
+              ".github/workflows/perf-nightly.yml",
+              ".github/workflows/pr-rate-limiter.yaml",
+              ".github/workflows/pr-size-labeler-batch-run.yml",
+              ".github/workflows/pr-size-labeler.yml",
+              ".github/workflows/release-change-tags.yml",
+              ".github/workflows/release-manual.yml",
+              ".github/workflows/release-nightly.yml",
+              ".github/workflows/release-notes.yml",
+              ".github/workflows/release-patch-0-from-comment.yml",
+              ".github/workflows/release-patch-1-create-pr.yml",
+              ".github/workflows/release-patch-2-trigger.yml",
+              ".github/workflows/release-patch-3-release.yml",
+              ".github/workflows/release-promote.yml",
+              ".github/workflows/release-rollback.yml",
+              ".github/workflows/release-sandbox.yml",
+              ".github/workflows/smoke-test.yml",
+              ".github/workflows/test-build-binary.yml",
+              ".github/workflows/tools-python-ci.yml",
+              ".github/workflows/trigger_e2e.yml",
+              ".github/workflows/unassign-inactive-assignees.yml",
+              ".github/workflows/verify-release.yml"
+            ],
+            "hooks": [
+              ".husky/pre-commit"
+            ],
+            "lint_format": [
+              ".editorconfig",
+              ".prettierrc.json",
+              "eslint.config.js"
+            ],
+            "typecheck": [
+              "tsconfig.json"
+            ],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 0,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G1",
+            "level": "ERROR",
+            "item": "Root AGENTS.md",
+            "message": "No canonical `AGENTS.md` at the repository root.",
+            "suggestion": "Create a root AGENTS.md (see assets/AGENTS.template.md), then run canonicalize.py --write-stubs."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/codex",
+      "name": "codex-monorepo",
+      "has_agents_md": true,
+      "summary": {
+        "files": 2,
+        "gaps": 7,
+        "security_high": 0,
+        "overlaps": 0,
+        "conflicts": 0,
+        "semantic_mismatches": 6
+      },
+      "report": {
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 22519,
+            "lines": 322,
+            "sha256": "c3f80e8386eb",
+            "analyzed_bytes": 22519,
+            "truncated": false,
+            "security_scanned_bytes": 22519
+          },
+          {
+            "path": "codex-rs/tui/src/bottom_pane/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 564,
+            "lines": 12,
+            "sha256": "d6e6791a55c1",
+            "analyzed_bytes": 564,
+            "truncated": false,
+            "security_scanned_bytes": 564
+          }
+        ],
+        "warnings": [
+          {
+            "level": "NOTICE",
+            "path": "AGENTS.md",
+            "message": "AGENTS.md is 22519 bytes; this may cause context bloat."
+          }
+        ],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": "codex-rs/tui/src/bottom_pane/AGENTS.md",
+            "scope": "codex-rs/tui/src/bottom_pane",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          "codex-rs/tui/src/bottom_pane/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/bazel.yml",
+              ".github/workflows/blob-size-policy.yml",
+              ".github/workflows/blocking-ci.yml",
+              ".github/workflows/cargo-deny.yml",
+              ".github/workflows/cla.yml",
+              ".github/workflows/close-stale-contributor-prs.yml",
+              ".github/workflows/codespell.yml",
+              ".github/workflows/issue-deduplicator.yml",
+              ".github/workflows/issue-labeler.yml",
+              ".github/workflows/issue-translator.yml",
+              ".github/workflows/postmerge-ci.yml",
+              ".github/workflows/python-runtime-build.yml",
+              ".github/workflows/python-runtime-release.yml",
+              ".github/workflows/python-sdk-release.yml",
+              ".github/workflows/repo-checks.yml",
+              ".github/workflows/rust-ci-full-nextest-platform.yml",
+              ".github/workflows/rust-ci-full.yml",
+              ".github/workflows/rust-ci.yml",
+              ".github/workflows/rust-release-argument-comment-lint.yml",
+              ".github/workflows/rust-release-prepare.yml",
+              ".github/workflows/rust-release-windows.yml",
+              ".github/workflows/rust-release-zsh.yml",
+              ".github/workflows/rust-release.yml",
+              ".github/workflows/rusty-v8-release.yml",
+              ".github/workflows/sdk.yml",
+              ".github/workflows/v8-canary.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".prettierrc.toml"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "Rust/codex-rs"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `codex-rs/codex-mcp/src/mcp_connection_manager.rs` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "codex-rs/codex-mcp/src/mcp_connection_manager.rs",
+              "actual": "path not found",
+              "line": 35
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `core/context` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "core/context",
+              "actual": "path not found",
+              "line": 100
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `core/suite` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "core/suite",
+              "actual": "path not found",
+              "line": 114
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `app-server-protocol/src/protocol/v2.rs` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "app-server-protocol/src/protocol/v2.rs",
+              "actual": "path not found",
+              "line": 265
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `thread/read` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "thread/read",
+              "actual": "path not found",
+              "line": 273
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `app/list` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "app/list",
+              "actual": "path not found",
+              "line": 273
+            }
+          ],
+          "checked": 20,
+          "mismatches": 6
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/home-assistant",
+      "name": null,
+      "has_agents_md": true,
+      "summary": {
+        "files": 4,
+        "gaps": 10,
+        "security_high": 0,
+        "overlaps": 3,
+        "conflicts": 0,
+        "semantic_mismatches": 2
+      },
+      "report": {
+        "files": [
+          {
+            "path": ".github/copilot-instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 10934,
+            "lines": 182,
+            "sha256": "6a47bdfba069",
+            "analyzed_bytes": 10934,
+            "truncated": false,
+            "security_scanned_bytes": 10934
+          },
+          {
+            "path": ".github/instructions/integrations.instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3559,
+            "lines": 51,
+            "sha256": "2f338b8f7e79",
+            "analyzed_bytes": 3559,
+            "truncated": false,
+            "security_scanned_bytes": 3559,
+            "applicability": {
+              "mode": "invalid",
+              "format": "copilot-instructions",
+              "patterns": [],
+              "match_count": 0,
+              "reason": "field `excludeAgent` is unsupported"
+            }
+          },
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 4792,
+            "lines": 46,
+            "sha256": "080242397d0b",
+            "analyzed_bytes": 4792,
+            "truncated": false,
+            "security_scanned_bytes": 4792
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 4792,
+            "lines": 46,
+            "sha256": "080242397d0b",
+            "analyzed_bytes": 4792,
+            "truncated": false,
+            "security_scanned_bytes": 4792
+          }
+        ],
+        "warnings": [],
+        "applicability": [
+          {
+            "path": ".github/instructions/integrations.instructions.md",
+            "tool": "GitHub Copilot",
+            "mode": "invalid",
+            "format": "copilot-instructions",
+            "patterns": [],
+            "match_count": 0,
+            "reason": "field `excludeAgent` is unsupported"
+          }
+        ],
+        "applicability_warnings": [
+          {
+            "category": "invalid",
+            "level": "WARN",
+            "path": ".github/instructions/integrations.instructions.md",
+            "line": 1,
+            "message": "Structured rule is invalid: field `excludeAgent` is unsupported",
+            "suggestion": "Use the documented rule extension and scalar frontmatter so applicability can be verified."
+          }
+        ],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": ".github/copilot-instructions.md",
+            "b": "AGENTS.md",
+            "shared_lines": 33,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": ".github/copilot-instructions.md",
+            "b": "CLAUDE.md",
+            "shared_lines": 33,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "AGENTS.md",
+            "b": "CLAUDE.md",
+            "shared_lines": 33,
+            "ratio": 1.0,
+            "percent": 100.0
+          }
+        ],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [
+            ".claude/agents/quality-scale-rule-verifier.md",
+            ".claude/agents/raise-pull-request.md"
+          ],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Python",
+              "markers": [
+                "pyproject.toml",
+                "requirements.txt"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/builder.yml",
+              ".github/workflows/check-requirements-deterministic.yml",
+              ".github/workflows/check-requirements.lock.yml",
+              ".github/workflows/ci.yaml",
+              ".github/workflows/codeql.yml",
+              ".github/workflows/detect-duplicate-issues.yml",
+              ".github/workflows/detect-non-english-issues.yml",
+              ".github/workflows/e2e-tests.yml",
+              ".github/workflows/lock.yml",
+              ".github/workflows/restrict-task-creation.yml",
+              ".github/workflows/stale.yml",
+              ".github/workflows/translations.yml",
+              ".github/workflows/wheels.yml"
+            ],
+            "hooks": [
+              ".pre-commit-config.yaml"
+            ],
+            "lint_format": [
+              ".prettierrc.js"
+            ],
+            "typecheck": [
+              "mypy.ini"
+            ],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "GitHub Copilot & Claude Code Instructions"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [
+            {
+              "category": "command",
+              "level": "MISMATCH",
+              "message": "AGENTS.md references `python run prek` but pyproject.toml declares no `prek` console script.",
+              "suggestion": "Add the console script under `[project.scripts]` / `[tool.poetry.scripts]` or update AGENTS.md.",
+              "declared": "python run prek",
+              "actual": "no such pyproject console script",
+              "line": 18
+            },
+            {
+              "category": "package_manager",
+              "level": "MISMATCH",
+              "message": "AGENTS.md uses `uv` but the repo has `requirements.txt`, implying `pip`.",
+              "suggestion": "Align AGENTS.md with `pip` or change the python manifest/lockfile to match `uv`.",
+              "declared": "uv",
+              "actual": "pip"
+            }
+          ],
+          "checked": 8,
+          "mismatches": 2
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Conventions",
+            "message": "AGENTS.md is missing the `Conventions` section.",
+            "suggestion": "Add a `# Conventions` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: CLAUDE.md",
+            "message": "`CLAUDE.md` exists but is not a minimal pointer to AGENTS.md (4792 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: .github/copilot-instructions.md",
+            "message": "`.github/copilot-instructions.md` exists but is not a minimal pointer to AGENTS.md (10934 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/zed",
+      "name": null,
+      "has_agents_md": true,
+      "summary": {
+        "files": 4,
+        "gaps": 10,
+        "security_high": 0,
+        "overlaps": 3,
+        "conflicts": 0,
+        "semantic_mismatches": 2
+      },
+      "report": {
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 11621,
+            "lines": 188,
+            "sha256": "079f88838e5b",
+            "analyzed_bytes": 11621,
+            "truncated": false,
+            "security_scanned_bytes": 11621
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11621,
+            "lines": 188,
+            "sha256": "079f88838e5b",
+            "analyzed_bytes": 11621,
+            "truncated": false,
+            "security_scanned_bytes": 11621
+          },
+          {
+            "path": "GEMINI.md",
+            "tool": "Gemini CLI",
+            "bytes": 11621,
+            "lines": 188,
+            "sha256": "079f88838e5b",
+            "analyzed_bytes": 11621,
+            "truncated": false,
+            "security_scanned_bytes": 11621
+          },
+          {
+            "path": "docs/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 11735,
+            "lines": 407,
+            "sha256": "a2ac2cdf2346",
+            "analyzed_bytes": 11735,
+            "truncated": false,
+            "security_scanned_bytes": 11735
+          }
+        ],
+        "warnings": [],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": "AGENTS.md",
+            "b": "CLAUDE.md",
+            "shared_lines": 117,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "AGENTS.md",
+            "b": "GEMINI.md",
+            "shared_lines": 117,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "GEMINI.md",
+            "shared_lines": 117,
+            "ratio": 1.0,
+            "percent": 100.0
+          }
+        ],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": "docs/AGENTS.md",
+            "scope": "docs",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          "docs/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Rust",
+              "markers": [
+                "Cargo.lock",
+                "Cargo.toml"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/add_commented_closed_issue_to_project.yml",
+              ".github/workflows/after_release.yml",
+              ".github/workflows/autofix_pr.yml",
+              ".github/workflows/bump_collab_staging.yml",
+              ".github/workflows/bump_patch_version.yml",
+              ".github/workflows/bump_zed_version.yml",
+              ".github/workflows/catch_blank_issues.yml",
+              ".github/workflows/cherry_pick.yml",
+              ".github/workflows/comment_on_potential_duplicate_issues.yml",
+              ".github/workflows/community_close_stale_issues.yml",
+              ".github/workflows/community_pr_board.yml",
+              ".github/workflows/community_pr_board_refresh.yml",
+              ".github/workflows/community_update_all_top_ranking_issues.yml",
+              ".github/workflows/community_update_weekly_top_ranking_issues.yml",
+              ".github/workflows/compliance_check.yml",
+              ".github/workflows/congrats.yml",
+              ".github/workflows/danger.yml",
+              ".github/workflows/deploy_collab.yml",
+              ".github/workflows/deploy_docs.yml",
+              ".github/workflows/deploy_nightly_docs.yml",
+              ".github/workflows/docs_suggestions.yml",
+              ".github/workflows/extension_auto_bump.yml",
+              ".github/workflows/extension_bump.yml",
+              ".github/workflows/extension_tests.yml",
+              ".github/workflows/extension_workflow_rollout.yml",
+              ".github/workflows/good_first_issue_notifier.yml",
+              ".github/workflows/guild_assignment_status.yml",
+              ".github/workflows/guild_new_pr_notify.yml",
+              ".github/workflows/guild_stale_assignments.yml",
+              ".github/workflows/guild_weekly_shipped.yml",
+              ".github/workflows/hotfix-review-monitor.yml",
+              ".github/workflows/nix_build.yml",
+              ".github/workflows/pr_issue_labeler.yml",
+              ".github/workflows/publish_extension_cli.yml",
+              ".github/workflows/release.yml",
+              ".github/workflows/release_nightly.yml",
+              ".github/workflows/run_bundling.yml",
+              ".github/workflows/run_tests.yml",
+              ".github/workflows/slack_notify_community_automation_failure.yml",
+              ".github/workflows/slack_notify_first_responders.yml",
+              ".github/workflows/slack_notify_label_created.yml",
+              ".github/workflows/stale-pr-reminder.yml",
+              ".github/workflows/track_duplicate_bot_effectiveness.yml",
+              ".github/workflows/triage_project_sync.yml",
+              ".github/workflows/update_duplicate_magnets.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".prettierrc",
+              "rustfmt.toml"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "Rust coding guidelines",
+            "Timers in tests",
+            "GPUI",
+            "Pull request hygiene",
+            "Crash Investigation",
+            "Rules Hygiene"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `src/some_module.rs` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "src/some_module.rs",
+              "actual": "path not found",
+              "line": 14
+            },
+            {
+              "category": "path",
+              "level": "MISSING",
+              "message": "AGENTS.md references path `src/some_module/mod.rs` which does not exist in the repository.",
+              "suggestion": "Fix or remove the backtick-quoted path in AGENTS.md.",
+              "declared": "src/some_module/mod.rs",
+              "actual": "path not found",
+              "line": 14
+            }
+          ],
+          "checked": 7,
+          "mismatches": 2
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Conventions",
+            "message": "AGENTS.md is missing the `Conventions` section.",
+            "suggestion": "Add a `# Conventions` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: CLAUDE.md",
+            "message": "`CLAUDE.md` exists but is not a minimal pointer to AGENTS.md (11621 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: GEMINI.md",
+            "message": "`GEMINI.md` exists but is not a minimal pointer to AGENTS.md (11621 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/elasticsearch",
+      "name": null,
+      "has_agents_md": true,
+      "summary": {
+        "files": 15,
+        "gaps": 7,
+        "security_high": 0,
+        "overlaps": 15,
+        "conflicts": 0,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 16144,
+            "lines": 179,
+            "sha256": "838a0ae16114",
+            "analyzed_bytes": 16144,
+            "truncated": false,
+            "security_scanned_bytes": 16144
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 10,
+            "lines": 1,
+            "sha256": "918b1c905593",
+            "analyzed_bytes": 10,
+            "truncated": false,
+            "security_scanned_bytes": 10
+          },
+          {
+            "path": "benchmarks/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 783,
+            "lines": 17,
+            "sha256": "381c5855f2a0",
+            "analyzed_bytes": 783,
+            "truncated": false,
+            "security_scanned_bytes": 783
+          },
+          {
+            "path": "docs/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 313,
+            "lines": 11,
+            "sha256": "8c4c20a7429e",
+            "analyzed_bytes": 313,
+            "truncated": false,
+            "security_scanned_bytes": 313
+          },
+          {
+            "path": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 9332,
+            "lines": 113,
+            "sha256": "e2eb18f44fc1",
+            "analyzed_bytes": 9332,
+            "truncated": false,
+            "security_scanned_bytes": 9332
+          },
+          {
+            "path": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "x-pack/plugin/esql/compute/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 878,
+            "lines": 24,
+            "sha256": "4681aaf4a059",
+            "analyzed_bytes": 878,
+            "truncated": false,
+            "security_scanned_bytes": 878
+          },
+          {
+            "path": "x-pack/plugin/inference/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 9791,
+            "lines": 108,
+            "sha256": "e54516401d2b",
+            "analyzed_bytes": 9791,
+            "truncated": false,
+            "security_scanned_bytes": 9791
+          },
+          {
+            "path": "x-pack/plugin/inference/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "x-pack/plugin/ml/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 8945,
+            "lines": 91,
+            "sha256": "9899a30acfd4",
+            "analyzed_bytes": 8945,
+            "truncated": false,
+            "security_scanned_bytes": 8945
+          },
+          {
+            "path": "x-pack/plugin/ml/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          },
+          {
+            "path": "x-pack/plugin/otel-data/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 288,
+            "lines": 7,
+            "sha256": "7bdab57654d2",
+            "analyzed_bytes": 288,
+            "truncated": false,
+            "security_scanned_bytes": 288
+          },
+          {
+            "path": "x-pack/plugin/otel-data/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 10,
+            "lines": 1,
+            "sha256": "918b1c905593",
+            "analyzed_bytes": 10,
+            "truncated": false,
+            "security_scanned_bytes": 10
+          },
+          {
+            "path": "x-pack/plugin/transform/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 7569,
+            "lines": 90,
+            "sha256": "c3286f823264",
+            "analyzed_bytes": 7569,
+            "truncated": false,
+            "security_scanned_bytes": 7569
+          },
+          {
+            "path": "x-pack/plugin/transform/CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 11,
+            "lines": 1,
+            "sha256": "336cc4fbf19b",
+            "analyzed_bytes": 11,
+            "truncated": false,
+            "security_scanned_bytes": 11
+          }
+        ],
+        "warnings": [
+          {
+            "level": "NOTICE",
+            "path": "AGENTS.md",
+            "message": "AGENTS.md is 16144 bytes; this may cause context bloat."
+          }
+        ],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": "CLAUDE.md",
+            "b": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "x-pack/plugin/inference/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "x-pack/plugin/ml/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "x-pack/plugin/otel-data/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "CLAUDE.md",
+            "b": "x-pack/plugin/transform/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/CLAUDE.md",
+            "b": "x-pack/plugin/inference/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/CLAUDE.md",
+            "b": "x-pack/plugin/ml/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/CLAUDE.md",
+            "b": "x-pack/plugin/otel-data/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/CLAUDE.md",
+            "b": "x-pack/plugin/transform/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/inference/CLAUDE.md",
+            "b": "x-pack/plugin/ml/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/inference/CLAUDE.md",
+            "b": "x-pack/plugin/otel-data/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/inference/CLAUDE.md",
+            "b": "x-pack/plugin/transform/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/ml/CLAUDE.md",
+            "b": "x-pack/plugin/otel-data/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/ml/CLAUDE.md",
+            "b": "x-pack/plugin/transform/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          },
+          {
+            "a": "x-pack/plugin/otel-data/CLAUDE.md",
+            "b": "x-pack/plugin/transform/CLAUDE.md",
+            "shared_lines": 1,
+            "ratio": 1.0,
+            "percent": 100.0
+          }
+        ],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": "benchmarks/AGENTS.md",
+            "scope": "benchmarks",
+            "parent": "."
+          },
+          {
+            "path": "docs/AGENTS.md",
+            "scope": "docs",
+            "parent": "."
+          },
+          {
+            "path": "x-pack/plugin/inference/AGENTS.md",
+            "scope": "x-pack/plugin/inference",
+            "parent": "."
+          },
+          {
+            "path": "x-pack/plugin/ml/AGENTS.md",
+            "scope": "x-pack/plugin/ml",
+            "parent": "."
+          },
+          {
+            "path": "x-pack/plugin/otel-data/AGENTS.md",
+            "scope": "x-pack/plugin/otel-data",
+            "parent": "."
+          },
+          {
+            "path": "x-pack/plugin/transform/AGENTS.md",
+            "scope": "x-pack/plugin/transform",
+            "parent": "."
+          },
+          {
+            "path": "x-pack/plugin/esql/compute/AGENTS.md",
+            "scope": "x-pack/plugin/esql/compute",
+            "parent": "."
+          },
+          {
+            "path": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/AGENTS.md",
+            "scope": "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          "benchmarks/AGENTS.md",
+          "docs/AGENTS.md",
+          "x-pack/plugin/core/src/main/java/org/elasticsearch/xpack/core/ml/AGENTS.md",
+          "x-pack/plugin/esql/compute/AGENTS.md",
+          "x-pack/plugin/inference/AGENTS.md",
+          "x-pack/plugin/ml/AGENTS.md",
+          "x-pack/plugin/otel-data/AGENTS.md",
+          "x-pack/plugin/transform/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Java/Kotlin (Gradle)",
+              "markers": [
+                "build.gradle"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/check-esql-generated-headers.yml",
+              ".github/workflows/docs-build.yml",
+              ".github/workflows/docs-deploy.yml",
+              ".github/workflows/docs-preview-cleanup.yml",
+              ".github/workflows/gradle-wrapper-validation.yml",
+              ".github/workflows/updatecli-compose.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".editorconfig"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "Elasticsearch"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 5,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/cline",
+      "name": "@cline/packages",
+      "has_agents_md": false,
+      "summary": {
+        "files": 19,
+        "gaps": 3,
+        "security_high": 0,
+        "overlaps": 0,
+        "conflicts": 0,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": ".clinerules/bun-and-node.md",
+            "tool": "Cline",
+            "bytes": 2873,
+            "lines": 55,
+            "sha256": "05572506d050",
+            "analyzed_bytes": 2873,
+            "truncated": false,
+            "security_scanned_bytes": 2873
+          },
+          {
+            "path": ".clinerules/cline-overview.md",
+            "tool": "Cline",
+            "bytes": 27191,
+            "lines": 764,
+            "sha256": "40f98d4f051a",
+            "analyzed_bytes": 27191,
+            "truncated": false,
+            "security_scanned_bytes": 27191
+          },
+          {
+            "path": ".clinerules/debug-harness.md",
+            "tool": "Cline",
+            "bytes": 6997,
+            "lines": 129,
+            "sha256": "2cef83e4d568",
+            "analyzed_bytes": 6997,
+            "truncated": false,
+            "security_scanned_bytes": 6997
+          },
+          {
+            "path": ".clinerules/general.md",
+            "tool": "Cline",
+            "bytes": 12683,
+            "lines": 205,
+            "sha256": "664e4ac53501",
+            "analyzed_bytes": 12683,
+            "truncated": false,
+            "security_scanned_bytes": 12683
+          },
+          {
+            "path": ".clinerules/hooks/README.md",
+            "tool": "Cline",
+            "bytes": 13810,
+            "lines": 423,
+            "sha256": "4f93bc38b2be",
+            "analyzed_bytes": 13810,
+            "truncated": false,
+            "security_scanned_bytes": 13810
+          },
+          {
+            "path": ".clinerules/network.md",
+            "tool": "Cline",
+            "bytes": 2725,
+            "lines": 90,
+            "sha256": "e8eab854b5dc",
+            "analyzed_bytes": 2725,
+            "truncated": false,
+            "security_scanned_bytes": 2725
+          },
+          {
+            "path": ".clinerules/protobuf-development.md",
+            "tool": "Cline",
+            "bytes": 3528,
+            "lines": 89,
+            "sha256": "beea96ce8c17",
+            "analyzed_bytes": 3528,
+            "truncated": false,
+            "security_scanned_bytes": 3528
+          },
+          {
+            "path": ".clinerules/sdk-migration.md",
+            "tool": "Cline",
+            "bytes": 1266,
+            "lines": 26,
+            "sha256": "0182505d4d45",
+            "analyzed_bytes": 1266,
+            "truncated": false,
+            "security_scanned_bytes": 1266
+          },
+          {
+            "path": ".clinerules/storage.md",
+            "tool": "Cline",
+            "bytes": 2875,
+            "lines": 64,
+            "sha256": "fc55429d30e2",
+            "analyzed_bytes": 2875,
+            "truncated": false,
+            "security_scanned_bytes": 2875
+          },
+          {
+            "path": ".clinerules/workflows/address-pr-comments.md",
+            "tool": "Cline",
+            "bytes": 1020,
+            "lines": 29,
+            "sha256": "7ec22a394e05",
+            "analyzed_bytes": 1020,
+            "truncated": false,
+            "security_scanned_bytes": 1020
+          },
+          {
+            "path": ".clinerules/workflows/find-pr-reviewers.md",
+            "tool": "Cline",
+            "bytes": 2644,
+            "lines": 49,
+            "sha256": "c1de82d867c5",
+            "analyzed_bytes": 2644,
+            "truncated": false,
+            "security_scanned_bytes": 2644
+          },
+          {
+            "path": ".clinerules/workflows/git-branch-analysis.md",
+            "tool": "Cline",
+            "bytes": 4024,
+            "lines": 61,
+            "sha256": "ffea56629bd2",
+            "analyzed_bytes": 4024,
+            "truncated": false,
+            "security_scanned_bytes": 4024
+          },
+          {
+            "path": ".clinerules/workflows/hotfix-release.md",
+            "tool": "Cline",
+            "bytes": 5589,
+            "lines": 187,
+            "sha256": "7329b858ba93",
+            "analyzed_bytes": 5589,
+            "truncated": false,
+            "security_scanned_bytes": 5589
+          },
+          {
+            "path": ".clinerules/workflows/pr-review.md",
+            "tool": "Cline",
+            "bytes": 12783,
+            "lines": 352,
+            "sha256": "0fbd206ba179",
+            "analyzed_bytes": 12783,
+            "truncated": false,
+            "security_scanned_bytes": 12783
+          },
+          {
+            "path": ".clinerules/workflows/release.md",
+            "tool": "Cline",
+            "bytes": 1492,
+            "lines": 64,
+            "sha256": "aa0a0a351680",
+            "analyzed_bytes": 1492,
+            "truncated": false,
+            "security_scanned_bytes": 1492
+          },
+          {
+            "path": ".clinerules/workflows/writing-documentation.md",
+            "tool": "Cline",
+            "bytes": 21815,
+            "lines": 392,
+            "sha256": "1ef6f89969a1",
+            "analyzed_bytes": 21815,
+            "truncated": false,
+            "security_scanned_bytes": 21815
+          },
+          {
+            "path": ".github/copilot-instructions.md",
+            "tool": "GitHub Copilot",
+            "bytes": 3804,
+            "lines": 57,
+            "sha256": "428e301a2157",
+            "analyzed_bytes": 3804,
+            "truncated": false,
+            "security_scanned_bytes": 3804
+          },
+          {
+            "path": "sdk/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 5258,
+            "lines": 109,
+            "sha256": "1b0a8daf4bed",
+            "analyzed_bytes": 5258,
+            "truncated": false,
+            "security_scanned_bytes": 5258
+          },
+          {
+            "path": "sdk/packages/llms/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1725,
+            "lines": 39,
+            "sha256": "ad60eac36045",
+            "analyzed_bytes": 1725,
+            "truncated": false,
+            "security_scanned_bytes": 1725
+          }
+        ],
+        "warnings": [
+          {
+            "level": "NOTICE",
+            "path": ".clinerules/cline-overview.md",
+            "message": ".clinerules/cline-overview.md is 27191 bytes; this may cause context bloat."
+          },
+          {
+            "level": "NOTICE",
+            "path": ".clinerules/general.md",
+            "message": ".clinerules/general.md is 12683 bytes; this may cause context bloat."
+          },
+          {
+            "level": "NOTICE",
+            "path": ".clinerules/hooks/README.md",
+            "message": ".clinerules/hooks/README.md is 13810 bytes; this may cause context bloat."
+          },
+          {
+            "level": "NOTICE",
+            "path": ".clinerules/workflows/pr-review.md",
+            "message": ".clinerules/workflows/pr-review.md is 12783 bytes; this may cause context bloat."
+          },
+          {
+            "level": "NOTICE",
+            "path": ".clinerules/workflows/writing-documentation.md",
+            "message": ".clinerules/workflows/writing-documentation.md is 21815 bytes; this may cause context bloat."
+          }
+        ],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "sdk/AGENTS.md",
+            "scope": "sdk",
+            "parent": "."
+          },
+          {
+            "path": "sdk/packages/llms/AGENTS.md",
+            "scope": "sdk/packages/llms",
+            "parent": "sdk"
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          "sdk/AGENTS.md",
+          "sdk/packages/llms/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [
+            ".claude/commands/hotfix-release.md",
+            ".claude/commands/release.md"
+          ],
+          "hooks": [
+            {
+              "config": ".claude/settings.json",
+              "event": "SessionStart",
+              "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/claude-code-for-web-setup.sh"
+            }
+          ],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [
+            {
+              "language": "Node.js",
+              "markers": [
+                "package.json"
+              ]
+            }
+          ],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/cli-publish.yml",
+              ".github/workflows/ext-jb-test-integration.yml",
+              ".github/workflows/ext-vscode-ab-package.yml",
+              ".github/workflows/ext-vscode-publish-legacy.yml",
+              ".github/workflows/ext-vscode-publish-nightly.yml",
+              ".github/workflows/ext-vscode-publish-stable.yml",
+              ".github/workflows/ext-vscode-test-e2e.yml",
+              ".github/workflows/ext-vscode-test.yml",
+              ".github/workflows/repo-label-issues.yml",
+              ".github/workflows/repo-stale-issues.yml",
+              ".github/workflows/sdk-publish.yml",
+              ".github/workflows/sdk-test.yml"
+            ],
+            "hooks": [
+              ".husky/pre-commit"
+            ],
+            "lint_format": [
+              "biome.json"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 0,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G1",
+            "level": "ERROR",
+            "item": "Root AGENTS.md",
+            "message": "No canonical `AGENTS.md` at the repository root.",
+            "suggestion": "Create a root AGENTS.md (see assets/AGENTS.template.md), then run canonicalize.py --write-stubs."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    },
+    {
+      "path": "benchmark/corpus/repos/ghostty",
+      "name": null,
+      "has_agents_md": true,
+      "summary": {
+        "files": 10,
+        "gaps": 9,
+        "security_high": 0,
+        "overlaps": 1,
+        "conflicts": 0,
+        "semantic_mismatches": 0
+      },
+      "report": {
+        "files": [
+          {
+            "path": "AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1388,
+            "lines": 39,
+            "sha256": "4939dae26b55",
+            "analyzed_bytes": 1388,
+            "truncated": false,
+            "security_scanned_bytes": 1388
+          },
+          {
+            "path": "CLAUDE.md",
+            "tool": "Claude Code",
+            "bytes": 1388,
+            "lines": 39,
+            "sha256": "4939dae26b55",
+            "analyzed_bytes": 1388,
+            "truncated": false,
+            "security_scanned_bytes": 1388
+          },
+          {
+            "path": "example/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1490,
+            "lines": 39,
+            "sha256": "36785170d8ca",
+            "analyzed_bytes": 1490,
+            "truncated": false,
+            "security_scanned_bytes": 1490
+          },
+          {
+            "path": "macos/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1634,
+            "lines": 34,
+            "sha256": "38feef69a7f4",
+            "analyzed_bytes": 1634,
+            "truncated": false,
+            "security_scanned_bytes": 1634
+          },
+          {
+            "path": "src/benchmark/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 2090,
+            "lines": 48,
+            "sha256": "28128d8d834f",
+            "analyzed_bytes": 2090,
+            "truncated": false,
+            "security_scanned_bytes": 2090
+          },
+          {
+            "path": "src/inspector/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 589,
+            "lines": 12,
+            "sha256": "7236500774d7",
+            "analyzed_bytes": 589,
+            "truncated": false,
+            "security_scanned_bytes": 589
+          },
+          {
+            "path": "src/terminal/apc/glyph/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 393,
+            "lines": 9,
+            "sha256": "f4264a3e240f",
+            "analyzed_bytes": 393,
+            "truncated": false,
+            "security_scanned_bytes": 393
+          },
+          {
+            "path": "src/terminal/c/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 1196,
+            "lines": 27,
+            "sha256": "aaa0dc8eacb0",
+            "analyzed_bytes": 1196,
+            "truncated": false,
+            "security_scanned_bytes": 1196
+          },
+          {
+            "path": "src/terminal/compress/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 4451,
+            "lines": 90,
+            "sha256": "5878ea3530fe",
+            "analyzed_bytes": 4451,
+            "truncated": false,
+            "security_scanned_bytes": 4451
+          },
+          {
+            "path": "test/fuzz-libghostty/AGENTS.md",
+            "tool": "AGENTS.md",
+            "bytes": 2060,
+            "lines": 48,
+            "sha256": "3a08432f3378",
+            "analyzed_bytes": 2060,
+            "truncated": false,
+            "security_scanned_bytes": 2060
+          }
+        ],
+        "warnings": [],
+        "applicability": [],
+        "applicability_warnings": [],
+        "analysis_limits": [],
+        "overlaps": [
+          {
+            "a": "AGENTS.md",
+            "b": "CLAUDE.md",
+            "shared_lines": 30,
+            "ratio": 1.0,
+            "percent": 100.0
+          }
+        ],
+        "conflicts": [],
+        "instruction_scopes": [
+          {
+            "path": "AGENTS.md",
+            "scope": ".",
+            "parent": null
+          },
+          {
+            "path": "example/AGENTS.md",
+            "scope": "example",
+            "parent": "."
+          },
+          {
+            "path": "macos/AGENTS.md",
+            "scope": "macos",
+            "parent": "."
+          },
+          {
+            "path": "src/benchmark/AGENTS.md",
+            "scope": "src/benchmark",
+            "parent": "."
+          },
+          {
+            "path": "src/inspector/AGENTS.md",
+            "scope": "src/inspector",
+            "parent": "."
+          },
+          {
+            "path": "test/fuzz-libghostty/AGENTS.md",
+            "scope": "test/fuzz-libghostty",
+            "parent": "."
+          },
+          {
+            "path": "src/terminal/c/AGENTS.md",
+            "scope": "src/terminal/c",
+            "parent": "."
+          },
+          {
+            "path": "src/terminal/compress/AGENTS.md",
+            "scope": "src/terminal/compress",
+            "parent": "."
+          },
+          {
+            "path": "src/terminal/apc/glyph/AGENTS.md",
+            "scope": "src/terminal/apc/glyph",
+            "parent": "."
+          }
+        ],
+        "scope_overrides": [],
+        "nested": [
+          "example/AGENTS.md",
+          "macos/AGENTS.md",
+          "src/benchmark/AGENTS.md",
+          "src/inspector/AGENTS.md",
+          "src/terminal/apc/glyph/AGENTS.md",
+          "src/terminal/c/AGENTS.md",
+          "src/terminal/compress/AGENTS.md",
+          "test/fuzz-libghostty/AGENTS.md"
+        ],
+        "surface": {
+          "mcp_servers": [],
+          "subagents": [],
+          "commands": [],
+          "hooks": [],
+          "permissions": []
+        },
+        "security": [],
+        "project_snapshot": {
+          "tech_stack": [],
+          "existing_files": {
+            "ci": [
+              ".github/workflows/clean-artifacts.yml",
+              ".github/workflows/flatpak.yml",
+              ".github/workflows/milestone.yml",
+              ".github/workflows/nix.yml",
+              ".github/workflows/publish-tag.yml",
+              ".github/workflows/release-tag.yml",
+              ".github/workflows/release-tip.yml",
+              ".github/workflows/snap.yml",
+              ".github/workflows/test.yml",
+              ".github/workflows/update-colorschemes.yml",
+              ".github/workflows/vouch-check-issue.yml",
+              ".github/workflows/vouch-check-pr.yml",
+              ".github/workflows/vouch-manage-by-discussion.yml",
+              ".github/workflows/vouch-manage-by-issue.yml",
+              ".github/workflows/vouch-sync-codeowners.yml"
+            ],
+            "hooks": [],
+            "lint_format": [
+              ".editorconfig"
+            ],
+            "typecheck": [],
+            "drift_guard_hook": null
+          },
+          "agents_sections": [
+            "Agent Development Guide"
+          ],
+          "maintenance_contract": false,
+          "mcp_tools": [],
+          "has_permissions": false
+        },
+        "semantic": {
+          "findings": [],
+          "checked": 2,
+          "mismatches": 0
+        },
+        "gaps": [
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Project overview",
+            "message": "AGENTS.md is missing the `Project overview` section.",
+            "suggestion": "Add a `# Project overview` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Build & test",
+            "message": "AGENTS.md is missing the `Build & test` section.",
+            "suggestion": "Add a `# Build & test` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Conventions",
+            "message": "AGENTS.md is missing the `Conventions` section.",
+            "suggestion": "Add a `# Conventions` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Testing requirements",
+            "message": "AGENTS.md is missing the `Testing requirements` section.",
+            "suggestion": "Add a `# Testing requirements` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Safety",
+            "message": "AGENTS.md is missing the `Safety` section.",
+            "suggestion": "Add a `# Safety` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G2",
+            "level": "WARN",
+            "item": "Section: Commit & PR",
+            "message": "AGENTS.md is missing the `Commit & PR` section.",
+            "suggestion": "Add a `# Commit & PR` section describing what agents cannot infer from code alone."
+          },
+          {
+            "check": "G3",
+            "level": "WARN",
+            "item": "Stub pointer: CLAUDE.md",
+            "message": "`CLAUDE.md` exists but is not a minimal pointer to AGENTS.md (1388 bytes; pointer must be <= 800 bytes and reference AGENTS.md).",
+            "suggestion": "Run canonicalize.py --write-stubs to downgrade it to a pointer."
+          },
+          {
+            "check": "G4",
+            "level": "WARN",
+            "item": "drift guard CI workflow",
+            "message": "`.github/workflows/harness-drift.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          },
+          {
+            "check": "G4",
+            "level": "NOTICE",
+            "item": "weekly checkup CI workflow",
+            "message": "`.github/workflows/harness-checkup.yml` is not installed.",
+            "suggestion": "Run `ai-harness-doctor guard . --apply` to install the guard suite."
+          }
+        ],
+        "custom": []
+      }
+    }
+  ]
+}

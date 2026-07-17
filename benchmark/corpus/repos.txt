@@ -1,0 +1,17 @@
+# Benchmark corpus for `scan.py --repos-file` (paths relative to the repo root;
+# run from the repository root after `git submodule update --init benchmark/corpus/repos/<name>`).
+# One well-known open-source repository per line, pinned as a shallow submodule.
+benchmark/corpus/repos/react
+benchmark/corpus/repos/n8n
+benchmark/corpus/repos/vscode
+benchmark/corpus/repos/ollama
+benchmark/corpus/repos/transformers
+benchmark/corpus/repos/dify
+benchmark/corpus/repos/supabase
+benchmark/corpus/repos/gemini-cli
+benchmark/corpus/repos/codex
+benchmark/corpus/repos/home-assistant
+benchmark/corpus/repos/zed
+benchmark/corpus/repos/elasticsearch
+benchmark/corpus/repos/cline
+benchmark/corpus/repos/ghostty
