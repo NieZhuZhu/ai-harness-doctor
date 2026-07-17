@@ -1,6 +1,6 @@
 # Implementation Plans
 
-Generated and reconciled across sixteen deep `improve` audit batches:
+Generated and reconciled across the deep `improve` audit batches below:
 
 - 2026-07-14 at commit `7121ce6` (plans 001–003, all complete);
 - 2026-07-15 at commit `c8d2f05` (plans 004–007).
@@ -26,6 +26,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-17 at commit `725128d` (plan 056).
 - 2026-07-17 at commit `30675ba` (plan 057).
 - 2026-07-17 at commit `8b0d19e` (plans 058–060).
+- 2026-07-18 at commit `8034dc4` (plan 061).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -522,6 +523,43 @@ verification gate, and update its status here.
    directs automation to aggregate `--json`; cross-repository SARIF remains a
    separate orchestration design rather than a misattributed single file.
 
+### 2026-07-18 post-Plan-058 improve round (repository contract headroom)
+
+1. **Root AGENTS.md has 57 bytes of headroom before its own required strict
+   gate** — independently re-audited all nine categories at `8034dc4` and
+   reconciled every prior plan: 058 is DONE (PR #267, merge `b62b325`);
+   059/060 are REJECTED because both defects were fixed independently in
+   `d3a6a3e` with no PR. All evidence for the selected finding was re-opened
+   live: `AGENTS.md` is 12,231 bytes; `check_drift.py` `d4_size` emits a D4
+   NOTICE above `12 * 1024` = 12,288 bytes and `--strict` promotes every
+   NOTICE to a blocking ERROR; appending one harmless 65-byte comment produced
+   12,296 bytes, strict exit 1, and score 85/B, while restored current `main`
+   is clean 100/A with self-eval 39/39 evidence-bound to the exact AGENTS
+   sha256. The standing "re-check `wc -c` in every AGENTS-touching plan"
+   mitigation demonstrably failed to preserve headroom (Plan 058 closed at
+   57 bytes). Plan 061 completes the file's own progressive-disclosure
+   routing — five measured duplicated clusters (2,870 bytes) restate
+   mechanics already owned by `references/maintenance-contract.md` or
+   repeated inside the root file — and enforces a repository-specific
+   ≤ 10,240-byte budget with a deterministic section/routing/relocation test,
+   leaving ≥ 2,048 bytes of headroom while product D4 stays unchanged.
+
+   Dependency notes: land the plan-only PR green on all nine required
+   contexts first; implementation follows test-first on
+   `docs/061-agents-progressive-disclosure` (commit `docs(agents): restore
+   progressive-disclosure headroom`), requires an honest self-eval
+   refresh/regrade because results bind the AGENTS byte hash (the refreshed
+   notes must state accurately that no `eval_run.py` runner/judge model call
+   was performed and that the offline regex regrade is not a fresh
+   independent model benchmark), keeps the task pack at 39, and is
+   patch-level docs/maintenance work with no public runtime/CLI behavior
+   change and no package manifest/inventory change — though the shipped
+   `references/maintenance-contract.md` prose (and thus tarball bytes) may
+   change, with the packed-candidate check still required green. Plan 061
+   depends on Plan 058 (DONE) because the
+   `local-all-green` invariant it added must survive compaction. The deferred
+   formatter footgun (below) must not be mixed into this change.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -586,6 +624,7 @@ verification gate, and update its status here.
 | 058 | Make the local all-green command cover the required package gate | P1 | S | 057 | DONE — PR [#267](https://github.com/NieZhuZhu/ai-harness-doctor/pull/267), merge `b62b325`, 9/9 required checks |
 | 059 | Distinguish Docker and RPC identifiers from repository paths | P1 | M | 014, 018, 052, 053 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 060 | Reject unsupported batch SARIF instead of emitting Markdown | P1 | S | 012, 032, 042 | REJECTED — fixed independently in `d3a6a3e`; no PR |
+| 061 | Restore AGENTS.md progressive-disclosure headroom | P1 | M | 058 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -1337,3 +1376,29 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   were investigated and are cosmetic/cleared. Not selected; revisit
   CORRECTNESS-02 only after confirming the intended fix-safe-vs-refuse-all
   contract with the maintainer.
+- **Keep relying on per-plan `wc -c` re-checks for AGENTS.md size**
+  (2026-07-18 round) — rejected as a failed mitigation, promoting the earlier
+  "~55 bytes under the strict threshold" housekeeping entry to Plan 061.
+  Plan 058's closeout landed `AGENTS.md` at 12,231 bytes, 57 bytes under the
+  strict D4 threshold, so the standing per-plan discipline preserved no
+  headroom; a repository-owned tested budget replaces it.
+- **Weaken or repository-parameterize the product D4 thresholds instead**
+  (2026-07-18 round) — rejected. The `12 * 1024` NOTICE, strict promotion,
+  and `DEFAULT_MAX_BYTES` are shipped product semantics validated on external
+  repositories; Plan 061 leaves them byte-identical and enforces the lower
+  ≤ 10,240-byte budget only through this repository's own deterministic test.
+- **`npm run format` rewrites tracked sources (formatter footgun)**
+  (2026-07-18 round) — independently revalidated at `8034dc4` with a locked
+  `npm ci --ignore-scripts` install: `prettier --check .` now reports
+  128 files that `--write` would rewrite (56 plans, 31 benchmark, 10
+  `.github` workflow/guard, 8 `bin`, 6 `commands`, 6 `assets`, 1
+  `.ai-harness-doctor`, and 10 root docs including all seven READMEs and
+  `SKILL.md`; zero test files), up from the 91 and 106 recorded in earlier
+  rounds. (Those counts are the `8034dc4` baseline; the Plan 061 plan-only
+  branch adds `plans/061-restore-agents-progressive-disclosure-headroom.md`,
+  so the same check on that branch reports 129 files, 57 in `plans/`.) Deferred to the next round after Plan 061, not selected now:
+  AGENTS headroom blocks every future stable-rule addition and has a cleaner,
+  bounded fix, while formatter ownership over historical evidence, fixtures,
+  generated adapters, synchronized READMEs, and workflow twins remains a
+  policy/migration decision. No other candidate this round produced a
+  reproduced defect that outranked these two.
