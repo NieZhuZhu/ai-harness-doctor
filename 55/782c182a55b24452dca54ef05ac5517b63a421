@@ -1,0 +1,33 @@
+EXTERNAL_VALIDATION.md
+  s_da394e20280a0e::t_7880d8041668cd 54,56,231-261
+benchmark/README.md
+  s_da394e20280a0e::t_05a61161110555 75-85
+benchmark/corpus/README.md
+  s_da394e20280a0e::t_ec75146cb3c1ec 131-134
+benchmark/corpus/evals/codex/README.md
+  s_da394e20280a0e::t_fb459789f3bcfc 1-132
+benchmark/corpus/evals/codex/results/report.md
+  s_da394e20280a0e::t_40ef9c49c34fa0 1-21
+benchmark/corpus/evals/codex/tasks.json
+  s_da394e20280a0e::t_14a411de3f2c50 1-74
+tests/test_benchmark_corpus.py
+  s_da394e20280a0e::t_da2afe01c32b4d 101-173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "55782c182a55b24452dca54ef05ac5517b63a421",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
