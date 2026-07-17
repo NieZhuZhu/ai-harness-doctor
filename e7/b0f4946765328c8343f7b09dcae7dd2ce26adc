@@ -1,0 +1,35 @@
+scripts/check_drift.py
+  s_da394e20280a0e::t_401734227dc655 571-573,575
+scripts/facts.py
+  s_da394e20280a0e::t_b9b76b462d9e58 443,573
+scripts/registry.py
+  s_da394e20280a0e::t_c77a9e82551467 12,36-53
+scripts/scan.py
+  s_da394e20280a0e::t_fdbecc0d0da99f 401-404,417
+tests/test_check_drift.py
+  s_da394e20280a0e::t_13ab77ca19eaf4 1488-1498
+tests/test_registry_consistency.py
+  s_da394e20280a0e::t_ca1ec26ab351b8 555-570
+tests/test_scan.py
+  s_da394e20280a0e::t_a83936e624881d 3207-3254
+tests/test_semantic.py
+  s_da394e20280a0e::t_dd6f6d3301c4ca 543-558
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "e7b0f4946765328c8343f7b09dcae7dd2ce26adc",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
