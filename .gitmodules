@@ -1,0 +1,56 @@
+[submodule "benchmark/corpus/repos/react"]
+	path = benchmark/corpus/repos/react
+	url = https://github.com/react/react.git
+	shallow = true
+[submodule "benchmark/corpus/repos/n8n"]
+	path = benchmark/corpus/repos/n8n
+	url = https://github.com/n8n-io/n8n.git
+	shallow = true
+[submodule "benchmark/corpus/repos/vscode"]
+	path = benchmark/corpus/repos/vscode
+	url = https://github.com/microsoft/vscode.git
+	shallow = true
+[submodule "benchmark/corpus/repos/ollama"]
+	path = benchmark/corpus/repos/ollama
+	url = https://github.com/ollama/ollama.git
+	shallow = true
+[submodule "benchmark/corpus/repos/transformers"]
+	path = benchmark/corpus/repos/transformers
+	url = https://github.com/huggingface/transformers.git
+	shallow = true
+[submodule "benchmark/corpus/repos/dify"]
+	path = benchmark/corpus/repos/dify
+	url = https://github.com/langgenius/dify.git
+	shallow = true
+[submodule "benchmark/corpus/repos/supabase"]
+	path = benchmark/corpus/repos/supabase
+	url = https://github.com/supabase/supabase.git
+	shallow = true
+[submodule "benchmark/corpus/repos/gemini-cli"]
+	path = benchmark/corpus/repos/gemini-cli
+	url = https://github.com/google-gemini/gemini-cli.git
+	shallow = true
+[submodule "benchmark/corpus/repos/codex"]
+	path = benchmark/corpus/repos/codex
+	url = https://github.com/openai/codex.git
+	shallow = true
+[submodule "benchmark/corpus/repos/home-assistant"]
+	path = benchmark/corpus/repos/home-assistant
+	url = https://github.com/home-assistant/core.git
+	shallow = true
+[submodule "benchmark/corpus/repos/zed"]
+	path = benchmark/corpus/repos/zed
+	url = https://github.com/zed-industries/zed.git
+	shallow = true
+[submodule "benchmark/corpus/repos/elasticsearch"]
+	path = benchmark/corpus/repos/elasticsearch
+	url = https://github.com/elastic/elasticsearch.git
+	shallow = true
+[submodule "benchmark/corpus/repos/cline"]
+	path = benchmark/corpus/repos/cline
+	url = https://github.com/cline/cline.git
+	shallow = true
+[submodule "benchmark/corpus/repos/ghostty"]
+	path = benchmark/corpus/repos/ghostty
+	url = https://github.com/ghostty-org/ghostty.git
+	shallow = true
