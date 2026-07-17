@@ -24,6 +24,7 @@ import semantic  # noqa: E402  # declaration-vs-fact consistency engine
 from redaction import (  # noqa: E402,F401  (public compatibility exports)
     _SECRET_PLACEHOLDER_RE,
     SECRET_PATTERNS,
+    is_identifier_annotation,
     redact_secret_values,
     secret_hits,
 )
@@ -603,6 +604,7 @@ def file_info(
                             match.start(),
                             match.end(),
                         )
+                        and not is_identifier_annotation(match)
                         for match in pattern.finditer(mapped)
                     ):
                         secret_labels.append(label)
