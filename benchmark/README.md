@@ -72,16 +72,27 @@ git submodules and scanned in one deterministic `scan.py --repos-file` batch. Th
 measures the Phase-0 checkup against real, diverse harness surfaces at exact commits; it
 involves no agent calls and does not change the headline numbers below.
 
-## Real-repo eval (boundary companion)
+## Real-repo evals (boundary companions)
 
-One corpus repository — openai/codex — has additionally been put through this same
-before/after eval protocol at its pinned commit, with the treatment reduced to exactly
-the 4 stale-path fixes `scan.py` flags in its otherwise healthy `AGENTS.md`. The outcome
-is an honestly published **null result** (24/24 vs 24/24, no flip-flops): a strong
-self-verifying runner heals stale *path* references on its own, while the controlled
-pair below shows the large effect comes from docs that are wrong about *conventions and
-commands*. Together they bracket where the efficacy story does and does not apply. See
-[`corpus/evals/codex/`](corpus/evals/codex/README.md).
+Two real repositories have been put through this same before/after protocol, chosen to
+sit on opposite sides of the efficacy boundary:
+
+- **openai/codex** ([`corpus/evals/codex/`](corpus/evals/codex/README.md)) — healthy
+  command docs, 4 stale *path* references fixed. Honestly published **null result**
+  (24/24 vs 24/24): a strong self-verifying runner heals stale paths on its own.
+- **trycompai/comp** ([`corpus/evals/comp/`](corpus/evals/comp/README.md)) — a bun
+  monorepo whose `CLAUDE.md` forked from `AGENTS.md` and still teaches stale `npx`
+  commands; found by disease-targeted sampling of 948 `.cursorrules` repositories.
+  **Positive result**: one Phase-1 treatment run (resolve conflicts against the
+  lockfile, merge to a single canonical `AGENTS.md`, stub `CLAUDE.md`) took the runner
+  from 18/24 to 24/24, with the 3 conflict tasks failing *deterministically* before —
+  the agent echoed the stale doc verbatim in both runs — and −37% wall time, −45%
+  agent turns, −19% cost after.
+
+Together they locate the boundary: wrong *convention/command* docs cause large,
+deterministic harm that treatment removes; stale *path* references in otherwise-healthy
+docs are self-healed by a strong agent. The controlled pair below remains the headline
+efficacy benchmark; the real-repo evals are its external validity check.
 
 ## Actual results
 
