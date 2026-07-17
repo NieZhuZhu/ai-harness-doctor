@@ -560,6 +560,17 @@ verification gate, and update its status here.
    `local-all-green` invariant it added must survive compaction. The deferred
    formatter footgun (below) must not be mixed into this change.
 
+   Closeout (2026-07-18): plan-only PR
+   [#269](https://github.com/NieZhuZhu/ai-harness-doctor/pull/269) merged as
+   `1d6b1f8` after 9/9 required checks, then implementation PR
+   [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270) merged as
+   `380085c` from reviewed head `b7a759e8` after 9/9 required checks and zero
+   unresolved threads. The completed contract is 10,227 bytes with 2,061
+   bytes of D4 headroom; focused tests passed 38/38, mutation probes 16/16,
+   Python 845, Node 51, `npm run check` including the package candidate,
+   scan, strict drift 100/A, self-eval 39/39 at 100/A with current evidence,
+   and README sync 7/7.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -624,7 +635,7 @@ verification gate, and update its status here.
 | 058 | Make the local all-green command cover the required package gate | P1 | S | 057 | DONE — PR [#267](https://github.com/NieZhuZhu/ai-harness-doctor/pull/267), merge `b62b325`, 9/9 required checks |
 | 059 | Distinguish Docker and RPC identifiers from repository paths | P1 | M | 014, 018, 052, 053 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 060 | Reject unsupported batch SARIF instead of emitting Markdown | P1 | S | 012, 032, 042 | REJECTED — fixed independently in `d3a6a3e`; no PR |
-| 061 | Restore AGENTS.md progressive-disclosure headroom | P1 | M | 058 | TODO |
+| 061 | Restore AGENTS.md progressive-disclosure headroom | P1 | M | 058 | DONE — PR [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270), merge `380085c`, 9/9 required checks |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
