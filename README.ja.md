@@ -9,7 +9,11 @@
 <p><a href="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml"><img align="left" alt="CI" src="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg"></a> <a href="https://www.npmjs.com/package/ai-harness-doctor"><img align="left" alt="npm version" src="https://img.shields.io/npm/v/ai-harness-doctor.svg"></a> <img align="left" alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"> <img align="left" alt="Python 3.9+" src="https://img.shields.io/badge/Python-3.9%2B-blue.svg"> <img align="left" alt="Node &gt;=16" src="https://img.shields.io/badge/Node-%3E%3D16-green.svg"></p>
 <br clear="left">
 
-> 同梱 benchmark では、canonicalization により客観的回答が **6/28 から 28/28** に改善し、flip-flop が消え、平均 latency は 27%、記録された cost は 17% 低下しました。
+## エビデンス
+
+- **harness を直せば、agent の挙動は測定可能なレベルで改善します。** 再現可能な before/after ベンチマークでは、矛盾した設定を 1 つの正準 `AGENTS.md` に統合した結果、客観的回答が **6/28 から 28/28** に改善し、flip-flop していた 2 つの不安定な回答が消え、同一タスクで平均 latency が 27%、記録された cost が 17% 低下しました — [方法論と生データ](benchmark/README.md)。
+- **この病はトップクラスの OSS でも現実に存在します。** 有名リポジトリ 14 件のコーパス（react、vscode、n8n、ollama、transformers、dify、supabase、gemini-cli、codex、home-assistant、zed、elasticsearch、cline、ghostty — 58k–247k スター、submodule で固定）では 10/14 がすでにルート `AGENTS.md` を持つ一方、決定論的な一括スキャン 1 回で 150 個の agent 設定ファイルから **96 件のギャップ、44 件の指示重複、15 件の宣言とコードの不一致、3 件の同一スコープ競合** が見つかりました — [コーパスとリポジトリ別結果](benchmark/corpus/README.md)。
+- **報告される検出結果は信頼できます。** 実リポジトリに対する 31 回の検証ラウンドの記録から、10 件の誤検出修正（openai/codex、microsoft/vscode、cline、gemini-cli など）が回帰テスト付きでリリースされ、保留中のクラスも隠さず公開記録されています — [外部検証ログ](EXTERNAL_VALIDATION.md)。
 
 ## 60 秒で開始
 

@@ -9,7 +9,11 @@ It helps you consolidate scattered guidance into one human-owned `AGENTS.md`, ke
 <p><a href="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml"><img align="left" alt="CI" src="https://github.com/NieZhuZhu/ai-harness-doctor/actions/workflows/test.yml/badge.svg"></a> <a href="https://www.npmjs.com/package/ai-harness-doctor"><img align="left" alt="npm version" src="https://img.shields.io/npm/v/ai-harness-doctor.svg"></a> <img align="left" alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"> <img align="left" alt="Python 3.9+" src="https://img.shields.io/badge/Python-3.9%2B-blue.svg"> <img align="left" alt="Node &gt;=16" src="https://img.shields.io/badge/Node-%3E%3D16-green.svg"></p>
 <br clear="left">
 
-> In the included benchmark, canonicalization improved objective answers from **6/28 to 28/28**, removed flip-flops, reduced average latency by 27%, and reduced captured cost by 17%.
+## Evidence
+
+- **Fixing the harness measurably fixes the agent.** In the reproducible before/after benchmark, consolidating a conflicted harness into one canonical `AGENTS.md` took objective agent answers from **6/28 to 28/28 correct**, eliminated both flip-flop answers, and cut average latency by 27% and captured cost by 17% on identical tasks — [methodology and raw results](benchmark/README.md).
+- **The disease is real at the top of open source.** A corpus of 14 well-known repositories (react, vscode, n8n, ollama, transformers, dify, supabase, gemini-cli, codex, home-assistant, zed, elasticsearch, cline, ghostty — 58k–247k stars, pinned as submodules) shows 10/14 already ship a root `AGENTS.md`, yet one deterministic batch scan still surfaces **96 gaps, 44 overlapping instruction files, 15 declaration-vs-code mismatches, and 3 same-scope conflicts** across 150 agent-config files — [corpus and per-repo results](benchmark/corpus/README.md).
+- **Findings you can trust.** 31 logged validation rounds against real repositories have produced ten false-positive fixes (openai/codex, microsoft/vscode, cline, gemini-cli, …), each released with regression tests; deferred classes are logged openly instead of hidden — [external validation log](EXTERNAL_VALIDATION.md).
 
 ## Start in 60 seconds
 
