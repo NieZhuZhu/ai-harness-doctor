@@ -3204,5 +3204,53 @@ class RenderModuleSplitTests(unittest.TestCase):
         self.assertEqual(scan.render_markdown(report), scan_render.render_markdown(report))
 
 
+class NestedRepositoryBoundaryTests(unittest.TestCase):
+    """A subdirectory carrying its own ``.git`` (submodule working tree or
+    vendored checkout) is a different repository: its instruction files must
+    not be inventoried as this repository's harness, while the same layout
+    without a ``.git`` stays a legitimate nested scope."""
+
+    def _repo(self, root, nested_git):
+        root = Path(root)
+        (root / "AGENTS.md").write_text("# root\n", encoding="utf-8")
+        sub = root / "vendor" / "dep"
+        sub.mkdir(parents=True)
+        (sub / "AGENTS.md").write_text("# other repo\n", encoding="utf-8")
+        (sub / "CLAUDE.md").write_text("# other repo\n", encoding="utf-8")
+        if nested_git == "file":
+            (sub / ".git").write_text("gitdir: ../../.git/modules/dep\n", encoding="utf-8")
+        elif nested_git == "dir":
+            (sub / ".git").mkdir()
+        nested = root / "pkg"
+        nested.mkdir()
+        (nested / "AGENTS.md").write_text("# same-repo nested scope\n", encoding="utf-8")
+        return root, sub
+
+    def test_submodule_files_excluded_from_scan(self):
+        for kind in ("file", "dir"):
+            with tempfile.TemporaryDirectory() as td:
+                root, _sub = self._repo(td, nested_git=kind)
+                paths = {f["path"] for f in scan.scan_repo(root, 32768)["files"]}
+                self.assertIn("AGENTS.md", paths)
+                self.assertIn("pkg/AGENTS.md", paths)
+                self.assertFalse(
+                    {p for p in paths if p.startswith("vendor/")},
+                    f"nested-repo ({kind}) files leaked into the host inventory",
+                )
+
+    def test_same_layout_without_git_is_still_a_nested_scope(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, _sub = self._repo(td, nested_git=None)
+            paths = {f["path"] for f in scan.scan_repo(root, 32768)["files"]}
+            self.assertIn("vendor/dep/AGENTS.md", paths)
+
+    def test_nested_repo_still_scannable_as_own_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            _root, sub = self._repo(td, nested_git="file")
+            paths = {f["path"] for f in scan.scan_repo(sub, 32768)["files"]}
+            self.assertIn("AGENTS.md", paths)
+            self.assertIn("CLAUDE.md", paths)
+
+
 if __name__ == "__main__":
     unittest.main()

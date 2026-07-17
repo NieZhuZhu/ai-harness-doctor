@@ -552,5 +552,21 @@ class SharedConstantConsistencyTests(unittest.TestCase):
         self.assertGreater(len(over_limit.encode("utf-8")), scan.STUB_POINTER_MAX_BYTES)
 
 
+class PruneWalkDirsTests(unittest.TestCase):
+    """The shared walk prune drops SKIP_DIRS and nested-repository boundaries
+    (``.git`` file or directory) while keeping ordinary subdirectories."""
+
+    def test_prunes_skip_dirs_and_nested_repositories(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name in ("node_modules", "kept", "submodule", "vendored"):
+                (root / name).mkdir()
+            (root / "submodule" / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+            (root / "vendored" / ".git").mkdir()
+            dirnames = ["node_modules", "kept", "submodule", "vendored"]
+            registry.prune_walk_dirs(str(root), dirnames)
+            self.assertEqual(dirnames, ["kept"])
+
+
 if __name__ == "__main__":
     unittest.main()

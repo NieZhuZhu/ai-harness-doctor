@@ -440,7 +440,7 @@ def _walk_package_jsons(root):
     unrelated ``node_modules`` never gets traversed.
     """
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
+        registry.prune_walk_dirs(dirpath, dirnames)
         if "package.json" not in filenames:
             continue
         text = read_text_within_root(root, Path(dirpath) / "package.json")
@@ -570,7 +570,7 @@ def build_subtree_path_index(root):
     has_safe_dir_alias = False
 
     for dirpath, dirnames, filenames in os.walk(rootp, followlinks=False):
-        dirnames[:] = [d for d in dirnames if d not in registry.SKIP_DIRS]
+        registry.prune_walk_dirs(dirpath, dirnames)
         current = Path(dirpath)
         if current != rootp:
             search_roots.append(current)

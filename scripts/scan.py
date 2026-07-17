@@ -398,8 +398,10 @@ def build_file_index(root):
 
     Returns a sorted list of ``(relposix, Path)`` for each regular file, with
     ``SKIP_DIRS`` (``.git`` / ``node_modules`` / ``dist`` / ``build`` /
-    ``__pycache__``) pruned at the directory level so their — often enormous —
-    subtrees are never descended. Every glob matcher in the scanner then runs
+    ``__pycache__``) and nested-repository boundaries (subdirectories carrying
+    their own ``.git`` — submodules or vendored checkouts, whose instruction
+    files are not this repository's harness) pruned at the directory level so
+    their — often enormous — subtrees are never descended. Every glob matcher in the scanner then runs
     against this single inventory (see :func:`index_glob`) instead of calling
     ``Path.glob`` once per pattern, which re-walked (and re-filtered) the whole
     tree ~90 times per scan (PERF-01).
@@ -412,7 +414,7 @@ def build_file_index(root):
     root = Path(root).resolve()
     index = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        registry.prune_walk_dirs(dirpath, dirnames)
         base = Path(dirpath)
         for name in filenames:
             path = base / name

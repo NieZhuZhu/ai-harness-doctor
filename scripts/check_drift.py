@@ -568,10 +568,11 @@ def d8_competing_lockfiles(root):
 def nested_agents(root):
     out = []
     # Walk with os.walk so we can prune vendored dirs in place and avoid
-    # following directory symlinks (which can loop). Reuse scan.SKIP_DIRS so
-    # scan.py and check_drift.py never maintain divergent skip sets.
+    # following directory symlinks (which can loop). Reuse the shared
+    # registry.prune_walk_dirs so scan.py, facts.py and check_drift.py never
+    # maintain divergent skip sets or nested-repository boundary semantics.
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = [d for d in dirnames if d not in scan.SKIP_DIRS]
+        registry.prune_walk_dirs(dirpath, dirnames)
         if "AGENTS.md" not in filenames:
             continue
         p = Path(dirpath) / "AGENTS.md"
