@@ -48,12 +48,15 @@ is enough.
    `bin/cli.js`.
 4. Run the full suite, the linters, and a self-checkup locally:
    ```bash
-   npm run check          # lint (eslint + ruff + docs + adapters) then tests
+   npm run check          # lint, Python/Node tests, then packed npm candidate
    node bin/cli.js help
    python3 scripts/scan.py .
    python3 scripts/check_drift.py .
    ```
-   `npm run check` is the single "all green" entry point (`npm run lint && npm test`).
+   `npm run check` is the single "all green" entry point
+   (`npm run lint && npm test && npm run check:package`): lint (eslint + ruff +
+   docs + adapters), then the Python and Node test suites, then packed npm
+   candidate verification.
    Linting requires Node >= 20.19 (eslint 10) and `ruff` on your PATH
    (`pip install ruff`); the runtime CLI itself still supports Node 16+.
    Keep the drift health score at grade A.

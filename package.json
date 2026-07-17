@@ -64,7 +64,7 @@
     "coverage": "npm run coverage:py && npm run coverage:js",
     "coverage:py": "python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report",
     "coverage:js": "node --test --experimental-test-coverage bin/*.test.js",
-    "check": "npm run lint && npm test",
+    "check": "npm run lint && npm test && npm run check:package",
     "check:package": "python3 scripts/check_package_candidate.py",
     "lint": "npm run lint:js && npm run lint:py && npm run lint:docs && npm run lint:adapters",
     "lint:js": "eslint bin",

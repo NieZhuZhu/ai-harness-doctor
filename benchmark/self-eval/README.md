@@ -11,13 +11,14 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-- `tasks.json` — 38 objective questions an agent would ask about this repo (build/test
+- `tasks.json` — 39 objective questions an agent would ask about this repo (build/test
   commands, language/runtime constraints, safety/release rules, installer/MCP policy,
   evidence freshness, repository operations, path truth, nested package facts,
   Action argv safety, the deep-improve loop, and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
-- `results-after.json` — manual-protocol answers refreshed on 2026-07-17 from the
-  current `AGENTS.md`, with no repository browsing or external model call.
+- `results-after.json` — manual-protocol answers refreshed on 2026-07-17 (the
+  `local-all-green` task was added on 2026-07-18) from the current `AGENTS.md`,
+  with no repository browsing or external model call.
 - `*-graded.json` — the same files after `--regrade` (adds `passed`/`answer`).
 - `results-after-graded.json` additionally binds the exact `tasks.json` and
   `AGENTS.md` bytes through a deterministic evidence manifest. Task-declared
@@ -43,7 +44,7 @@ python3 scripts/eval_run.py --score benchmark/self-eval/results-after-graded.jso
 |---|---|
 | before (pre-fix `AGENTS.md`) | 9/12 |
 | after (historical post-fix `AGENTS.md`) | 12/12 |
-| current evidence-bound maintenance pack | 38/38 |
+| current evidence-bound maintenance pack | 39/39 |
 
 **Finding:** the three failures (`drift-script`, `scan-script`, `eval-script`) all shared one
 root cause — `AGENTS.md` never named the four phase scripts (`scan.py`, `canonicalize.py`,
@@ -101,3 +102,7 @@ nine-category audit, land plan-only and implementation PRs behind all nine CI
 contexts, verify Standards/Spec plus real evidence, squash/delete, close out the
 plan in a green docs PR, and revalidate candidates instead of carrying them
 forward unexamined.
+The `local-all-green` task checks the local/CI parity invariant: the local
+all-green `npm run check` runs lint, tests, then packed npm candidate
+verification, while CI remains responsible for the Python 3.9–3.12 and
+Node 16–22 matrix coverage.
