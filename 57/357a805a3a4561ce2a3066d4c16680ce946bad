@@ -1,0 +1,55 @@
+EXTERNAL_VALIDATION.md
+  s_da394e20280a0e::t_608e57890bd527 55,57,263-303
+README.es.md
+  s_da394e20280a0e::t_c88a8802c5d30c 15,17
+README.fr.md
+  s_da394e20280a0e::t_760e7eefd19388 15,17
+README.ja.md
+  s_da394e20280a0e::t_a83e7daa767c4d 15,17
+README.ko.md
+  s_da394e20280a0e::t_4ac00486977783 15,17
+README.md
+  s_da394e20280a0e::t_bcb8903d48604a 15,17
+README.pt-BR.md
+  s_da394e20280a0e::t_0b9eebc06fed4f 15,17
+README.zh-CN.md
+  s_da394e20280a0e::t_5c66fdaa8ecd20 15,17
+benchmark/README.md
+  s_da394e20280a0e::t_e9b8050010ee02 75-95
+benchmark/corpus/README.md
+  s_da394e20280a0e::t_59fe5f4be6aeb2 132-136
+benchmark/corpus/evals/comp/README.md
+  s_da394e20280a0e::t_e1b6076e165f62 1-159
+benchmark/corpus/evals/comp/results/report.md
+  s_da394e20280a0e::t_c311e18e44ed25 1-21
+benchmark/corpus/evals/comp/results/results-after-run2.json
+  s_da394e20280a0e::t_4af91eedb8dc31 1-530
+benchmark/corpus/evals/comp/results/results-after.json
+  s_da394e20280a0e::t_e033d529d15261 1-530
+benchmark/corpus/evals/comp/results/results-before-run2.json
+  s_da394e20280a0e::t_bdf320e303dccc 1-530
+benchmark/corpus/evals/comp/results/results-before.json
+  s_da394e20280a0e::t_5fb07f655563ab 1-530
+benchmark/corpus/evals/comp/tasks.json
+  s_da394e20280a0e::t_1b48fd11132500 1-110
+tests/test_benchmark_corpus.py
+  s_da394e20280a0e::t_e0638cc8e62868 101-102,110-111,113-117,120-133,136-146,149-155,158-172,175-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "57357a805a3a4561ce2a3066d4c16680ce946bad",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <1050090118@qq.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
