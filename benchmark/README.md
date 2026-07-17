@@ -62,6 +62,16 @@ The eval harness now also supports running the same task set across several runn
 
 To keep the reported numbers reproducible and honest, the tables in this file continue to use the objective regex tasks and the single `claude -p` runner described above; matrix/judge results, if run, should be reported separately with their own runner and judge configuration.
 
+## Multi-repo corpus (breadth companion)
+
+This before/after benchmark proves the efficacy story in depth on one controlled repo
+pair. Its breadth companion lives in [`corpus/`](corpus/README.md): 14 well-known
+open-source repositories (react, vscode, n8n, ollama, transformers, dify, supabase,
+gemini-cli, codex, home-assistant, zed, elasticsearch, cline, ghostty) pinned as shallow
+git submodules and scanned in one deterministic `scan.py --repos-file` batch. The corpus
+measures the Phase-0 checkup against real, diverse harness surfaces at exact commits; it
+involves no agent calls and does not change the headline numbers below.
+
 ## Actual results
 
 | Side | Runs | Passed | Flip-flop tasks | Avg duration/task | Total captured cost (USD) |
