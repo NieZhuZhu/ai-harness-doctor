@@ -25,6 +25,7 @@ Generated and reconciled across sixteen deep `improve` audit batches:
 - 2026-07-17 at commit `5d96c95` (plan 055).
 - 2026-07-17 at commit `725128d` (plan 056).
 - 2026-07-17 at commit `30675ba` (plan 057).
+- 2026-07-17 at commit `8b0d19e` (plans 058–060).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -502,6 +503,25 @@ verification gate, and update its status here.
    the exact local tarball under isolated HOME/prefix, executes installed doctor
    before PR merge/release publish, and retains post-publish registry proof.
 
+### 2026-07-17 post-Plan-057 independent deep research rounds
+
+1. **Local all-green parity** — required CI now executes packed-candidate
+   verification, but `npm run check` and contributor/agent docs still define the
+   authoritative local gate as lint + source tests only. Plan 058 composes the
+   candidate into the local aggregate while preserving exactly-once CI
+   execution and evidence-bound AGENTS maintenance.
+2. **Runtime identifier path precision** — current shared path extraction and
+   both semantic/D2 engines reproduce three false errors for Letta's Docker
+   image and Codex RPC/API method examples while a real `org/service` directory
+   uses the same token shape. Plan 059 adds bounded explicit context at the one
+   shared classifier, keeping ambiguity fail-closed and validating against the
+   recorded external repositories.
+3. **Batch output contract** — `scan --repos-file ... --sarif` exits 0 while
+   emitting Markdown, because the batch branch returns before SARIF output
+   selection. Plan 060 rejects the unsupported combination before scanning and
+   directs automation to aggregate `--json`; cross-repository SARIF remains a
+   separate orchestration design rather than a misattributed single file.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -563,6 +583,9 @@ verification gate, and update its status here.
 | 055 | Bound every GitHub PR-review network request | P1 | S | 010, 036 | DONE |
 | 056 | Keep the pre-commit example on the current stable release | P1 | S | 003, 005, 019 | DONE |
 | 057 | Execute the packed npm candidate before publication | P0 | M | 005, 025, 028, 034 | DONE |
+| 058 | Make the local all-green command cover the required package gate | P1 | S | 057 | DONE — PR [#267](https://github.com/NieZhuZhu/ai-harness-doctor/pull/267), merge `b62b325`, 9/9 required checks |
+| 059 | Distinguish Docker and RPC identifiers from repository paths | P1 | M | 014, 018, 052, 053 | REJECTED — fixed independently in `d3a6a3e`; no PR |
+| 060 | Reject unsupported batch SARIF instead of emitting Markdown | P1 | S | 012, 032, 042 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -829,6 +852,29 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   next minor version after this completion record merges.
 
 ## Findings considered and rejected or deferred
+
+- **Implement one cross-repository SARIF document in Plan 060** — rejected.
+  Artifact URIs from unrelated roots would be interpreted relative to the
+  repository receiving the upload. Separate SARIF files/categories/uploads need
+  a concrete orchestration consumer and must not be approximated silently.
+- **Globally ignore every two-segment lowercase `org/name` token** — rejected.
+  Real repositories contain paths with exactly that shape. Plan 059 requires
+  explicit bounded Docker/RPC/API labels and positive filesystem controls.
+- **Treat Plan 057's required CI success as proof of local `npm run check`
+  parity** — rejected. Direct manifest/document evidence shows the local
+  aggregate still omits `check:package`; CI runs it as a separate step.
+- **Promote automatic all-scope eval generation in these rounds** — deferred
+  again. Explicit target generation is proven, but there is still no measured
+  cost/task-selection policy for a default that may multiply paid runs across
+  large monorepos.
+- **Record update-check timestamps only after a successful registry response**
+  — real minor DX issue, revalidated, but it delays only a best-effort update
+  nudge and does not affect diagnosis, mutation, CI, or publication. It ranks
+  below the three reproduced correctness/contracts above.
+- **Make `npm run format` authoritative in these rounds** — deferred. Its broad
+  write set is real, but choosing formatting ownership for historical evidence,
+  fixtures, generated sources, workflows, and seven READMEs remains a separate
+  migration decision rather than a narrow correctness repair.
 
 - **Treat post-publish exact npm verification as sufficient package testing** —
   rejected. It catches registry/package defects only after immutable
