@@ -43,9 +43,9 @@
   },
   {
     "id": "doc-languages",
-    "prompt": "In which languages must the public README documentation be kept synchronized? Answer briefly.",
+    "prompt": "In which seven required README languages/locales must the public documentation be kept synchronized? Answer briefly.",
     "timeout_s": 120,
-    "check": {"type": "regex", "value": "(?i)japanese"}
+    "check": {"type": "regex", "value": "(?i)(?=.*\\benglish\\b)(?=.*zh[\\-]?cn)(?=.*\\bja(?:panese)?\\b)(?=.*\\bes(?:panish)?\\b)(?=.*\\bko(?:rean)?\\b)(?=.*pt[\\-]?br)(?=.*\\bfr(?:ench)?\\b)"}
   },
   {
     "id": "drift-script",

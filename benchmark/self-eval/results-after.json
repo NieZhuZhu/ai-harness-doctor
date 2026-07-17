@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-17 (local-all-green added 2026-07-18) using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-18 for Plan 061 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
   "tasks": [
     {"id": "test-suite", "stdout": "python3 -m unittest discover -s tests -v"},
     {"id": "python-version", "stdout": "3.9+"},
@@ -10,7 +10,7 @@
     {"id": "npm-deps", "stdout": "No, do not add npm runtime dependencies; bin/cli.js must use the Node standard library only."},
     {"id": "semantic-merging", "stdout": "No. Scripts stay deterministic; semantic merging decisions belong in the SKILL.md workflow and human review."},
     {"id": "guard-templates", "stdout": "assets/guard/"},
-    {"id": "doc-languages", "stdout": "English, Simplified Chinese, and Japanese."},
+    {"id": "doc-languages", "stdout": "English, zh-CN, ja, es, ko, pt-BR, and fr."},
     {"id": "drift-script", "stdout": "scripts/check_drift.py"},
     {"id": "scan-script", "stdout": "scripts/scan.py"},
     {"id": "eval-script", "stdout": "scripts/eval_run.py"},

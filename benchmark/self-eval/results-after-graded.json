@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-17 (local-all-green added 2026-07-18) using only the current AGENTS.md, with no repository browsing or external model call; offline regrade is evidence-bounded, not a fresh model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-18 for Plan 061 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
   "tasks": [
     {
       "id": "test-suite",
@@ -54,8 +54,8 @@
     },
     {
       "id": "doc-languages",
-      "stdout": "English, Simplified Chinese, and Japanese.",
-      "answer": "English, Simplified Chinese, and Japanese.",
+      "stdout": "English, zh-CN, ja, es, ko, pt-BR, and fr.",
+      "answer": "English, zh-CN, ja, es, ko, pt-BR, and fr.",
       "passed": true,
       "regraded": true
     },
@@ -289,12 +289,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "e960774b1fb580449fc630412fea033fadbd783a61c4b5b07833a51d3d7f61fd"
+      "sha256": "4a6fb24461c933db6d7cc69695458ae98e67a6099bf70693831d606d16b902cb"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "df8459b607630c3873908bc2fa372a9dd31286929889f8690270a9009cfb62f5"
+        "sha256": "f93e71ec4eb711818cf74b197ef78873a4aa43e0a1bce419c78e27f0dbf76902"
       }
     ]
   }
