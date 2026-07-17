@@ -128,8 +128,10 @@ payload.
 - Results describe the pinned commits only; upstream repos move daily, and refreshed pins
   will produce different numbers.
 - This is a Phase-0 scan corpus: it measures inventory, gaps, security and semantic
-  consistency deterministically. It does not run the Phase-3 before/after efficacy eval
-  (which makes paid agent calls) against these repos.
+  consistency deterministically. The Phase-3 before/after efficacy eval (which makes
+  paid agent calls) has been run against one corpus repo so far — openai/codex, with
+  an honestly published null result; see [`evals/codex/`](evals/codex/README.md) —
+  and is not part of the deterministic corpus refresh.
 - Third-party findings are unadjudicated evidence. Unlike `EXTERNAL_VALIDATION.md`
   rounds, corpus refreshes do not individually verify whether each finding is genuine
   upstream drift or a scanner limitation; the corpus exists precisely to surface such

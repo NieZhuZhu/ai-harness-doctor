@@ -1,0 +1,74 @@
+[
+  {
+    "id": "mcp-manager-file",
+    "prompt": "Which file in this repository defines the `McpConnectionManager` struct that manages MCP tools and tool calls? Answer with ONLY the repository-relative file path, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "^(?![\\s\\S]*mcp_connection_manager)[\\s\\S]*codex-rs/codex-mcp/src/connection_manager\\.rs"}
+  },
+  {
+    "id": "context-fragments-dir",
+    "prompt": "Structs implementing the ContextualUserFragment trait for injected model-context fragments must be defined in which directory? Answer with ONLY the repository-relative directory path, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "codex-rs/core/src/context\\b"}
+  },
+  {
+    "id": "integration-suite-dir",
+    "prompt": "In which directory do the core integration tests (the ones using `test_codex` to set up a test instance) live? Answer with ONLY the repository-relative directory path, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "codex-rs/core/tests/suite\\b"}
+  },
+  {
+    "id": "v2-protocol-location",
+    "prompt": "Where in this repository is the app-server v2 protocol defined (the place where new v2 API surface such as *Params/*Response payload types is added)? Answer with ONLY the repository-relative path, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "^(?![\\s\\S]*v2\\.rs)[\\s\\S]*codex-rs/app-server-protocol/src/protocol/v2\\b"}
+  },
+  {
+    "id": "fmt",
+    "prompt": "What is the exact command to format the Rust code after finishing code changes, run from the codex-rs directory? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "just\\s+fmt\\b(?!-)"}
+  },
+  {
+    "id": "test",
+    "prompt": "What is the exact command to run the Rust test suite following this repository's defaults? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "^(?![\\s\\S]*cargo\\s+test\\b)[\\s\\S]*just\\s+test\\b"}
+  },
+  {
+    "id": "test-scoped",
+    "prompt": "What is the exact command to run the tests for only the codex-tui project? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "just\\s+test\\s+-p\\s+codex-tui\\b"}
+  },
+  {
+    "id": "lint-fix-scoped",
+    "prompt": "What is the exact command to fix linter issues scoped to a single project (for example codex-tui) before finalizing a change in codex-rs? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "just\\s+fix\\s+-p\\b"}
+  },
+  {
+    "id": "config-schema",
+    "prompt": "After changing `ConfigToml` or nested config types, what is the exact command to regenerate the config schema file? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "just\\s+write-config-schema\\b"}
+  },
+  {
+    "id": "bazel-lock",
+    "prompt": "After changing Rust dependencies (Cargo.toml or Cargo.lock), what is the exact command to refresh MODULE.bazel.lock? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "just\\s+bazel-lock-update\\b"}
+  },
+  {
+    "id": "bench",
+    "prompt": "What is the exact command to run the cargo benchmarks in codex-rs? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "^(?![\\s\\S]*bench-)[\\s\\S]*just\\s+bench\\b"}
+  },
+  {
+    "id": "insta-accept",
+    "prompt": "What is the exact command to accept all pending insta snapshot changes for the codex-tui project? Answer with ONLY the exact command, no explanation.",
+    "timeout_s": 240,
+    "check": {"type": "regex", "value": "cargo\\s+insta\\s+accept\\s+-p\\s+codex-tui\\b"}
+  }
+]
