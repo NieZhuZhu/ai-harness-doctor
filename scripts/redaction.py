@@ -21,7 +21,7 @@ SECRET_PATTERNS = [
         re.compile(
             r"(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|access[_-]?key|client[_-]?secret|token|password|passwd|"
             r"auth[_-]?token|bearer)\b\s*[:=]\s*"
-            r"(?:['\"][^'\"\s]{12,}['\"]|[A-Za-z0-9+/_\-.]{16,})"
+            r"(?:['\"][^'\"\s]{12,}['\"]|(?P<unquoted>[A-Za-z0-9+/_\-.]{16,}))"
         ),
     ),
 ]
@@ -32,15 +32,48 @@ _SECRET_PLACEHOLDER_RE = re.compile(
     re.I,
 )
 
+# An unquoted, purely alphabetic, mixed-case value is a code identifier — a
+# typed-language annotation such as `token: CancellationToken` or a camelCase
+# reference — not a credential: real secrets of this length are high-entropy
+# and virtually always carry digits or symbols. Found scanning microsoft/vscode
+# (benchmark corpus), whose Copilot-extension AGENTS.md documents TypeScript
+# signatures like `handle(..., token: CancellationToken)`. Quoted values keep
+# full recall: quoting asserts a literal value, not an identifier.
+_IDENTIFIER_VALUE_RE = re.compile(r"^[A-Za-z]+$")
+
+
+def is_identifier_annotation(match):
+    """Whether a ``SECRET_PATTERNS`` match captured a code identifier, not a value.
+
+    Accepts matches from the str patterns above or from scan.py's byte-compiled
+    copies (the ``unquoted`` group name survives byte compilation), so the
+    in-memory and streaming security paths share one predicate.
+    """
+    value = match.groupdict().get("unquoted")
+    if not value:
+        return False
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+    return bool(
+        _IDENTIFIER_VALUE_RE.match(value)
+        and value != value.lower()
+        and value != value.upper()
+    )
+
+
+def _is_exempt(match):
+    """Whether a raw pattern match is a placeholder/identifier, not a secret."""
+    return bool(_SECRET_PLACEHOLDER_RE.search(match.group(0))) or is_identifier_annotation(match)
+
 
 def secret_hits(text):
     """Return labels for non-placeholder high-confidence secrets in ``text``."""
     hits = []
     for label, pattern in SECRET_PATTERNS:
-        if any(
-            not _SECRET_PLACEHOLDER_RE.search(match.group(0))
-            for match in pattern.finditer(str(text))
-        ):
+        if any(not _is_exempt(match) for match in pattern.finditer(str(text))):
             hits.append(label)
     return hits
 
@@ -51,9 +84,7 @@ def redact_secret_values(text):
     for label, pattern in SECRET_PATTERNS:
         redacted = pattern.sub(
             lambda match: (
-                match.group(0)
-                if _SECRET_PLACEHOLDER_RE.search(match.group(0))
-                else f"<redacted:{label}>"
+                match.group(0) if _is_exempt(match) else f"<redacted:{label}>"
             ),
             redacted,
         )

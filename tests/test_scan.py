@@ -2293,6 +2293,48 @@ class SecretRecallTests(unittest.TestCase):
         ):
             self.assertEqual(scan.secret_hits(benign), [], benign)
 
+    def test_type_annotation_identifier_is_not_flagged(self):
+        # Found scanning microsoft/vscode (benchmark corpus): its Copilot
+        # extension AGENTS.md documents TypeScript signatures like
+        # `handle(args: string, ..., token: CancellationToken)`, and the
+        # unquoted mixed-case identifier was flagged as a hardcoded secret.
+        for annotation in (
+            "token: CancellationToken",
+            "handle(args: string, stream: ChatResponseStream, token: CancellationToken)",
+            "token: cancellationTokenSource",
+        ):
+            self.assertEqual(scan.secret_hits(annotation), [], annotation)
+
+    def test_identifier_exemption_keeps_recall_for_real_secret_shapes(self):
+        for real in (
+            "token: Abc123Def456Ghi7",  # digits: high-entropy value, not an identifier
+            "password=supersecretpassword",  # all-lowercase: not identifier-cased
+            'token: "CancellationToken"',  # quoted: asserts a literal value
+        ):
+            self.assertIn("Generic hardcoded secret", scan.secret_hits(real), real)
+
+    def test_redaction_preserves_type_annotations_and_still_redacts_secrets(self):
+        text = "token: CancellationToken\nSECRET_KEY=s3cr3t-value-not-quoted-1234\n"
+        redacted = scan.redact_secret_values(text)
+        self.assertIn("token: CancellationToken", redacted)
+        self.assertNotIn("s3cr3t-value-not-quoted-1234", redacted)
+
+    def test_tail_type_annotation_beyond_semantic_budget_is_not_flagged(self):
+        # The streaming (bytes) security path must share the identifier
+        # exemption with the in-memory path: an annotation in the tail of an
+        # oversize file used to be flagged HIGH even though the same line
+        # inside the budget was not.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "AGENTS.md").write_text(
+                ("safe prefix\n" * 100) + "token: CancellationToken\n",
+                encoding="utf-8",
+            )
+            report = scan.scan_repo(root, 100)
+            self.assertFalse(
+                [item for item in report["security"] if item["category"] == "secret"]
+            )
+
     def test_example_placeholder_values_are_not_flagged(self):
         # Found scanning continuedev/continue's .continue/rules/dev-data-guide.md:
         # `apiKey: "your-api-key-here"` passed every other check (quoted, 12+
