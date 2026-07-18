@@ -489,7 +489,11 @@ def _link_target_is_probeable(target):
         return None
     if target.startswith(("http://", "https://", "mailto:", "tel:")) or "://" in target:
         return None
-    if "<" in target or "{" in target or "*" in target or "?" in target:
+    if "<" in target or "{" in target or "*" in target or "?" in target or "`" in target:
+        # A backtick would break out of the single-backtick code span that
+        # carries the target into the D7 finding message (posted verbatim as a
+        # PR review comment by pr_review.py); a real repo-relative path never
+        # contains one.
         return None
     if target.startswith(("~", "/", "$")) or ":" in target:
         # Home-relative, absolute, env-var or scheme/drive-like targets are not

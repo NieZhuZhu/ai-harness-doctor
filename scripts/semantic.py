@@ -172,10 +172,12 @@ _CARGO_BIN_RE = re.compile(r"\bcargo\s+(?:run|build|install)\b[^`\n]*?--bin[= ]\
 # Go package/file invocations that reference a filesystem path: ``go run|build|test|vet ./pkg`` or ``foo.go``.
 _GO_PKG_RE = re.compile(r"\bgo\s+(?:run|build|test|vet)\s+(\.{1,2}/[A-Za-z0-9._/-]+|[A-Za-z0-9._/-]+\.go)\b")
 # Python console-script invocations: ``poetry|pdm|uv run NAME``. Capture the
-# whole argument so a script-file path (``uv run examples/simple.py``) is not
-# truncated at the first ``/`` and mistaken for a console script named
-# ``examples``; declared_commands filters those file paths out below.
-_PY_RUN_RE = re.compile(r"\b(?:poetry|pdm|uv)\s+run\s+(\S+)")
+# argument up to the first backtick, pipe, or whitespace: a script-file path
+# (``uv run examples/simple.py``) keeps its ``/`` and ``.py`` so declared_commands
+# filters it out below, while a backtick/pipe can never enter the captured name
+# and break out of the single-backtick code span that carries it into a finding
+# message posted verbatim as a PR review comment by pr_review.py.
+_PY_RUN_RE = re.compile(r"\b(?:poetry|pdm|uv)\s+run\s+([^\s`|]+)")
 # Extensions that mark a ``... run <arg>`` target as a script *file* to execute
 # rather than a project console script.
 _PY_RUN_SCRIPT_SUFFIXES = (".py", ".pyw", ".sh")

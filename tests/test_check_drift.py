@@ -1413,6 +1413,21 @@ class DriftTests(unittest.TestCase):
         report = json.loads(proc.stdout)
         self.assertFalse([f for f in report["findings"] if f["check"] == "D7"])
 
+    def test_backtick_markdown_link_target_is_not_probed(self):
+        # A link target carrying a backtick would break out of the single-backtick
+        # code span that carries it into the D7 finding message (posted verbatim
+        # as a PR review comment by pr_review.py). A real repo-relative path never
+        # contains a backtick, so the probe skips such targets entirely.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        body = CLEAN_AGENTS + "\nSee the [runbook](missing`whoami`.md) for details.\n"
+        (repo / "AGENTS.md").write_text(body, encoding="utf-8")
+        self._stub_pointers(repo)
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertFalse([f for f in report["findings"] if f["check"] == "D7"])
+
     def test_url_encoded_markdown_link_does_not_trigger_d7(self):
         # Markdown percent-encodes spaces in link targets; the D7 probe must
         # decode before checking existence, else a valid file is falsely
