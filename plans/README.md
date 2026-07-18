@@ -686,6 +686,37 @@ independently-reproduced items for this batch:
    installer adapters beyond 4 of 9 detected tools; productize the
    disease-targeted candidate-sampling pipeline.
 
+   **Round closeout (Plans 063–065, 2026-07-18)**: all three implementation PRs
+   merged green after 9/9 required checks, zero unresolved threads, admin bypass
+   for the sole-maintainer self-approval deadlock only (never over red/pending
+   CI), and their branches deleted. The urgent red-`main` docs fix landed first
+   as PR [#276](https://github.com/NieZhuZhu/ai-harness-doctor/pull/276)
+   (`21fb964`), then the plan-only PR
+   [#277](https://github.com/NieZhuZhu/ai-harness-doctor/pull/277) (`66ab9db`).
+   - **Plan 063** — PR [#278](https://github.com/NieZhuZhu/ai-harness-doctor/pull/278),
+     merge `5c68d3f`. `scan.extract_signals` now sanitizes the conflict-signal
+     `evidence` at its single capture site with `_md_safe(redact_secret_values(line))`;
+     a new cross-surface test asserts a `ghp_…` sentinel and stray backticks are
+     absent from the JSON, Markdown, and temp-report while the `package_manager`
+     conflict is still detected. `AGENTS.md` unchanged (10,228 bytes).
+   - **Plan 065** — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279),
+     merge `2f88e33`. `regrade()` fails the regex branch closed when a stored
+     record carries operational-failure evidence (non-zero `exit_code` or
+     `timed_out`); `exit_code == 0`/absent records keep recomputing. Four new
+     tests cover non-zero-exit, timeout, `exit_code == 0` happy path, and
+     absent-`exit_code` manual-protocol compatibility.
+   - **Plan 064** — PR [#280](https://github.com/NieZhuZhu/ai-harness-doctor/pull/280),
+     merge `6f5a513`. `_PY_RUN_RE` bounded to `([^\s`|]+)` and the D7
+     link probe rejects backticks. Implementation note: the plan's proposed
+     `[A-Za-z0-9._-]+` was corrected to `[^\s`|]+` during execution because the
+     former truncates `uv run examples/simple.py` to `examples` and reintroduces
+     a false positive already guarded by the existing
+     `test_uv_run_script_file_not_flagged`; the chosen bound keeps `/`/`.py` in
+     the capture (script-file filter intact) while excluding backtick/pipe.
+   - **Final `main` state**: strict drift 100/Grade A, self-scan exit 0, Python
+     853 + Node 51 green, `npm run check` (incl. packed candidate) green,
+     README sync 7/7.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -752,9 +783,9 @@ independently-reproduced items for this batch:
 | 060 | Reject unsupported batch SARIF instead of emitting Markdown | P1 | S | 012, 032, 042 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 061 | Restore AGENTS.md progressive-disclosure headroom | P1 | M | 058 | DONE — PR [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270), merge `380085c`, 9/9 required checks |
 | 062 | Redact MCP credentials from every scan-report surface | P0 | S–M | 049, 051 | DONE — PR [#273](https://github.com/NieZhuZhu/ai-harness-doctor/pull/273), merge `b9fb8a3`, 9/9 required checks |
-| 063 | Redact and Markdown-neutralize conflict-signal evidence | P0 | S | 049, 051, 062 | TODO |
-| 064 | Bound and neutralize semantic/drift finding-message tokens | P1 | S | — | TODO |
-| 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | TODO |
+| 063 | Redact and Markdown-neutralize conflict-signal evidence | P0 | S | 049, 051, 062 | DONE — PR [#278](https://github.com/NieZhuZhu/ai-harness-doctor/pull/278), merge `5c68d3f`, 9/9 required checks |
+| 064 | Bound and neutralize semantic/drift finding-message tokens | P1 | S | — | DONE — PR [#280](https://github.com/NieZhuZhu/ai-harness-doctor/pull/280), merge `6f5a513`, 9/9 required checks |
+| 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | DONE — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279), merge `2f88e33`, 9/9 required checks |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
