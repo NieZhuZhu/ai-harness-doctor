@@ -210,7 +210,7 @@ Non-Claude adapters are intentionally thin. Broad rules distribution belongs to 
 - Nested drift resolves commands, paths, and runtime/package-manager facts through lexical package ancestors without searching sibling packages; Markdown links remain file-relative.
 - Write paths refuse symlinked files or existing parent directories.
 - Plugins are disabled unless `--allow-plugins` is supplied.
-- Secret findings name type/path without reproducing values; risky hook snippets are redacted in JSON, Markdown, SARIF, and PR feedback.
+- Secret findings name type/path without reproducing values; repository-controlled hook and MCP command/URL inventory is redacted before JSON, Markdown, and full-report serialization, while risky hook snippets remain redacted in SARIF and PR feedback.
 - Installer mutations are lock-serialized, journaled, ownership-aware, and recoverable.
 - MCP tools remain read-only; findings are not transport failures.
 - External judges and real LLM grading are opt-in. Remote judge endpoints require HTTPS, loopback HTTP is explicit, redirects are refused, and failures fall back to the deterministic judge.

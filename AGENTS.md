@@ -68,7 +68,7 @@ See `references/maintenance-contract.md`.
 - Installer tests: isolated temporary `HOME`; never write real agent config dirs.
 - Scanning logic must treat the audited repository as read-only; never mutate or write back into the repo being scanned.
 - Repository-derived reads/probes/mutations use `scripts/facts.py` or the matching `bin/cli.js` guard helper. External symlinks neither affect output nor receive writes; mutations refuse symlinked files/parents. Only documented explicit inputs/outputs may be external.
-- Never commit secrets, tokens, or credentials.
+- Never commit or report secrets or credentials.
 - The eval / LLM-as-judge harness makes external model calls — be mindful of cost and token usage when running or expanding it.
 
 # Operational workflows

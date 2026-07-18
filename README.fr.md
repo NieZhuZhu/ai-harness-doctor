@@ -210,7 +210,7 @@ Les adapters non Claude sont volontairement légers. La distribution massive app
 - Nested drift résout commands, paths et facts runtime/package manager via les ancestors lexicaux sans chercher les packages frères ; les liens Markdown restent relatifs au fichier.
 - Les chemins d’écriture refusent les fichiers ou parents symlinked.
 - Les plugins ne s’activent qu’avec `--allow-plugins`.
-- Les findings de secrets indiquent type/chemin sans reproduire la valeur ; les hooks dangereux sont expurgés dans JSON, Markdown, SARIF et les retours PR.
+- Les findings de secrets indiquent type/chemin sans reproduire la valeur ; l’inventaire des hooks et commandes/URL MCP contrôlé par le dépôt est expurgé avant la sérialisation JSON, Markdown et du rapport complet, tandis que les extraits de hooks dangereux restent expurgés dans SARIF et les retours PR.
 - L’installateur utilise lock, journal, propriété et récupération.
 - Les outils MCP restent en lecture seule ; un finding n’est pas une erreur de transport.
 - Les juges externes et LLM réels sont opt-in. Les endpoints distants exigent HTTPS, HTTP est réservé au loopback, les redirections sont refusées et les échecs reviennent au juge déterministe.

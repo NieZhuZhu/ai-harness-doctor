@@ -1395,6 +1395,28 @@ def _md_safe(value):
     return " ".join(str(value).replace("`", "'").split())
 
 
+def public_mcp_servers(servers):
+    """Return report-safe MCP inventory while preserving its public shape."""
+    return [
+        {
+            **server,
+            "name": _md_safe(redact_secret_values(server.get("name", ""))),
+            "transport": _md_safe(
+                redact_secret_values(server.get("transport", ""))
+            ),
+            "command": _md_safe(
+                redact_secret_values(server.get("command", ""))
+            ),
+            "url": _md_safe(redact_secret_values(server.get("url", ""))),
+            "env_keys": [
+                _md_safe(redact_secret_values(key))
+                for key in server.get("env_keys", [])
+            ],
+        }
+        for server in servers
+    ]
+
+
 def security_findings(root, files, mcp, hooks, permissions, ctx=None):
     ctx = ctx or ScanContext(root)
     findings = []
@@ -1459,7 +1481,11 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                             "level": "HIGH",
                             "category": "secret",
                             "path": rel_path,
-                            "message": f"Possible {label} in MCP server `{_md_safe(name)}` env `{_md_safe(key)}`",
+                            "message": (
+                                f"Possible {label} in MCP server "
+                                f"`{_md_safe(redact_secret_values(name))}` env "
+                                f"`{_md_safe(redact_secret_values(key))}`"
+                            ),
                         }
                     )
     # 2) MCP transport / credential hygiene.
@@ -1470,7 +1496,11 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                     "level": "MEDIUM",
                     "category": "mcp",
                     "path": s["config"],
-                    "message": f"MCP server `{_md_safe(s['name'])}` uses insecure http:// transport",
+                    "message": (
+                        "MCP server "
+                        f"`{_md_safe(redact_secret_values(s['name']))}` "
+                        "uses insecure http:// transport"
+                    ),
                 }
             )
         for key in s["env_keys"]:
@@ -1480,8 +1510,13 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                         "level": "MEDIUM",
                         "category": "mcp",
                         "path": s["config"],
-                        "message": f"MCP server `{_md_safe(s['name'])}` sets credential-shaped "
-                        f"env `{_md_safe(key)}`; reference an env var instead of a literal",
+                        "message": (
+                            "MCP server "
+                            f"`{_md_safe(redact_secret_values(s['name']))}` "
+                            "sets credential-shaped env "
+                            f"`{_md_safe(redact_secret_values(key))}`; "
+                            "reference an env var instead of a literal"
+                        ),
                     }
                 )
     # 3) Permission breadth.
@@ -1858,12 +1893,13 @@ def scan_repo(
     # (PERF-01/PERF-02). In monorepo mode the caller passes a subcontext sliced
     # from the parent inventory so package subtrees are not re-walked (PERF-03).
     files, result_files, warnings, ctx = collect_instruction_files(root, max_bytes, ctx)
-    mcp = scan_mcp(root, ctx)
-    hooks = scan_hooks(root, ctx)
-    safe_hooks = public_hooks(hooks)
+    raw_mcp = scan_mcp(root, ctx)
+    safe_mcp = public_mcp_servers(raw_mcp)
+    raw_hooks = scan_hooks(root, ctx)
+    safe_hooks = public_hooks(raw_hooks)
     permissions = scan_permissions(root, ctx)
     surface = {
-        "mcp_servers": mcp,
+        "mcp_servers": safe_mcp,
         "subagents": scan_subagents(root, ctx),
         "commands": scan_commands(root, ctx),
         "hooks": safe_hooks,
@@ -1891,7 +1927,9 @@ def scan_repo(
         "scope_overrides": scope_overrides,
         "nested": nested_agents(result_files),
         "surface": surface,
-        "security": security_findings(root, files, mcp, hooks, permissions, ctx),
+        "security": security_findings(
+            root, files, raw_mcp, raw_hooks, permissions, ctx
+        ),
         "project_snapshot": build_project_snapshot(root, surface, agents_text, ctx),
         "semantic": semantic.analyze(
             root,

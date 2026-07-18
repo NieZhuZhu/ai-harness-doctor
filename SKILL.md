@@ -53,7 +53,7 @@ The scan checks the configuration-file inventory, size warnings, overlap candida
 
 `--max-bytes` is a semantic evidence budget, not a security boundary. For an oversize recognized instruction file, the scanner retains only that prefix for overlap/conflict/override/semantic analysis, but streams the complete contained file for SHA-256, line count, secret labels, and permission-bypass labels. JSON exposes per-file `analyzed_bytes`, `truncated`, `security_scanned_bytes`, plus top-level `analysis_limits`; Markdown and explain reports state when a conclusion is prefix-only. Never infer that an unseen tail is clean from an empty bounded-semantic result.
 
-Secret findings name only the credential type and repository path; they never reproduce matched values. Hook inventory and risky-hook snippets are redacted before JSON, Markdown, SARIF, or PR-review serialization while detection still inspects the original command.
+Secret findings name only the credential type and repository path; they never reproduce matched values. Repository-controlled hook and MCP command/URL inventory is redacted before JSON, Markdown, or full-report serialization while detection still inspects the original values. Risky-hook snippets remain redacted in SARIF and PR-review serialization.
 
 The scanner's filesystem boundary is the audited repository root: repository-derived configs, manifests, workspace metadata, semantic facts, and default rule plugins are used only when their resolved targets remain inside that root. In-repo file symlinks stay supported and retain their lexical repo-relative report path. Explicit `--rules DIR` locations remain an intentional opt-in and may live outside the repository.
 

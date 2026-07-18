@@ -210,7 +210,7 @@ Los adapters no Claude son deliberadamente finos. La distribución masiva corres
 - Nested drift resuelve commands, paths y facts de runtime/package manager por ancestors léxicos sin buscar paquetes hermanos; los links Markdown siguen relativos al archivo.
 - Las rutas de escritura rechazan archivos o padres symlinked.
 - Los plugins solo se activan con `--allow-plugins`.
-- Los hallazgos de secretos indican tipo/ruta sin repetir valores; los hooks peligrosos se redactan en JSON, Markdown, SARIF y feedback de PR.
+- Los hallazgos de secretos indican tipo/ruta sin repetir valores; el inventario de hooks y comandos/URLs MCP controlado por el repositorio se redacta antes de serializar JSON, Markdown y el informe completo, mientras los fragmentos de hooks peligrosos siguen redactados en SARIF y feedback de PR.
 - El instalador usa lock, journal, propiedad y recuperación.
 - Las herramientas MCP son de solo lectura; un finding no es un fallo de transporte.
 - Jueces externos y LLM reales son opt-in. Los endpoints remotos requieren HTTPS, HTTP solo se permite en loopback, los redirects se rechazan y los fallos vuelven al juez determinista.

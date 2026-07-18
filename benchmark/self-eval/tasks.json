@@ -84,6 +84,12 @@
     "check": {"type": "regex", "value": "(?i)\\bno\\b|ineligible|unsuppress"}
   },
   {
+    "id": "secret-report-safety",
+    "prompt": "May repository tooling commit or report secret credential values? Answer briefly.",
+    "timeout_s": 120,
+    "check": {"type": "regex", "value": "(?i)(?:no|never).*(?:commit|report).*(?:secret|credential)"}
+  },
+  {
     "id": "mcp-policy",
     "prompt": "What are the MCP tool mutation and finding/error rules? Answer briefly.",
     "timeout_s": 120,

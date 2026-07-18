@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-18 for Plan 061 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-18 for Plan 062 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
   "tasks": [
     {
       "id": "test-suite",
@@ -98,6 +98,13 @@
       "id": "security-baseline",
       "stdout": "No. HIGH security findings are ineligible for baselines and remain active.",
       "answer": "No. HIGH security findings are ineligible for baselines and remain active.",
+      "passed": true,
+      "regraded": true
+    },
+    {
+      "id": "secret-report-safety",
+      "stdout": "No. Never commit or report secrets or credentials.",
+      "answer": "No. Never commit or report secrets or credentials.",
       "passed": true,
       "regraded": true
     },
@@ -280,8 +287,8 @@
   "health": {
     "score": 100,
     "grade": "A",
-    "passed": 39,
-    "total": 39,
+    "passed": 40,
+    "total": 40,
     "timed_out": 0,
     "pass_rate": 1.0
   },
@@ -289,12 +296,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "4a6fb24461c933db6d7cc69695458ae98e67a6099bf70693831d606d16b902cb"
+      "sha256": "f137b1271e32a31ec4c99b640ff15122a88b7bbd7e205183153d3c026d8417b0"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "f93e71ec4eb711818cf74b197ef78873a4aa43e0a1bce419c78e27f0dbf76902"
+        "sha256": "fa6e4fed67007d2f639346178081de1f929539e932c2a245c78dbec584f5d51b"
       }
     ]
   }
