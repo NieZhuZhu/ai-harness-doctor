@@ -1,0 +1,27 @@
+plans/063-redact-conflict-signal-evidence.md
+  s_8951344b811c55::t_57d44cf621daca 1-273
+plans/064-bound-engine-finding-message-tokens.md
+  s_8951344b811c55::t_479fffb1703441 1-275
+plans/065-regrade-honors-operational-failure.md
+  s_8951344b811c55::t_726d24f29a95cb 1-258
+plans/README.md
+  s_8951344b811c55::t_e047266ba8343e 31,613-688,755-757
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6b5aa88e1e09881cc1953c5a4d558f65a78a0bb3",
+  "prompts": {},
+  "sessions": {
+    "s_8951344b811c55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c70785f3-9456-4cf3-bcba-ae6fbd19e0d5",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
