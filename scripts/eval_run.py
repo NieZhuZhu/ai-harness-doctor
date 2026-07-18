@@ -1938,8 +1938,18 @@ def regrade(args):
             continue
         check = task.get("check", {})
         if check.get("type") == "regex":
-            record["passed"] = regex_passes(check.get("value", ""), answer)
-            record["regraded"] = True
+            if record.get("timed_out") or record.get("exit_code") not in (0, None):
+                # A crashed / timed-out / non-zero-exit runner never succeeded;
+                # regrading a stricter or looser regex must not flip its partial
+                # stdout to a pass. Mirrors run_runner_record's Plan 038 contract
+                # for live runs at this offline entry point. Records with
+                # exit_code == 0 or an absent exit_code (e.g. manual-protocol
+                # records) keep recomputing from stdout.
+                record["passed"] = False
+                record["regraded"] = False
+            else:
+                record["passed"] = regex_passes(check.get("value", ""), answer)
+                record["regraded"] = True
         elif check.get("type") == "command":
             record["regraded"] = False
         else:
