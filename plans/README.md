@@ -28,6 +28,7 @@ Generated and reconciled across the deep `improve` audit batches below:
 - 2026-07-17 at commit `8b0d19e` (plans 058–060).
 - 2026-07-18 at commit `8034dc4` (plan 061).
 - 2026-07-18 at commit `11e3a71` (plan 062).
+- 2026-07-18 at commit `9acdafc` (plans 063–065).
 
 Execute TODO plans in the order below unless dependencies say otherwise. Each
 executor must read the selected plan fully, honor its STOP conditions, run every
@@ -609,6 +610,82 @@ verification gate, and update its status here.
    `actionlint` gating, formatter scope, release-docs truth, EOL runtimes,
    provider/MCP/report product directions) are retained for future rounds.
 
+### 2026-07-18 post-Plan-062 independent nine-category deep audit round
+
+Independently re-audited all nine categories at `9acdafc` (v1.13.2) with eight
+parallel read-only category sweeps, reconciled every prior plan (001–062, all
+DONE/REJECTED), and reproduced each selected finding live. First surfaced and
+immediately fixed an urgent docs-staleness regression: the `v1.13.2` release
+bumped `package.json` without the customary follow-up README pre-commit pin
+sync, so `test_readme_pre_commit_examples_use_current_exact_release` was red on
+`main` for all seven READMEs — landed as its own patch PR
+[#276](https://github.com/NieZhuZhu/ai-harness-doctor/pull/276) (bump
+`rev: v1.13.1` → `v1.13.2`). Selected three narrow, high-confidence,
+independently-reproduced items for this batch:
+
+1. **Conflict-signal `evidence` bypasses the shared redactor and Markdown
+   neutralizer** — `scan.extract_signals` stores the entire raw source line as
+   `evidence`; it is copied into `report["conflicts"]` and
+   `report["scope_overrides"]`, then the on-disk JSON report, the scan Job
+   Summary, and — via the shipped `assets/guard/harness-checkup.yml` — a public
+   GitHub Issue body (`gh issue ... --body`), while every other
+   repository-controlled string (hooks Plan 049, MCP Plan 062, eval Plan 051)
+   is run through `redaction.redact_secret_values` + `scan._md_safe`. A crafted
+   `AGENTS.md`/`CLAUDE.md` line combining a conflict keyword with a
+   credential-shaped value was reproduced verbatim in the conflicts JSON and the
+   rendered Markdown. `pr_review.py` is already safe (it rebuilds conflict
+   evidence from `path:line`). Plan 063 sanitizes `evidence` once at the capture
+   site so every consumer inherits the safe value; detection keys on
+   `signal`+`value` and is unchanged.
+
+2. **`eval --regrade` reopens Plan 038's false-success class** — `regrade()`
+   recomputes `passed` for a `regex` check from stored `stdout` alone, ignoring
+   the record's own `exit_code`/`timed_out`. A stored `exit_code: 9,
+   stdout: "OK"` record for a regex task `"OK"` was written back `passed: true`
+   and a subsequent `--score` reported a false `100/100 (grade A)`, exit 0 —
+   exactly the operational-failure hole Plan 038 closed for live runs, through
+   the offline entry point. Plan 065 fails the regex-regrade branch closed on
+   stored operational-failure evidence while preserving the legitimate
+   fix-the-regex recompute for `exit_code == 0`/absent records.
+
+3. **Unbounded/unescaped engine tokens break `pr_review.py`'s stated safety
+   premise** — `semantic._PY_RUN_RE` captures `(\S+)` (unlike its four bounded
+   sibling command regexes) and `check_drift._link_target_is_probeable` does not
+   reject backticks, so a crafted `poetry|pdm|uv run …` reference or a Markdown
+   link target with an embedded backtick reaches a finding `message` that
+   `pr_review.py` posts verbatim as an inline PR review comment — whose only
+   sanitizer (`_no_embedded_newlines`) documents the false premise that "the
+   engines only ever extract regex-bounded tokens." Plan 064 bounds the capture
+   and rejects the backtick at the two extraction boundaries, making the premise
+   true rather than adding a second escaper.
+
+   Vetted runner-up findings retained for future rounds rather than mixed into
+   these narrow patches: guard `--apply`/`--remove` multi-file writes lack the
+   installer's transaction/rollback (cross-confirmed by the correctness and
+   security sweeps; Plan 037 explicitly scoped it out); core `AGENTS.md`/drift
+   `--fix` writes are non-atomic with zero fault-injection coverage (TESTS-01);
+   the mmap byte-path secret scan is regression-tested for only 1 of 9 credential
+   patterns (TESTS-02); backslash/Windows path normalization has zero test-input
+   coverage and CI is ubuntu-only (TESTS-03); shipped guard shell scripts are
+   substring-checked, never executed, and `assets/guard/pre-commit.sh` is missing
+   from the public-command check (TESTS-04); the scan/drift baseline subsystem is
+   hand-duplicated end-to-end and has already diverged in fingerprint strategy
+   (DEBT-01); `bin/cli.js` is a 2,756-line four-subsystem god file (DEBT-02);
+   eight of nine `scan_render` re-exports are dead (DEBT-04);
+   `assets/tasks.example.json` ships in the tarball unreferenced (DEBT-05);
+   `scan --repos-file` and the eval matrix run fully serial (PERF-01/02),
+   `find_overlaps` re-normalizes per pair (PERF-03), `compare_commands`
+   double-walks `package.json` (PERF-04); `npm run format` has no
+   `.prettierignore` and would rewrite byte-locked files (DX-01); `actionlint` is
+   a documented gate no workflow runs (DX-02); the documented self-checkup
+   commands differ from CI's required drift gate (DX-03). Direction options
+   (maintainer decisions, not defects): retire the EOL Node 16 / Python 3.9
+   floor (release automation itself runs on now-EOL Node 20); extend GitLab/
+   Codebase guards with inline MR review comments; add a Phase-2 drift breadth
+   artifact to the 14-repo corpus; add a JetBrains Junie registry entry; widen
+   installer adapters beyond 4 of 9 detected tools; productize the
+   disease-targeted candidate-sampling pipeline.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -675,6 +752,9 @@ verification gate, and update its status here.
 | 060 | Reject unsupported batch SARIF instead of emitting Markdown | P1 | S | 012, 032, 042 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 061 | Restore AGENTS.md progressive-disclosure headroom | P1 | M | 058 | DONE — PR [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270), merge `380085c`, 9/9 required checks |
 | 062 | Redact MCP credentials from every scan-report surface | P0 | S–M | 049, 051 | DONE — PR [#273](https://github.com/NieZhuZhu/ai-harness-doctor/pull/273), merge `b9fb8a3`, 9/9 required checks |
+| 063 | Redact and Markdown-neutralize conflict-signal evidence | P0 | S | 049, 051, 062 | TODO |
+| 064 | Bound and neutralize semantic/drift finding-message tokens | P1 | S | — | TODO |
+| 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
