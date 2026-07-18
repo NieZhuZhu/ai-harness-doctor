@@ -33,7 +33,51 @@
   patterns and cross-surface testing already exist)
 - **Category**: security / data minimization / report integrity
 - **Planned at**: commit `11e3a71`, 2026-07-18
-- **Status**: TODO
+- **Status**: DONE — implemented on `fix/062-redact-mcp-surface-secrets`
+  and merged via PR
+  [#273](https://github.com/NieZhuZhu/ai-harness-doctor/pull/273)
+  (reviewed head `fc2fc5056b1970525e8865c43b1d3679b9836754`, squash merge
+  `b9fb8a3391441146a7c6959f56f294160ae800ee`), closeout recorded
+  2026-07-18; the remote implementation branch was deleted.
+
+## Implementation and verification evidence (closeout, 2026-07-18)
+
+- **Plan-first sequence**: plan-only PR
+  [#272](https://github.com/NieZhuZhu/ai-harness-doctor/pull/272) passed 9/9
+  required checks before merging as `68d5e878`; implementation then proceeded
+  in PR [#273](https://github.com/NieZhuZhu/ai-harness-doctor/pull/273).
+- **Implementation review and merge**: the final reviewed head
+  `fc2fc5056b1970525e8865c43b1d3679b9836754` had 9/9 required checks
+  SUCCESS and zero unresolved review threads. Standards/Spec review was
+  PASS. Admin bypass was used only for the sole-maintainer self-approval
+  deadlock, never over red or pending CI.
+- **Test-first RED**: against the implementation parent (plan merge
+  `68d5e87876c3bd4a116c61c5d30a3ca3c58ffb0c`), the new MCP artifact test
+  failed at the raw `command`, `url`, serialized JSON, rendered Markdown, and
+  temporary full-report assertions before production code changed. The new
+  repository-contract assertion independently failed on the parent's old
+  commit-only Safety wording.
+- **Historical compatibility RED**: copying the final repository-contract test
+  to Plan 061's pre-compaction parent `1d6b1f8` still produced exactly the
+  intended sole budget failure (`12231 > 10240`), with no semantic subtest
+  failures.
+- **Test matrix**: 8/8 mutation probes passed including the raw spy
+  boundary (raw MCP data stays available for security detection while
+  only the public surface is sanitized). Focused suites passed scan 176,
+  action metadata 38, eval 135, SARIF 38, and PR review 42 tests.
+- **Full suite**: Python 849 tests passing, Node 51 tests passing,
+  `npm test` green, `npm run check` green including packed candidate.
+- **Repository health**: self scan exited 0; strict drift scored 100/Grade A.
+- **Docs and contract**: README sync passed 7/7; SKILL.md updated;
+  `AGENTS.md` is 10,228 bytes (within the ≤ 10,240-byte budget) with
+  SHA-256 `fa6e4fed67007d2f639346178081de1f929539e932c2a245c78dbec584f5d51b`.
+- **Self-eval**: 40/40 tasks pass at 100/Grade A with honest
+  manual-protocol notes; `tasks.json` SHA
+  `f137b1271e32a31ec4c99b640ff15122a88b7bbd7e205183153d3c026d8417b0`.
+- **Scope proof (16 files)**: `redaction.py`, `scan_render.py`,
+  `plans/`, `package.json`, and `.github/workflows/` are unchanged.
+  Changes are confined to `scan.py`, test files, public contract docs
+  (7 READMEs + SKILL.md + AGENTS.md), and self-eval evidence.
 
 ## Why this matters
 
@@ -654,23 +698,23 @@ required contexts and zero unresolved threads before merge.
 
 ## Done criteria
 
-- [ ] A generated MCP credential is absent from final JSON, Markdown, temp
+- [x] A generated MCP credential is absent from final JSON, Markdown, temp
       report, SARIF, and PR-review serialization.
-- [ ] `surface.mcp_servers` keeps all existing fields and carries stable
+- [x] `surface.mcp_servers` keeps all existing fields and carries stable
       redaction markers instead of raw matched values.
-- [ ] Raw MCP data still drives all existing security findings, severity, and
+- [x] Raw MCP data still drives all existing security findings, severity, and
       exits.
-- [ ] All repository-controlled public MCP strings are redacted and
+- [x] All repository-controlled public MCP strings are redacted and
       Markdown-safe; placeholders retain existing behavior.
-- [ ] `--no-security`, monorepo, and batch reports cannot bypass sanitization.
-- [ ] No new secret-pattern or renderer-local redaction implementation exists.
-- [ ] All seven READMEs and `SKILL.md` document the MCP inventory guarantee.
-- [ ] `AGENTS.md` records the no-report invariant and remains within 10 KiB.
-- [ ] The expanded self-eval pack is current and 100/Grade A with honest
+- [x] `--no-security`, monorepo, and batch reports cannot bypass sanitization.
+- [x] No new secret-pattern or renderer-local redaction implementation exists.
+- [x] All seven READMEs and `SKILL.md` document the MCP inventory guarantee.
+- [x] `AGENTS.md` records the no-report invariant and remains within 10 KiB.
+- [x] The expanded self-eval pack is current and 100/Grade A with honest
       manual-protocol notes (40/40 tasks).
-- [ ] Focused tests, `npm run check`, package candidate, self scan, strict drift,
+- [x] Focused tests, `npm run check`, package candidate, self scan, strict drift,
       and all nine required CI contexts pass.
-- [ ] Standards/Spec review passes, PR is squash-merged, branch deleted, and
+- [x] Standards/Spec review passes, PR is squash-merged, branch deleted, and
       plans-only closeout is merged.
 
 ## STOP conditions
