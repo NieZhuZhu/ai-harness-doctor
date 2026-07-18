@@ -927,7 +927,15 @@ def extract_signals(file_entry):
                         "value": actual,
                         "path": file_entry["path"],
                         "line": lineno,
-                        "evidence": line.strip(),
+                        # Display-only source line. It is copied verbatim into
+                        # report["conflicts"]/["scope_overrides"], the JSON
+                        # report, the scan Job Summary, and — via the shipped
+                        # harness-checkup guard — a public GitHub Issue body, so
+                        # it must carry the same secret redaction and Markdown
+                        # neutralization every other repository-controlled string
+                        # receives. Conflict detection keys on signal+value, not
+                        # this field, so sanitizing here changes nothing detected.
+                        "evidence": _md_safe(redact_secret_values(line)),
                     }
                 )
     return signals

@@ -2307,6 +2307,62 @@ class ExtendedSurfaceTests(unittest.TestCase):
             finally:
                 Path(report_path).unlink(missing_ok=True)
 
+    def test_conflict_signal_evidence_is_redacted_from_every_report_surface(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            sentinel = "ghp_" + ("D" * 24)
+            # A conflicting package_manager signal whose source line also carries
+            # a credential-shaped value and a stray backtick — the exact shape a
+            # crafted repo would use to leak a secret / break Markdown structure
+            # through the conflict "evidence" field.
+            _write(
+                repo / "AGENTS.md",
+                f"# Project overview\n\n- Install with `npm install` token {sentinel}`x here\n",
+            )
+            _write(
+                repo / "CLAUDE.md",
+                f"# Claude\n\n- Install with `pnpm install` token {sentinel}`x here\n",
+            )
+
+            report = scan.scan_repo(repo, 32768)
+            report_path = scan.write_report_file(report, repo)
+            self.assertIsNotNone(report_path)
+            try:
+                # Detection is unaffected: the package_manager conflict is still
+                # reported (the fix sanitizes display text, not detection keys).
+                self.assertTrue(
+                    any(
+                        c.get("signal") == "package_manager"
+                        for c in report["conflicts"]
+                    ),
+                    "conflict detection must survive evidence sanitization",
+                )
+                serialized = {
+                    "json": json.dumps(report),
+                    "markdown": scan.render_markdown(report),
+                    "temp_report": Path(report_path).read_text(encoding="utf-8"),
+                }
+                for label, output in serialized.items():
+                    with self.subTest(surface=label):
+                        self.assertNotIn(sentinel, output)
+                        self.assertIn("<redacted:GitHub token>", output)
+                # Every stored evidence string is Markdown-neutralized: no stray
+                # backtick survives to break out of its rendered code span.
+                for bucket in ("conflicts", "scope_overrides"):
+                    for record in report.get(bucket, []):
+                        values = record.get("values", {})
+                        entries = (
+                            [e for group in values.values() for e in group]
+                            if isinstance(values, dict)
+                            else record.get("evidence", [])
+                        )
+                        for entry in entries:
+                            with self.subTest(bucket=bucket):
+                                self.assertNotIn("`", entry.get("evidence", ""))
+                                self.assertNotIn(sentinel, entry.get("evidence", ""))
+            finally:
+                Path(report_path).unlink(missing_ok=True)
+
     def test_mcp_public_inventory_sanitizes_all_controlled_strings(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
