@@ -1,0 +1,23 @@
+scripts/eval_run.py
+  s_8951344b811c55::t_11645b8ca857f6 1941-1952
+tests/test_eval_run.py
+  s_8951344b811c55::t_884719175a866e 490-578
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "fe50402885dec651daebfa531f6fc27c509cecbe",
+  "prompts": {},
+  "sessions": {
+    "s_8951344b811c55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c70785f3-9456-4cf3-bcba-ae6fbd19e0d5",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
