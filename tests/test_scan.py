@@ -2549,6 +2549,19 @@ class SecretRecallTests(unittest.TestCase):
         self.assertIn("token: CancellationToken", redacted)
         self.assertNotIn("s3cr3t-value-not-quoted-1234", redacted)
 
+    def test_redaction_covers_base64_padding_of_unquoted_secrets(self):
+        # A base64-encoded credential carries trailing `=`/`==` padding. The
+        # unquoted-value redaction used to stop before the padding, leaving
+        # `<redacted:...>==` in every report surface — that residue leaks the
+        # value's base64 shape and exact decoded length. Redact the padding too.
+        for secret in (
+            "api_key=YWJjZGVmZ2hpamtsbW5vcHFy==",
+            "token: c2VjcmV0dmFsdWVoZXJlMTIzNA=",
+        ):
+            redacted = scan.redact_secret_values(secret)
+            self.assertNotIn("=", redacted, secret)
+            self.assertEqual(redacted, "<redacted:Generic hardcoded secret>", secret)
+
     def test_tail_type_annotation_beyond_semantic_budget_is_not_flagged(self):
         # The streaming (bytes) security path must share the identifier
         # exemption with the in-memory path: an annotation in the tail of an
