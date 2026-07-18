@@ -1,0 +1,21 @@
+plans/README.md
+  s_8951344b811c55::t_4111ff1d61c0a1 689-719,786-788
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "eaea4531473770ca52dce7fc1552de04f2373d41",
+  "prompts": {},
+  "sessions": {
+    "s_8951344b811c55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c70785f3-9456-4cf3-bcba-ae6fbd19e0d5",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
