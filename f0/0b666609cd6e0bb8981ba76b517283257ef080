@@ -1,0 +1,27 @@
+scripts/check_drift.py
+  s_8951344b811c55::t_90682c737854ff 492-496
+scripts/semantic.py
+  s_8951344b811c55::t_e77c18b05fcc21 175-180
+tests/test_check_drift.py
+  s_8951344b811c55::t_2da1da4ec627f5 1414-1428
+tests/test_semantic.py
+  s_8951344b811c55::t_08ce722088c7a8 974-991
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f00b666609cd6e0bb8981ba76b517283257ef080",
+  "prompts": {},
+  "sessions": {
+    "s_8951344b811c55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c70785f3-9456-4cf3-bcba-ae6fbd19e0d5",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
