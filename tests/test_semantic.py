@@ -971,6 +971,24 @@ class SemanticPythonTests(unittest.TestCase):
             self.assertEqual(len(cmds), 1)
             self.assertIn("ghost", cmds[0]["message"])
 
+    def test_uv_run_backtick_token_cannot_break_finding_message(self):
+        # A crafted AGENTS.md that embeds a backtick in the run argument must not
+        # produce a finding message with an unbalanced backtick: pr_review.py
+        # posts the message verbatim as a PR review comment inside a single
+        # backtick code span, and the _PY_RUN_RE capture is bounded to stop at
+        # the backtick so it can never break out.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pyproject.toml", '[project.scripts]\nmytool = "pkg:main"\n')
+            text = "Run:\n\n```\nuv run evil`whoami`tool\n```\n"
+            result = semantic.analyze(td, text)
+            for finding in result["findings"]:
+                self.assertNotIn("`whoami`", finding["message"])
+                self.assertEqual(
+                    finding["message"].count("`") % 2,
+                    0,
+                    f"unbalanced backtick in message: {finding['message']!r}",
+                )
+
 
 class SemanticGoTests(unittest.TestCase):
     def test_go_mod_version_mismatch(self):
