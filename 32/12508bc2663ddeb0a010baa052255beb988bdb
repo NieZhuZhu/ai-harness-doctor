@@ -1,0 +1,23 @@
+scripts/scan.py
+  s_8951344b811c55::t_340561de72f8b9 930-938
+tests/test_scan.py
+  s_8951344b811c55::t_2f3e94dc8a7299 2310-2365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3212508bc2663ddeb0a010baa052255beb988bdb",
+  "prompts": {},
+  "sessions": {
+    "s_8951344b811c55": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c70785f3-9456-4cf3-bcba-ae6fbd19e0d5",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
