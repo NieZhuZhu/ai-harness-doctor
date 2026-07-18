@@ -487,6 +487,95 @@ class EvalRunTests(unittest.TestCase):
             self.assertEqual(record["duration_s"], 1.23)
             self.assertEqual(record["usage"], {"total_cost_usd": 0.01})
 
+    def _regrade_record(self, td, stored_record, *, value="OK"):
+        """Regrade one stored record against a regex task; return the record."""
+        tasks = Path(td) / "tasks.json"
+        tasks.write_text(
+            json.dumps(
+                [{"id": "t1", "prompt": "p", "check": {"type": "regex", "value": value}}]
+            ),
+            encoding="utf-8",
+        )
+        results = Path(td) / "results.json"
+        results.write_text(
+            json.dumps({"label": "stored", "tasks": [stored_record]}),
+            encoding="utf-8",
+        )
+        proc = subprocess.run(
+            [sys.executable, str(EVAL), "--regrade", str(results),
+             "--tasks", str(tasks), "-o", str(results)],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        return json.loads(results.read_text(encoding="utf-8"))["tasks"][0], results
+
+    def test_regrade_does_not_flip_nonzero_exit_runner_to_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            record, results = self._regrade_record(
+                td,
+                {
+                    "id": "t1",
+                    "passed": False,
+                    "timed_out": False,
+                    "exit_code": 9,
+                    "stdout": "OK",
+                    "answer": "OK",
+                },
+            )
+            self.assertFalse(record["passed"])
+            self.assertFalse(record["regraded"])
+            # The false-green must also be visible to --score / --fail-under.
+            score = subprocess.run(
+                [sys.executable, str(EVAL), "--score", str(results), "--fail-under", "80"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertNotEqual(score.returncode, 0, score.stdout + score.stderr)
+
+    def test_regrade_does_not_flip_timed_out_runner_to_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            record, _ = self._regrade_record(
+                td,
+                {
+                    "id": "t1",
+                    "passed": False,
+                    "timed_out": True,
+                    "exit_code": None,
+                    "stdout": "OK",
+                    "answer": "OK",
+                },
+            )
+            self.assertFalse(record["passed"])
+            self.assertFalse(record["regraded"])
+
+    def test_regrade_recomputes_pass_for_successful_exit(self):
+        with tempfile.TemporaryDirectory() as td:
+            record, _ = self._regrade_record(
+                td,
+                {
+                    "id": "t1",
+                    "passed": False,
+                    "timed_out": False,
+                    "exit_code": 0,
+                    "stdout": "OK",
+                    "answer": "WRONG",
+                },
+            )
+            # exit_code == 0 keeps the fix-the-regex recompute path working.
+            self.assertTrue(record["passed"])
+            self.assertTrue(record["regraded"])
+
+    def test_regrade_recomputes_pass_when_exit_code_absent(self):
+        with tempfile.TemporaryDirectory() as td:
+            record, _ = self._regrade_record(
+                td,
+                {"id": "t1", "passed": False, "stdout": "OK", "answer": "WRONG"},
+            )
+            # Manual-protocol records omit exit_code; they must still recompute.
+            self.assertTrue(record["passed"])
+            self.assertTrue(record["regraded"])
+
     def test_matrix_run_across_two_runners_produces_report_and_json(self):
         with tempfile.TemporaryDirectory() as td:
             workdir = Path(td) / "repo"
