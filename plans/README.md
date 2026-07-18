@@ -595,6 +595,20 @@ verification gate, and update its status here.
    release/version docs, EOL runtimes, and several provider/MCP/report product
    directions need their own policy or compatibility decisions.
 
+   **Round closeout (Plan 062, 2026-07-18)**: Plan 062 landed as PR #273
+   (squash merge `b9fb8a3`, 9/9 required checks, zero unresolved threads,
+   Standards/Spec PASS, admin bypass for sole-maintainer self-approval
+   only, branch deleted). The implementation introduces `public_mcp_servers()`
+   alongside `public_hooks()`, reuses the shared redactor and `_md_safe` for
+   every repository-controlled MCP string, and adds an end-to-end sentinel
+   matrix across JSON, Markdown, temp report, SARIF, and PR-review payloads.
+   `AGENTS.md` records the no-report invariant at 10,228 bytes (SHA
+   `fa6e4fe…`). Self-eval stays 40/40 at 100/Grade A with honest
+   manual-protocol notes. Vetted runner-up findings (guard multi-file
+   rollback, eval `usage`/exit integrity, root-vs-scoped eval parity,
+   `actionlint` gating, formatter scope, release-docs truth, EOL runtimes,
+   provider/MCP/report product directions) are retained for future rounds.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -660,7 +674,7 @@ verification gate, and update its status here.
 | 059 | Distinguish Docker and RPC identifiers from repository paths | P1 | M | 014, 018, 052, 053 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 060 | Reject unsupported batch SARIF instead of emitting Markdown | P1 | S | 012, 032, 042 | REJECTED — fixed independently in `d3a6a3e`; no PR |
 | 061 | Restore AGENTS.md progressive-disclosure headroom | P1 | M | 058 | DONE — PR [#270](https://github.com/NieZhuZhu/ai-harness-doctor/pull/270), merge `380085c`, 9/9 required checks |
-| 062 | Redact MCP credentials from every scan-report surface | P0 | S–M | 049, 051 | TODO |
+| 062 | Redact MCP credentials from every scan-report surface | P0 | S–M | 049, 051 | DONE — PR [#273](https://github.com/NieZhuZhu/ai-harness-doctor/pull/273), merge `b9fb8a3`, 9/9 required checks |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
