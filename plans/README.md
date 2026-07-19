@@ -717,6 +717,50 @@ independently-reproduced items for this batch:
      853 + Node 51 green, `npm run check` (incl. packed candidate) green,
      README sync 7/7.
 
+### 2026-07-19 post-v1.13.6 deep improve round 1
+
+Independently re-audited all nine categories on current
+`main@0232401` and reconciled Plans 001–065 (all DONE/REJECTED). The baseline
+was verified rather than inferred: scan had no new gated findings, strict drift
+was 100/A, evidence-bound self-eval passed 40/40, npm 10.8.2 against
+`registry.npmjs.org` reported zero vulnerabilities, the latest main workflows
+were green, and the remote branch read-back still required all nine documented
+contexts with secret scanning/push protection enabled. The local
+`/usr/local/bin/npm` is an obsolete npm 6 wired to an internal registry and
+cannot execute the modern package-candidate/audit paths; that host-tool failure
+is not recorded as a repository failure or a green gate.
+
+The selected finding is **guard multi-file transaction safety**. The
+`applyGuardChanges()` path validates every hook/worktree path first, then
+directly applies the ordered writes/removals with no journal or rollback. Two
+isolated filesystem fault injections reproduced both halves:
+
+1. `guard --apply --provider github` with a writable Git hook directory and
+   non-writable worktree root installed `.git/hooks/pre-commit`, then failed
+   creating `.github/workflows`; both workflows and the `AGENTS.md` maintenance
+   contract remained absent.
+2. From a complete install, `guard --remove --apply` with a non-writable
+   workflow directory deleted the pre-commit hook, then failed unlinking the
+   first workflow; both workflows and `AGENTS.md` remained installed.
+
+Plan 066 specifies a separate repository-local transaction below the resolved
+Git common directory: fixed guard allow-list, exact byte/mode snapshots,
+write-ahead expected states, atomic file replacement, caught-error rollback,
+abrupt-exit recovery, live-owner serialization, and fail-closed handling of
+post-crash edits or malformed/symlinked/escaping/tampered state. It explicitly
+does not couple guard to the HOME installer manifest/transaction and preserves
+foreign/edited-file ownership semantics.
+
+Vetted runner-ups remain separate: the documented `actionlint` gate is not
+required locally or in CI; `npm run format` still has unsafe authority over
+historical evidence/generated/synchronized files; shipped provider shell
+templates are mostly substring-tested rather than executed; and Node-native
+coverage of the monolithic CLI remains low even though high-risk paths have
+Python black-box integration tests. Direction candidates (provider-neutral eval
+gate config, read-only MCP eval verification, and additive public JSON schema
+versions) are product decisions, not substitutes for the reproduced mutation
+integrity defect.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -786,6 +830,7 @@ independently-reproduced items for this batch:
 | 063 | Redact and Markdown-neutralize conflict-signal evidence | P0 | S | 049, 051, 062 | DONE — PR [#278](https://github.com/NieZhuZhu/ai-harness-doctor/pull/278), merge `5c68d3f`, 9/9 required checks |
 | 064 | Bound and neutralize semantic/drift finding-message tokens | P1 | S | — | DONE — PR [#280](https://github.com/NieZhuZhu/ai-harness-doctor/pull/280), merge `6f5a513`, 9/9 required checks |
 | 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | DONE — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279), merge `2f88e33`, 9/9 required checks |
+| 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -813,6 +858,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Plans 011–013 are bugfixes under the current contracts unless a STOP condition
   forces a breaking schema/protocol change. A combined release is patch-only if
   every implementation remains backward-compatible.
+- Plan 066 reuses the already-DONE Plans 004/037 containment and recovery
+  patterns but keeps guard state independent from the adapter installer
+  manifest. Land its plan-only PR first, then implement test-first from the
+  resulting latest `main`; use a separate green closeout PR after the
+  implementation is squash-merged.
 - Execute Plan 014 first because it fixes a reproduced cross-engine false
   positive with the smallest blast radius. Plans 015 and 016 are independent
   backward-compatible features and should remain separate PRs.
