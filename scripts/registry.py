@@ -370,7 +370,7 @@ _PATH_LABEL_RE = re.compile(
 # Explicit runtime-identifier cues that mark the token as NOT a filesystem path.
 _NONPATH_LABEL_RE = re.compile(
     r"\b(?:docker\s+image|container\s+image|image|"
-    r"rpc\s+method|method|endpoint|operation|route)\b",
+    r"rpc\s+method|method|endpoint|operation|route|action|skill|command|tool|library|component|package)\b",
     re.I,
 )
 
@@ -386,7 +386,10 @@ _NONPATH_LABEL_RE = re.compile(
 # ``facts.is_eslint_rule_identifier`` only catches rules quoted verbatim in an
 # ESLint config file; oxlint's native rules live in no such file, so a
 # prose-labelled fallback is needed too.
-_LINT_RULE_SHAPE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+")
+_LINT_RULE_SHAPE_RE = re.compile(
+    r"(?:react|react-hooks|import|jsx-a11y|unicorn|promise|node|n|vue|svelte|solid|"
+    r"astro|prettier|jest|vitest|testing-library)/[A-Za-z0-9][A-Za-z0-9-]*"
+)
 _LINTER_NAME_RE = re.compile(r"\b(?:eslint|oxlint|tslint|stylelint|biome)\b", re.I)
 _RULE_WORD_RE = re.compile(r"\brules?\b", re.I)
 
@@ -494,6 +497,9 @@ def declared_paths(text):
             if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
                 continue
             if token.startswith(("http://", "https://")) or "<" in token or "{" in token:
+                continue
+            # Ellipsis-bearing snippets are illustrative placeholders, not literal repo paths.
+            if "..." in token:
                 continue
             # A token carrying code-expression punctuation (`#`, brackets,
             # parentheses, quotes, operators) is a code snippet, not a path —
