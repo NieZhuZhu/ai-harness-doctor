@@ -14,7 +14,7 @@ Ele encontra o drift antes de um PR quebrado, consolida orientações em um `AGE
 - **Consertar o harness melhora o agente de forma mensurável.** No benchmark reproduzível antes/depois, consolidar uma configuração contraditória em um único `AGENTS.md` canônico elevou as respostas objetivas corretas de **6/28 para 28/28**, eliminou as duas respostas instáveis e reduziu a latência média em 27% e o custo registrado em 17% em tarefas idênticas — [metodologia e dados brutos](benchmark/README.md).
 - **Vale também num repositório real de produção.** No trycompai/comp (um monorepo bun de ~1.7k estrelas em desenvolvimento ativo cujo `CLAUDE.md` divergiu do `AGENTS.md` e ainda ensinava comandos `npx` obsoletos), uma única rodada de tratamento levou o agente de **18/24 para 24/24 corretas** — antes ele repetia o documento obsoleto ao pé da letra, deterministicamente, nas duas execuções — cortando ainda a latência em 37% e os turnos do agente em 45%; o limite é documentado com honestidade por um **resultado nulo** publicado sobre openai/codex, cujos documentos saudáveis não deixavam nada a melhorar — [caso positivo](benchmark/corpus/evals/comp/README.md) · [caso nulo](benchmark/corpus/evals/codex/README.md).
 - **A doença é real na elite do open source.** Um corpus de 14 repositórios conhecidos (react, vscode, n8n, ollama, transformers, dify, supabase, gemini-cli, codex, home-assistant, zed, elasticsearch, cline, ghostty — 58k–247k estrelas, fixados como submodules) mostra que 10/14 já trazem um `AGENTS.md` raiz e, ainda assim, uma única varredura determinística em lote revela **96 lacunas, 44 arquivos de instruções sobrepostos, 15 divergências declaração-código e 3 conflitos de mesmo escopo** em 150 arquivos de configuração de agentes — [corpus e resultados por repo](benchmark/corpus/README.md).
-- **Descobertas confiáveis.** 37 rodadas de validação registradas contra repositórios reais produziram treze correções de falsos positivos (openai/codex, microsoft/vscode, cline, gemini-cli, …), cada uma lançada com testes de regressão; classes adiadas são registradas abertamente, nunca escondidas — [registro de validação externa](EXTERNAL_VALIDATION.md).
+- **Descobertas confiáveis.** 38 rodadas de validação registradas contra repositórios reais produziram quinze correções de falsos positivos (openai/codex, microsoft/vscode, cline, gemini-cli, assistant-ui, …), cada uma lançada com testes de regressão; classes adiadas são registradas abertamente, nunca escondidas — [registro de validação externa](EXTERNAL_VALIDATION.md).
 
 ## Comece em 60 segundos
 
@@ -50,7 +50,7 @@ Nenhum desses comandos altera o repositório auditado.
 |---|---|
 | Inventário | Arquivos canônicos, regras, scopes aninhados, MCP, hooks, comandos, permissões e subagentes. |
 | Segurança | Segredos em texto, permissões amplas, transportes MCP inseguros, hooks perigosos e bypasses. |
-| Consistência | Scripts ausentes, caminhos movidos, drift de gerenciador/runtime, links quebrados e lockfiles concorrentes. |
+| Consistência | Scripts ausentes, caminhos movidos, drift de gerenciador/runtime, links quebrados, lockfiles concorrentes e identificadores que não são caminhos — como regras lint ou refs de branch rotuladas — sem falsos positivos. |
 | Qualidade das instruções | Contexto excessivo, cópia do README, decisão silenciosa, sobreposição e conflito no mesmo scope. |
 | Scope | Herança até o `AGENTS.md` mais próximo e globs limitados de Claude, Cursor e Copilot. |
 | Eficácia | Correção antes/depois, estabilidade, latência, custo, frescor da evidência e nota de saúde. |
