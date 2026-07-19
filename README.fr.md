@@ -218,7 +218,7 @@ Les adapters non Claude sont volontairement légers. La distribution massive app
 - L’installateur utilise lock, journal, propriété et récupération.
 - Les outils MCP restent en lecture seule ; un finding n’est pas une erreur de transport.
 - Les juges externes et LLM réels sont opt-in. Les endpoints distants exigent HTTPS, HTTP est réservé au loopback, les redirections sont refusées et les échecs reviennent au juge déterministe.
-- Les artefacts et rapports eval expurgent les identifiants à haute confiance des diagnostics runner/judge, metadata usage imbriquées et templates matrix ; ils gardent l'usage numérique et le grading utilise en mémoire la sortie bornée originale.
+- Les artefacts et rapports eval expurgent les identifiants à haute confiance des diagnostics runner/judge, metadata usage imbriquées et templates matrix ; ils gardent l'usage numérique, notent la sortie brute bornée et rejettent tout stored pass contraire à un échec runner/judge explicite.
 - Aucune télémétrie. Désactivez le contrôle npm avec `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1`.
 
 ## Preuves et benchmark

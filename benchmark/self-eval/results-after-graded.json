@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-20 for Plan 067 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-20 for Plan 068 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
   "tasks": [
     {
       "id": "test-suite",
@@ -222,8 +222,8 @@
     },
     {
       "id": "stored-result-health",
-      "stdout": "Offline eval consumers validate stored result records, derive health from those records, and require every cached health field to agree.",
-      "answer": "Offline eval consumers validate stored result records, derive health from those records, and require every cached health field to agree.",
+      "stdout": "Offline eval consumers validate records, derive health from them, require cached fields to agree, and reject an explicit pass/failure contradiction.",
+      "answer": "Offline eval consumers validate records, derive health from them, require cached fields to agree, and reject an explicit pass/failure contradiction.",
       "passed": true,
       "regraded": true
     },
@@ -296,12 +296,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "32c6a39326843d1802cc30db2cf6625d264e0bbc67ee0303a81ff769e3d29300"
+      "sha256": "1c0ccd0c231b308cab7dc96a0d334d235fba11bf094345557f63af121bb369a1"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "8a3faee384c516ef240241822881624789b869eeacdb20730107b0956d34a7ce"
+        "sha256": "2cc479f81df47472537f0bb4d74781b8953fc0f8803decc2d78156f1253ca613"
       }
     ]
   }

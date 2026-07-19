@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-20 for Plan 067 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-20 for Plan 068 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
   "tasks": [
     {"id": "test-suite", "stdout": "python3 -m unittest discover -s tests -v"},
     {"id": "python-version", "stdout": "3.9+"},
@@ -34,7 +34,7 @@
     {"id": "eval-task-preflight", "stdout": "Validate the complete task pack before any runner, judge, evidence hash, or write."},
     {"id": "checkup-issue-lifecycle", "stdout": "Failure opens or updates one exact-title issue; recovery comments and closes it, and unrelated issues stay untouched."},
     {"id": "batch-scan-coverage", "stdout": "Report every reachable repository, but any unscanned entry fails with exit 8 after finding exits 2, 3, 4, and 7 take precedence."},
-    {"id": "stored-result-health", "stdout": "Offline eval consumers validate stored result records, derive health from those records, and require every cached health field to agree."},
+    {"id": "stored-result-health", "stdout": "Offline eval consumers validate records, derive health from them, require cached fields to agree, and reject an explicit pass/failure contradiction."},
     {"id": "action-success-matrix", "stdout": "PR validation proves bundled scan, bundled drift, and an exact npm override; release repeats both bundled commands before npm and verifies floating bundled code plus the exact new npm version post-publish."},
     {"id": "structured-applicability", "stdout": "Claude/Cursor/Copilot structured globs may narrow automatic conflict domains; conditional, manual, invalid, and ignored rules stay diagnostic, and recursive discovery never authorizes recursive deletion or rewriting."},
     {"id": "canonical-readiness", "stdout": "Product-owned draft markers, unsafe paths, size, and required-section failures block destructive stub consolidation; --force may bypass only dirty-tree risk."},

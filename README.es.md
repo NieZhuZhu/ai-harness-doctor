@@ -218,7 +218,7 @@ Los adapters no Claude son deliberadamente finos. La distribución masiva corres
 - El instalador usa lock, journal, propiedad y recuperación.
 - Las herramientas MCP son de solo lectura; un finding no es un fallo de transporte.
 - Jueces externos y LLM reales son opt-in. Los endpoints remotos requieren HTTPS, HTTP solo se permite en loopback, los redirects se rechazan y los fallos vuelven al juez determinista.
-- Los artefactos e informes eval redactan credenciales de alta confianza en diagnósticos runner/judge, metadata usage anidada y templates matrix; conservan usage numérico y la evaluación usa en memoria la salida acotada original.
+- Los artefactos e informes eval redactan credenciales de alta confianza en diagnósticos runner/judge, metadata usage anidada y templates matrix; conservan usage numérico, evalúan con salida original acotada y rechazan stored pass contradictorios con fallos runner/judge explícitos.
 - No hay telemetría. Desactiva el chequeo npm con `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1`.
 
 ## Evidencia y benchmark

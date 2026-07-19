@@ -187,9 +187,9 @@
   },
   {
     "id": "stored-result-health",
-    "prompt": "How must offline eval consumers treat stored result records and cached health? Answer briefly.",
+    "prompt": "How must offline eval consumers handle stored records, cached health, and an explicit pass/failure contradiction? Answer briefly.",
     "timeout_s": 120,
-    "check": {"type": "regex", "value": "(?i)validat.*stored.*record.*deriv.*health.*cache.*agree|deriv.*health.*record.*cached.*agree"}
+    "check": {"type": "regex", "value": "(?i)validat.*record.*deriv.*health.*cache.*agree.*reject.*contradict|reject.*contradict.*deriv.*health.*record.*cache.*agree"}
   },
   {
     "id": "action-success-matrix",

@@ -1105,6 +1105,17 @@ def _result_error(location, message):
     raise ResultFileError(f"{location} {message}")
 
 
+def _validate_optional_exit_code(container, field, location):
+    if field not in container:
+        return None
+    value = container[field]
+    if value is not None and (
+        isinstance(value, bool) or not isinstance(value, int)
+    ):
+        _result_error(location, f"field `{field}` must be an integer or null")
+    return value
+
+
 def _validate_result_records(records, location, allow_ungraded=False):
     if not isinstance(records, list):
         _result_error(location, "must be an array")
@@ -1126,6 +1137,44 @@ def _validate_result_records(records, location, allow_ungraded=False):
             _result_error(item, "field `passed` must be a boolean")
         if "timed_out" in record and not isinstance(record["timed_out"], bool):
             _result_error(item, "field `timed_out` must be a boolean")
+        exit_code = _validate_optional_exit_code(record, "exit_code", item)
+        judge = record.get("judge")
+        judge_exit_code = None
+        judge_passed = None
+        if isinstance(judge, dict):
+            judge_exit_code = _validate_optional_exit_code(
+                judge,
+                "exit_code",
+                f"{item} judge",
+            )
+            if "passed" in judge:
+                if not isinstance(judge["passed"], bool):
+                    _result_error(
+                        f"{item} judge",
+                        "field `passed` must be a boolean",
+                    )
+                judge_passed = judge["passed"]
+        if record.get("passed") is True:
+            if record.get("timed_out") is True:
+                _result_error(
+                    item,
+                    "field `passed` contradicts runner `timed_out`",
+                )
+            if exit_code not in (None, 0):
+                _result_error(
+                    item,
+                    "field `passed` contradicts runner `exit_code`",
+                )
+            if judge_exit_code not in (None, 0):
+                _result_error(
+                    item,
+                    "field `passed` contradicts judge `exit_code`",
+                )
+            if judge_passed is False:
+                _result_error(
+                    item,
+                    "field `passed` contradicts judge `passed`",
+                )
     return records, all_graded
 
 
