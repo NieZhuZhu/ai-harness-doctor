@@ -31,7 +31,39 @@
   separation and the shared redactor)
 - **Category**: security / persisted artifact minimization
 - **Planned at**: commit `cf96c2a`, 2026-07-20
-- **Status**: TODO
+- **Status**: DONE — plan PR
+  [#292](https://github.com/NieZhuZhu/ai-harness-doctor/pull/292);
+  implementation PR
+  [#293](https://github.com/NieZhuZhu/ai-harness-doctor/pull/293), squash merge
+  `b26974f`; both passed all nine required contexts.
+
+## Implementation evidence
+
+- The pre-fix public runner reproduction is now an end-to-end regression: raw
+  regex grading still sees the generated sentinel and passes, while the exact
+  value is absent from persisted stdout/answer and nested
+  `usage`/`cost`/`tokens`.
+- `sanitize_json_strings()` creates an iterative JSON-compatible safe copy,
+  redacts string keys/values, preserves numeric/bool/null/container values, and
+  uses deterministic safe suffixes for colliding redacted keys without losing
+  values or mutating the input.
+- Successful and non-zero runners plus single, multi-round, matrix, and regrade
+  final artifacts are covered. Matrix Markdown does not render usage and is
+  checked for absence of the raw value.
+- Historical/manual `--compare` input is sanitized at stdout and file report
+  boundaries, table pipes/backticks/newlines are neutralized, before/after
+  preference is covered, and both source files remain byte-identical.
+- Standards, Spec, and security-focused `bits-code-guard` reviews found no
+  remaining P0–P2 issues. Review artifacts are under
+  `/tmp/ai-harness-doctor_review_067/`.
+- Final local evidence on the reviewed tree: `npm run check` passed 892 Python
+  tests, 51 Node tests, lint, synchronized docs/adapters, and packed candidate;
+  eval-focused tests passed 146/146; scan exited 0; strict drift was 100/A;
+  current-evidence self-eval was 40/40; public-registry audit reported zero
+  vulnerabilities; `AGENTS.md` was 10,171 bytes.
+- PR #293 head `1e9f1bc` passed `drift`, `lint`, Node 16/20/22, `self-test`,
+  and Python 3.9/3.10/3.12, had zero unresolved review threads, and was
+  squash-merged as `b26974f`; the implementation branch was deleted.
 
 ## Why this matters
 

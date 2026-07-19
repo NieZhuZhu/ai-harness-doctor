@@ -796,6 +796,21 @@ Markdown-neutralizes comparison rendering because historical inputs may predate
 the fix. Grading, usage extraction, secret patterns, result schema, health, and
 the usage allow-list remain unchanged.
 
+**Round closeout (2026-07-20):** plan-only PR
+[#292](https://github.com/NieZhuZhu/ai-harness-doctor/pull/292) merged as
+`029f8d5` after 9/9 required checks. Implementation PR
+[#293](https://github.com/NieZhuZhu/ai-harness-doctor/pull/293) passed all nine
+contexts on reviewed head `1e9f1bc`, had zero unresolved threads, and was
+squash-merged as `b26974f`; both remote branches were deleted. The final
+iterative safe-copy sanitizer covers nested string keys/values, collision-safe
+suffixes, deep containers, numeric compatibility, successful/non-zero records,
+single/round/matrix/regrade artifacts, and historical/manual comparison stdout
+and files without rewriting inputs. Standards/Spec/security review has no
+remaining P0–P2 findings. Final local evidence: 892 Python + 51 Node tests,
+146 eval-focused tests, packed candidate, scan, strict drift 100/A,
+current-evidence self-eval 40/40, public-registry audit with zero
+vulnerabilities, and `AGENTS.md` at 10,171 bytes.
+
 The highest runner-up is also mechanically reproduced but deliberately kept
 separate: three stored records that claimed `passed: true` while carrying,
 respectively, runner `exit_code: 9`, `timed_out: true`, or judge
@@ -886,7 +901,7 @@ integrity defect.
 | 064 | Bound and neutralize semantic/drift finding-message tokens | P1 | S | — | DONE — PR [#280](https://github.com/NieZhuZhu/ai-harness-doctor/pull/280), merge `6f5a513`, 9/9 required checks |
 | 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | DONE — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279), merge `2f88e33`, 9/9 required checks |
 | 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | DONE — PR [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), merge `28150ef`, 9/9 required checks |
-| 067 | Redact secrets from nested eval usage metadata before persistence or rendering | P0 | S | 051 | TODO |
+| 067 | Redact secrets from nested eval usage metadata before persistence or rendering | P0 | S | 051 | DONE — PR [#293](https://github.com/NieZhuZhu/ai-harness-doctor/pull/293), merge `b26974f`, 9/9 required checks |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
