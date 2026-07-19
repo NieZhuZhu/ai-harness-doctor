@@ -811,6 +811,35 @@ remaining P0–P2 findings. Final local evidence: 892 Python + 51 Node tests,
 current-evidence self-eval 40/40, public-registry audit with zero
 vulnerabilities, and `AGENTS.md` at 10,171 bytes.
 
+### 2026-07-20 post-Plan-067 deep improve round 3
+
+Independently re-audited all nine categories on clean
+`main@5280ad3`. Baseline scan exited 0, strict drift was 100/A,
+current-evidence self-eval passed 40/40, and remote required-check/security
+posture remained intact.
+
+The selected finding is **stored result passes can contradict explicit
+operational failure evidence**. Four one-record files claimed `passed:true`
+while recording runner exit 9, timeout, judge exit 7, or judge
+`passed:false`. Both `--score --fail-under 80` and `--stats` exited 0 and
+reported 100/A for every case; the timeout record simultaneously reported one
+passed task and one timeout. The shared `_validate_result_records()` checks
+types for `id`/`passed`/`timed_out` but does not reconcile explicit operational
+evidence before `compute_health()` trusts `passed`.
+
+Plan 068 extends the shared read validator. It rejects only explicit
+contradictions with a safe `result error`/exit 2 before health, evidence,
+threshold, baseline, compare, or regrade side effects. It does not normalize
+input or require operational fields, preserving manual/historical records that
+omit them. Top-level failures remain valid even if other evidence looks
+successful; the scope is false green.
+
+Runner-ups were rechecked but rank lower: root-generated tasks omit fact
+evidence and therefore fail closed when current evidence is required rather
+than false-green; `drift --fix --apply` remains non-transactional; `actionlint`
+remains documented but unenforced; broad formatter ownership and runtime-floor
+changes remain policy/migration decisions.
+
 The highest runner-up is also mechanically reproduced but deliberately kept
 separate: three stored records that claimed `passed: true` while carrying,
 respectively, runner `exit_code: 9`, `timed_out: true`, or judge
@@ -902,6 +931,7 @@ integrity defect.
 | 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | DONE — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279), merge `2f88e33`, 9/9 required checks |
 | 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | DONE — PR [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), merge `28150ef`, 9/9 required checks |
 | 067 | Redact secrets from nested eval usage metadata before persistence or rendering | P0 | S | 051 | DONE — PR [#293](https://github.com/NieZhuZhu/ai-harness-doctor/pull/293), merge `b26974f`, 9/9 required checks |
+| 068 | Reject stored eval passes that contradict explicit operational failure evidence | P0 | S | 033, 038, 065 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -937,6 +967,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Plan 067 extends the already-DONE Plan 051 redaction boundary without changing
   raw grading or result schema. Land plan-only, implement the nested sanitizer
   and comparison boundary test-first, then use the same green closeout cycle.
+- Plan 068 extends the shared Plan 033 stored-result validator with the
+  Plans 038/065 operational truth. Keep omitted legacy fields compatible,
+  implement test-first, and use the same plan/implementation/closeout cycle.
 - Execute Plan 014 first because it fixes a reproduced cross-engine false
   positive with the smallest blast radius. Plans 015 and 016 are independent
   backward-compatible features and should remain separate PRs.
