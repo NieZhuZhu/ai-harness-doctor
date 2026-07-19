@@ -11,7 +11,7 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-The current Plan 062 maintenance-pack answers are **manually maintained by an AI
+The current Plan 066 maintenance-pack answers are **manually maintained by an AI
 implementation workflow** directly from `AGENTS.md`. No `eval_run.py` runner or
 judge model call was performed; the offline regex regrade is evidence-bounded,
 **not an independent model benchmark**.
@@ -21,7 +21,7 @@ judge model call was performed; the offline regex regrade is evidence-bounded,
   evidence freshness, repository operations, path truth, nested package facts,
   Action argv safety, the deep-improve loop, and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
-- `results-after.json` — current Plan 062 manual-protocol answers maintained
+- `results-after.json` — current Plan 066 manual-protocol answers maintained
   by AI implementation workflow from the current `AGENTS.md`; no `eval_run.py`
   runner or judge model call.
 - `*-graded.json` — the same files after `--regrade` (adds `passed`/`answer`).
@@ -62,7 +62,7 @@ script and listing the key directories. Closing that gap raised the pass rate to
 keeping `AGENTS.md` small (progressive disclosure preserved). The drift guard stays green
 (100/100, grade A) after the change.
 
-The 2026-07-17 refresh covers objective checks for installer manifest safety,
+The 2026-07-19 refresh covers objective checks for installer/guard transaction recovery,
 unsuppressible HIGH security findings, MCP read-only/error semantics, semantic
 release classification, isolated-HOME installer tests, eval evidence freshness,
 MCP versioned wire contracts, and the public-repository operations baseline. Any change to

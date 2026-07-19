@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-18 for Plan 062 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-19 for Plan 066 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
   "tasks": [
     {"id": "test-suite", "stdout": "python3 -m unittest discover -s tests -v"},
     {"id": "python-version", "stdout": "3.9+"},
@@ -15,7 +15,7 @@
     {"id": "scan-script", "stdout": "scripts/scan.py"},
     {"id": "eval-script", "stdout": "scripts/eval_run.py"},
     {"id": "commit-convention", "stdout": "The CLI entry point is bin/cli.js and the deterministic engines live in scripts/ (scan.py, canonicalize.py, check_drift.py, eval_run.py)."},
-    {"id": "installer-state", "stdout": "Parse installer manifests fail-closed, reject symlinked state, and replace valid state atomically."},
+    {"id": "installer-state", "stdout": "Installer and guard mutation transactions recover incomplete state or fail closed when state is ambiguous."},
     {"id": "security-baseline", "stdout": "No. HIGH security findings are ineligible for baselines and remain active."},
     {"id": "secret-report-safety", "stdout": "No. Never commit or report secrets or credentials."},
     {"id": "mcp-policy", "stdout": "MCP tools stay read-only, and findings are not operational failures."},

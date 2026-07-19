@@ -104,6 +104,10 @@ Install provider-aware pre-commit, pull-request, and scheduled guards:
 npx ai-harness-doctor guard . --apply
 ```
 
+Guard apply/remove is transactional across the Git hook, provider files, and `AGENTS.md`.
+
+Caught failures roll back, interrupted mutations recover before the next `--apply`, and unsafe or externally changed recovery state fails closed.
+
 GitHub guards combine scan and drift into one rich PR review. Located findings become inline comments; the summary includes severity, health, evidence, repair guidance, and prioritized next steps.
 
 Already use the pre-commit framework?

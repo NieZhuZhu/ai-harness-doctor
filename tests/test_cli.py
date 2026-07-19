@@ -1187,6 +1187,33 @@ class CliInstallerTests(unittest.TestCase):
                 agents.read_text(encoding="utf-8").count("ai-harness-doctor:maintenance-contract:start"), 1
             )
 
+    def test_guard_apply_rolls_back_all_files_on_mid_transaction_failure(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            agents = repo / "AGENTS.md"
+            agents_before = agents.read_bytes()
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            drift = repo / ".github" / "workflows" / "harness-drift.yml"
+            checkup = repo / ".github" / "workflows" / "harness-checkup.yml"
+
+            proc = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_FAILURE": "after-mutation"},
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("rolled back", proc.stderr.lower())
+            self.assertNotIn("node:internal", proc.stderr)
+            self.assertFalse(hook.exists())
+            self.assertFalse(drift.exists())
+            self.assertFalse(checkup.exists())
+            self.assertEqual(agents.read_bytes(), agents_before)
+            self.assertFalse((repo / ".github").exists())
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
     def test_guard_consumer_repo_can_build_review_through_public_cli(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
@@ -1418,6 +1445,699 @@ class CliInstallerTests(unittest.TestCase):
                 self.assertIn("Keep this intact.", agents_after)
                 self.assertEqual(hashlib.sha256(agents_after_bytes).hexdigest(), original_hash)
 
+    def test_guard_remove_rolls_back_all_files_on_mid_transaction_failure(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply", "--provider", "github"], home, repo)
+            managed = (
+                repo / ".git" / "hooks" / "pre-commit",
+                repo / ".github" / "workflows" / "harness-drift.yml",
+                repo / ".github" / "workflows" / "harness-checkup.yml",
+                repo / "AGENTS.md",
+            )
+            before = {
+                path: (path.read_bytes(), path.stat().st_mode & 0o777)
+                for path in managed
+            }
+
+            proc = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--remove", "--apply"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_FAILURE": "after-mutation"},
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("rolled back", proc.stderr.lower())
+            self.assertNotIn("node:internal", proc.stderr)
+            for path, (content, mode) in before.items():
+                with self.subTest(path=path):
+                    self.assertTrue(path.is_file())
+                    self.assertEqual(path.read_bytes(), content)
+                    self.assertEqual(path.stat().st_mode & 0o777, mode)
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
+    def test_guard_recovers_interrupted_transaction_before_next_apply(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            agents = repo / "AGENTS.md"
+            agents_before = agents.read_bytes()
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            drift = repo / ".github" / "workflows" / "harness-drift.yml"
+            checkup = repo / ".github" / "workflows" / "harness-checkup.yml"
+
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            self.assertTrue(hook.is_file())
+            self.assertFalse(drift.exists())
+            self.assertFalse(checkup.exists())
+            self.assertEqual(agents.read_bytes(), agents_before)
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+            self.assertTrue(transaction.is_dir())
+
+            dry_run = self.run_cli_raw(["guard", str(repo), "--provider", "github"], home, repo)
+
+            self.assertNotEqual(dry_run.returncode, 0)
+            self.assertIn("pending", dry_run.stderr.lower())
+            self.assertTrue(hook.is_file())
+            self.assertFalse(drift.exists())
+            self.assertTrue(transaction.is_dir())
+
+            recovered = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertIn("Applied 4 change(s)", recovered.stdout)
+            self.assertTrue(hook.is_file())
+            self.assertTrue(drift.is_file())
+            self.assertTrue(checkup.is_file())
+            self.assertIn(
+                "ai-harness-doctor:maintenance-contract:start",
+                agents.read_text(encoding="utf-8"),
+            )
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
+    def test_guard_recovery_refuses_to_overwrite_post_crash_edit(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            hook.write_text("#!/bin/sh\necho user-edited-after-crash\n", encoding="utf-8")
+            edited = hook.read_bytes()
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+
+            recovery = self.run_cli_raw(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertNotEqual(recovery.returncode, 0)
+            self.assertIn("externally modified", recovery.stderr)
+            self.assertEqual(hook.read_bytes(), edited)
+            self.assertTrue(transaction.is_dir())
+
+    def test_guard_recovery_refuses_tampered_backup(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply", "--provider", "github"], home, repo)
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--remove", "--apply"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+            backup = next(path for path in transaction.iterdir() if path.name.startswith("backup-"))
+            backup.write_bytes(backup.read_bytes() + b"tampered")
+
+            recovery = self.run_cli_raw(
+                ["guard", str(repo), "--remove", "--apply"],
+                home,
+                repo,
+            )
+
+            self.assertNotEqual(recovery.returncode, 0)
+            self.assertIn("backup digest does not match", recovery.stderr)
+            self.assertTrue(transaction.is_dir())
+
+    def test_guard_recovery_refuses_malformed_journal(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+            journal = transaction / "journal.json"
+            journal.write_text("{broken\n", encoding="utf-8")
+
+            recovery = self.run_cli_raw(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertNotEqual(recovery.returncode, 0)
+            self.assertIn("malformed guard transaction journal", recovery.stderr)
+            self.assertEqual(journal.read_text(encoding="utf-8"), "{broken\n")
+            self.assertTrue(transaction.is_dir())
+
+    def test_guard_rollback_preserves_special_mode_bits(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply", "--provider", "github"], home, repo)
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            try:
+                hook.chmod(0o4755)
+            except OSError as error:
+                self.skipTest(f"special mode bits unsupported: {error}")
+            expected_mode = hook.stat().st_mode & 0o7777
+            if expected_mode != 0o4755:
+                self.skipTest("filesystem does not retain setuid mode on the test hook")
+            content = hook.read_bytes()
+
+            proc = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--remove", "--apply"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_FAILURE": "after-mutation"},
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("rolled back", proc.stderr.lower())
+            self.assertEqual(hook.read_bytes(), content)
+            self.assertEqual(hook.stat().st_mode & 0o7777, expected_mode)
+
+    def test_guard_codebase_failure_rolls_back_parents_and_executable_mode(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            agents_before = (repo / "AGENTS.md").read_bytes()
+
+            proc = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "codebase"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_FAILURE": "after-3"},
+            )
+
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("rolled back", proc.stderr.lower())
+            self.assertFalse((repo / ".harness-ci").exists())
+            self.assertFalse((repo / ".codebase").exists())
+            self.assertFalse((repo / ".git" / "hooks" / "pre-commit").exists())
+            self.assertEqual((repo / "AGENTS.md").read_bytes(), agents_before)
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
+            installed = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "codebase"],
+                home,
+                repo,
+            )
+            self.assertIn("Applied 5 change(s)", installed.stdout)
+            script = repo / ".harness-ci" / "harness-guard.sh"
+            self.assertTrue(script.is_file())
+            self.assertTrue(script.stat().st_mode & 0o111)
+
+    def test_guard_recovers_interrupted_remove_before_completing_remove(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply", "--provider", "github"], home, repo)
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            drift = repo / ".github" / "workflows" / "harness-drift.yml"
+            checkup = repo / ".github" / "workflows" / "harness-checkup.yml"
+
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--remove", "--apply"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            self.assertFalse(hook.exists())
+            self.assertTrue(drift.is_file())
+            self.assertTrue(checkup.is_file())
+
+            recovered = self.run_cli(["guard", str(repo), "--remove", "--apply"], home, repo)
+
+            self.assertIn("Applied 4 change(s)", recovered.stdout)
+            self.assertFalse(hook.exists())
+            self.assertFalse(drift.exists())
+            self.assertFalse(checkup.exists())
+            self.assertNotIn(
+                "ai-harness-doctor:maintenance-contract:start",
+                (repo / "AGENTS.md").read_text(encoding="utf-8"),
+            )
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
+    def test_guard_commit_point_keeps_completed_changes_and_cleans_on_next_apply(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            drift = repo / ".github" / "workflows" / "harness-drift.yml"
+            checkup = repo / ".github" / "workflows" / "harness-checkup.yml"
+
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-commit"},
+            )
+
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            self.assertTrue(hook.is_file())
+            self.assertTrue(drift.is_file())
+            self.assertTrue(checkup.is_file())
+            self.assertIn(
+                "ai-harness-doctor:maintenance-contract:start",
+                (repo / "AGENTS.md").read_text(encoding="utf-8"),
+            )
+            state = repo / ".git" / "ai-harness-doctor"
+            self.assertTrue(any(path.name.startswith(".guard-committed-") for path in state.iterdir()))
+            self.assertFalse((state / "guard-transaction").exists())
+
+            recovered = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertIn("No changes needed.", recovered.stdout)
+            self.assertTrue(hook.is_file())
+            self.assertTrue(drift.is_file())
+            self.assertTrue(checkup.is_file())
+            self.assertFalse(state.exists())
+
+    def test_guard_recovers_interrupted_atomic_write_and_removes_temp_file(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            agents_before = (repo / "AGENTS.md").read_bytes()
+            hook = repo / ".git" / "hooks" / "pre-commit"
+
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "before-rename"},
+            )
+
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            self.assertFalse(hook.exists())
+            temp_files = list(hook.parent.glob(".pre-commit-guard-*.tmp"))
+            self.assertEqual(len(temp_files), 1)
+            self.assertTrue(
+                (repo / ".git" / "ai-harness-doctor" / "guard-transaction").is_dir()
+            )
+
+            recovered = self.run_cli(
+                [ "guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertIn("Applied 4 change(s)", recovered.stdout)
+            self.assertTrue(hook.is_file())
+            self.assertEqual(list(hook.parent.glob(".pre-commit-guard-*.tmp")), [])
+            self.assertNotEqual((repo / "AGENTS.md").read_bytes(), agents_before)
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
+    def test_guard_recovery_is_idempotent_after_second_crash_during_restore(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            self.run_cli(["guard", str(repo), "--apply", "--provider", "github"], home, repo)
+            hook = repo / ".git" / "hooks" / "pre-commit"
+            hook_before = hook.read_bytes()
+            hook_mode = hook.stat().st_mode & 0o777
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--remove", "--apply"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            self.assertFalse(hook.exists())
+
+            recovery_crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "before-rename"},
+            )
+
+            self.assertEqual(recovery_crash.returncode, 87, recovery_crash.stderr)
+            self.assertFalse(hook.exists())
+            temp_files = list(hook.parent.glob(".pre-commit-guard-*.tmp"))
+            self.assertEqual(len(temp_files), 1)
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+            self.assertTrue(transaction.is_dir())
+
+            recovered = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertIn("No changes needed.", recovered.stdout)
+            self.assertEqual(hook.read_bytes(), hook_before)
+            self.assertEqual(hook.stat().st_mode & 0o777, hook_mode)
+            self.assertEqual(list(hook.parent.glob(".pre-commit-guard-*.tmp")), [])
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
+    def test_guard_rollback_commit_point_cleans_without_reapplying_mutations(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            agents_before = (repo / "AGENTS.md").read_bytes()
+            hook = repo / ".git" / "hooks" / "pre-commit"
+
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {
+                    "AI_HARNESS_DOCTOR_TEST_GUARD_FAILURE": "after-mutation",
+                    "AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-rollback",
+                },
+            )
+
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            self.assertFalse(hook.exists())
+            self.assertFalse((repo / ".github").exists())
+            self.assertEqual((repo / "AGENTS.md").read_bytes(), agents_before)
+            state = repo / ".git" / "ai-harness-doctor"
+            self.assertTrue(any(path.name.startswith(".guard-rolled-back-") for path in state.iterdir()))
+            self.assertFalse((state / "guard-transaction").exists())
+
+            recovered = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertIn("Applied 4 change(s)", recovered.stdout)
+            self.assertTrue(hook.is_file())
+            self.assertTrue((repo / ".github" / "workflows" / "harness-drift.yml").is_file())
+            self.assertFalse(state.exists())
+
+    def test_concurrent_guard_apply_refuses_live_lock_then_recovers_dead_owner(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+            env["AI_HARNESS_DOCTOR_TEST_GUARD_PAUSE"] = "after-mutation"
+            first = subprocess.Popen(
+                ["node", str(CLI), "guard", str(repo), "--apply", "--provider", "github"],
+                cwd=repo,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            lock = repo / ".git" / "ai-harness-doctor" / "guard-lock"
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and not (lock.is_dir() and transaction.is_dir()):
+                time.sleep(0.05)
+            self.assertTrue(lock.is_dir())
+            self.assertTrue(transaction.is_dir())
+
+            second = self.run_cli_raw(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertNotEqual(second.returncode, 0)
+            self.assertIn("another guard mutation is active", second.stderr)
+            self.assertTrue(transaction.is_dir())
+            first.send_signal(signal.SIGTERM)
+            first.communicate(timeout=10)
+
+            recovered = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+            self.assertIn("Applied 4 change(s)", recovered.stdout)
+            self.assertFalse((repo / ".git" / "ai-harness-doctor").exists())
+
+    def test_guard_recovery_rejects_journal_path_outside_fixed_allowlist(self):
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as parent_dir,
+            ResilientTemporaryDirectory() as outside_dir,
+        ):
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            outside = Path(outside_dir) / "do-not-touch"
+            outside.write_text("outside\n", encoding="utf-8")
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+            journal = transaction / "journal.json"
+            payload = json.loads(journal.read_text(encoding="utf-8"))
+            payload["snapshots"][0]["path"] = str(outside)
+            journal.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+            recovery = self.run_cli_raw(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertNotEqual(recovery.returncode, 0)
+            self.assertIn("unsafe snapshot", recovery.stderr)
+            self.assertEqual(outside.read_text(encoding="utf-8"), "outside\n")
+            self.assertTrue(transaction.is_dir())
+
+    def test_guard_linked_worktree_separates_common_hook_and_worktree_files(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            parent = Path(parent_dir)
+            primary = parent / "primary"
+            linked = parent / "linked"
+            primary.mkdir()
+            subprocess.run(["git", "init"], cwd=primary, check=True, capture_output=True, text=True)
+            (primary / "AGENTS.md").write_text("# Agent Guide\n\nPrimary.\n", encoding="utf-8")
+            subprocess.run(["git", "add", "AGENTS.md"], cwd=primary, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "commit",
+                    "-m",
+                    "init",
+                ],
+                cwd=primary,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "worktree", "add", "-b", "guard-test", str(linked)],
+                cwd=primary,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            common_hook = primary / ".git" / "hooks" / "pre-commit"
+            linked_agents_before = (linked / "AGENTS.md").read_bytes()
+
+            failed = self.run_cli_raw_with_env(
+                ["guard", str(linked), "--apply", "--provider", "github"],
+                home,
+                linked,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_FAILURE": "after-mutation"},
+            )
+
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(common_hook.exists())
+            self.assertFalse((linked / ".github").exists())
+            self.assertEqual((linked / "AGENTS.md").read_bytes(), linked_agents_before)
+            self.assertFalse((primary / ".git" / "ai-harness-doctor").exists())
+
+            installed = self.run_cli(
+                ["guard", str(linked), "--apply", "--provider", "github"],
+                home,
+                linked,
+            )
+
+            self.assertIn("Applied 4 change(s)", installed.stdout)
+            self.assertTrue(common_hook.is_file())
+            self.assertTrue((linked / ".github" / "workflows" / "harness-drift.yml").is_file())
+            self.assertFalse((primary / ".github").exists())
+            self.assertIn(
+                "ai-harness-doctor:maintenance-contract:start",
+                (linked / "AGENTS.md").read_text(encoding="utf-8"),
+            )
+            self.assertNotIn(
+                "ai-harness-doctor:maintenance-contract:start",
+                (primary / "AGENTS.md").read_text(encoding="utf-8"),
+            )
+
+    def test_guard_recovers_linked_worktree_transaction_from_primary_worktree(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            parent = Path(parent_dir)
+            primary = parent / "primary"
+            linked = parent / "linked"
+            primary.mkdir()
+            subprocess.run(["git", "init"], cwd=primary, check=True, capture_output=True, text=True)
+            original = b"# Agent Guide\n\nShared baseline.\n"
+            (primary / "AGENTS.md").write_bytes(original)
+            subprocess.run(["git", "add", "AGENTS.md"], cwd=primary, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=Test",
+                    "-c",
+                    "user.email=test@example.com",
+                    "commit",
+                    "-m",
+                    "init",
+                ],
+                cwd=primary,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "worktree", "add", "-b", "guard-recovery-test", str(linked)],
+                cwd=primary,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            hook = primary / ".git" / "hooks" / "pre-commit"
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(linked), "--apply", "--provider", "github"],
+                home,
+                linked,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            self.assertTrue(hook.is_file())
+            self.assertEqual((linked / "AGENTS.md").read_bytes(), original)
+
+            recovered = self.run_cli(
+                ["guard", str(primary), "--apply", "--provider", "github"],
+                home,
+                primary,
+            )
+
+            self.assertIn("Applied 4 change(s)", recovered.stdout)
+            self.assertTrue(hook.is_file())
+            self.assertTrue((primary / ".github" / "workflows" / "harness-drift.yml").is_file())
+            self.assertFalse((linked / ".github").exists())
+            self.assertEqual((linked / "AGENTS.md").read_bytes(), original)
+            self.assertIn(
+                "ai-harness-doctor:maintenance-contract:start",
+                (primary / "AGENTS.md").read_text(encoding="utf-8"),
+            )
+            self.assertFalse((primary / ".git" / "ai-harness-doctor").exists())
+
+    def test_guard_recovery_refuses_symlinked_transaction_state(self):
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as parent_dir,
+            ResilientTemporaryDirectory() as outside_dir,
+        ):
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            outside = Path(outside_dir)
+            (outside / "journal.json").write_text("{}\n", encoding="utf-8")
+            crash = self.run_cli_raw_with_env(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+                {"AI_HARNESS_DOCTOR_TEST_GUARD_CRASH": "after-mutation"},
+            )
+            self.assertEqual(crash.returncode, 87, crash.stderr)
+            transaction = repo / ".git" / "ai-harness-doctor" / "guard-transaction"
+            shutil.rmtree(transaction)
+            try:
+                transaction.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks unsupported on this platform")
+
+            recovery = self.run_cli_raw(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertNotEqual(recovery.returncode, 0)
+            self.assertIn("unsafe guard transaction path", recovery.stderr)
+            self.assertEqual((outside / "journal.json").read_text(encoding="utf-8"), "{}\n")
+            self.assertTrue(transaction.is_symlink())
+
+    def test_guard_transaction_owner_blocks_recovery_even_if_lock_is_removed(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            env = os.environ.copy()
+            env["HOME"] = str(home)
+            env["AI_HARNESS_DOCTOR_NO_UPDATE_CHECK"] = "1"
+            env["AI_HARNESS_DOCTOR_TEST_GUARD_PAUSE"] = "after-mutation"
+            first = subprocess.Popen(
+                ["node", str(CLI), "guard", str(repo), "--apply", "--provider", "github"],
+                cwd=repo,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            state = repo / ".git" / "ai-harness-doctor"
+            lock = state / "guard-lock"
+            transaction = state / "guard-transaction"
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and not (lock.is_dir() and transaction.is_dir()):
+                time.sleep(0.05)
+            self.assertTrue(lock.is_dir())
+            self.assertTrue(transaction.is_dir())
+            shutil.rmtree(lock)
+
+            second = self.run_cli_raw(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertNotEqual(second.returncode, 0)
+            self.assertIn("transaction is still owned by a live process", second.stderr)
+            self.assertTrue(transaction.is_dir())
+            first.send_signal(signal.SIGTERM)
+            first.communicate(timeout=10)
+
+            recovered = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+            self.assertIn("Applied 4 change(s)", recovered.stdout)
+            self.assertFalse(state.exists())
+
     def test_guard_remove_strips_block_and_preserves_user_appended_hook_lines(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)
@@ -1509,6 +2229,34 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("symlink", proc.stderr.lower())
             self.assertEqual(outside.read_bytes(), before)
             self.assertTrue(workflow.is_symlink())
+
+    def test_guard_ignores_unselected_provider_symlink(self):
+        with (
+            ResilientTemporaryDirectory() as home_dir,
+            ResilientTemporaryDirectory() as parent_dir,
+            ResilientTemporaryDirectory() as outside_dir,
+        ):
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            outside = Path(outside_dir) / "gitlab.yml"
+            outside.write_text("outside gitlab config\n", encoding="utf-8")
+            gitlab = repo / ".gitlab" / "harness-ci.yml"
+            gitlab.parent.mkdir(parents=True)
+            try:
+                gitlab.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("file symlinks unsupported on this platform")
+
+            result = self.run_cli(
+                ["guard", str(repo), "--apply", "--provider", "github"],
+                home,
+                repo,
+            )
+
+            self.assertIn("Applied 4 change(s)", result.stdout)
+            self.assertTrue((repo / ".github" / "workflows" / "harness-drift.yml").is_file())
+            self.assertTrue(gitlab.is_symlink())
+            self.assertEqual(outside.read_text(encoding="utf-8"), "outside gitlab config\n")
 
     def test_guard_remove_refuses_symlinked_managed_workflow(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:

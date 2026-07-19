@@ -1,7 +1,7 @@
 {
   "label": "after",
   "workdir": ".",
-  "note": "Manual-protocol answers refreshed 2026-07-18 for Plan 062 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
+  "note": "Manual-protocol answers refreshed 2026-07-19 for Plan 066 from the current AGENTS.md; no eval_run.py runner/judge model call was performed; answers were manually maintained by this AI implementation workflow; offline regex regrade is evidence-bounded, not a fresh independent model benchmark.",
   "tasks": [
     {
       "id": "test-suite",
@@ -89,8 +89,8 @@
     },
     {
       "id": "installer-state",
-      "stdout": "Parse installer manifests fail-closed, reject symlinked state, and replace valid state atomically.",
-      "answer": "Parse installer manifests fail-closed, reject symlinked state, and replace valid state atomically.",
+      "stdout": "Installer and guard mutation transactions recover incomplete state or fail closed when state is ambiguous.",
+      "answer": "Installer and guard mutation transactions recover incomplete state or fail closed when state is ambiguous.",
       "passed": true,
       "regraded": true
     },
@@ -296,12 +296,12 @@
     "schemaVersion": 1,
     "tasks": {
       "path": "benchmark/self-eval/tasks.json",
-      "sha256": "f137b1271e32a31ec4c99b640ff15122a88b7bbd7e205183153d3c026d8417b0"
+      "sha256": "4d68a8b13fb66df0e1886968cea587041d2f855fe45956e81f6864c0665568bc"
     },
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "fa6e4fed67007d2f639346178081de1f929539e932c2a245c78dbec584f5d51b"
+        "sha256": "8bc280297375213a01708330979827fed8b3e56fa3f6f372a3a770302dbb56f8"
       }
     ]
   }

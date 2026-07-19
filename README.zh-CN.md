@@ -104,6 +104,10 @@ Copy 安装会追踪所有权。更新和卸载会保留非本工具所有的冲
 npx ai-harness-doctor guard . --apply
 ```
 
+Guard 的 apply/remove 会将 Git hook、provider 文件和 `AGENTS.md` 作为一个事务。
+
+捕获到失败时回滚，中断的变更会在下次 `--apply` 前恢复，恢复状态不安全或已被外部修改时则 fail-closed。
+
 GitHub guard 会把 scan 与 drift 合并为一条完整 PR review。可定位发现会成为行内评论；总结包含严重度、健康分、证据、修复建议和优先级。
 
 已经使用 pre-commit framework？

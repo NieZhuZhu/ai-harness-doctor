@@ -104,6 +104,10 @@ Provider-aware な pre-commit、PR、scheduled guard をインストール：
 npx ai-harness-doctor guard . --apply
 ```
 
+Guard の apply/remove は Git hook、provider file、`AGENTS.md` を 1 つの transaction として扱います。
+
+捕捉した failure は rollback し、中断した mutation は次の `--apply` の前に recovery し、安全でない、または外部変更された recovery state は fail-closed になります。
+
 GitHub guard は scan と drift を 1 つの詳細な PR review に統合します。位置情報のある finding は inline comment になり、summary には severity、health、evidence、修復方法、優先順位が含まれます。
 
 すでに pre-commit framework を利用していますか？

@@ -73,9 +73,9 @@
   },
   {
     "id": "installer-state",
-    "prompt": "How must installer manifest state be parsed and written? Answer briefly.",
+    "prompt": "How must installer and guard mutation transactions handle incomplete or ambiguous state? Answer briefly.",
     "timeout_s": 120,
-    "check": {"type": "regex", "value": "(?i)fail.?closed.*atomic|atomic.*fail.?closed"}
+    "check": {"type": "regex", "value": "(?i)transaction.*recover.*fail.?closed|recover.*transaction.*fail.?closed"}
   },
   {
     "id": "security-baseline",
