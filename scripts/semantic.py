@@ -224,6 +224,36 @@ def declared_commands(text):
                 out.append({"kind": "go_pkg", "tool": "go", "path": m.group(1), "line": lineno})
         for m in _PY_RUN_RE.finditer(token):
             name = m.group(1)
+            if name.startswith("-"):
+                args = re.findall(r"[^\s`|]+", token[m.start(1) :])
+                name = None
+                skip_next = False
+                value_options = {
+                    "--config-file",
+                    "--directory",
+                    "--env-file",
+                    "--from",
+                    "--group",
+                    "--index",
+                    "--isolated",
+                    "--project",
+                    "--python",
+                    "--refresh",
+                    "--with",
+                    "--with-editable",
+                    "--with-requirements",
+                }
+                for arg in args:
+                    if skip_next:
+                        skip_next = False
+                        continue
+                    if arg.startswith("-"):
+                        skip_next = arg in value_options
+                        continue
+                    name = arg
+                    break
+                if not name:
+                    continue
             # `uv run path/to/script.py` (or a bare `script.py`) executes a
             # script *file*, not a project console script, so it must never be
             # flagged as a missing console script.
@@ -424,6 +454,25 @@ def python_scripts(root):
         return None
     text = _read(path, root)
     return _toml_table_keys(text, "project.scripts") | _toml_table_keys(text, "tool.poetry.scripts")
+
+
+def _normalize_python_package_name(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def python_dependency_names(root):
+    path = root / "pyproject.toml"
+    if not facts.is_file_within_root(root, path):
+        return None
+    text = _read(path, root)
+    names = set()
+    for spec in re.findall(r'["\']([A-Za-z0-9_.-]+(?:\[[^"\']+\])?[^"\']*)["\']', text):
+        m = re.match(r"\s*([A-Za-z0-9_.-]+)", spec)
+        if m:
+            names.add(_normalize_python_package_name(m.group(1)))
+    for key in _toml_table_keys(text, "tool.uv.sources"):
+        names.add(_normalize_python_package_name(key))
+    return names
 
 
 def cargo_bin_targets(root):
@@ -698,6 +747,7 @@ def compare_commands(root, text):
     all_dependencies = "not computed"
     targets = make_targets(root)
     py_scripts = python_scripts(root)
+    py_dependencies = "not computed"
     cargo_bins = cargo_bin_targets(root)
     for decl in declared_commands(text):
         kind = decl["kind"]
@@ -776,7 +826,11 @@ def compare_commands(root, text):
                 )
         elif kind == "py_run":
             name = decl["name"]
-            if name in PYTHON_RUN_BUILTINS:
+            if name in PYTHON_RUN_BUILTINS or name.startswith("<"):
+                continue
+            if py_dependencies == "not computed":
+                py_dependencies = python_dependency_names(root) or set()
+            if _normalize_python_package_name(name) in py_dependencies:
                 continue
             # Conservative: only flag when pyproject declares a non-empty script set.
             if py_scripts and name not in py_scripts:
