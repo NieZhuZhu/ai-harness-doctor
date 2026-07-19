@@ -515,6 +515,89 @@ class SharedConstantConsistencyTests(unittest.TestCase):
                 expected,
             )
 
+    def test_prose_labeled_lint_rule_ids_are_not_declared_paths(self):
+        # A `plugin/rule-name` linter identifier shares the two-segment shape of
+        # a repo path. When the same line names a linter AND uses the word
+        # "rule(s)", the token is a lint rule, not a path. Found running the full
+        # chain against assistant-ui/assistant-ui, whose AGENTS.md says "hook
+        # rules are checked by oxlint's native `react/exhaustive-deps` and
+        # `react/rules-of-hooks`" — both were falsely reported MISSING by
+        # Phase-0 and Phase-2 D2.
+        text = (
+            "Resources use hooks, so dependency arrays and hook rules are checked "
+            "by oxlint's native `react/exhaustive-deps` and `react/rules-of-hooks`.\n"
+        )
+        self.assertEqual(
+            registry.declared_paths(text),
+            [],
+            "prose-labelled lint rule ids wrongly classified as declared paths",
+        )
+        # Both stages share the classifier, so neither the Phase-0 semantic check
+        # nor the Phase-2 D2 gate can flag them.
+        self.assertEqual(semantic.declared_paths(text), [])
+
+        # Real directories are never over-suppressed. Every guard signal is
+        # required: a hyphenated `plugin/rule` shape, a linter name, and the word
+        # "rule(s)" — plus an explicit filesystem cue always wins.
+        kept = {
+            # linter name + "rules", but no hyphen in the second segment
+            "The eslint rules live in `config/eslint`.": ["config/eslint"],
+            # hyphenated shape + "rules", but no linter named on the line
+            "The workflow `ci/build-matrix` runs the rules.": ["ci/build-matrix"],
+            # hyphenated shape + linter name, but the word "rule" is absent
+            "Configure eslint in `packages/eslint-config` now.": ["packages/eslint-config"],
+            # all three cues, but an explicit filesystem cue wins over them
+            "Edit the eslint rule file `plugins/no-foo-bar` now.": ["plugins/no-foo-bar"],
+        }
+        for text, expected in kept.items():
+            self.assertEqual(
+                [d["path"] for d in registry.declared_paths(text)],
+                expected,
+                f"real path in {text!r} wrongly suppressed as a lint rule",
+            )
+            self.assertEqual(
+                [d["path"] for d in semantic.declared_paths(text)],
+                expected,
+            )
+
+    def test_strong_branch_cue_suppresses_non_prefixed_branch_ref(self):
+        # A STRONG equative cue ("the current branch is `X`", "on branch `X`")
+        # equates the token to a branch, so it is not a repo path even when its
+        # first segment is NOT a conventional branch-type prefix. Found running
+        # the full chain against assistant-ui/assistant-ui: "If the current
+        # branch is `gitbutler/workspace`, the user uses GitButler, not Git" —
+        # falsely flagged MISSING by Phase-0 and Phase-2 D2.
+        suppressed = [
+            "If the current branch is `gitbutler/workspace`, use GitButler.",
+            "When you are on branch `stacked/review`, do not rebase.",
+            "The branch named `wip/experiment` is disposable.",
+        ]
+        for text in suppressed:
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"branch ref in {text!r} wrongly classified as a path",
+            )
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # A bare mention of "branch" (weak cue) without a conventional prefix
+        # still keeps a real directory checked, and an explicit filesystem cue
+        # always wins.
+        kept = {
+            "The `src/utils` module lives on this branch.": ["src/utils"],
+            "Edit the file `feature/login.tsx` on the current branch.": ["feature/login.tsx"],
+        }
+        for text, expected in kept.items():
+            self.assertEqual(
+                [d["path"] for d in registry.declared_paths(text)],
+                expected,
+                f"real path in {text!r} wrongly suppressed as a branch ref",
+            )
+            self.assertEqual(
+                [d["path"] for d in semantic.declared_paths(text)],
+                expected,
+            )
+
     def test_fact_readers_single_sourced_across_engines(self):
         # TD-02: the generic repo fact-readers and declaration extractors used to
         # be copy-pasted into both semantic.py (Phase-0) and check_drift.py
