@@ -11,7 +11,7 @@ binary is missing). An agent answers each task in `tasks.json` using **only** th
 of `AGENTS.md` — no repo browsing — and the answers are graded offline by the tool's
 regex regrader (`eval_run.py --regrade`) against repository ground truth.
 
-The current Plan 067 maintenance-pack answers are **manually maintained by an AI
+The current Plan 068 maintenance-pack answers are **manually maintained by an AI
 implementation workflow** directly from `AGENTS.md`. No `eval_run.py` runner or
 judge model call was performed; the offline regex regrade is evidence-bounded,
 **not an independent model benchmark**.
@@ -21,7 +21,7 @@ judge model call was performed; the offline regex regrade is evidence-bounded,
   evidence freshness, repository operations, path truth, nested package facts,
   Action argv safety, the deep-improve loop, and where the core scripts live).
 - `results-before.json` — answers from an agent given the **pre-fix** `AGENTS.md`.
-- `results-after.json` — current Plan 067 manual-protocol answers maintained
+- `results-after.json` — current Plan 068 manual-protocol answers maintained
   by AI implementation workflow from the current `AGENTS.md`; no `eval_run.py`
   runner or judge model call.
 - `*-graded.json` — the same files after `--regrade` (adds `passed`/`answer`).
@@ -118,6 +118,10 @@ credential values, including nested eval usage metadata. Its answer is
 manually maintained from `AGENTS.md`; no
 `eval_run.py` runner or judge model call was made, and the offline regex
 regrade is not an independent model benchmark.
+
+The Plan 068 refresh extends `stored-result-health`: offline consumers validate
+records, derive health, require cached agreement, and reject an explicit stored
+pass that contradicts runner/judge failure or timeout evidence.
 
 The Plan 061 refresh expands `doc-languages` to seven required locales
 (English, zh-CN, ja, es, ko, pt-BR, fr) and adds a progressive-disclosure

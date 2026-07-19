@@ -305,7 +305,10 @@ non-strict historical score/compare/stats remain independent of a task file but
 validate their stored result records separately. Malformed single-run,
 multi-round, or matrix input exits 2 with a concise `result error` before a
 comparison/regrade output or baseline snapshot can be written. Trend history is
-a separate append-only schema.
+a separate append-only schema. A stored `passed: true` also exits 2 when it
+contradicts explicit timeout, non-zero runner/judge exit, or judge rejection
+evidence. Historical/manual records may omit operational fields; validation is
+read-only and never silently rewrites `passed`.
 
 A task passes only when its runner exits zero and its selected check passes.
 Non-zero, timeout, and spawn failures remain bounded diagnostic records and are

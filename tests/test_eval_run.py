@@ -2051,6 +2051,346 @@ class StoredResultIntegrityTests(unittest.TestCase):
             capture_output=True,
         )
 
+    def test_explicit_runner_failure_cannot_be_stored_as_pass(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            result = root / "contradictory.json"
+            baseline = root / "baseline.json"
+            result.write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {
+                                "id": "failed-runner",
+                                "passed": True,
+                                "timed_out": False,
+                                "exit_code": 9,
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            proc = self._run_score(
+                result,
+                "--fail-under",
+                "80",
+                "--baseline",
+                str(baseline),
+                "--save-baseline",
+            )
+
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn(
+                "result error: tasks record 0 field `passed` contradicts "
+                "runner `exit_code`",
+                proc.stderr,
+            )
+            self.assertEqual(proc.stdout, "")
+            self.assertNotIn("Traceback", proc.stderr)
+            self.assertNotIn("failed-runner", proc.stderr)
+            self.assertFalse(baseline.exists())
+
+    def test_runner_operational_evidence_validation_matrix(self):
+        cases = [
+            (
+                "timeout-pass",
+                {"id": "x", "passed": True, "timed_out": True, "exit_code": None},
+                False,
+                "runner `timed_out`",
+            ),
+            (
+                "nonzero-pass",
+                {"id": "x", "passed": True, "timed_out": False, "exit_code": 9},
+                False,
+                "runner `exit_code`",
+            ),
+            (
+                "bad-exit-string",
+                {"id": "x", "passed": False, "exit_code": "0"},
+                False,
+                "must be an integer or null",
+            ),
+            (
+                "bad-exit-bool",
+                {"id": "x", "passed": False, "exit_code": False},
+                False,
+                "must be an integer or null",
+            ),
+            ("exit-zero-pass", {"id": "x", "passed": True, "exit_code": 0}, True, None),
+            ("exit-null-pass", {"id": "x", "passed": True, "exit_code": None}, True, None),
+            ("exit-absent-pass", {"id": "x", "passed": True}, True, None),
+            (
+                "failed-nonzero",
+                {"id": "x", "passed": False, "exit_code": 9},
+                True,
+                None,
+            ),
+            (
+                "failed-timeout",
+                {"id": "x", "passed": False, "timed_out": True, "exit_code": None},
+                True,
+                None,
+            ),
+        ]
+        for name, record, valid, message in cases:
+            with self.subTest(name=name):
+                payload = {"tasks": [record]}
+                if valid:
+                    result = eval_run.validate_result(payload)
+                    self.assertEqual(result["records"], [record])
+                else:
+                    with self.assertRaisesRegex(eval_run.ResultFileError, message):
+                        eval_run.validate_result(payload)
+
+    def test_judge_operational_evidence_validation_matrix(self):
+        cases = [
+            (
+                "judge-nonzero-pass",
+                {
+                    "id": "x",
+                    "passed": True,
+                    "exit_code": 0,
+                    "judge": {"passed": True, "exit_code": 7},
+                },
+                False,
+                "judge `exit_code`",
+            ),
+            (
+                "judge-reject-pass",
+                {
+                    "id": "x",
+                    "passed": True,
+                    "exit_code": 0,
+                    "judge": {"passed": False, "exit_code": 0},
+                },
+                False,
+                "judge `passed`",
+            ),
+            (
+                "judge-bad-exit",
+                {
+                    "id": "x",
+                    "passed": False,
+                    "judge": {"passed": False, "exit_code": True},
+                },
+                False,
+                "judge field `exit_code` must be an integer or null",
+            ),
+            (
+                "judge-bad-passed",
+                {
+                    "id": "x",
+                    "passed": False,
+                    "judge": {"passed": 1, "exit_code": 0},
+                },
+                False,
+                "judge field `passed` must be a boolean",
+            ),
+            (
+                "judge-pass",
+                {
+                    "id": "x",
+                    "passed": True,
+                    "exit_code": 0,
+                    "judge": {"passed": True, "exit_code": 0},
+                },
+                True,
+                None,
+            ),
+            (
+                "builtin-no-exit",
+                {
+                    "id": "x",
+                    "passed": True,
+                    "judge": {"passed": True, "judge": "builtin"},
+                },
+                True,
+                None,
+            ),
+            (
+                "legacy-non-object-judge",
+                {"id": "x", "passed": True, "judge": "legacy"},
+                True,
+                None,
+            ),
+            ("no-judge", {"id": "x", "passed": True}, True, None),
+            (
+                "top-failed-judge-nonzero",
+                {
+                    "id": "x",
+                    "passed": False,
+                    "judge": {"passed": False, "exit_code": 7},
+                },
+                True,
+                None,
+            ),
+        ]
+        for name, record, valid, message in cases:
+            with self.subTest(name=name):
+                payload = {"tasks": [record]}
+                if valid:
+                    self.assertEqual(
+                        eval_run.validate_result(payload)["records"],
+                        [record],
+                    )
+                else:
+                    with self.assertRaisesRegex(eval_run.ResultFileError, message):
+                        eval_run.validate_result(payload)
+
+    def test_operational_contradictions_fail_in_every_result_family(self):
+        contradiction = {
+            "id": "secret-controlled-id",
+            "passed": True,
+            "timed_out": True,
+            "exit_code": None,
+        }
+        cases = [
+            (
+                "tasks",
+                {"tasks": [dict(contradiction)]},
+                {},
+                "tasks record 0",
+            ),
+            (
+                "rounds",
+                {"round_results": [{"tasks": [dict(contradiction)]}]},
+                {},
+                "round_results entry 0 tasks record 0",
+            ),
+            (
+                "bare-rounds",
+                [{"tasks": [dict(contradiction)]}],
+                {"allow_bare_rounds": True},
+                "round_results entry 0 tasks record 0",
+            ),
+            (
+                "agents",
+                {
+                    "agents": {
+                        "secret-controlled-agent": {
+                            "tasks": [dict(contradiction)]
+                        }
+                    }
+                },
+                {},
+                "agents entry 0 tasks record 0",
+            ),
+        ]
+        for name, payload, kwargs, location in cases:
+            with self.subTest(name=name):
+                with self.assertRaises(eval_run.ResultFileError) as caught:
+                    eval_run.validate_result(payload, **kwargs)
+                message = str(caught.exception)
+                self.assertIn(location, message)
+                self.assertIn("runner `timed_out`", message)
+                self.assertNotIn("secret-controlled", message)
+
+    def test_operational_contradiction_blocks_all_offline_side_effects(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            invalid = root / "invalid.json"
+            invalid.write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {
+                                "id": "secret-controlled-id",
+                                "passed": True,
+                                "exit_code": 9,
+                                "stdout": "ok",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            valid = root / "valid.json"
+            valid.write_text(
+                json.dumps({"tasks": [{"id": "x", "passed": True}]}),
+                encoding="utf-8",
+            )
+            tasks = root / "tasks.json"
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "secret-controlled-id",
+                            "prompt": "x",
+                            "check": {"type": "regex", "value": "ok"},
+                            "evidence": ["missing-secret-evidence.txt"],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            baseline = root / "baseline.json"
+            report = root / "compare.md"
+            regraded = root / "regraded.json"
+
+            commands = [
+                [
+                    "--score",
+                    str(invalid),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(root),
+                    "--require-current-evidence",
+                    "--fail-under",
+                    "80",
+                    "--baseline",
+                    str(baseline),
+                    "--save-baseline",
+                ],
+                ["--stats", str(invalid), "--json"],
+                [
+                    "--compare",
+                    str(invalid),
+                    str(valid),
+                    "-o",
+                    str(report),
+                ],
+                [
+                    "--regrade",
+                    str(invalid),
+                    "--tasks",
+                    str(tasks),
+                    "--workdir",
+                    str(root),
+                    "-o",
+                    str(regraded),
+                ],
+            ]
+            for command in commands:
+                with self.subTest(command=command[0]):
+                    proc = subprocess.run(
+                        [sys.executable, str(EVAL), *command],
+                        text=True,
+                        capture_output=True,
+                    )
+                    self.assertEqual(proc.returncode, 2)
+                    self.assertIn("result error:", proc.stderr)
+                    self.assertIn("runner `exit_code`", proc.stderr)
+                    self.assertNotIn("secret-controlled", proc.stderr)
+                    self.assertNotIn("missing-secret-evidence", proc.stderr)
+                    self.assertNotIn("Traceback", proc.stderr)
+                    self.assertEqual(proc.stdout, "")
+            self.assertFalse(baseline.exists())
+            self.assertFalse(report.exists())
+            self.assertFalse(regraded.exists())
+
+    def test_ungraded_regrade_record_keeps_operational_compatibility(self):
+        record = {"id": "x", "exit_code": 9, "timed_out": False}
+        result = eval_run.validate_result(
+            {"tasks": [record]},
+            accepted_families={"tasks"},
+            allow_ungraded=True,
+        )
+        self.assertIsNone(result["health"])
+        self.assertEqual(result["records"], [record])
+
     def test_forged_health_cannot_pass_threshold_or_mutate_baseline(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
