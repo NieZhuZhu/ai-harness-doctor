@@ -598,6 +598,34 @@ class SharedConstantConsistencyTests(unittest.TestCase):
                 expected,
             )
 
+    def test_labeled_nonpath_identifiers_cover_shadcn_improve(self):
+        cases = [
+            "Run the `shadcn/improve` action after updating components.",
+            "The `shadcn/ui` library owns these component primitives.",
+            "Use the `import/order` eslint rule for sorted imports.",
+            "Invoke the `agent/review` command from the tool palette.",
+        ]
+        for text in cases:
+            self.assertEqual(registry.declared_paths(text), [], text)
+            self.assertEqual(semantic.declared_paths(text), [], text)
+
+        kept = {
+            "Edit the action file `shadcn/improve` before release.": ["shadcn/improve"],
+            "The library source path `packages/ui` is checked.": ["packages/ui"],
+        }
+        for text, expected in kept.items():
+            self.assertEqual([d["path"] for d in registry.declared_paths(text)], expected)
+            self.assertEqual([d["path"] for d in semantic.declared_paths(text)], expected)
+
+    def test_ellipsis_placeholder_paths_are_not_declared_paths(self):
+        cases = [
+            "Place generated files under `apps/app/src/app/api/...` when sketching examples.",
+            "Replace `.../path/to/file` with your local file.",
+        ]
+        for text in cases:
+            self.assertEqual(registry.declared_paths(text), [], text)
+            self.assertEqual(semantic.declared_paths(text), [], text)
+
     def test_fact_readers_single_sourced_across_engines(self):
         # TD-02: the generic repo fact-readers and declaration extractors used to
         # be copy-pasted into both semantic.py (Phase-0) and check_drift.py
