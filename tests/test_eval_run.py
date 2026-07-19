@@ -9,7 +9,7 @@ import threading
 import time
 import unittest
 from argparse import Namespace
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from shlex import quote as shlex_quote
@@ -343,6 +343,108 @@ class EvalRunTests(unittest.TestCase):
             text = report.read_text(encoding="utf-8")
             self.assertIn("before", text)
             self.assertIn("after", text)
+
+    def test_compare_redacts_and_neutralizes_historical_usage_without_rewriting_inputs(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + ("C" * 24)
+            before = root / "before.json"
+            after = root / "after.json"
+            report = root / "report.md"
+            before.write_text(
+                json.dumps(
+                    {
+                        "label": "before",
+                        "tasks": [
+                            {
+                                "id": "task",
+                                "passed": False,
+                                "usage": {"trace": token, "detail": "safe|`cell"},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            after.write_text(
+                json.dumps(
+                    {
+                        "label": "after",
+                        "tasks": [
+                            {
+                                "id": "task",
+                                "passed": True,
+                                "usage": {
+                                    "cost": {"note": token},
+                                    "detail": "after|`cell",
+                                },
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            before_bytes = before.read_bytes()
+            after_bytes = after.read_bytes()
+
+            rc = eval_run.main(
+                [
+                    "--compare",
+                    str(before),
+                    str(after),
+                    "-o",
+                    str(report),
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            rendered = report.read_text(encoding="utf-8")
+            self.assertNotIn(token, rendered)
+            self.assertIn("<redacted:GitHub token>", rendered)
+            self.assertIn(r"after\|'cell", rendered)
+            table_rows = [
+                line for line in rendered.splitlines() if line.startswith("| `task`")
+            ]
+            self.assertEqual(len(table_rows), 1)
+            self.assertEqual(before.read_bytes(), before_bytes)
+            self.assertEqual(after.read_bytes(), after_bytes)
+
+            # Empty after usage falls back to the historical before value and
+            # must pass through the same report-only sanitizer.
+            after_data = json.loads(after.read_text(encoding="utf-8"))
+            after_data["tasks"][0]["usage"] = {}
+            after.write_text(json.dumps(after_data), encoding="utf-8")
+            before_fallback = root / "before-fallback.md"
+            self.assertEqual(
+                eval_run.main(
+                    [
+                        "--compare",
+                        str(before),
+                        str(after),
+                        "-o",
+                        str(before_fallback),
+                    ]
+                ),
+                0,
+            )
+            fallback = before_fallback.read_text(encoding="utf-8")
+            self.assertNotIn(token, fallback)
+            self.assertIn(r"safe\|'cell", fallback)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(
+                    eval_run.main(
+                        [
+                            "--compare",
+                            str(before),
+                            str(after),
+                        ]
+                    ),
+                    0,
+                )
+            self.assertNotIn(token, stdout.getvalue())
+            self.assertIn("<redacted:GitHub token>", stdout.getvalue())
 
     def test_runner_timeout_records_task_and_continues(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1124,6 +1226,47 @@ class EvalRunTests(unittest.TestCase):
             self.assertIn("<redacted:GitHub token>", record["answer"])
             self.assertIn("<redacted:GitHub token>", record["stderr"])
 
+    def test_nested_usage_secret_is_redacted_after_raw_grading(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + ("U" * 24)
+            runner_file = root / "runner.py"
+            payload = {
+                "result": f"answer {token}",
+                "usage": {"trace": token, "input_tokens": 3},
+                "cost": {"note": token, "total": 0.01},
+                "tokens": [token, 7],
+            }
+            runner_file.write_text(
+                f"import json\nprint(json.dumps({payload!r}))\n",
+                encoding="utf-8",
+            )
+            task = {
+                "id": "usage-secret",
+                "prompt": "x",
+                # Grading must still inspect the raw result before persistence
+                # redacts both stdout and nested usage metadata.
+                "check": {"type": "regex", "value": re.escape(token)},
+                "timeout_s": 10,
+            }
+
+            record = eval_run.run_runner_record(
+                f"{sys.executable} {runner_file}",
+                task,
+                root,
+                None,
+            )
+
+            self.assertTrue(record["passed"])
+            serialized = json.dumps(record)
+            self.assertNotIn(token, serialized)
+            marker = "<redacted:GitHub token>"
+            self.assertEqual(record["usage"]["usage"]["trace"], marker)
+            self.assertEqual(record["usage"]["cost"]["note"], marker)
+            self.assertEqual(record["usage"]["tokens"], [marker, 7])
+            self.assertEqual(record["usage"]["usage"]["input_tokens"], 3)
+            self.assertEqual(record["usage"]["cost"]["total"], 0.01)
+
     def test_nonzero_and_timeout_runner_output_is_redacted(self):
         with tempfile.TemporaryDirectory() as td:
             token = "ghp_" + ("B" * 24)
@@ -1167,6 +1310,39 @@ class EvalRunTests(unittest.TestCase):
             self.assertNotIn(token, json.dumps(timed_out))
             self.assertIn("<redacted:GitHub token>", timed_out["stdout"])
             self.assertIn("<redacted:GitHub token>", timed_out["stderr"])
+
+    def test_nonzero_runner_usage_metadata_is_redacted(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = "ghp_" + ("N" * 24)
+            runner_file = root / "runner.py"
+            runner_file.write_text(
+                "import json,sys\n"
+                f"print(json.dumps({{'result':'partial','usage':{{'trace':'{token}'}}}}))\n"
+                "sys.exit(9)\n",
+                encoding="utf-8",
+            )
+            task = {
+                "id": "failed-usage",
+                "prompt": "x",
+                "check": {"type": "regex", "value": "partial"},
+                "timeout_s": 10,
+            }
+
+            record = eval_run.run_runner_record(
+                f"{sys.executable} {runner_file}",
+                task,
+                root,
+                None,
+            )
+
+            self.assertFalse(record["passed"])
+            self.assertEqual(record["exit_code"], 9)
+            self.assertNotIn(token, json.dumps(record))
+            self.assertEqual(
+                record["usage"]["usage"]["trace"],
+                "<redacted:GitHub token>",
+            )
 
     def test_external_judge_raw_reason_and_stderr_are_redacted(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1356,6 +1532,140 @@ class EvalRunTests(unittest.TestCase):
             self.assertTrue(regrade_records[0]["regraded"])
             self.assertFalse(regrade_records[1]["regraded"])
 
+    def test_all_result_artifacts_redact_nested_usage_metadata(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tasks = root / "tasks.json"
+            runner_file = root / "runner.py"
+            token = "ghp_" + ("V" * 24)
+            tasks.write_text(
+                json.dumps(
+                    [
+                        {
+                            "id": "usage-secret",
+                            "prompt": "x",
+                            "check": {"type": "regex", "value": "ok"},
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            runner_file.write_text(
+                "import json\n"
+                f"print(json.dumps({{'result':'ok','usage':{{'trace':'{token}'}}}}))\n",
+                encoding="utf-8",
+            )
+            runner = f"{sys.executable} {runner_file}"
+            marker = "<redacted:GitHub token>"
+
+            single = root / "single.json"
+            self.assertEqual(
+                eval_run.main(
+                    [
+                        "--tasks",
+                        str(tasks),
+                        "--label",
+                        "single",
+                        "--workdir",
+                        str(root),
+                        "--runner",
+                        runner,
+                        "-o",
+                        str(single),
+                    ]
+                ),
+                0,
+            )
+
+            rounds = root / "rounds.json"
+            self.assertEqual(
+                eval_run.main(
+                    [
+                        "--tasks",
+                        str(tasks),
+                        "--label",
+                        "rounds",
+                        "--workdir",
+                        str(root),
+                        "--runner",
+                        runner,
+                        "--rounds",
+                        "2",
+                        "-o",
+                        str(rounds),
+                    ]
+                ),
+                0,
+            )
+
+            matrix_json = root / "matrix.json"
+            matrix_report = root / "matrix.md"
+            self.assertEqual(
+                eval_run.main(
+                    [
+                        "--tasks",
+                        str(tasks),
+                        "--workdir",
+                        str(root),
+                        "--runner-cmd",
+                        f"usage={runner}",
+                        "--matrix-json",
+                        str(matrix_json),
+                        "--matrix-report",
+                        str(matrix_report),
+                    ]
+                ),
+                0,
+            )
+
+            regrade_source = root / "regrade-source.json"
+            regrade_source.write_text(
+                json.dumps(
+                    {
+                        "tasks": [
+                            {
+                                "id": "usage-secret",
+                                "passed": False,
+                                "stdout": "ok",
+                                "usage": {
+                                    "cost": {"note": token},
+                                    "tokens": [token, 3],
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            regraded = root / "regraded.json"
+            self.assertEqual(
+                eval_run.main(
+                    [
+                        "--tasks",
+                        str(tasks),
+                        "--regrade",
+                        str(regrade_source),
+                        "-o",
+                        str(regraded),
+                    ]
+                ),
+                0,
+            )
+
+            for artifact in (
+                single,
+                rounds,
+                matrix_json,
+                regraded,
+            ):
+                with self.subTest(artifact=artifact.name):
+                    content = artifact.read_text(encoding="utf-8")
+                    self.assertNotIn(token, content)
+                    self.assertIn(marker, content)
+            # Matrix Markdown intentionally summarizes pass/latency only and
+            # does not render usage. It must still never contain the raw value.
+            self.assertNotIn(token, matrix_report.read_text(encoding="utf-8"))
+
     def test_missing_runner_shell_command_is_operational_failure(self):
         with tempfile.TemporaryDirectory() as td:
             task = {
@@ -1526,6 +1836,56 @@ class MaybeUsageTests(unittest.TestCase):
     def test_object_payload_extracts_known_usage_keys(self):
         out = json.dumps({"result": "ok", "usage": {"input_tokens": 3}, "cost": 0.01, "other": 1})
         self.assertEqual(eval_run.maybe_usage(out), {"usage": {"input_tokens": 3}, "cost": 0.01})
+
+    def test_sanitize_json_strings_redacts_nested_keys_and_preserves_values(self):
+        token_a = "ghp_" + ("K" * 24)
+        token_b = "ghp_" + ("L" * 24)
+        source = {
+            token_a: {"secret": token_b, "count": 3, "cost": 0.01},
+            token_b: [token_a, True, None],
+            "<redacted:GitHub token>#2": "safe existing key",
+        }
+
+        sanitized = eval_run.sanitize_json_strings(source)
+
+        marker = "<redacted:GitHub token>"
+        self.assertNotIn(token_a, json.dumps(sanitized))
+        self.assertNotIn(token_b, json.dumps(sanitized))
+        self.assertEqual(sanitized[marker]["secret"], marker)
+        # The pre-existing safe #2 key is reserved, so the colliding redacted
+        # key gets #3 rather than overwriting either value.
+        self.assertEqual(sanitized[f"{marker}#3"], [marker, True, None])
+        self.assertEqual(sanitized[f"{marker}#2"], "safe existing key")
+        self.assertEqual(len(sanitized), 3)
+        self.assertEqual(sanitized[marker]["count"], 3)
+        self.assertEqual(sanitized[marker]["cost"], 0.01)
+        self.assertEqual(source[token_a]["secret"], token_b)
+        self.assertEqual(source[token_b][0], token_a)
+
+    def test_sanitize_json_strings_handles_deep_lists_iteratively(self):
+        token = "ghp_" + ("M" * 24)
+        source = token
+        for _ in range(1500):
+            source = [source]
+
+        sanitized = eval_run.sanitize_json_strings(source)
+
+        current = sanitized
+        for _ in range(1500):
+            self.assertIsInstance(current, list)
+            current = current[0]
+        self.assertEqual(current, "<redacted:GitHub token>")
+
+    def test_sanitize_json_strings_preserves_numeric_usage_shape(self):
+        usage = {
+            "usage": {"input_tokens": 3, "output_tokens": 4},
+            "cost": 0.01,
+            "tokens": [3, 4],
+            "enabled": True,
+            "note": None,
+        }
+        self.assertEqual(eval_run.sanitize_json_strings(usage), usage)
+        self.assertIsNot(eval_run.sanitize_json_strings(usage), usage)
 
     def test_non_json_returns_empty(self):
         self.assertEqual(eval_run.maybe_usage("plain text answer"), {})
