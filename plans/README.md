@@ -834,6 +834,20 @@ input or require operational fields, preserving manual/historical records that
 omit them. Top-level failures remain valid even if other evidence looks
 successful; the scope is false green.
 
+**Round closeout (2026-07-20):** plan PR
+[#295](https://github.com/NieZhuZhu/ai-harness-doctor/pull/295) merged as
+`6aefcb1` after 9/9 checks. Implementation PR
+[#296](https://github.com/NieZhuZhu/ai-harness-doctor/pull/296) passed 9/9 on
+reviewed head `11d146a`, had zero unresolved threads, and was squash-merged as
+`8e61ba3`; both branches were deleted. The shared validator now covers explicit
+runner timeout/non-zero exit and judge non-zero/rejection contradictions while
+preserving omitted/null operational fields, top-level failures, ungraded
+regrade input, and legacy non-object judge metadata. Tasks/rounds/bare-rounds/
+agents and score/stats/compare/regrade no-side-effect paths are tested.
+Standards/Spec/integrity review has no remaining P0–P2 findings. Final evidence:
+898 Python + 51 Node tests, 152 eval tests, packed candidate, scan, strict drift
+100/A, self-eval 40/40, audit zero vulnerabilities, AGENTS 10,156 bytes.
+
 Runner-ups were rechecked but rank lower: root-generated tasks omit fact
 evidence and therefore fail closed when current evidence is required rather
 than false-green; `drift --fix --apply` remains non-transactional; `actionlint`
@@ -931,7 +945,7 @@ integrity defect.
 | 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | DONE — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279), merge `2f88e33`, 9/9 required checks |
 | 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | DONE — PR [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), merge `28150ef`, 9/9 required checks |
 | 067 | Redact secrets from nested eval usage metadata before persistence or rendering | P0 | S | 051 | DONE — PR [#293](https://github.com/NieZhuZhu/ai-harness-doctor/pull/293), merge `b26974f`, 9/9 required checks |
-| 068 | Reject stored eval passes that contradict explicit operational failure evidence | P0 | S | 033, 038, 065 | TODO |
+| 068 | Reject stored eval passes that contradict explicit operational failure evidence | P0 | S | 033, 038, 065 | DONE — PR [#296](https://github.com/NieZhuZhu/ai-harness-doctor/pull/296), merge `8e61ba3`, 9/9 required checks |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).

@@ -27,7 +27,35 @@
 - **Depends on**: Plans 033, 038, and 065 (DONE)
 - **Category**: correctness / efficacy integrity
 - **Planned at**: commit `5280ad3`, 2026-07-20
-- **Status**: TODO
+- **Status**: DONE — plan PR
+  [#295](https://github.com/NieZhuZhu/ai-harness-doctor/pull/295);
+  implementation PR
+  [#296](https://github.com/NieZhuZhu/ai-harness-doctor/pull/296), squash merge
+  `8e61ba3`; both passed all nine required contexts.
+
+## Implementation evidence
+
+- All four pre-fix reproductions now fail with safe `result error`/exit 2:
+  runner non-zero, timeout, judge non-zero, and judge rejection can no longer
+  coexist with a stored pass or produce 100/A through score/stats.
+- Present runner/judge exit codes are integer-or-null validated (bool rejected);
+  present judge `passed` is boolean validated. Missing/null operational fields,
+  non-object legacy judge metadata, top-level failures, and ungraded regrade
+  inputs remain compatible.
+- Tasks, round results, legacy bare rounds, and matrix agents inherit the shared
+  validation. Score/evidence/baseline, stats, compare, and regrade tests prove
+  failure before health output, evidence hashing, baseline append, or output
+  mutation; stable position errors never echo task IDs, agent names, or evidence
+  paths.
+- Standards/Spec/integrity review found no remaining P0–P2 findings. Review
+  artifacts are under `/tmp/ai-harness-doctor_review_068/`.
+- Final local evidence: `npm run check` passed 898 Python tests, 51 Node tests,
+  lint, docs/adapters, and packed candidate; eval suite passed 152/152; scan
+  exited 0; strict drift was 100/A; self-eval was 40/40; public-registry audit
+  reported zero vulnerabilities; `AGENTS.md` was 10,156 bytes.
+- PR #296 head `11d146a` passed all nine required contexts, had zero unresolved
+  threads and a 100/A doctor review, and was squash-merged as `8e61ba3`; the
+  implementation branch was deleted.
 
 ## Why this matters
 
