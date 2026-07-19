@@ -751,6 +751,23 @@ post-crash edits or malformed/symlinked/escaping/tampered state. It explicitly
 does not couple guard to the HOME installer manifest/transaction and preserves
 foreign/edited-file ownership semantics.
 
+**Round closeout (2026-07-19):** plan-only PR
+[#289](https://github.com/NieZhuZhu/ai-harness-doctor/pull/289) merged as
+`e7e48f7` after 9/9 required checks. Implementation PR
+[#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290) passed 9/9
+required checks on reviewed head `1abb451`, had zero unresolved threads, and
+was squash-merged as `28150ef`; both remote branches were deleted. The final
+transaction uses Git-common-dir state, a fixed guard allow-list, exact
+byte/`0o7777` mode snapshots, write-ahead file/temp/parent states, live-owner
+serialization, atomic commit/rollback retirement points, and fail-closed
+recovery. Fault injection covers caught failures, install/remove and
+atomic-write crashes, a second recovery crash, post-crash edits, unsafe or
+tampered state, all providers, and linked worktrees. Standards/Spec and
+`bits-code-guard` reviews have no remaining P0–P2 findings. Local final evidence
+was 885 Python + 51 Node tests, packed candidate, scan, strict drift 100/A,
+current-evidence self-eval 40/40, public-registry audit with zero
+vulnerabilities, and `AGENTS.md` at 10,237 bytes.
+
 Vetted runner-ups remain separate: the documented `actionlint` gate is not
 required locally or in CI; `npm run format` still has unsafe authority over
 historical evidence/generated/synchronized files; shipped provider shell
@@ -830,7 +847,7 @@ integrity defect.
 | 063 | Redact and Markdown-neutralize conflict-signal evidence | P0 | S | 049, 051, 062 | DONE — PR [#278](https://github.com/NieZhuZhu/ai-harness-doctor/pull/278), merge `5c68d3f`, 9/9 required checks |
 | 064 | Bound and neutralize semantic/drift finding-message tokens | P1 | S | — | DONE — PR [#280](https://github.com/NieZhuZhu/ai-harness-doctor/pull/280), merge `6f5a513`, 9/9 required checks |
 | 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | DONE — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279), merge `2f88e33`, 9/9 required checks |
-| 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | TODO |
+| 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | DONE — PR [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), merge `28150ef`, 9/9 required checks |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
