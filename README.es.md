@@ -104,6 +104,10 @@ Instala guards para pre-commit, pull requests y comprobaciones programadas:
 npx ai-harness-doctor guard . --apply
 ```
 
+Apply/remove del guard es transaccional para el hook de Git, los archivos del provider y `AGENTS.md`.
+
+Los fallos capturados revierten, las mutaciones interrumpidas se recuperan antes del siguiente `--apply` y un estado de recuperación inseguro o modificado externamente falla de forma cerrada.
+
 El guard de GitHub combina scan y drift en una revisión de PR. Los hallazgos localizados se vuelven comentarios inline; el resumen incluye severidad, salud, evidencia, reparación y prioridades.
 
 ¿Ya usas el framework pre-commit?

@@ -104,6 +104,10 @@ Provider-aware pre-commit, PR, scheduled guard를 설치합니다:
 npx ai-harness-doctor guard . --apply
 ```
 
+Guard apply/remove는 Git hook, provider 파일, `AGENTS.md` 전체에 대해 transaction으로 동작합니다.
+
+포착된 실패는 rollback하고, 중단된 mutation은 다음 `--apply` 전에 recovery하며, 안전하지 않거나 외부에서 변경된 recovery state는 fail-closed 처리합니다.
+
 GitHub guard는 scan과 drift를 하나의 풍부한 PR review로 합칩니다. 위치가 있는 finding은 inline comment가 되고, summary에는 severity, health, evidence, repair, 우선순위가 포함됩니다.
 
 이미 pre-commit framework를 사용하나요?

@@ -48,7 +48,7 @@ See `references/maintenance-contract.md`.
 - Action: `findings > maintenance > ok`; `action-run.js`: bounded `args-json`/legacy `shell:false` argv; `action-report.js` owns outputs; bundled scan/drift + exact npm pre/post-publish.
 - Guard/PR sync; exact-title issue upsert; recovery comment/close; unrelated issues untouched; never expose host paths/baselined debt.
 - CI/release: `npm ci --ignore-scripts`; committed `package-lock.json`/`registry.npmjs.org`; lint/tests/packed candidate; reruns: `gitHead`/packed shasum; secret scanning/push protection; required checks/resolved conversations; admin bypass: self-approval, never red/pending.
-- Installer state authorizes deletion; parsing fails closed; replacement is atomic.
+- State authorizes deletion; parsing fails closed; replacement atomic; transactions recover.
 - Eval validates tasks/results before side effects; runner and explicit judge exit 0 are prerequisites for a passing record; failed runner output is never judged. Derive health from records, require cached agreement, then verify evidence freshness before gates. Refresh committed results honestly.
 - Validate the complete eval task pack before any runner, judge, evidence hash, or write. Task-declared evidence joins explicit evidence automatically: files bind exact hashes, directories bind existence/type, all before trusting health.
 - Targeted eval reuses explain scope/containment. Keep root IDs; use local scripts/deps, nearest clear manager/runtime, inherited canonical rules, relative evidence, and no automatic all-scope expansion.

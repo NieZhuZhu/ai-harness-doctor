@@ -236,6 +236,7 @@ The CI gate is **provider-aware** — pass `--provider github|gitlab|codebase` (
 - `gitlab` → includable `.gitlab/harness-ci.yml` (add `include: { local: .gitlab/harness-ci.yml }`)
 - `codebase` → portable `.harness-ci/harness-guard.sh` + wiring `README.md` for internal Codebase / Bits / any runner
 Remove it with `npx ai-harness-doctor guard /path/to/repo --remove --apply` (cleans up all providers' CI files); Claude hooks are not integrated.
+Guard apply/remove is one repository-local transaction across the Git hook, provider files, and `AGENTS.md`. The journal lives below the resolved Git common directory: caught failures roll back immediately, an interrupted mutation is recovered before the next mutating `--apply`, and a dry-run with pending recovery stays read-only and asks for `--apply`. Recovery revalidates the fixed guard allow-list, backup digests, and current fingerprints; malformed, symlinked, escaping, tampered, or externally changed state fails closed and remains for inspection rather than overwriting user work.
 
 The GitHub weekly checkup owns exactly one incident title:
 `🩺 Harness checkup: issues detected`. An unhealthy run creates it or appends

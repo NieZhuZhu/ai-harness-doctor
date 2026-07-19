@@ -2413,6 +2413,867 @@ const GUARD_CI_TEMPLATE_BY_NAME = (() => {
   return map;
 })();
 
+const GUARD_STATE_DIR = 'ai-harness-doctor';
+const GUARD_TRANSACTION_DIR = 'guard-transaction';
+const GUARD_LOCK_DIR = 'guard-lock';
+const GUARD_TRANSACTION_TEMP_PREFIX = '.guard-transaction-';
+const GUARD_COMMITTED_PREFIX = '.guard-committed-';
+const GUARD_ROLLED_BACK_PREFIX = '.guard-rolled-back-';
+
+function guardStatePaths(target) {
+  const common = gitCommonDir(target);
+  const state = path.join(common, GUARD_STATE_DIR);
+  return {
+    common,
+    state,
+    transaction: path.join(state, GUARD_TRANSACTION_DIR),
+    lock: path.join(state, GUARD_LOCK_DIR),
+  };
+}
+
+function guardAuthorizedPathRoots(target, hookPath) {
+  const common = gitCommonDir(target);
+  const roots = new Map();
+  const add = (file, root) => {
+    const absolute = path.resolve(file);
+    roots.set(absolute, root);
+  };
+  add(hookPath, common);
+  add(path.join(target, 'AGENTS.md'), target);
+  for (const files of Object.values(GUARD_CI_FILES)) {
+    for (const [name] of files) add(path.join(target, name), target);
+  }
+  return roots;
+}
+
+function guardFileFingerprint(file) {
+  let stat;
+  try {
+    stat = fs.lstatSync(file);
+  } catch (error) {
+    if (error.code === 'ENOENT') return { kind: 'absent' };
+    throw error;
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new Error(`refusing guard mutation of non-regular file: ${file}`);
+  }
+  return {
+    kind: 'file',
+    digest: fileDigest(file),
+    mode: stat.mode & 0o7777,
+  };
+}
+
+function validGuardFileFingerprint(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (value.kind === 'absent') return Object.keys(value).length === 1;
+  return (
+    value.kind === 'file' &&
+    typeof value.digest === 'string' &&
+    /^[0-9a-f]{64}$/.test(value.digest) &&
+    Number.isInteger(value.mode) &&
+    value.mode >= 0 &&
+    value.mode <= 0o7777
+  );
+}
+
+function guardTargetFingerprint(change, prior) {
+  if (change.remove) return { kind: 'absent' };
+  const content = Buffer.from(change.after, 'utf8');
+  const requestedMode = change.mode === undefined
+    ? 0o644 & ~process.umask()
+    : change.mode;
+  return {
+    kind: 'file',
+    digest: contentDigest(content),
+    mode: prior.kind === 'file' && change.mode === undefined
+      ? prior.mode
+      : requestedMode,
+  };
+}
+
+function guardPotentialParentPaths(authorizedRoots) {
+  const parents = new Map();
+  for (const [file, root] of authorizedRoots) {
+    let current = path.dirname(file);
+    while (current !== root && pathIsWithin(current, root)) {
+      parents.set(current, root);
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  return parents;
+}
+
+function guardAuthorizedRootForPath(transaction, file) {
+  const hookPath = gitPath(transaction.targetRoot, 'hooks/pre-commit');
+  const roots = guardAuthorizedPathRoots(transaction.targetRoot, hookPath);
+  const root = roots.get(path.resolve(file));
+  if (!root) throw new Error(`guard transaction path is no longer authorized: ${file}`);
+  return root;
+}
+
+function guardAuthorizedRootForParent(transaction, parent) {
+  const hookPath = gitPath(transaction.targetRoot, 'hooks/pre-commit');
+  const parents = guardPotentialParentPaths(
+    guardAuthorizedPathRoots(transaction.targetRoot, hookPath)
+  );
+  const root = parents.get(path.resolve(parent));
+  if (!root) {
+    throw new Error(`guard transaction parent is no longer authorized: ${parent}`);
+  }
+  return root;
+}
+
+function guardTransactionJournalPath(transaction) {
+  return path.join(transaction.dir, 'journal.json');
+}
+
+function serializableGuardTransaction(transaction) {
+  return {
+    schemaVersion: 1,
+    command: transaction.command,
+    targetRoot: transaction.targetRoot,
+    gitCommonRoot: transaction.gitCommonRoot,
+    owner: transaction.owner,
+    snapshots: transaction.snapshots,
+    createdParents: transaction.createdParents,
+  };
+}
+
+function writeGuardTransactionJournal(transaction) {
+  rawWriteAtomic(
+    guardTransactionJournalPath(transaction),
+    `${JSON.stringify(serializableGuardTransaction(transaction), null, 2)}\n`
+  );
+}
+
+function readGuardLock(lockPath) {
+  const stat = fs.lstatSync(lockPath);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`unsafe guard lock path: ${lockPath}`);
+  }
+  const ownerPath = path.join(lockPath, 'owner.json');
+  const ownerStat = fs.lstatSync(ownerPath);
+  if (!ownerStat.isFile() || ownerStat.isSymbolicLink()) {
+    throw new Error(`unsafe guard lock owner: ${ownerPath}`);
+  }
+  let owner;
+  try {
+    owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`malformed guard lock owner: ${ownerPath}`, { cause: error });
+  }
+  if (
+    !owner ||
+    !Number.isInteger(owner.pid) ||
+    owner.pid <= 0 ||
+    typeof owner.token !== 'string' ||
+    !/^[0-9a-f]{32}$/.test(owner.token)
+  ) {
+    throw new Error(`malformed guard lock owner: ${ownerPath}`);
+  }
+  return owner;
+}
+
+function reclaimDeadGuardLock(paths, observedOwner) {
+  const claimPath = path.join(paths.lock, 'recovery.json');
+  let claim;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    claim = {
+      pid: process.pid,
+      token: crypto.randomBytes(16).toString('hex'),
+      observedToken: observedOwner.token,
+    };
+    try {
+      fs.writeFileSync(claimPath, `${JSON.stringify(claim)}\n`, {
+        encoding: 'utf8',
+        flag: 'wx',
+        mode: 0o600,
+      });
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      let stale;
+      try {
+        const stat = fs.lstatSync(claimPath);
+        if (!stat.isFile() || stat.isSymbolicLink()) {
+          throw new Error(`unsafe guard lock recovery claim: ${claimPath}`, {
+            cause: error,
+          });
+        }
+        stale = JSON.parse(fs.readFileSync(claimPath, 'utf8'));
+      } catch (claimError) {
+        throw new Error(`malformed guard lock recovery claim: ${claimPath}`, {
+          cause: claimError,
+        });
+      }
+      if (
+        !stale ||
+        !Number.isInteger(stale.pid) ||
+        stale.pid <= 0 ||
+        typeof stale.token !== 'string' ||
+        !/^[0-9a-f]{32}$/.test(stale.token) ||
+        stale.observedToken !== observedOwner.token
+      ) {
+        throw new Error(`malformed guard lock recovery claim: ${claimPath}`, {
+          cause: error,
+        });
+      }
+      if (processIsAlive(stale.pid)) {
+        throw new Error('another process is recovering the guard mutation lock', {
+          cause: error,
+        });
+      }
+      try {
+        fs.unlinkSync(claimPath);
+      } catch (unlinkError) {
+        if (unlinkError.code !== 'ENOENT') throw unlinkError;
+      }
+    }
+  }
+  if (!fs.existsSync(claimPath)) {
+    throw new Error('could not claim dead guard mutation lock');
+  }
+  const removeOwnClaim = () => {
+    try {
+      const current = JSON.parse(fs.readFileSync(claimPath, 'utf8'));
+      if (current.pid === claim.pid && current.token === claim.token) {
+        fs.unlinkSync(claimPath);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  };
+  let currentOwner;
+  try {
+    currentOwner = readGuardLock(paths.lock);
+  } catch (error) {
+    removeOwnClaim();
+    throw error;
+  }
+  if (
+    currentOwner.pid !== observedOwner.pid ||
+    currentOwner.token !== observedOwner.token ||
+    processIsAlive(currentOwner.pid)
+  ) {
+    removeOwnClaim();
+    return false;
+  }
+  rawRemovePath(paths.lock);
+  fsyncDirectory(paths.state);
+  return true;
+}
+
+function acquireGuardLock(target) {
+  const paths = guardStatePaths(target);
+  assertSafeMutationPath(paths.common, paths.state);
+  rawEnsureDir(paths.state);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const token = crypto.randomBytes(16).toString('hex');
+    const candidate = path.join(paths.state, `.guard-lock-${process.pid}-${token}.tmp`);
+    fs.mkdirSync(candidate, { mode: 0o700 });
+    fs.writeFileSync(
+      path.join(candidate, 'owner.json'),
+      `${JSON.stringify({ pid: process.pid, token })}\n`,
+      { flag: 'wx', mode: 0o600 }
+    );
+    fsyncFile(path.join(candidate, 'owner.json'));
+    fsyncDirectory(candidate);
+    try {
+      fs.renameSync(candidate, paths.lock);
+      fsyncDirectory(paths.state);
+      return { ...paths, pid: process.pid, token };
+    } catch (error) {
+      rawRemovePath(candidate);
+      if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error;
+    }
+    const owner = readGuardLock(paths.lock);
+    if (processIsAlive(owner.pid)) {
+      throw new Error(`another guard mutation is active (pid ${owner.pid})`);
+    }
+    if (!reclaimDeadGuardLock(paths, owner)) {
+      throw new Error('guard mutation lock changed while attempting recovery');
+    }
+  }
+  throw new Error('could not acquire guard mutation lock');
+}
+
+function cleanupEmptyGuardState(paths) {
+  try {
+    fs.rmdirSync(paths.state);
+  } catch (error) {
+    if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
+  }
+}
+
+function releaseGuardLock(lock) {
+  const owner = readGuardLock(lock.lock);
+  if (owner.pid !== lock.pid || owner.token !== lock.token) {
+    throw new Error('refusing to release guard lock owned by another process');
+  }
+  rawRemovePath(lock.lock);
+  fsyncDirectory(lock.state);
+  cleanupEmptyGuardState(lock);
+}
+
+function cleanupGuardPreparationDirectories(paths) {
+  let entries;
+  try {
+    entries = fs.readdirSync(paths.state, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  for (const entry of entries) {
+    if ([GUARD_TRANSACTION_DIR, GUARD_LOCK_DIR].includes(entry.name)) continue;
+    const isPreparation = entry.name.startsWith(GUARD_TRANSACTION_TEMP_PREFIX);
+    const isCommitted = entry.name.startsWith(GUARD_COMMITTED_PREFIX);
+    const isRolledBack = entry.name.startsWith(GUARD_ROLLED_BACK_PREFIX);
+    const isLockCandidate = entry.name.startsWith('.guard-lock-');
+    if (!isPreparation && !isCommitted && !isRolledBack && !isLockCandidate) {
+      throw new Error(`unexpected guard state entry: ${entry.name}`);
+    }
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
+      throw new Error(`unsafe guard preparation path: ${entry.name}`);
+    }
+    const pidPattern = isPreparation
+      ? /^\.guard-transaction-([0-9]+)-[0-9a-f]+$/
+      : isCommitted
+        ? /^\.guard-committed-([0-9]+)-[0-9a-f]+$/
+        : isRolledBack
+          ? /^\.guard-rolled-back-([0-9]+)-[0-9a-f]+$/
+          : /^\.guard-lock-([0-9]+)-[0-9a-f]+\.tmp$/;
+    const match = entry.name.match(pidPattern);
+    if (!match) {
+      throw new Error(`malformed guard preparation path: ${entry.name}`);
+    }
+    const ownerPid = Number(match[1]);
+    if (!isCommitted && !isRolledBack && processIsAlive(ownerPid)) {
+      throw new Error(`guard preparation is still owned by a live process (pid ${ownerPid})`);
+    }
+    rawRemovePath(path.join(paths.state, entry.name));
+  }
+}
+
+function guardHasPendingState(target) {
+  const paths = guardStatePaths(target);
+  let entries;
+  try {
+    const stat = fs.lstatSync(paths.state);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return true;
+    entries = fs.readdirSync(paths.state);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+  return entries.length > 0;
+}
+
+function snapshotGuardChanges(target, command, changes, hookPath, tempDir) {
+  const authorizedRoots = guardAuthorizedPathRoots(target, hookPath);
+  const seen = new Set();
+  const snapshots = [];
+  const missingParents = new Map();
+  const parentAllowList = guardPotentialParentPaths(authorizedRoots);
+  for (const change of changes.filter((item) => item.write || item.remove)) {
+    const absolute = path.resolve(change.path);
+    const root = authorizedRoots.get(absolute);
+    if (!root || seen.has(absolute)) {
+      throw new Error(`guard plan contains an unauthorized or duplicate path: ${absolute}`);
+    }
+    seen.add(absolute);
+    assertSafeMutationPath(root, absolute);
+    const prior = guardFileFingerprint(absolute);
+    if (
+      !sameFingerprint(prior, change.beforeFingerprint) ||
+      (change.before === null && prior.kind !== 'absent') ||
+      (
+        change.before !== null &&
+        (
+          prior.kind !== 'file' ||
+          fs.readFileSync(absolute, 'utf8') !== change.before
+        )
+      )
+    ) {
+      throw new Error(`guard target changed after planning: ${absolute}`);
+    }
+    const snapshot = {
+      path: absolute,
+      prior,
+      target: guardTargetFingerprint(change, prior),
+      status: 'planned',
+    };
+    if (prior.kind === 'file') {
+      snapshot.backup = `backup-${String(snapshots.length).padStart(6, '0')}`;
+      const backup = path.join(tempDir, snapshot.backup);
+      fs.copyFileSync(absolute, backup);
+      fs.chmodSync(backup, prior.mode);
+      fsyncFile(backup);
+    }
+    snapshots.push(snapshot);
+
+    let parent = path.dirname(absolute);
+    while (parent !== root && pathIsWithin(parent, root)) {
+      if (!parentAllowList.has(parent)) {
+        throw new Error(`guard plan contains an unauthorized parent path: ${parent}`);
+      }
+      try {
+        const stat = fs.lstatSync(parent);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) {
+          throw new Error(`refusing guard mutation through non-directory parent: ${parent}`);
+        }
+        break;
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        missingParents.set(parent, { path: parent, status: 'absent' });
+        parent = path.dirname(parent);
+      }
+    }
+  }
+  return {
+    schemaVersion: 1,
+    command,
+    targetRoot: target,
+    gitCommonRoot: gitCommonDir(target),
+    owner: { pid: process.pid, token: crypto.randomBytes(16).toString('hex') },
+    snapshots,
+    createdParents: [...missingParents.values()].sort(
+      (a, b) => a.path.split(path.sep).length - b.path.split(path.sep).length
+    ),
+  };
+}
+
+function beginGuardTransaction(target, command, changes, hookPath) {
+  const paths = guardStatePaths(target);
+  if (fs.existsSync(paths.transaction)) {
+    throw new Error(`guard recovery is already pending at ${paths.transaction}`);
+  }
+  const tempDir = path.join(
+    paths.state,
+    `${GUARD_TRANSACTION_TEMP_PREFIX}${process.pid}-${crypto.randomBytes(8).toString('hex')}`
+  );
+  fs.mkdirSync(tempDir, { mode: 0o700 });
+  let transaction;
+  try {
+    transaction = snapshotGuardChanges(target, command, changes, hookPath, tempDir);
+    transaction.dir = tempDir;
+    transaction.mutationCount = 0;
+    writeGuardTransactionJournal(transaction);
+    fsyncDirectory(tempDir);
+    fs.renameSync(tempDir, paths.transaction);
+    fsyncDirectory(paths.state);
+    transaction.dir = paths.transaction;
+    return transaction;
+  } catch (error) {
+    rawRemovePath(tempDir);
+    throw error;
+  }
+}
+
+function guardWriteTempPath(file) {
+  return path.join(
+    path.dirname(file),
+    `.${path.basename(file)}-guard-${process.pid}-${crypto.randomBytes(8).toString('hex')}.tmp`
+  );
+}
+
+function atomicGuardWrite(file, content, mode, temp) {
+  const tempPath = temp || guardWriteTempPath(file);
+  try {
+    fs.writeFileSync(tempPath, content, { encoding: 'utf8', flag: 'wx', mode });
+    fs.chmodSync(tempPath, mode);
+    fsyncFile(tempPath);
+    if (process.env.AI_HARNESS_DOCTOR_TEST_GUARD_CRASH === 'before-rename') {
+      process.exit(87);
+    }
+    fs.renameSync(tempPath, file);
+    fsyncDirectory(path.dirname(file));
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch (cleanupError) {
+      if (cleanupError.code !== 'ENOENT') throw cleanupError;
+    }
+    throw error;
+  }
+}
+
+function ensureGuardParents(transaction, file) {
+  for (const parent of transaction.createdParents) {
+    if (!pathIsWithin(file, parent.path)) continue;
+    if (parent.status === 'created') continue;
+    const root = guardAuthorizedRootForParent(transaction, parent.path);
+    assertSafeMutationPath(root, parent.path);
+    const current = pathFingerprint(parent.path);
+    if (current.kind !== 'absent') {
+      throw new Error(`guard parent changed after planning: ${parent.path}`);
+    }
+    parent.status = 'creating';
+    writeGuardTransactionJournal(transaction);
+    fs.mkdirSync(parent.path);
+    fsyncDirectory(path.dirname(parent.path));
+    parent.status = 'created';
+    writeGuardTransactionJournal(transaction);
+  }
+}
+
+function applyOneGuardChange(transaction, change) {
+  const snapshot = transaction.snapshots.find(
+    (item) => item.path === path.resolve(change.path)
+  );
+  if (!snapshot) return;
+  const root = guardAuthorizedRootForPath(transaction, snapshot.path);
+  assertSafeMutationPath(root, snapshot.path);
+  const current = guardFileFingerprint(snapshot.path);
+  if (!sameFingerprint(current, snapshot.prior)) {
+    throw new Error(`guard target changed before mutation: ${snapshot.path}`);
+  }
+  snapshot.status = 'mutating';
+  writeGuardTransactionJournal(transaction);
+  if (change.remove) {
+    fs.unlinkSync(snapshot.path);
+    fsyncDirectory(path.dirname(snapshot.path));
+  } else {
+    ensureGuardParents(transaction, snapshot.path);
+    snapshot.tempPath = guardWriteTempPath(snapshot.path);
+    snapshot.tempExpected = snapshot.target;
+    writeGuardTransactionJournal(transaction);
+    assertSafeMutationPath(root, snapshot.tempPath);
+    atomicGuardWrite(
+      snapshot.path,
+      change.after,
+      snapshot.target.mode,
+      snapshot.tempPath
+    );
+    delete snapshot.tempPath;
+    delete snapshot.tempExpected;
+  }
+  const actual = guardFileFingerprint(snapshot.path);
+  if (!sameFingerprint(actual, snapshot.target)) {
+    throw new Error(`guard mutation did not reach its journaled state: ${snapshot.path}`);
+  }
+  snapshot.status = 'applied';
+  writeGuardTransactionJournal(transaction);
+  transaction.mutationCount += 1;
+  const failurePoint = process.env.AI_HARNESS_DOCTOR_TEST_GUARD_FAILURE;
+  if (
+    (
+      failurePoint === 'after-mutation' ||
+      failurePoint === `after-${transaction.mutationCount}`
+    ) &&
+    (failurePoint === 'after-mutation' ? transaction.mutationCount === 1 : true)
+  ) {
+    throw new Error('injected guard mutation failure');
+  }
+  if (
+    process.env.AI_HARNESS_DOCTOR_TEST_GUARD_CRASH === 'after-mutation' &&
+    transaction.mutationCount === 1
+  ) {
+    process.exit(87);
+  }
+  if (
+    process.env.AI_HARNESS_DOCTOR_TEST_GUARD_PAUSE === 'after-mutation' &&
+    transaction.mutationCount === 1
+  ) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 30000);
+  }
+}
+
+function restoreGuardSnapshot(transaction, snapshot) {
+  const root = guardAuthorizedRootForPath(transaction, snapshot.path);
+  assertSafeMutationPath(root, snapshot.path);
+  if (snapshot.tempPath !== undefined) {
+    assertSafeMutationPath(root, snapshot.tempPath);
+    let temp;
+    try {
+      temp = guardFileFingerprint(snapshot.tempPath);
+    } catch (error) {
+      throw new Error(`unsafe guard write temporary path: ${snapshot.tempPath}`, {
+        cause: error,
+      });
+    }
+    if (temp.kind !== 'absent') {
+      if (!sameFingerprint(temp, snapshot.tempExpected)) {
+        throw new Error(
+          `refusing guard rollback over modified write temporary path: ${snapshot.tempPath}`
+        );
+      }
+      fs.unlinkSync(snapshot.tempPath);
+      fsyncDirectory(path.dirname(snapshot.tempPath));
+    }
+    delete snapshot.tempPath;
+    delete snapshot.tempExpected;
+    writeGuardTransactionJournal(transaction);
+  }
+  const current = guardFileFingerprint(snapshot.path);
+  if (sameFingerprint(current, snapshot.prior)) {
+    snapshot.status = 'restored';
+    writeGuardTransactionJournal(transaction);
+    return;
+  }
+  if (!sameFingerprint(current, snapshot.target)) {
+    throw new Error(`refusing guard rollback over externally modified path: ${snapshot.path}`);
+  }
+  snapshot.status = 'restoring';
+  writeGuardTransactionJournal(transaction);
+  if (snapshot.prior.kind === 'absent') {
+    fs.unlinkSync(snapshot.path);
+    fsyncDirectory(path.dirname(snapshot.path));
+  } else {
+    const backup = path.join(transaction.dir, snapshot.backup);
+    snapshot.tempPath = guardWriteTempPath(snapshot.path);
+    snapshot.tempExpected = snapshot.prior;
+    writeGuardTransactionJournal(transaction);
+    assertSafeMutationPath(root, snapshot.tempPath);
+    atomicGuardWrite(
+      snapshot.path,
+      fs.readFileSync(backup),
+      snapshot.prior.mode,
+      snapshot.tempPath
+    );
+    delete snapshot.tempPath;
+    delete snapshot.tempExpected;
+  }
+  if (!sameFingerprint(guardFileFingerprint(snapshot.path), snapshot.prior)) {
+    throw new Error(`guard rollback did not restore its journaled state: ${snapshot.path}`);
+  }
+  snapshot.status = 'restored';
+  writeGuardTransactionJournal(transaction);
+}
+
+function rollbackGuardTransaction(transaction) {
+  for (const snapshot of [...transaction.snapshots].reverse()) {
+    restoreGuardSnapshot(transaction, snapshot);
+  }
+  for (const parent of [...transaction.createdParents].reverse()) {
+    const root = guardAuthorizedRootForParent(transaction, parent.path);
+    assertSafeMutationPath(root, parent.path);
+    let stat;
+    try {
+      stat = fs.lstatSync(parent.path);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        parent.status = 'restored';
+        writeGuardTransactionJournal(transaction);
+        continue;
+      }
+      throw error;
+    }
+    if (parent.status === 'absent' || parent.status === 'restored') {
+      throw new Error(`refusing guard rollback over externally modified parent: ${parent.path}`);
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink() || fs.readdirSync(parent.path).length) {
+      throw new Error(`refusing guard rollback over externally modified parent: ${parent.path}`);
+    }
+    fs.rmdirSync(parent.path);
+    fsyncDirectory(path.dirname(parent.path));
+    parent.status = 'restored';
+    writeGuardTransactionJournal(transaction);
+  }
+  const state = path.dirname(transaction.dir);
+  const rolledBack = path.join(
+    state,
+    `${GUARD_ROLLED_BACK_PREFIX}${process.pid}-${crypto.randomBytes(8).toString('hex')}`
+  );
+  fs.renameSync(transaction.dir, rolledBack);
+  transaction.rolledBack = true;
+  transaction.rolledBackDir = rolledBack;
+  fsyncDirectory(state);
+  if (process.env.AI_HARNESS_DOCTOR_TEST_GUARD_CRASH === 'after-rollback') {
+    process.exit(87);
+  }
+  rawRemovePath(rolledBack);
+  fsyncDirectory(state);
+}
+
+function finishGuardTransaction(transaction) {
+  const state = path.dirname(transaction.dir);
+  const committed = path.join(
+    state,
+    `${GUARD_COMMITTED_PREFIX}${process.pid}-${crypto.randomBytes(8).toString('hex')}`
+  );
+  fs.renameSync(transaction.dir, committed);
+  transaction.committed = true;
+  transaction.committedDir = committed;
+  fsyncDirectory(state);
+  if (process.env.AI_HARNESS_DOCTOR_TEST_GUARD_CRASH === 'after-commit') {
+    process.exit(87);
+  }
+  rawRemovePath(committed);
+  fsyncDirectory(state);
+}
+
+function readGuardTransaction(target) {
+  const paths = guardStatePaths(target);
+  const stat = fs.lstatSync(paths.transaction);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error(`unsafe guard transaction path: ${paths.transaction}`);
+  }
+  const journalPath = path.join(paths.transaction, 'journal.json');
+  const journalStat = fs.lstatSync(journalPath);
+  if (!journalStat.isFile() || journalStat.isSymbolicLink()) {
+    throw new Error(`unsafe guard transaction journal: ${journalPath}`);
+  }
+  let journal;
+  try {
+    journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`malformed guard transaction journal: ${journalPath}`, { cause: error });
+  }
+  if (
+    !journal ||
+    journal.schemaVersion !== 1 ||
+    !['install', 'remove'].includes(journal.command) ||
+    typeof journal.targetRoot !== 'string' ||
+    !path.isAbsolute(journal.targetRoot) ||
+    journal.gitCommonRoot !== paths.common ||
+    !journal.owner ||
+    !Number.isInteger(journal.owner.pid) ||
+    journal.owner.pid <= 0 ||
+    typeof journal.owner.token !== 'string' ||
+    !/^[0-9a-f]{32}$/.test(journal.owner.token) ||
+    !Array.isArray(journal.snapshots) ||
+    !Array.isArray(journal.createdParents)
+  ) {
+    throw new Error(`malformed guard transaction journal: ${journalPath}`);
+  }
+  let recordedTarget;
+  try {
+    recordedTarget = fs.realpathSync(journal.targetRoot);
+  } catch (error) {
+    throw new Error(`guard transaction target is unavailable: ${journal.targetRoot}`, {
+      cause: error,
+    });
+  }
+  if (
+    recordedTarget !== journal.targetRoot ||
+    !isGitRepo(recordedTarget) ||
+    gitCommonDir(recordedTarget) !== paths.common
+  ) {
+    throw new Error(
+      `guard transaction target is not in the recorded Git common directory: ${journal.targetRoot}`
+    );
+  }
+  journal.targetRoot = recordedTarget;
+  const hookPath = gitPath(recordedTarget, 'hooks/pre-commit');
+  const authorizedRoots = guardAuthorizedPathRoots(recordedTarget, hookPath);
+  const parentAllowList = guardPotentialParentPaths(authorizedRoots);
+  const seen = new Set();
+  for (const snapshot of journal.snapshots) {
+    if (
+      !snapshot ||
+      typeof snapshot.path !== 'string' ||
+      !path.isAbsolute(snapshot.path) ||
+      seen.has(path.resolve(snapshot.path)) ||
+      !authorizedRoots.has(path.resolve(snapshot.path)) ||
+      !validGuardFileFingerprint(snapshot.prior) ||
+      !validGuardFileFingerprint(snapshot.target) ||
+      !['planned', 'mutating', 'applied', 'restoring', 'restored'].includes(snapshot.status) ||
+      (
+        snapshot.tempPath !== undefined &&
+        (
+          typeof snapshot.tempPath !== 'string' ||
+          !path.isAbsolute(snapshot.tempPath) ||
+          !validGuardFileFingerprint(snapshot.tempExpected)
+        )
+      ) ||
+      (snapshot.tempPath === undefined && snapshot.tempExpected !== undefined)
+    ) {
+      throw new Error(`guard transaction journal contains an unsafe snapshot: ${journalPath}`);
+    }
+    snapshot.path = path.resolve(snapshot.path);
+    seen.add(snapshot.path);
+    assertSafeMutationPath(authorizedRoots.get(snapshot.path), snapshot.path);
+    if (snapshot.tempPath !== undefined) {
+      snapshot.tempPath = path.resolve(snapshot.tempPath);
+      const expectedPrefix = `.${path.basename(snapshot.path)}-guard-`;
+      if (
+        path.dirname(snapshot.tempPath) !== path.dirname(snapshot.path) ||
+        !path.basename(snapshot.tempPath).startsWith(expectedPrefix) ||
+        !path.basename(snapshot.tempPath).endsWith('.tmp')
+      ) {
+        throw new Error(`guard transaction journal contains an unsafe write temporary path: ${journalPath}`);
+      }
+      assertSafeMutationPath(authorizedRoots.get(snapshot.path), snapshot.tempPath);
+    }
+    if (snapshot.prior.kind === 'file') {
+      if (
+        typeof snapshot.backup !== 'string' ||
+        !/^backup-[0-9]{6}$/.test(snapshot.backup)
+      ) {
+        throw new Error(`guard transaction journal contains an unsafe backup: ${journalPath}`);
+      }
+      const backup = path.join(paths.transaction, snapshot.backup);
+      if (path.dirname(backup) !== paths.transaction) {
+        throw new Error(`guard transaction journal contains an escaping backup: ${journalPath}`);
+      }
+      const backupStat = fs.lstatSync(backup);
+      if (!backupStat.isFile() || backupStat.isSymbolicLink()) {
+        throw new Error(`guard transaction backup is unsafe: ${journalPath}`);
+      }
+      if (!sameFingerprint(guardFileFingerprint(backup), snapshot.prior)) {
+        throw new Error(`guard transaction backup digest does not match: ${journalPath}`);
+      }
+    } else if (snapshot.backup !== undefined) {
+      throw new Error(`guard transaction journal contains an unexpected backup: ${journalPath}`);
+    }
+  }
+  const seenParents = new Set();
+  for (const parent of journal.createdParents) {
+    if (
+      !parent ||
+      typeof parent.path !== 'string' ||
+      !path.isAbsolute(parent.path) ||
+      seenParents.has(path.resolve(parent.path)) ||
+      !parentAllowList.has(path.resolve(parent.path)) ||
+      !['absent', 'creating', 'created', 'restored'].includes(parent.status)
+    ) {
+      throw new Error(`guard transaction journal contains an unsafe parent: ${journalPath}`);
+    }
+    parent.path = path.resolve(parent.path);
+    seenParents.add(parent.path);
+    assertSafeMutationPath(parentAllowList.get(parent.path), parent.path);
+  }
+  journal.dir = paths.transaction;
+  journal.mutationCount = 0;
+  return journal;
+}
+
+function recoverGuardTransactionBeforePlanning(target) {
+  let lock;
+  try {
+    lock = acquireGuardLock(target);
+    cleanupGuardPreparationDirectories(lock);
+    if (fs.existsSync(lock.transaction)) {
+      const transaction = readGuardTransaction(target);
+      if (
+        transaction.owner.pid !== process.pid &&
+        processIsAlive(transaction.owner.pid)
+      ) {
+        throw new Error(
+          `guard transaction is still owned by a live process (pid ${transaction.owner.pid})`
+        );
+      }
+      rollbackGuardTransaction(transaction);
+    }
+    releaseGuardLock(lock);
+  } catch (error) {
+    if (lock) {
+      try {
+        releaseGuardLock(lock);
+      } catch (lockError) {
+        throw new Error(
+          `${error.message}. Guard lock cleanup failed: ${lockError.message}.`,
+          { cause: lockError }
+        );
+      }
+    }
+    throw error;
+  }
+}
+
 function isPristineManaged(currentContent, templateContent) {
   if (currentContent == null) return false;
   return currentContent === templateContent;
@@ -2671,20 +3532,53 @@ function plannedGuardRemoveChanges(target) {
   return changes;
 }
 
-function applyGuardChanges(changes, target, hookPath) {
-  const gitRoot = gitCommonDir(target);
-  for (const change of changes) {
-    assertSafeMutationPath(change.path === hookPath ? gitRoot : target, change.path);
-  }
-  for (const change of changes) {
-    assertSafeMutationPath(change.path === hookPath ? gitRoot : target, change.path);
-    if (change.remove) {
-      removePath(change.path);
-    } else if (change.write) {
-      ensureDir(path.dirname(change.path));
-      fs.writeFileSync(change.path, change.after, { encoding: 'utf8', mode: change.mode || 0o644 });
-      if (change.mode) fs.chmodSync(change.path, change.mode);
+function applyGuardChanges(changes, target, hookPath, command) {
+  let lock;
+  let transaction;
+  try {
+    lock = acquireGuardLock(target);
+    cleanupGuardPreparationDirectories(lock);
+    transaction = beginGuardTransaction(target, command, changes, hookPath);
+    for (const change of changes) {
+      if (change.write || change.remove) applyOneGuardChange(transaction, change);
     }
+    finishGuardTransaction(transaction);
+    transaction = null;
+    releaseGuardLock(lock);
+    lock = null;
+  } catch (error) {
+    let finalError = error;
+    if (transaction && !transaction.committed) {
+      try {
+        rollbackGuardTransaction(transaction);
+        finalError = new Error(`${error.message}. Guard changes were rolled back.`);
+      } catch (rollbackError) {
+        finalError = transaction.rolledBack
+          ? new Error(
+            `${error.message}. Guard changes were rolled back; cleanup remains at ` +
+            `${transaction.rolledBackDir}.`
+          )
+          : new Error(
+            `${error.message}. Guard rollback failed: ${rollbackError.message}. ` +
+            `Recovery evidence remains at ${transaction.dir}.`
+          );
+      }
+    } else if (transaction && transaction.committed) {
+      finalError = new Error(
+        `${error.message}. Guard changes committed; cleanup remains at ` +
+        `${transaction.committedDir}.`
+      );
+    }
+    if (lock) {
+      try {
+        releaseGuardLock(lock);
+      } catch (lockError) {
+        finalError = new Error(
+          `${finalError.message}. Guard lock cleanup failed: ${lockError.message}.`
+        );
+      }
+    }
+    throw finalError;
   }
 }
 
@@ -2699,8 +3593,24 @@ function guard(argv) {
   assertSafeMutationPath(target, path.join(target, 'AGENTS.md'));
   if (!fs.existsSync(path.join(target, 'AGENTS.md'))) fail('run the treat phase first');
 
+  if (!apply && guardHasPendingState(target)) {
+    fail('guard recovery is pending; rerun with --apply to recover before planning');
+  }
+  if (apply) {
+    try {
+      recoverGuardTransactionBeforePlanning(target);
+    } catch (error) {
+      fail(`Cannot recover guard transaction: ${error.message}`);
+    }
+  }
+
   const resolvedProvider = provider === 'auto' ? detectProvider(target) : provider;
   const changes = remove ? plannedGuardRemoveChanges(target) : plannedGuardInstallChanges(target, resolvedProvider);
+  for (const change of changes) {
+    if (change.write || change.remove) {
+      change.beforeFingerprint = guardFileFingerprint(change.path);
+    }
+  }
   console.log(`Guard ${remove ? 'remove' : 'install'} plan for ${target}`);
   if (!remove) console.log(`CI provider: ${resolvedProvider}${provider === 'auto' ? ' (auto-detected)' : ''}`);
   console.log(apply ? 'Mode: apply' : 'Mode: dry-run (use --apply to write)');
@@ -2708,7 +3618,16 @@ function guard(argv) {
   for (const change of changes) describeChange(change);
   if (!remove && GUARD_PROVIDER_NOTES[resolvedProvider]) console.log(`\nNote: ${GUARD_PROVIDER_NOTES[resolvedProvider]}`);
   if (apply) {
-    applyGuardChanges(changes, target, gitPath(target, 'hooks/pre-commit'));
+    try {
+      applyGuardChanges(
+        changes,
+        target,
+        gitPath(target, 'hooks/pre-commit'),
+        remove ? 'remove' : 'install'
+      );
+    } catch (error) {
+      fail(error.message);
+    }
     console.log(`\nApplied ${changes.filter((change) => change.write || change.remove).length} change(s).`);
   } else {
     console.log('\nDry-run only; no files written.');

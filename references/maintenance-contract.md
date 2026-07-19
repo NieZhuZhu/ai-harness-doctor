@@ -57,6 +57,13 @@ when changing GitHub integration, baselines, CI, release, or installer state.
 - Every PR-feedback API operation uses the shared finite request timeout.
   Timeout/transport failures terminate cleanly; the workflow caller decides
   whether that bounded posting failure is fatal.
+- Guard apply/remove is one transaction over the Git hook, provider files, and
+  root `AGENTS.md`. Its private journal lives below the resolved Git common
+  directory, authorizes only the fixed guard file set, and records exact
+  fingerprints/backups before mutation. Caught failures roll back; interrupted
+  mutations recover before the next `--apply`; pending dry-runs remain
+  read-only. Malformed, symlinked, escaping, tampered, live-owned, or externally
+  changed state fails closed with recovery evidence retained.
 
 ## CI, release, and repository operations
 
