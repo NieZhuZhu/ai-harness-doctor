@@ -971,6 +971,41 @@ class SemanticPythonTests(unittest.TestCase):
             self.assertEqual(len(cmds), 1)
             self.assertIn("ghost", cmds[0]["message"])
 
+    def test_uv_run_leading_options_do_not_become_console_scripts(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pyproject.toml", '[project]\nrequires-python = ">=3.10"\n')
+            text = "Run `uv run --frozen pytest` and `uv run --python 3.10 pytest`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_uv_run_dependency_binary_not_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(
+                td,
+                "pyproject.toml",
+                '[project]\ndependencies = ["strict-no-cover"]\n[project.scripts]\nmytool = "pkg:main"\n',
+            )
+            text = "Run `uv run --frozen strict-no-cover`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_uv_run_placeholder_target_not_flagged(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pyproject.toml", '[project.scripts]\nmytool = "pkg:main"\n')
+            text = "Run tools with `uv run --frozen <tool>`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
+    def test_uv_run_leading_options_still_flag_unknown_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pyproject.toml", '[project.scripts]\nmytool = "pkg:main"\n')
+            text = "Run `uv run --frozen ghost`."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("ghost", cmds[0]["message"])
+            self.assertNotIn("--frozen", cmds[0]["message"])
+
     def test_uv_run_backtick_token_cannot_break_finding_message(self):
         # A crafted AGENTS.md that embeds a backtick in the run argument must not
         # produce a finding message with an unbalanced backtick: pr_review.py
