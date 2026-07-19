@@ -211,14 +211,85 @@ def sanitize_judge_info(info):
     return sanitized
 
 
+def sanitize_json_strings(value):
+    """Return a JSON-compatible copy with every string key/value redacted.
+
+    The traversal is iterative so deeply nested runner metadata cannot exhaust
+    Python's call stack.  JSON object keys are strings; non-string keys are
+    preserved defensively for in-memory callers.  When distinct secret-bearing
+    keys redact to the same marker, deterministic ``#N`` suffixes preserve all
+    values without retaining either raw key.
+    """
+
+    def empty_copy(item):
+        if isinstance(item, dict):
+            return {}
+        if isinstance(item, list):
+            return []
+        if isinstance(item, str):
+            return redact_secret_values(item)
+        return item
+
+    result = empty_copy(value)
+    if not isinstance(value, (dict, list)):
+        return result
+
+    stack = [(value, result)]
+    while stack:
+        source, target = stack.pop()
+        if isinstance(source, list):
+            for item in source:
+                copied = empty_copy(item)
+                target.append(copied)
+                if isinstance(item, (dict, list)):
+                    stack.append((item, copied))
+            continue
+
+        safe_keys = [
+            redact_secret_values(key) if isinstance(key, str) else key
+            for key in source
+        ]
+        reserved = set(safe_keys)
+        used = set()
+        for (raw_key, item), safe_key in zip(source.items(), safe_keys):
+            output_key = safe_key
+            if output_key in used:
+                suffix = 2
+                while (
+                    f"{safe_key}#{suffix}" in reserved
+                    or f"{safe_key}#{suffix}" in used
+                ):
+                    suffix += 1
+                output_key = f"{safe_key}#{suffix}"
+            used.add(output_key)
+            copied = empty_copy(item)
+            target[output_key] = copied
+            if isinstance(item, (dict, list)):
+                stack.append((item, copied))
+    return result
+
+
 def sanitize_result_record(record):
     """Redact every persisted runner/judge text field in one task record."""
     for key in ("stdout", "answer", "stderr"):
         if isinstance(record.get(key), str):
             record[key] = redact_secret_values(record[key])
+    if "usage" in record:
+        record["usage"] = sanitize_json_strings(record["usage"])
     if isinstance(record.get("judge"), dict):
         record["judge"] = sanitize_judge_info(record["judge"])
     return record
+
+
+def markdown_table_code(value):
+    """Keep repository-controlled JSON inside one Markdown table/code cell."""
+    return (
+        str(value)
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("|", r"\|")
+        .replace("`", "'")
+    )
 
 
 def extract_answer(stdout):
@@ -1992,7 +2063,10 @@ def compare(args):
         before_pass += 1 if b.get("passed") else 0
         after_pass += 1 if a.get("passed") else 0
         delta = round((a.get("duration_s") or 0) - (b.get("duration_s") or 0), 3)
-        usage = json.dumps(a.get("usage") or b.get("usage") or {}, ensure_ascii=False)
+        usage_value = sanitize_json_strings(a.get("usage") or b.get("usage") or {})
+        usage = markdown_table_code(
+            json.dumps(usage_value, ensure_ascii=False)
+        )
         lines.append(f"| `{tid}` | {b.get('passed')} | {a.get('passed')} | {delta} | `{usage}` |")
     lines.extend(
         [
