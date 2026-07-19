@@ -222,6 +222,19 @@ _BRANCH_TYPE_PREFIXES = (
 )
 # Same-line cue that a token is being introduced as a git branch name.
 _BRANCH_CONTEXT_RE = re.compile(r"\bbranch(?:es)?\b|\bcheckout\b|\bgit\s+switch\b", re.I)
+# A STRONG equative branch cue directly names the token as a branch ("the
+# current branch is `X`", "on branch `X`", "branch named `X`"). Unlike the weak
+# cue above (a mere mention of "branch" on the line), this equates the token to
+# a branch, so it suppresses the token even when its first segment is NOT a
+# conventional branch-type prefix (`feature/`, `fix/`, ...). Found running the
+# full chain against assistant-ui/assistant-ui, whose AGENTS.md says "If the
+# current branch is `gitbutler/workspace`, the user uses GitButler, not Git" —
+# the GitButler workspace ref was falsely flagged MISSING by the Phase-0
+# semantic scan and the Phase-2 D2 gate.
+_STRONG_BRANCH_CUE_RE = re.compile(
+    r"\b(?:current\s+branch|branch\s+is|branch\s+named|branch\s+called|on\s+branch)\b",
+    re.I,
+)
 # Filesystem cues that force a path classification and override the branch cue
 # (fail-closed toward paths): "edit the `feature/login.tsx` file" is a real path
 # even though the line mentions a branch. Deliberately narrow.
@@ -361,6 +374,45 @@ _NONPATH_LABEL_RE = re.compile(
     re.I,
 )
 
+# A linter rule id (`react/exhaustive-deps`, `import/no-cycle`,
+# `react/rules-of-hooks`) has the same `plugin/rule` shape as a two-segment repo
+# path, but its rule segment is a hyphenated identifier that no real directory
+# uses in this position. Combined with an explicit linter name AND the word
+# "rule(s)" on the same line, the token is a lint rule, not a path. Found running
+# the full chain against assistant-ui/assistant-ui, whose AGENTS.md says "hook
+# rules are checked by oxlint's native `react/exhaustive-deps` and
+# `react/rules-of-hooks`" — both rule ids were falsely reported MISSING by the
+# Phase-0 semantic scan and the Phase-2 D2 gate. The existing config-backed
+# ``facts.is_eslint_rule_identifier`` only catches rules quoted verbatim in an
+# ESLint config file; oxlint's native rules live in no such file, so a
+# prose-labelled fallback is needed too.
+_LINT_RULE_SHAPE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)+")
+_LINTER_NAME_RE = re.compile(r"\b(?:eslint|oxlint|tslint|stylelint|biome)\b", re.I)
+_RULE_WORD_RE = re.compile(r"\brules?\b", re.I)
+
+
+def _is_labeled_lint_rule(line, match):
+    """True when a backtick token is a linter ``plugin/rule`` id, not a path.
+
+    Requires three independent signals so real two-segment directories are never
+    over-suppressed: the token has the hyphenated ``plugin/rule-name`` shape, the
+    same line names a concrete linter (eslint/oxlint/...), and the same line uses
+    the word "rule(s)". An explicit filesystem cue (file, directory, edit, ...)
+    in the bounded window around the token always wins and keeps it a path.
+    """
+    token = match.group(1).strip()
+    if "." in token or token.count("/") != 1:
+        return False
+    if not _LINT_RULE_SHAPE_RE.fullmatch(token):
+        return False
+    before = line[max(0, match.start() - _LABEL_WINDOW):match.start()]
+    after = line[match.end():match.end() + _LABEL_WINDOW]
+    window = before + " " + after
+    # Explicit filesystem intent wins over the lint-rule cue.
+    if _PATH_LABEL_RE.search(window):
+        return False
+    return bool(_LINTER_NAME_RE.search(line) and _RULE_WORD_RE.search(line))
+
 
 def _is_labeled_runtime_identifier(line, match):
     """True when bounded same-line context explicitly labels the backtick token
@@ -390,19 +442,28 @@ def _is_labeled_branch_ref(line, match):
     Requires two independent signals so real directories are never over-
     suppressed: the token's first segment is a conventional branch-type prefix
     (`feature/`, `fix/`, ...), AND bounded same-line context names a git branch
-    (`branch`, `checkout`, `git switch`). Reads only a small window around the
-    exact match span so section-level prose never leaks in, and an explicit
-    filesystem cue (file, directory, edit, ...) always wins and keeps the token a
-    path.
+    (`branch`, `checkout`, `git switch`). A STRONG equative cue ("current branch
+    is `X`", "on branch `X`") is the one exception: it directly names the token
+    as a branch, so it suppresses the token on its own even without a
+    conventional prefix. Reads only a small window around the exact match span so
+    section-level prose never leaks in, and an explicit filesystem cue (file,
+    directory, edit, ...) always wins and keeps the token a path.
     """
     token = match.group(1).strip()
-    if "/" not in token or not token.startswith(_BRANCH_TYPE_PREFIXES):
+    if "/" not in token:
         return False
     before = line[max(0, match.start() - _BRANCH_LABEL_WINDOW):match.start()]
     after = line[match.end():match.end() + _BRANCH_LABEL_WINDOW]
     window = before + " " + after
     # Explicit filesystem intent wins over the branch cue (fail-closed to path).
     if _BRANCH_PATH_CUE_RE.search(window):
+        return False
+    # A strong equative cue equates the token to a branch, so no conventional
+    # branch-type prefix is required.
+    if _STRONG_BRANCH_CUE_RE.search(window):
+        return True
+    # Otherwise require both signals: a branch-type prefix AND a weaker cue.
+    if not token.startswith(_BRANCH_TYPE_PREFIXES):
         return False
     return bool(_BRANCH_CONTEXT_RE.search(window))
 
@@ -506,6 +567,13 @@ def declared_paths(text):
             # and an unlabeled token stays a path (see
             # ``_is_labeled_runtime_identifier``).
             if _is_labeled_runtime_identifier(line, m):
+                continue
+            # A `plugin/rule-name` linter identifier (`react/exhaustive-deps`,
+            # `react/rules-of-hooks`) shares the two-segment shape of a repo path
+            # but is a lint rule when the same line names a linter and uses the
+            # word "rule(s)". Bounded and fail-closed (see
+            # ``_is_labeled_lint_rule``).
+            if _is_labeled_lint_rule(line, m):
                 continue
             # A conventional runtime dotenv file (`.env`, `frontend/.env`,
             # `.env.local`, `.env.production`, ...) is deliberately gitignored
