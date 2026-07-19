@@ -768,6 +768,44 @@ was 885 Python + 51 Node tests, packed candidate, scan, strict drift 100/A,
 current-evidence self-eval 40/40, public-registry audit with zero
 vulnerabilities, and `AGENTS.md` at 10,237 bytes.
 
+### 2026-07-20 post-Plan-066 deep improve round 2
+
+Independently re-audited all nine categories on clean
+`main@cf96c2a` after the complete Plan 066 three-PR closeout. The new baseline
+was re-established rather than inherited: scan exited 0, strict drift was
+100/A, current-evidence self-eval passed 40/40, the worktree was clean, recent
+main workflows were green, and the remote branch read-back still required the
+same nine contexts plus resolved conversations.
+
+The selected finding is **nested eval usage metadata bypasses credential
+redaction**. A temporary runner printed a passing JSON envelope with one
+runtime-generated GitHub-token sentinel under `usage.trace`, `cost.note`, and a
+`tokens` list. The task passed and the persisted stdout correctly replaced all
+three values with `<redacted:GitHub token>`, proving Plan 051's raw-grading /
+persisted-text boundary worked. The separate `usage` copy retained all three
+sentinels verbatim in the result JSON because `maybe_usage()` copies arbitrary
+nested values and `sanitize_result_record()` visits only
+stdout/answer/stderr/judge fields. Single, multi-round, and matrix producers all
+reuse that record; `--compare` also renders usage from supplied historical or
+manual results without a sanitization boundary.
+
+Plan 067 adds one JSON-compatible safe-copy sanitizer for nested usage string
+keys/values, preserving numeric billing data and container shape, and applies
+it at the shared task-record persistence boundary. It separately sanitizes and
+Markdown-neutralizes comparison rendering because historical inputs may predate
+the fix. Grading, usage extraction, secret patterns, result schema, health, and
+the usage allow-list remain unchanged.
+
+The highest runner-up is also mechanically reproduced but deliberately kept
+separate: three stored records that claimed `passed: true` while carrying,
+respectively, runner `exit_code: 9`, `timed_out: true`, or judge
+`exit_code: 7` all passed `--score --fail-under 80` at 100/A. Root-generated
+tasks still omit fact evidence and therefore fail `--require-current-evidence`
+with no manifest (fail closed rather than false green); `drift --fix --apply`
+multi-file writes remain non-transactional; and `actionlint` remains a
+documented but unenforced local/CI gate. Product-direction options remain
+separate from these correctness/security defects.
+
 Vetted runner-ups remain separate: the documented `actionlint` gate is not
 required locally or in CI; `npm run format` still has unsafe authority over
 historical evidence/generated/synchronized files; shipped provider shell
@@ -848,6 +886,7 @@ integrity defect.
 | 064 | Bound and neutralize semantic/drift finding-message tokens | P1 | S | — | DONE — PR [#280](https://github.com/NieZhuZhu/ai-harness-doctor/pull/280), merge `6f5a513`, 9/9 required checks |
 | 065 | Make eval `--regrade` honor stored operational-failure evidence | P1 | S | 038 | DONE — PR [#279](https://github.com/NieZhuZhu/ai-harness-doctor/pull/279), merge `2f88e33`, 9/9 required checks |
 | 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | DONE — PR [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), merge `28150ef`, 9/9 required checks |
+| 067 | Redact secrets from nested eval usage metadata before persistence or rendering | P0 | S | 051 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -880,6 +919,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
   manifest. Land its plan-only PR first, then implement test-first from the
   resulting latest `main`; use a separate green closeout PR after the
   implementation is squash-merged.
+- Plan 067 extends the already-DONE Plan 051 redaction boundary without changing
+  raw grading or result schema. Land plan-only, implement the nested sanitizer
+  and comparison boundary test-first, then use the same green closeout cycle.
 - Execute Plan 014 first because it fixes a reproduced cross-engine false
   positive with the smallest blast radius. Plans 015 and 016 are independent
   backward-compatible features and should remain separate PRs.
