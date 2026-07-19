@@ -32,7 +32,40 @@
   not a reason to couple guard state to the installer manifest)
 - **Category**: correctness / security
 - **Planned at**: commit `0232401`, 2026-07-19
-- **Status**: TODO
+- **Status**: DONE — plan PR
+  [#289](https://github.com/NieZhuZhu/ai-harness-doctor/pull/289);
+  implementation PR
+  [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), squash merge
+  `28150ef`; both passed all nine required contexts.
+
+## Implementation evidence
+
+- The two pre-fix fault injections were rerun as integration tests: a caught
+  install failure and a caught remove failure now restore exact pre-command
+  existence, bytes, full `0o7777` mode, and transaction-created parents.
+- Guard state is separate from the HOME installer ledger and lives below the
+  resolved Git common directory. Journal authority is limited to the fixed
+  hook/provider/`AGENTS.md` allow-list; every apply and restore rechecks lexical
+  symlink containment.
+- Fault tests cover install/remove crash recovery, atomic-write temp cleanup,
+  a second crash during restore, explicit commit and rollback retirement
+  points, post-crash external edits, malformed/tampered/escaping/symlinked
+  state, live lock/owner protection, unselected-provider symlinks, every
+  provider's parents/modes, and linked-worktree/common-dir recovery.
+- Standards and Spec reviews found four implementation gaps before commit:
+  committed cleanup could trigger a false rollback, atomic sibling temp files
+  were initially unjournaled, unrelated provider symlinks were over-probed, and
+  a sibling worktree could not recover the recorded worktree. Each was fixed
+  with a regression test; the final `bits-code-guard` report has no remaining
+  P0–P2 findings.
+- Final local verification on the reviewed tree: `npm run check` passed 885
+  Python tests, 51 Node tests, lint, synchronized docs/adapters, and the packed
+  candidate; scan exited 0; strict drift was 100/A; current-evidence self-eval
+  was 40/40 at 100/A; npm 10.8.2 public-registry audit reported zero
+  vulnerabilities; `AGENTS.md` was 10,237 bytes.
+- PR #290 head `1abb451` passed `drift`, `lint`, Node 16/20/22, `self-test`,
+  and Python 3.9/3.10/3.12. It had zero unresolved review threads and was
+  squash-merged as `28150ef`; the implementation branch was deleted.
 
 ## Why this matters
 
