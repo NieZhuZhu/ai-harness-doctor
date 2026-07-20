@@ -28,7 +28,48 @@
   containment) and 061 (AGENTS.md headroom discipline)
 - **Category**: product / feature (premium-upgrade loop)
 - **Planned at**: commit `a6f6932`, 2026-07-20
-- **Status**: TODO
+- **Status**: DONE — plan PR
+  [#301](https://github.com/NieZhuZhu/ai-harness-doctor/pull/301);
+  implementation PR
+  [#302](https://github.com/NieZhuZhu/ai-harness-doctor/pull/302), squash merge
+  `3da9a77`; both passed all nine required contexts.
+
+## Implementation evidence
+
+- `report["maturity"]` ships with the contract shape: cumulative levels
+  0 Ungoverned → 4 Evidenced, per-item present/absent statuses with evidence
+  strings, `next.missing` remedies naming only packaged commands, and a
+  five-item advisory list that never gates a level. Monorepo package
+  sub-reports carry no ladder; `--repos-file` rows carry a pre-suppression
+  row-level maturity summary and the batch table gained the Maturity column.
+- G1–G4 predicates were extracted into shared helpers
+  (`missing_required_sections` / `non_minimal_stubs` /
+  `missing_guard_workflows`) consumed by both `find_gaps` and
+  `compute_maturity`; all pre-existing gap tests passed untouched, and the
+  ladder is provably independent of `--no-gaps` and baseline suppression.
+- Draft-marker literals moved to `registry.py`
+  (`DRAFT_INFERRED_MARKER`/`DRAFT_SUGGESTED_MARKER`); `canonicalize.py`
+  aliases them (identity-asserted in tests). `GUARD_PROVIDER_GATE_FILES`
+  literal-syncs against `bin/cli.js` via a test.
+- `--min-maturity` (int or level name) exits 5 with precedence
+  security > gaps > maturity > semantic > conflicts in both single-repo and
+  batch paths; default exit semantics unchanged; `--no-maturity` mirrors the
+  `--no-gaps` pop contract; SARIF carries no maturity results.
+- Pre-PR adversarial review (4 lenses, per-finding verification) confirmed
+  five defects, all fixed and test-pinned: batch-column suppression asymmetry,
+  missing `has_agents` gate on M3/M5 (hard-failing remedy), comment-line CI
+  probe false positive, A2 evidence hardcoding `.yaml`, and README.zh-CN
+  translating the level names the tool prints in English.
+- Final local evidence: 23-test `MaturityTests` + updated batch-precedence
+  unit test; `tests/test_scan.py` 202/202; `npm run check` lint + 923 Python /
+  51 Node tests green (`check:package` verified with CI-supported npm 10.9.8);
+  `check_readme_sync.py` seven aligned; `gen_adapters.py --check` unchanged;
+  gated self-checkup scan exit 0; strict drift 100/A. Self-scan reports this
+  repository at Level 2 (Canonicalized), next rung the maintenance-contract
+  block — an honest deficit, not a false positive.
+- PR #302 head passed all nine required contexts with zero unresolved
+  threads and was squash-merged as `3da9a77`; the implementation branch was
+  deleted.
 
 ## Why this matters
 
