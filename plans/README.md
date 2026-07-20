@@ -946,6 +946,7 @@ integrity defect.
 | 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | DONE — PR [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), merge `28150ef`, 9/9 required checks |
 | 067 | Redact secrets from nested eval usage metadata before persistence or rendering | P0 | S | 051 | DONE — PR [#293](https://github.com/NieZhuZhu/ai-harness-doctor/pull/293), merge `b26974f`, 9/9 required checks |
 | 068 | Reject stored eval passes that contradict explicit operational failure evidence | P0 | S | 033, 038, 065 | DONE — PR [#296](https://github.com/NieZhuZhu/ai-harness-doctor/pull/296), merge `8e61ba3`, 9/9 required checks |
+| 069 | Report the harness maturity ladder in scan | P1 | M | — | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
@@ -984,6 +985,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 - Plan 068 extends the shared Plan 033 stored-result validator with the
   Plans 038/065 operational truth. Keep omitted legacy fields compatible,
   implement test-first, and use the same plan/implementation/closeout cycle.
+- Plan 069 is a product feature (premium-upgrade loop, user-requested): a
+  deterministic maturity-ladder view assembled from existing scan signals. It
+  must keep `find_gaps` output byte-identical, keep every stack-dependent
+  signal advisory-only per the G5–G8 retirement precedent, and change no
+  default exit semantics. Land plan-only, implement test-first, then the same
+  green closeout cycle; ships as a minor release.
 - Execute Plan 014 first because it fixes a reproduced cross-engine false
   positive with the smallest blast radius. Plans 015 and 016 are independent
   backward-compatible features and should remain separate PRs.
