@@ -165,6 +165,7 @@ KNOWN_ROOT_FILES = {
     "Makefile",
     # Node
     "package.json",
+    "components.json",
     "package-lock.json",
     "pnpm-lock.yaml",
     "yarn.lock",
@@ -378,7 +379,17 @@ _PATH_LABEL_RE = re.compile(
 # Explicit runtime-identifier cues that mark the token as NOT a filesystem path.
 _NONPATH_LABEL_RE = re.compile(
     r"\b(?:docker\s+image|container\s+image|image|"
-    r"rpc\s+method|method|endpoint|operation|route|action|skill|command|tool|library|component|package)\b",
+    r"rpc\s+method|method|endpoint|operation|route|action|skill|command|tool|library)\b",
+    re.I,
+)
+# List-introduction cue for compact API/RPC method inventories where the label
+# appears once before several backtick tokens (for example: "RPC API methods:
+# `thread/read`, `app/list`"). The normal bounded window catches the first token
+# but can miss later tokens; this deliberately requires an explicit same-line
+# method/endpoint list introducer so broad section prose cannot leak in.
+_NONPATH_LIST_INTRO_RE = re.compile(
+    r"\b(?:rpc|api|http)?\s*(?:methods?|endpoints?|operations?|routes?|actions?)\b\s*"
+    r"(?:include|includes|are|:)",
     re.I,
 )
 
@@ -395,9 +406,9 @@ _NONPATH_LABEL_RE = re.compile(
 # ESLint config file; oxlint's native rules live in no such file, so a
 # prose-labelled fallback is needed too.
 _LINT_RULE_SHAPE_RE = re.compile(
-    r"(?:react|react-hooks|import|jsx-a11y|unicorn|promise|node|n|vue|svelte|solid|"
-    r"astro|prettier|jest|vitest|testing-library)/[A-Za-z0-9][A-Za-z0-9-]*"
+    r"[A-Za-z0-9][A-Za-z0-9_-]*/[A-Za-z0-9][A-Za-z0-9_-]*"
 )
+_LINT_RULE_PATH_PREFIXES = ("config/", "configs/", "package/", "packages/")
 _LINTER_NAME_RE = re.compile(r"\b(?:eslint|oxlint|tslint|stylelint|biome)\b", re.I)
 _RULE_WORD_RE = re.compile(r"\brules?\b", re.I)
 
@@ -415,6 +426,8 @@ def _is_labeled_lint_rule(line, match):
     if "." in token or token.count("/") != 1:
         return False
     if not _LINT_RULE_SHAPE_RE.fullmatch(token):
+        return False
+    if token.startswith(_LINT_RULE_PATH_PREFIXES):
         return False
     before = line[max(0, match.start() - _LABEL_WINDOW):match.start()]
     after = line[match.end():match.end() + _LABEL_WINDOW]
@@ -443,7 +456,10 @@ def _is_labeled_runtime_identifier(line, match):
     # Explicit filesystem intent wins over any runtime-identifier word.
     if _PATH_LABEL_RE.search(window):
         return False
-    return bool(_NONPATH_LABEL_RE.search(window))
+    if _NONPATH_LABEL_RE.search(window):
+        return True
+    prefix = line[:match.start()]
+    return bool(_NONPATH_LIST_INTRO_RE.search(prefix))
 
 
 def _is_labeled_branch_ref(line, match):

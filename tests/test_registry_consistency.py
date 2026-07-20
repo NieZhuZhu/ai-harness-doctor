@@ -432,6 +432,8 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             "Call RPC method `thread/read` to stream.",
             "The `app/list` endpoint returns sessions.",
             "Invoke the `app/list` operation from the client.",
+            "RPC API methods include `thread/read`, `app/list`, and `session/new`.",
+            "Known endpoints: `thread/read`, `app/list`, and `session/new`.",
         ]
         for line in runtime_lines:
             text = line + "\n"
@@ -603,6 +605,7 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             "Run the `shadcn/improve` action after updating components.",
             "The `shadcn/ui` library owns these component primitives.",
             "Use the `import/order` eslint rule for sorted imports.",
+            "Use the `perfectionist/sort-imports` eslint rule for sorted imports.",
             "Invoke the `agent/review` command from the tool palette.",
         ]
         for text in cases:
@@ -611,6 +614,8 @@ class SharedConstantConsistencyTests(unittest.TestCase):
 
         kept = {
             "Edit the action file `shadcn/improve` before release.": ["shadcn/improve"],
+            "The `ui/button` component should be used by forms.": ["ui/button"],
+            "The package path `packages/app` is checked.": ["packages/app"],
             "The library source path `packages/ui` is checked.": ["packages/ui"],
         }
         for text, expected in kept.items():
