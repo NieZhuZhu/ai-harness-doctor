@@ -946,7 +946,7 @@ integrity defect.
 | 066 | Make guard install and removal transactional across every managed file | P0 | M | 004, 008, 011, 037, 044 | DONE — PR [#290](https://github.com/NieZhuZhu/ai-harness-doctor/pull/290), merge `28150ef`, 9/9 required checks |
 | 067 | Redact secrets from nested eval usage metadata before persistence or rendering | P0 | S | 051 | DONE — PR [#293](https://github.com/NieZhuZhu/ai-harness-doctor/pull/293), merge `b26974f`, 9/9 required checks |
 | 068 | Reject stored eval passes that contradict explicit operational failure evidence | P0 | S | 033, 038, 065 | DONE — PR [#296](https://github.com/NieZhuZhu/ai-harness-doctor/pull/296), merge `8e61ba3`, 9/9 required checks |
-| 069 | Report the harness maturity ladder in scan | P1 | M | — | TODO |
+| 069 | Report the harness maturity ladder in scan | P1 | M | — | DONE — PR [#302](https://github.com/NieZhuZhu/ai-harness-doctor/pull/302), merge `3da9a77`, 9/9 required checks |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with reason) | REJECTED
 (with rationale).
