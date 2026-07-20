@@ -1,0 +1,45 @@
+README.es.md
+  s_da394e20280a0e::t_6903e4b97ab673 56
+README.fr.md
+  s_da394e20280a0e::t_f357ee35dcc1d6 56
+README.ja.md
+  s_da394e20280a0e::t_0df90161d9f0ac 56
+README.ko.md
+  s_da394e20280a0e::t_52d245846ddbf1 56
+README.md
+  s_da394e20280a0e::t_7ecfba7a1d01a7 56
+README.pt-BR.md
+  s_da394e20280a0e::t_8cfec3369ef665 56
+README.zh-CN.md
+  s_da394e20280a0e::t_1864fc838e8444 56
+SKILL.md
+  s_da394e20280a0e::t_05ad7fdb9e65f3 40-41,56-57,82-83,95
+scripts/canonicalize.py
+  s_da394e20280a0e::t_bfa55a183a0fce 309-311
+scripts/registry.py
+  s_da394e20280a0e::t_1d7e31aa22abd6 29-36
+scripts/scan.py
+  s_da394e20280a0e::t_13a5b1d93f6c85 41,52-54,199-234,1678-1716,1744-1751,1753,1757,1760-1766,1770-1781,1801-2069,2229,2286-2290,2821,2878,2884-2891,2911-2924,2933-2934,2953-2956,3028-3039,3233-3237,3244-3245
+scripts/scan_render.py
+  s_da394e20280a0e::t_e712012daf062a 76-77,257-258,261-264,267,341-374
+tests/test_scan.py
+  s_da394e20280a0e::t_135845e37de974 3136,3141,3144-3151,3664-4028
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "9d68cee73a7636278b08f283b671502a858b1789",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
