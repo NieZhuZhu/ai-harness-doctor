@@ -26,6 +26,14 @@ _REGISTRY_PATH = _PACKAGE_ROOT / "assets" / "agent-tools.json"
 # (<200 bytes) (CORR-06).
 STUB_POINTER_MAX_BYTES = 800
 
+# Single source of truth for the draft-review markers `canonicalize.py --draft`
+# inserts and `--validate` flags. Hosted here (not in canonicalize.py, which
+# imports scan.py) so scan's maturity ladder can detect an unreviewed draft
+# without an import cycle; canonicalize.py aliases these names, so the writer
+# and both detectors cannot drift (TD-02).
+DRAFT_INFERRED_MARKER = "(inferred — confirm)"
+DRAFT_SUGGESTED_MARKER = "(suggested default)"
+
 # Single source of truth for directories a repository walk should never descend
 # into: version control internals and build/dependency output that is either
 # huge (node_modules), not source the agent should read, or both. Shared by

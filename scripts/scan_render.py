@@ -73,6 +73,8 @@ def render_markdown(report, report_path=None):
         render_semantic(lines, report["semantic"])
     if "gaps" in report:
         render_gaps(lines, report["gaps"])
+    if "maturity" in report:
+        render_maturity(lines, report["maturity"])
     if "custom" in report:
         render_custom(lines, report["custom"])
     if report_path:
@@ -252,13 +254,17 @@ def render_repos_file(summary, repos, report_path=None):
     ok_repos = [r for r in repos if "error" not in r]
     if ok_repos:
         lines.append("")
-        lines.append("| Repo | Name | AGENTS.md | Config files | Gaps | HIGH sec | Semantic mismatches |")
-        lines.append("|---|---|:---:|---:|---:|---:|---:|")
+        lines.append("| Repo | Name | AGENTS.md | Maturity | Config files | Gaps | HIGH sec | Semantic mismatches |")
+        lines.append("|---|---|:---:|:---:|---:|---:|---:|---:|")
         for r in ok_repos:
             s = r.get("summary", {})
+            maturity = r.get("maturity") or {}
+            maturity_cell = (
+                f"{maturity['level']}/{maturity.get('max_level', 4)}" if "level" in maturity else "—"
+            )
             lines.append(
                 f"| `{r['path']}` | {r.get('name') or '—'} | "
-                f"{'yes' if r.get('has_agents_md') else 'no'} | "
+                f"{'yes' if r.get('has_agents_md') else 'no'} | {maturity_cell} | "
                 f"{s.get('files', 0)} | {s.get('gaps', 0)} | "
                 f"{s.get('security_high', 0)} | {s.get('semantic_mismatches', 0)} |"
             )
@@ -330,6 +336,40 @@ def render_gaps(lines, gaps):
     for g in gaps:
         lines.append(f"- **{g['level']}** {g['item']}: {g['message']}")
         lines.append(f"  - Suggestion: {g['suggestion']}")
+
+
+def render_maturity(lines, maturity):
+    """Render the harness maturity ladder (levels, next rung, advisory list)."""
+    lines.extend(["", "## Harness maturity"])
+    level = maturity.get("level", 0)
+    lines.append(
+        f"**Level {level} of {maturity.get('max_level', 4)} — {maturity.get('level_name', 'Ungoverned')}.** "
+        "Levels describe which harness artifacts exist (mirroring the four phases); "
+        "they are not a judgement, carry no severity, and never change the default exit code."
+    )
+    for rung in maturity.get("levels", []):
+        status = "achieved" if rung.get("achieved") else "not achieved"
+        lines.append("")
+        lines.append(f"### Level {rung['level']} — {rung['name']} ({status})")
+        for item in rung.get("items", []):
+            mark = "x" if item.get("status") == "present" else " "
+            evidence = f" — {item['evidence']}" if item.get("evidence") else ""
+            lines.append(f"- [{mark}] {item['label']}{evidence}")
+    nxt = maturity.get("next")
+    if nxt:
+        lines.append("")
+        lines.append(f"### Next: Level {nxt['level']} — {nxt['name']}")
+        for item in nxt.get("missing", []):
+            lines.append(f"- {item['label']}")
+            if item.get("remedy"):
+                lines.append(f"  - Remedy: {item['remedy']}")
+    advisory = maturity.get("advisory", [])
+    if advisory:
+        lines.append("")
+        lines.append("### Advisory (stack-dependent — informational only, never affects the level)")
+        for item in advisory:
+            evidence = f" — {item['evidence']}" if item.get("evidence") else ""
+            lines.append(f"- {item['label']}: {item.get('status', 'absent')}{evidence}")
 
 
 def render_custom(lines, findings):

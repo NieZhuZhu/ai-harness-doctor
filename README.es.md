@@ -53,6 +53,7 @@ Ninguno de estos comandos modifica el repositorio auditado.
 | Consistencia | Scripts ausentes, rutas movidas, drift de gestor o runtime, enlaces rotos, lockfiles rivales e identificadores que no son rutas —como reglas lint o refs de rama etiquetadas— sin falsos positivos. |
 | Calidad de instrucciones | Contexto excesivo, copias del README, decisiones silenciosas, solapamientos y conflictos locales. |
 | Scope | Herencia hasta el `AGENTS.md` más cercano y globs acotados de Claude, Cursor y Copilot. |
+| Madurez | El nivel de la escalera del repositorio —Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced— más lo que exige el siguiente nivel y el comando que lo instala. |
 | Eficacia | Exactitud antes/después, estabilidad, latencia, coste, frescura de evidencia y nota de salud. |
 
 Las lecturas de seguridad permanecen dentro del repositorio. Los archivos grandes conservan cobertura completa de SHA-256, líneas, secretos y bypasses; `--max-bytes` solo limita el análisis semántico.

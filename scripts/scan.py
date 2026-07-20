@@ -38,6 +38,7 @@ from scan_render import (  # noqa: E402,F401  (re-exported for backward compatib
     render_custom,
     render_gaps,
     render_markdown,
+    render_maturity,
     render_monorepo,
     render_repos_file,
     render_security,
@@ -48,6 +49,9 @@ from scan_render import (  # noqa: E402,F401  (re-exported for backward compatib
 
 SKIP_DIRS = registry.SKIP_DIRS
 REPOS_FILE_OPERATIONAL_EXIT = 8
+# Exit for the opt-in `--min-maturity` gate (Plan 069). 5 was unused; 6 stays
+# free for future gates.
+MATURITY_GATE_EXIT = 5
 
 # Scan baselines are an auditable register of known non-security debt. Security
 # findings are deliberately absent from this allow-list so neither a generated
@@ -191,6 +195,42 @@ GUARD_CI_WORKFLOWS = [
 ]
 GUARD_MARKER = "ai-harness-doctor:guard"
 PRECOMMIT_HOOK_PATHS = [".git/hooks/pre-commit", ".githooks/pre-commit"]
+
+# Gate-bearing files `guard --apply` installs for non-GitHub providers. Kept in
+# lockstep with the guard installer's provider table in bin/cli.js; a test
+# asserts these literals appear there so the two lists cannot drift (TD-04).
+GUARD_PROVIDER_GATE_FILES = [
+    ".gitlab/harness-ci.yml",
+    ".harness-ci/harness-guard.sh",
+    ".codebase/pipelines/harness-guard.yaml",
+]
+
+# ---------------------------------------------------------------------------
+# Harness maturity ladder (Plan 069). Levels mirror the four-phase doctrine:
+# 0 Ungoverned -> 1 Inventoried (Checkup has something to inventory) ->
+# 2 Canonicalized (Treat is structurally complete) -> 3 Guarded (Follow-up is
+# wired into CI) -> 4 Evidenced (Efficacy is re-verified in CI). Levels are
+# definitional — which artifacts exist — not normative: the section carries no
+# severity, never changes the default exit code, and every stack-dependent
+# signal (MCP, permissions, local hooks, debt baselines) stays in an advisory
+# list that can never gate a level, per the G5-G8 retirement precedent below.
+# ---------------------------------------------------------------------------
+MATURITY_MAX_LEVEL = 4
+MATURITY_LEVEL_NAMES = {
+    0: "Ungoverned",
+    1: "Inventoried",
+    2: "Canonicalized",
+    3: "Guarded",
+    4: "Evidenced",
+}
+
+# Command-form invocation detection for hand-rolled CI wiring. The packaged CLI
+# dispatches on its FIRST argument (bin/cli.js main()), so the subcommand
+# always directly follows the binary name (optionally npx-version-pinned);
+# prose mentions and negations elsewhere on a line never form this shape.
+_MATURITY_DRIFT_LINE_RE = re.compile(r"ai-harness-doctor(?:@\S+)?\s+(?:drift|scan)\b")
+_MATURITY_EVAL_LINE_RE = re.compile(r"ai-harness-doctor(?:@\S+)?\s+eval\b")
+_MATURITY_ACTION_USES_RE = re.compile(r"\buses:\s*\S*ai-harness-doctor@")
 
 # ---------------------------------------------------------------------------
 # Project snapshot: a compact, factual description of the repository that an
@@ -1635,6 +1675,45 @@ def gap(check, level, item, message, suggestion):
     return {"check": check, "level": level, "item": item, "message": message, "suggestion": suggestion}
 
 
+# --- Shared raw signals, consumed by BOTH find_gaps (G2/G3/G4) and
+# compute_maturity (M3/M5/M6) so the two views can never drift (TD-04) and the
+# ladder stays independent of --no-gaps and baseline suppression. ---
+
+
+def missing_required_sections(agents_text):
+    """Required template sections absent from AGENTS.md (G2/M3 signal)."""
+    present = [h.lower() for h in markdown_headings(agents_text or "")]
+    missing = []
+    for section in required_sections():
+        needle = section.lower()
+        if not any(needle == h or needle in h for h in present):
+            missing.append(section)
+    return missing
+
+
+def non_minimal_stubs(root, ctx=None):
+    """Present tool stubs that are not minimal pointers, as (rel_path, bytes)
+    pairs (G3/M5 signal). Absent stubs never count against."""
+    ctx = ctx or ScanContext(root)
+    bad = []
+    for rel_path in GAP_STUB_FILES:
+        path = root / rel_path
+        if not facts.is_file_within_root(root, path):
+            continue
+        data = ctx.read_bytes(path)
+        if data is None:
+            continue
+        text = data.decode("utf-8", errors="replace")
+        if len(data) > STUB_POINTER_MAX_BYTES or "AGENTS.md" not in text:
+            bad.append((rel_path, len(data)))
+    return bad
+
+
+def missing_guard_workflows(root):
+    """GUARD_CI_WORKFLOWS entries whose file is not installed (G4/M6 signal)."""
+    return [entry for entry in GUARD_CI_WORKFLOWS if not facts.is_file_within_root(root, root / entry[0])]
+
+
 def find_gaps(root, surface, conflicts=None, ctx=None, agents_text=None):
     """Diff the repo against a harness completeness checklist and report what is
     missing. Read-only: never writes or mutates the target repository."""
@@ -1662,55 +1741,43 @@ def find_gaps(root, surface, conflicts=None, ctx=None, agents_text=None):
 
     # 2) Required sections present in AGENTS.md.
     if has_agents:
-        present = [h.lower() for h in markdown_headings(agents_text)]
-        for section in required_sections():
-            needle = section.lower()
-            if not any(needle == h or needle in h for h in present):
-                gaps.append(
-                    gap(
-                        "G2",
-                        "WARN",
-                        f"Section: {section}",
-                        f"AGENTS.md is missing the `{section}` section.",
-                        f"Add a `# {section}` section describing what agents cannot infer from code alone.",
-                    )
+        for section in missing_required_sections(agents_text):
+            gaps.append(
+                gap(
+                    "G2",
+                    "WARN",
+                    f"Section: {section}",
+                    f"AGENTS.md is missing the `{section}` section.",
+                    f"Add a `# {section}` section describing what agents cannot infer from code alone.",
                 )
+            )
 
     # 3) Tool stubs should be minimal pointers to AGENTS.md, not full duplicates.
     if has_agents:
-        for rel_path in GAP_STUB_FILES:
-            path = root / rel_path
-            if not facts.is_file_within_root(root, path):
-                continue
-            data = ctx.read_bytes(path)
-            if data is None:
-                continue
-            text = data.decode("utf-8", errors="replace")
-            if len(data) > STUB_POINTER_MAX_BYTES or "AGENTS.md" not in text:
-                gaps.append(
-                    gap(
-                        "G3",
-                        "WARN",
-                        f"Stub pointer: {rel_path}",
-                        f"`{rel_path}` exists but is not a minimal pointer to AGENTS.md "
-                        f"({len(data)} bytes; pointer must be <= "
-                        f"{STUB_POINTER_MAX_BYTES} bytes and reference AGENTS.md).",
-                        "Run canonicalize.py --write-stubs to downgrade it to a pointer.",
-                    )
-                )
-
-    # 4) Drift guard / checkup CI workflows.
-    for rel_path, level, item in GUARD_CI_WORKFLOWS:
-        if not facts.is_file_within_root(root, root / rel_path):
+        for rel_path, size in non_minimal_stubs(root, ctx):
             gaps.append(
                 gap(
-                    "G4",
-                    level,
-                    item,
-                    f"`{rel_path}` is not installed.",
-                    "Run `ai-harness-doctor guard . --apply` to install the guard suite.",
+                    "G3",
+                    "WARN",
+                    f"Stub pointer: {rel_path}",
+                    f"`{rel_path}` exists but is not a minimal pointer to AGENTS.md "
+                    f"({size} bytes; pointer must be <= "
+                    f"{STUB_POINTER_MAX_BYTES} bytes and reference AGENTS.md).",
+                    "Run canonicalize.py --write-stubs to downgrade it to a pointer.",
                 )
             )
+
+    # 4) Drift guard / checkup CI workflows.
+    for rel_path, level, item in missing_guard_workflows(root):
+        gaps.append(
+            gap(
+                "G4",
+                level,
+                item,
+                f"`{rel_path}` is not installed.",
+                "Run `ai-harness-doctor guard . --apply` to install the guard suite.",
+            )
+        )
 
     # G5-G8 (pre-commit drift guard, maintenance contract, MCP configuration,
     # permission configuration) used to be reported here as static gaps. They
@@ -1729,6 +1796,275 @@ def find_gaps(root, surface, conflicts=None, ctx=None, agents_text=None):
     return sorted(
         gaps, key=lambda g: (order.get(g["level"], 3), int(g["check"][1:]) if g["check"][1:].isdigit() else 99)
     )
+
+
+def _maturity_item(item_id, label, present, evidence, remedy):
+    return {
+        "id": item_id,
+        "label": label,
+        "status": "present" if present else "absent",
+        "evidence": evidence,
+        "remedy": None if present else remedy,
+    }
+
+
+def _ci_line_signals(root, snapshot, ctx):
+    """Find drift/eval gate wiring in the snapshot's ci-group files.
+
+    Line-level command-form matching only: the packaged CLI dispatches on its
+    first argument, so `... ai-harness-doctor <cmd>` adjacency is the real
+    invocation shape; prose mentions elsewhere never form it. The shipped
+    guard templates are recognized by their GUARD_MARKER signature even when
+    renamed or merged into another workflow. Reads stay inside the audited
+    repository via the shared ScanContext/facts containment primitives.
+    """
+    drift_hits, eval_hits = [], []
+    for rel in snapshot.get("existing_files", {}).get("ci", []):
+        text = ctx.read_text(root / rel)
+        if not text:
+            continue
+        if GUARD_MARKER in text and rel not in drift_hits:
+            drift_hits.append(rel)
+        for line in text.splitlines():
+            # A commented-out invocation is not a live gate. (The GUARD_MARKER
+            # signature above is deliberately a comment and stays whole-text.)
+            if line.lstrip().startswith("#"):
+                continue
+            if rel not in drift_hits and (
+                _MATURITY_DRIFT_LINE_RE.search(line)
+                or _MATURITY_ACTION_USES_RE.search(line)
+                or "check_drift.py" in line
+            ):
+                drift_hits.append(rel)
+            if rel not in eval_hits and (_MATURITY_EVAL_LINE_RE.search(line) or "eval_run.py" in line):
+                eval_hits.append(rel)
+    return drift_hits, eval_hits
+
+
+def compute_maturity(root, files, snapshot, agents_text, ctx=None):
+    """Assemble the harness maturity ladder from existing scan signals.
+
+    Purely a view: every value derives from the same raw signals find_gaps and
+    build_project_snapshot use plus three bounded content probes (draft
+    markers, pre-commit-config reference, ci-group invocation lines). No new
+    repository walk, no YAML parsing, no network, no LLM judgment. Levels are
+    definitional, not normative; the advisory list never gates a level.
+    """
+    ctx = ctx or ScanContext(root)
+    agents_text = agents_text or ""
+    has_agents = facts.is_file_within_root(root, root / "AGENTS.md")
+    missing_sections = missing_required_sections(agents_text)
+    markers = [m for m in (registry.DRAFT_INFERRED_MARKER, registry.DRAFT_SUGGESTED_MARKER) if m in agents_text]
+    bad_stubs = non_minimal_stubs(root, ctx)
+    missing_guard = {entry[0] for entry in missing_guard_workflows(root)}
+    provider_gates = [rel for rel in GUARD_PROVIDER_GATE_FILES if facts.is_file_within_root(root, root / rel)]
+    drift_ci, eval_ci = _ci_line_signals(root, snapshot, ctx)
+
+    instruction_paths = [entry["path"] for entry in files]
+    inventory_evidence = (
+        instruction_paths[0] + (f" (+{len(instruction_paths) - 1} more)" if len(instruction_paths) > 1 else "")
+        if instruction_paths
+        else "no recognized agent-instruction files found"
+    )
+    drift_wf = GUARD_CI_WORKFLOWS[0][0]
+    checkup_wf = GUARD_CI_WORKFLOWS[1][0]
+    drift_gate_evidence = (
+        drift_wf
+        if drift_wf not in missing_guard
+        else (provider_gates + drift_ci)[0]
+        if provider_gates or drift_ci
+        else "no guard workflow, provider gate file, or CI invocation found"
+    )
+    stub_evidence = (
+        "requires a root AGENTS.md; existing tool files become pointer stubs after canonicalization"
+        if not has_agents
+        else "; ".join(f"{rel} ({size} bytes)" for rel, size in bad_stubs)
+        if bad_stubs
+        else "all present tool stubs are minimal pointers"
+    )
+
+    ladder = [
+        (
+            1,
+            "Inventoried",
+            [
+                _maturity_item(
+                    "M1",
+                    "Agent-instruction file present (any tool)",
+                    bool(instruction_paths),
+                    inventory_evidence,
+                    "Create a root AGENTS.md (start from assets/AGENTS.template.md or `npx ai-harness-doctor plan .`).",
+                ),
+            ],
+        ),
+        (
+            2,
+            "Canonicalized",
+            [
+                _maturity_item(
+                    "M2",
+                    "Root AGENTS.md (canonical file)",
+                    has_agents,
+                    "AGENTS.md" if has_agents else "no AGENTS.md at the repository root",
+                    "Run `npx ai-harness-doctor plan .`, write AGENTS.md from the merge plan, "
+                    "then `npx ai-harness-doctor stubs . --apply`.",
+                ),
+                _maturity_item(
+                    "M3",
+                    "Required AGENTS.md sections",
+                    has_agents and not missing_sections,
+                    "all required sections present"
+                    if has_agents and not missing_sections
+                    else "no AGENTS.md at the repository root"
+                    if not has_agents
+                    else "missing: " + ", ".join(missing_sections),
+                    "Create a root AGENTS.md first (see the previous item), then re-run "
+                    "`npx ai-harness-doctor validate .`."
+                    if not has_agents
+                    else "Run `npx ai-harness-doctor validate .` and add each missing section.",
+                ),
+                _maturity_item(
+                    "M4",
+                    "No unreviewed draft markers",
+                    not markers,
+                    "no draft markers" if not markers else "marker present: " + ", ".join(markers),
+                    "Review every draft marker, then re-run `npx ai-harness-doctor validate .`.",
+                ),
+                _maturity_item(
+                    "M5",
+                    "Tool files are minimal pointer stubs",
+                    has_agents and not bad_stubs,
+                    stub_evidence,
+                    "Create a root AGENTS.md first, then run `npx ai-harness-doctor stubs . --apply` "
+                    "to downgrade tool files to pointers."
+                    if not has_agents
+                    else "Run `npx ai-harness-doctor stubs . --apply` to downgrade tool files to pointers.",
+                ),
+            ],
+        ),
+        (
+            3,
+            "Guarded",
+            [
+                _maturity_item(
+                    "M6",
+                    "Drift gate wired into CI",
+                    drift_wf not in missing_guard or bool(provider_gates) or bool(drift_ci),
+                    drift_gate_evidence,
+                    "Run `npx ai-harness-doctor guard . --apply` to install the drift-gate CI workflow.",
+                ),
+                _maturity_item(
+                    "M7",
+                    "Maintenance contract recorded",
+                    bool(snapshot.get("maintenance_contract")),
+                    "AGENTS.md"
+                    if snapshot.get("maintenance_contract")
+                    else "no maintenance-contract block in AGENTS.md",
+                    "Run `npx ai-harness-doctor guard . --apply` to record the maintenance contract in AGENTS.md.",
+                ),
+            ],
+        ),
+        (
+            4,
+            "Evidenced",
+            [
+                _maturity_item(
+                    "M8",
+                    "Eval health gate wired into CI",
+                    bool(eval_ci),
+                    eval_ci[0] if eval_ci else "no CI step invokes the eval health gate",
+                    "Add a CI step running `npx ai-harness-doctor eval --score --fail-under <N>` "
+                    "(see SKILL.md Phase 3).",
+                ),
+            ],
+        ),
+    ]
+
+    levels = []
+    level = 0
+    blocked = False
+    next_info = None
+    for number, name, items in ladder:
+        achieved = all(item["status"] == "present" for item in items)
+        levels.append({"level": number, "name": name, "achieved": achieved, "items": items})
+        if achieved and not blocked:
+            level = number
+        elif not achieved and not blocked:
+            blocked = True
+            next_info = {
+                "level": number,
+                "name": name,
+                "missing": [item for item in items if item["status"] == "absent"],
+            }
+
+    precommit_ref = next(
+        (
+            rel
+            for rel in (".pre-commit-config.yaml", ".pre-commit-config.yml")
+            if facts.is_file_within_root(root, root / rel)
+            and "ai-harness-doctor" in (ctx.read_text(root / rel) or "")
+        ),
+        None,
+    )
+    hook_path = snapshot.get("existing_files", {}).get("drift_guard_hook")
+    precommit_evidence = None
+    if precommit_ref:
+        precommit_evidence = precommit_ref
+    elif hook_path:
+        precommit_evidence = hook_path + (" (not clone-durable)" if hook_path.startswith(".git/") else "")
+    baselines = [
+        rel
+        for rel in (".ai-harness-doctor/scan-baseline.json", ".ai-harness-doctor/drift-baseline.json")
+        if facts.is_file_within_root(root, root / rel)
+    ]
+    mcp_tools = snapshot.get("mcp_tools", [])
+    advisory_note = "stack-dependent; informational only — never affects the level"
+    advisory = [
+        {
+            "id": "A1",
+            "label": "Weekly checkup CI workflow",
+            "status": "present" if checkup_wf not in missing_guard else "absent",
+            "evidence": checkup_wf if checkup_wf not in missing_guard else None,
+            "note": advisory_note,
+        },
+        {
+            "id": "A2",
+            "label": "Local pre-commit drift guard",
+            "status": "present" if precommit_evidence else "absent",
+            "evidence": precommit_evidence,
+            "note": advisory_note,
+        },
+        {
+            "id": "A3",
+            "label": "Committed debt baseline register",
+            "status": "present" if baselines else "absent",
+            "evidence": ", ".join(baselines) if baselines else None,
+            "note": advisory_note,
+        },
+        {
+            "id": "A4",
+            "label": "Project-scoped MCP configuration",
+            "status": "present" if mcp_tools else "absent",
+            "evidence": f"{len(mcp_tools)} MCP server(s) configured" if mcp_tools else None,
+            "note": advisory_note,
+        },
+        {
+            "id": "A5",
+            "label": "Committed permission policy",
+            "status": "present" if snapshot.get("has_permissions") else "absent",
+            "evidence": None,
+            "note": advisory_note,
+        },
+    ]
+
+    return {
+        "level": level,
+        "level_name": MATURITY_LEVEL_NAMES[level],
+        "max_level": MATURITY_MAX_LEVEL,
+        "levels": levels,
+        "next": next_info,
+        "advisory": advisory,
+    }
 
 
 def collect_instruction_files(repo_root, max_bytes=32768, ctx=None):
@@ -1890,6 +2226,7 @@ def scan_repo(
     allow_plugins=False,
     ctx=None,
     repository_root=None,
+    include_maturity=True,
 ):
     root = Path(repo_root).resolve()
     repository_root = (
@@ -1946,6 +2283,11 @@ def scan_repo(
         ),
         "gaps": find_gaps(root, surface, conflicts, ctx, agents_text=agents_text),
     }
+    # Maturity is a repo-level ladder (guard/eval CI is a repository concept),
+    # so monorepo package sub-reports skip it: a package-level ladder would cap
+    # at Canonicalized and read as a false deficit.
+    if include_maturity:
+        report["maturity"] = compute_maturity(root, files, report["project_snapshot"], agents_text, ctx)
     # User-extensible deterministic rule plugins (opt-in, default OFF). Plugin
     # files live inside the scanned repo, so importing them runs arbitrary code
     # on the host/CI; discovery + execution therefore happens ONLY when the
@@ -2476,6 +2818,7 @@ def scan_monorepo(root, max_bytes, package_dirs, source, rules_dirs=None, allow_
             allow_plugins=allow_plugins,
             ctx=ctx.subcontext(pdir),
             repository_root=root,
+            include_maturity=False,
         )
         packages.append(
             {
@@ -2532,11 +2875,20 @@ def scan_repos_file(paths, max_bytes, rules_dirs=None, allow_plugins=False):
             repos.append({"path": raw_path, "resolved": str(root), "error": f"not a directory: {raw_path}"})
             continue
         report = scan_repo(root, max_bytes, rules_dirs, allow_plugins=allow_plugins)
+        maturity = report.get("maturity", {})
         repos.append(
             {
                 "path": raw_path,
                 "resolved": str(root),
                 "name": _package_name(root),
+                # Row-level summary like has_agents_md, captured before the
+                # --no-* output suppression runs, so the batch table's Maturity
+                # column stays populated (mirroring how Gaps/HIGH-sec columns
+                # read the pre-suppression `summary` snapshot).
+                "maturity": {
+                    "level": maturity.get("level", 0),
+                    "max_level": maturity.get("max_level", MATURITY_MAX_LEVEL),
+                },
                 "has_agents_md": facts.is_file_within_root(root, root / "AGENTS.md"),
                 "summary": _package_summary(report),
                 "report": report,
@@ -2556,6 +2908,20 @@ def scan_repos_file(paths, max_bytes, rules_dirs=None, allow_plugins=False):
     return summary, repos
 
 
+def _parse_min_maturity(value):
+    """argparse type for --min-maturity: 1-4 or a level name (case-insensitive)."""
+    names = {name.lower(): number for number, name in MATURITY_LEVEL_NAMES.items() if number > 0}
+    token = str(value).strip().lower()
+    if token in names:
+        return names[token]
+    if token.isdigit() and 1 <= int(token) <= MATURITY_MAX_LEVEL:
+        return int(token)
+    raise argparse.ArgumentTypeError(
+        f"must be 1-{MATURITY_MAX_LEVEL} or a level name: "
+        + ", ".join(MATURITY_LEVEL_NAMES[n] for n in range(1, MATURITY_MAX_LEVEL + 1))
+    )
+
+
 def _apply_section_flags(report, args):
     """Drop optional report sections per the --no-* flags (in place)."""
     if args.no_snapshot:
@@ -2564,6 +2930,8 @@ def _apply_section_flags(report, args):
         report.pop("security", None)
     if args.no_gaps:
         report.pop("gaps", None)
+    if args.no_maturity:
+        report.pop("maturity", None)
     if args.no_semantic:
         report.pop("semantic", None)
     if args.no_custom:
@@ -2582,6 +2950,10 @@ def batch_scan_exit_code(summary, reports, args):
         for report in reports
     ):
         return 3
+    if args.min_maturity is not None and any(
+        report.get("maturity", {}).get("level", 0) < args.min_maturity for report in reports
+    ):
+        return MATURITY_GATE_EXIT
     if args.fail_on_semantic and any(
         report.get("semantic", {}).get("findings") for report in reports
     ):
@@ -2652,6 +3024,18 @@ def main(argv=None):
     parser.add_argument("--no-gaps", action="store_true", help="Skip the missing / gap analysis section.")
     parser.add_argument(
         "--fail-on-gaps", action="store_true", help="Exit non-zero when any ERROR-level harness gap is present."
+    )
+    parser.add_argument(
+        "--no-maturity", action="store_true", help="Skip the harness maturity section (drops the `maturity` key)."
+    )
+    parser.add_argument(
+        "--min-maturity",
+        type=_parse_min_maturity,
+        default=None,
+        metavar="LEVEL",
+        help=f"Exit {MATURITY_GATE_EXIT} when the repository's harness maturity level is below LEVEL "
+        "(1-4 or a level name: Inventoried, Canonicalized, Guarded, Evidenced). "
+        "Off by default; the maturity section alone never changes the exit code.",
     )
     parser.add_argument(
         "--no-semantic", action="store_true", help="Skip the semantic consistency section (drops the `semantic` key)."
@@ -2846,15 +3230,19 @@ def main(argv=None):
     # section and silently neuter --fail-on-security, letting HIGH findings pass
     # with exit 0 (CORR-03). --no-security must only hide the section from the
     # printed report, never disable the gate. Precedence: security > gaps >
-    # semantic > conflicts, preserving every existing code meaning and adding 7
-    # for conflicts. Fail-on gates consider the root report and every package
-    # report so a monorepo run cannot hide a failing package.
+    # maturity > semantic > conflicts, preserving every existing code meaning
+    # and adding 7 for conflicts and 5 for the opt-in maturity gate. Fail-on
+    # gates consider the root report and every package report so a monorepo run
+    # cannot hide a failing package; the maturity gate reads the root report
+    # only, because package sub-reports intentionally carry no ladder.
     reports = [report] + [pkg["report"] for pkg in report.get("packages", [])]
     exit_code = 0
     if args.fail_on_security and any(any(s["level"] == "HIGH" for s in r.get("security", [])) for r in reports):
         exit_code = 2
     elif args.fail_on_gaps and any(any(g["level"] == "ERROR" for g in r.get("gaps", [])) for r in reports):
         exit_code = 3
+    elif args.min_maturity is not None and report.get("maturity", {}).get("level", 0) < args.min_maturity:
+        exit_code = MATURITY_GATE_EXIT
     elif args.fail_on_semantic and any(r.get("semantic", {}).get("findings") for r in reports):
         exit_code = 4
     elif args.fail_on_conflicts and any(r.get("conflicts") for r in reports):

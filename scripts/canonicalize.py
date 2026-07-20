@@ -306,8 +306,9 @@ def write_plan(args):
 
 
 DRAFT_PROVENANCE = "<!-- Auto-drafted by `ai-harness-doctor canonicalize.py --draft`. -->"
-INFERRED = "(inferred — confirm)"
-SUGGESTED = "(suggested default)"
+# Marker literals live in registry.py (shared with scan's maturity ladder).
+INFERRED = registry.DRAFT_INFERRED_MARKER
+SUGGESTED = registry.DRAFT_SUGGESTED_MARKER
 DRAFT_TODOS = [
     "TODO: Describe what this repository does, its main subsystems, "
     "and boundaries an agent cannot infer from code alone.",

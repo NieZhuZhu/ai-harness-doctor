@@ -3133,17 +3133,22 @@ class ReposFileTests(unittest.TestCase):
         args = argparse.Namespace(
             fail_on_security=True,
             fail_on_gaps=True,
+            min_maturity=2,
             fail_on_semantic=True,
             fail_on_conflicts=True,
         )
         summary = {"error_count": 1}
+        low_maturity = {"maturity": {"level": 1}, "semantic": {"findings": [{}]}}
         cases = [
             ("security", [{"security": [{"level": "HIGH"}]}], 2),
-            ("gaps", [{"gaps": [{"level": "ERROR"}]}], 3),
-            ("semantic", [{"semantic": {"findings": [{}]}}], 4),
-            ("conflicts", [{"conflicts": [{}]}], 7),
-            ("operational", [{}], scan.REPOS_FILE_OPERATIONAL_EXIT),
-            ("clean", [{}], 0),
+            # Gaps beat the maturity gate even when both would fire.
+            ("gaps", [{"gaps": [{"level": "ERROR"}], "maturity": {"level": 0}}], 3),
+            # The maturity gate beats semantic when both would fire.
+            ("maturity", [low_maturity], scan.MATURITY_GATE_EXIT),
+            ("semantic", [{"maturity": {"level": 2}, "semantic": {"findings": [{}]}}], 4),
+            ("conflicts", [{"maturity": {"level": 2}, "conflicts": [{}]}], 7),
+            ("operational", [{"maturity": {"level": 2}}], scan.REPOS_FILE_OPERATIONAL_EXIT),
+            ("clean", [{"maturity": {"level": 2}}], 0),
         ]
         for name, reports, expected in cases:
             with self.subTest(name=name):
@@ -3654,6 +3659,371 @@ class NestedRepositoryBoundaryTests(unittest.TestCase):
             paths = {f["path"] for f in scan.scan_repo(sub, 32768)["files"]}
             self.assertIn("AGENTS.md", paths)
             self.assertIn("CLAUDE.md", paths)
+
+
+class MaturityTests(unittest.TestCase):
+    """Plan 069: the harness maturity ladder (`report[\"maturity\"]`).
+
+    Levels are definitional and cumulative; stack-dependent advisory items
+    never gate a level; the section never changes the default exit code.
+    """
+
+    SECTIONS = [
+        "Project overview",
+        "Build & test",
+        "Conventions",
+        "Testing requirements",
+        "Safety",
+        "Commit & PR",
+    ]
+
+    def scan(self, repo, *flags):
+        return subprocess.run(
+            [sys.executable, str(SCAN), str(repo), *flags], text=True, capture_output=True
+        )
+
+    def report(self, repo, *flags):
+        proc = self.scan(repo, "--json", *flags)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return json.loads(proc.stdout)
+
+    def write_canonical(self, repo, contract=True):
+        agents = "\n\n".join(f"# {s}\n\nBody for {s}." for s in self.SECTIONS)
+        if contract:
+            agents += "\n\nMaintenance contract: see guard.\n"
+        _write(repo / "AGENTS.md", agents + "\n")
+        _write(repo / "CLAUDE.md", "Canonical agent instructions live in AGENTS.md.\n")
+
+    def item(self, maturity, item_id):
+        for rung in maturity["levels"]:
+            for item in rung["items"]:
+                if item["id"] == item_id:
+                    return item
+        raise AssertionError(f"no item {item_id}")
+
+    def test_empty_repo_is_ungoverned(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 0)
+            self.assertEqual(maturity["level_name"], "Ungoverned")
+            self.assertEqual(maturity["max_level"], 4)
+            self.assertEqual(len(maturity["levels"]), 4)
+            self.assertEqual(maturity["next"]["level"], 1)
+            missing = {i["id"] for i in maturity["next"]["missing"]}
+            self.assertEqual(missing, {"M1"})
+            self.assertTrue(maturity["next"]["missing"][0]["remedy"])
+            self.assertEqual(len(maturity["advisory"]), 5)
+            self.assertTrue(all(a["status"] == "absent" for a in maturity["advisory"]))
+
+    def test_single_tool_file_is_inventoried(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "CLAUDE.md", "# Rules\n\nUse npm.\n")
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 1)
+            self.assertEqual(maturity["level_name"], "Inventoried")
+            self.assertEqual(maturity["next"]["level"], 2)
+            self.assertIn("M2", {i["id"] for i in maturity["next"]["missing"]})
+            # Without a canonical file, M5 never claims the lone instruction
+            # file is a "bad stub", and its remedy starts with creating
+            # AGENTS.md (a bare `stubs --apply` would hard-fail here).
+            m5 = self.item(maturity, "M5")
+            self.assertEqual(m5["status"], "absent")
+            self.assertIn("requires a root AGENTS.md", m5["evidence"])
+            self.assertNotIn("CLAUDE.md", m5["evidence"])
+            self.assertTrue(m5["remedy"].startswith("Create a root AGENTS.md first"))
+
+    def test_canonical_repo_is_canonicalized(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 2)
+            self.assertEqual(maturity["level_name"], "Canonicalized")
+            # Contract phrase is present, so only the CI drift gate blocks L3.
+            self.assertEqual([i["id"] for i in maturity["next"]["missing"]], ["M6"])
+
+    def test_guard_artifacts_reach_guarded(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(repo / ".github" / "workflows" / "harness-drift.yml", "name: drift\n")
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 3)
+            self.assertEqual(maturity["level_name"], "Guarded")
+            self.assertEqual([i["id"] for i in maturity["next"]["missing"]], ["M8"])
+            self.assertEqual(self.item(maturity, "M6")["evidence"], ".github/workflows/harness-drift.yml")
+
+    def test_eval_ci_reaches_evidenced(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(repo / ".github" / "workflows" / "harness-drift.yml", "name: drift\n")
+            _write(
+                repo / ".github" / "workflows" / "eval.yml",
+                "name: eval\njobs:\n  eval:\n    steps:\n"
+                "      - run: npx --yes ai-harness-doctor@1.13.7 eval --score --fail-under 80\n",
+            )
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 4)
+            self.assertEqual(maturity["level_name"], "Evidenced")
+            self.assertIsNone(maturity["next"])
+            self.assertEqual(self.item(maturity, "M8")["evidence"], ".github/workflows/eval.yml")
+
+    def test_levels_are_cumulative_never_skipped(self):
+        # Guard + eval CI without a canonical AGENTS.md stays Inventoried: a
+        # repo cannot claim Guarded/Evidenced past an unachieved lower rung.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "CLAUDE.md", "# Rules\n\nUse npm.\n")
+            _write(repo / ".github" / "workflows" / "harness-drift.yml", "name: drift\n")
+            _write(
+                repo / ".github" / "workflows" / "eval.yml",
+                "      - run: npx ai-harness-doctor eval --score --fail-under 80\n",
+            )
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 1)
+            self.assertEqual(maturity["next"]["level"], 2)
+            levels = {rung["level"]: rung["achieved"] for rung in maturity["levels"]}
+            self.assertFalse(levels[2])
+            self.assertFalse(levels[3])  # maintenance contract is still absent
+            self.assertTrue(levels[4])
+
+    def test_draft_markers_block_canonicalized(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            agents = repo / "AGENTS.md"
+            agents.write_text(
+                agents.read_text(encoding="utf-8") + "\nRun tests with `npm test` (inferred — confirm)\n",
+                encoding="utf-8",
+            )
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 1)
+            m4 = self.item(maturity, "M4")
+            self.assertEqual(m4["status"], "absent")
+            self.assertIn("(inferred — confirm)", m4["evidence"])
+            self.assertIn("M4", {i["id"] for i in maturity["next"]["missing"]})
+
+    def test_ci_invocation_line_counts_as_drift_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(
+                repo / ".github" / "workflows" / "ci.yml",
+                "name: ci\njobs:\n  drift:\n    steps:\n"
+                "      - run: npx ai-harness-doctor drift . --strict  # nightly gate\n",
+            )
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(maturity["level"], 3)
+            self.assertEqual(self.item(maturity, "M6")["evidence"], ".github/workflows/ci.yml")
+
+    def test_guard_marker_recognizes_renamed_workflow(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(repo / ".github" / "workflows" / "quality.yml", "# ai-harness-doctor:guard\nname: q\n")
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(self.item(maturity, "M6")["status"], "present")
+
+    def test_provider_gate_file_counts_as_drift_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(repo / ".gitlab" / "harness-ci.yml", "include: harness\n")
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(self.item(maturity, "M6")["status"], "present")
+            self.assertEqual(self.item(maturity, "M6")["evidence"], ".gitlab/harness-ci.yml")
+
+    def test_mere_mention_or_install_never_counts(self):
+        # Prose mentions, bare installs, and commented-out invocations are not
+        # command-form gates; neither is an `eval`-prefixed word like
+        # "evaluates".
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(
+                repo / ".github" / "workflows" / "ci.yml",
+                "name: ci\njobs:\n  build:\n    steps:\n"
+                "      # We recommend ai-harness-doctor for doc hygiene.\n"
+                "      # - run: npx ai-harness-doctor drift . --strict\n"
+                "      #- run: npx ai-harness-doctor eval --score --fail-under 80\n"
+                "      - run: npm install -g ai-harness-doctor\n"
+                "      - run: echo ai-harness-doctor evaluates nothing here\n",
+            )
+            maturity = self.report(repo)["maturity"]
+            self.assertEqual(self.item(maturity, "M6")["status"], "absent")
+            self.assertEqual(self.item(maturity, "M8")["status"], "absent")
+
+    def test_provider_gate_files_match_cli_installer(self):
+        # GUARD_PROVIDER_GATE_FILES mirrors bin/cli.js's guard installer
+        # targets; this literal-sync test keeps the two lists in lockstep.
+        cli_text = (ROOT / "bin" / "cli.js").read_text(encoding="utf-8")
+        for rel in scan.GUARD_PROVIDER_GATE_FILES:
+            self.assertIn(rel, cli_text)
+
+    def test_draft_marker_constants_stay_aliased(self):
+        import canonicalize
+        import registry
+
+        self.assertEqual(registry.DRAFT_INFERRED_MARKER, "(inferred — confirm)")
+        self.assertEqual(registry.DRAFT_SUGGESTED_MARKER, "(suggested default)")
+        self.assertIs(canonicalize.INFERRED, registry.DRAFT_INFERRED_MARKER)
+        self.assertIs(canonicalize.SUGGESTED, registry.DRAFT_SUGGESTED_MARKER)
+
+    def test_advisory_items_never_gate_the_level(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "CLAUDE.md", "# Rules\n\nUse npm.\n")
+            _write(repo / ".pre-commit-config.yml", "repos:\n  - repo: ai-harness-doctor\n")
+            _write(repo / ".ai-harness-doctor" / "scan-baseline.json", '{"version": 1, "findings": []}')
+            _write(repo / ".github" / "workflows" / "harness-checkup.yml", "name: checkup\n")
+            _write(repo / ".mcp.json", json.dumps({"mcpServers": {"demo": {"command": "demo"}}}))
+            _write(
+                repo / ".claude" / "settings.json",
+                json.dumps({"permissions": {"allow": ["Bash(git status)"]}}),
+            )
+            maturity = self.report(repo)["maturity"]
+            statuses = {a["id"]: a["status"] for a in maturity["advisory"]}
+            self.assertEqual(
+                statuses, {"A1": "present", "A2": "present", "A3": "present", "A4": "present", "A5": "present"}
+            )
+            # A2's evidence names the file that actually matched (.yml here).
+            a2 = next(a for a in maturity["advisory"] if a["id"] == "A2")
+            self.assertEqual(a2["evidence"], ".pre-commit-config.yml")
+            # Every advisory signal is present, yet the level is still 1.
+            self.assertEqual(maturity["level"], 1)
+
+    def test_maturity_independent_of_baseline_suppression(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(repo / "CLAUDE.md", "# Full duplicate\n\n" + "Use npm.\n" * 60)
+            baseline = Path(td) / "baseline.json"
+            proc = self.scan(repo, "--write-baseline", str(baseline))
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = self.report(repo, "--baseline", str(baseline))
+            self.assertEqual(report["gaps"], [])  # G3 suppressed by baseline
+            m5 = self.item(report["maturity"], "M5")
+            self.assertEqual(m5["status"], "absent")  # ladder reads raw signals
+            self.assertEqual(report["maturity"]["level"], 1)
+
+    def test_min_maturity_gate_and_parsing(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)  # level 2
+            self.assertEqual(self.scan(repo, "--min-maturity", "2").returncode, 0)
+            self.assertEqual(self.scan(repo, "--min-maturity", "canonicalized").returncode, 0)
+            gated = self.scan(repo, "--min-maturity", "guarded")
+            self.assertEqual(gated.returncode, 5, gated.stderr)
+            self.assertEqual(self.scan(repo, "--min-maturity", "3").returncode, 5)
+            bad = self.scan(repo, "--min-maturity", "9")
+            self.assertEqual(bad.returncode, 2)
+            self.assertIn("level name", bad.stderr)
+
+    def test_min_maturity_gate_survives_no_maturity_suppression(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            proc = self.scan(repo, "--json", "--min-maturity", "guarded", "--no-maturity")
+            self.assertEqual(proc.returncode, 5)
+            self.assertNotIn("maturity", json.loads(proc.stdout))
+
+    def test_security_gate_takes_precedence_over_maturity(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            _write(
+                repo / ".claude" / "settings.json",
+                json.dumps({"permissions": {"defaultMode": "bypassPermissions"}}),
+            )
+            proc = self.scan(repo, "--fail-on-security", "--min-maturity", "4")
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+
+    def test_no_maturity_flag_drops_section(self):
+        report = json.loads(self.scan(FIXTURE, "--json").stdout)
+        self.assertIn("maturity", report)
+        stripped = json.loads(self.scan(FIXTURE, "--json", "--no-maturity").stdout)
+        self.assertNotIn("maturity", stripped)
+
+    def test_sarif_carries_no_maturity_results(self):
+        proc = self.scan(FIXTURE, "--sarif")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        sarif = json.loads(proc.stdout)
+        for run in sarif.get("runs", []):
+            for result in run.get("results", []):
+                self.assertFalse(str(result.get("ruleId", "")).startswith("maturity"))
+            for rule in run.get("tool", {}).get("driver", {}).get("rules", []):
+                self.assertFalse(str(rule.get("id", "")).startswith("maturity"))
+
+    def test_monorepo_packages_carry_no_ladder(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "package.json", json.dumps({"workspaces": ["packages/*"]}))
+            self.write_canonical(repo)
+            _write(repo / "packages" / "app" / "package.json", "{}")
+            _write(repo / "packages" / "app" / "AGENTS.md", "# Project overview\n\nApp.\n")
+            report = self.report(repo)
+            self.assertIn("maturity", report)
+            self.assertTrue(report.get("packages"))
+            for pkg in report["packages"]:
+                self.assertNotIn("maturity", pkg["report"])
+
+    def test_repos_file_table_and_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            low = Path(td) / "low"
+            _write(low / "CLAUDE.md", "# Rules\n\nUse npm.\n")
+            high = Path(td) / "high"
+            self.write_canonical(high)
+            repos_file = Path(td) / "repos.txt"
+            repos_file.write_text(f"{low}\n{high}\n", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--no-report-file"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("| Repo | Name | AGENTS.md | Maturity |", proc.stdout)
+            self.assertIn("| 1/4 |", proc.stdout)
+            self.assertIn("| 2/4 |", proc.stdout)
+            # --no-maturity hides the per-repo report section but the summary
+            # column stays populated, mirroring how --no-gaps keeps the Gaps
+            # column (both read pre-suppression row snapshots).
+            hidden = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCAN),
+                    "--repos-file",
+                    str(repos_file),
+                    "--no-maturity",
+                    "--no-report-file",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(hidden.returncode, 0, hidden.stderr)
+            self.assertIn("| 1/4 |", hidden.stdout)
+            self.assertIn("| 2/4 |", hidden.stdout)
+            gated = subprocess.run(
+                [sys.executable, str(SCAN), "--repos-file", str(repos_file), "--min-maturity", "2"],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(gated.returncode, 5, gated.stderr)
+
+    def test_markdown_render_shows_ladder_and_disclaimer(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            self.write_canonical(repo)
+            proc = self.scan(repo, "--no-report-file")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("## Harness maturity", proc.stdout)
+            self.assertIn("**Level 2 of 4 — Canonicalized.**", proc.stdout)
+            self.assertIn("### Next: Level 3 — Guarded", proc.stdout)
+            self.assertIn("Advisory (stack-dependent", proc.stdout)
+            self.assertIn("never change the default exit code", proc.stdout)
 
 
 if __name__ == "__main__":

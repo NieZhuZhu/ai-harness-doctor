@@ -53,6 +53,7 @@ Aucune de ces commandes ne modifie le dépôt audité.
 | Cohérence | Scripts absents, chemins déplacés, drift du gestionnaire/runtime, liens cassés, lockfiles concurrents et identifiants non-chemins — comme des règles lint ou refs de branche libellées — sans faux positifs. |
 | Qualité des instructions | Contexte excessif, copie du README, arbitrage silencieux, chevauchements et conflits locaux. |
 | Scope | Héritage jusqu’au `AGENTS.md` le plus proche et globs bornés de Claude, Cursor et Copilot. |
+| Maturité | Le niveau de l’échelle du dépôt — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — plus ce qu’exige le niveau suivant et la commande qui l’installe. |
 | Efficacité | Exactitude avant/après, stabilité, latence, coût, fraîcheur des preuves et note de santé. |
 
 Les lectures de sécurité restent dans le dépôt. Les gros fichiers conservent une couverture complète de SHA-256, lignes, secrets et bypass ; `--max-bytes` ne limite que l’analyse sémantique.

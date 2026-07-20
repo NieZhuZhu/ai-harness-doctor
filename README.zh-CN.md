@@ -53,6 +53,7 @@ npx ai-harness-doctor --version
 | 一致性 | 缺失脚本、移动路径、包管理器漂移、运行时版本漂移、坏链接、多套 lockfile，以及带标签的 lint rule 或 branch ref 等安全排除误报的非路径标识符。 |
 | 指令质量 | 上下文过大、照搬 README、静默裁决、重复内容和同作用域冲突。 |
 | 作用域 | 从根到最近 `AGENTS.md` 的继承，以及有边界的 Claude、Cursor、Copilot glob 适用性。 |
+| 成熟度 | 仓库所处的阶梯等级——Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced——以及升到下一级还缺什么、用哪个命令补齐。 |
 | 效果 | 前后正确率、稳定性、延迟、成本、证据新鲜度和健康等级。 |
 
 安全读取不会越出被审计仓库。超大文件仍会完整计算 SHA-256、行数、secret 和权限绕过；`--max-bytes` 只限制语义分析。
