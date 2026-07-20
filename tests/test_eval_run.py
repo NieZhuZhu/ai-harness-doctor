@@ -3910,8 +3910,27 @@ class GenerateTasksTests(unittest.TestCase):
             self.assertTrue(eval_run.regex_passes(by_id["go-version"]["check"]["value"], "1.22"))
             self.assertTrue(eval_run.regex_passes(by_id["go-module"]["check"]["value"], "github.com/acme/widget"))
             self.assertFalse(eval_run.regex_passes(by_id["install"]["check"]["value"], "npm install"))
+            self.assertIn("Which code formatter does this repo use?", by_id["formatter"]["prompt"])
+            self.assertNotIn("formatter/linter", by_id["formatter"]["prompt"])
             for t in tasks:
                 self.assertEqual(t["check"]["type"], "regex")
+
+    def test_generate_tasks_accepts_npm_ci_install_command(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = self._make_repo(td)
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"test": "node --test"}}),
+                encoding="utf-8",
+            )
+            (repo / "pnpm-lock.yaml").unlink()
+            (repo / "package-lock.json").write_text('{"lockfileVersion": 3}\n', encoding="utf-8")
+
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+
+            install_pattern = by_id["install"]["check"]["value"]
+            self.assertTrue(eval_run.regex_passes(install_pattern, "npm ci --ignore-scripts"))
+            self.assertTrue(eval_run.regex_passes(install_pattern, "npm install"))
+            self.assertFalse(eval_run.regex_passes(install_pattern, "pnpm install"))
 
     def test_generate_cli_writes_file(self):
         with tempfile.TemporaryDirectory() as td:
