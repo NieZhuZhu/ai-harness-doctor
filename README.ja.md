@@ -53,6 +53,7 @@ npx ai-harness-doctor --version
 | Consistency | 存在しない script、移動済み path、package manager/runtime drift、broken links、競合 lockfiles、および labeled lint rule や branch ref など誤検知を安全に避ける non-path identifier。 |
 | Instruction quality | 大きすぎる context、README の丸ごとコピー、silent adjudication、overlap、same-scope conflict。 |
 | Scope | root から最寄り `AGENTS.md` までの継承と、bounded な Claude/Cursor/Copilot glob applicability。 |
+| Maturity | リポジトリの ladder level — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — と、次の level に足りないもの、それを入れるコマンド。 |
 | Efficacy | Before/after correctness、stability、latency、cost、evidence freshness、health grade。 |
 
 Security read は監査対象リポジトリ内に限定されます。大きなファイルでも SHA-256、行数、secret、permission-bypass は全体を確認し、`--max-bytes` は semantic analysis だけを制限します。

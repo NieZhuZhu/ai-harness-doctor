@@ -53,6 +53,7 @@ Nothing above changes the audited repository.
 | Consistency | Missing scripts, moved paths, package-manager drift, runtime-version drift, broken links, competing lockfiles, and false-positive-safe non-path identifiers such as labeled lint rules or branch refs. |
 | Instruction quality | Oversized context, wholesale README copying, silent conflict adjudication, overlaps, and same-scope conflicts. |
 | Scope | Root-to-nearest `AGENTS.md` inheritance plus bounded Claude, Cursor, and Copilot glob applicability. |
+| Maturity | The repository's ladder level — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — plus what the next level requires and the command that installs it. |
 | Efficacy | Before/after task correctness, stability, latency, cost, evidence freshness, and health grade. |
 
 Security reads stay inside the audited repository. Oversized files still receive full-file SHA-256, line-count, secret, and permission-bypass coverage; `--max-bytes` limits semantic analysis only.

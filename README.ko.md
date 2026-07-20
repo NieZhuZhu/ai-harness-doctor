@@ -53,6 +53,7 @@ npx ai-harness-doctor --version
 | Consistency | 없는 script, 이동한 path, package manager/runtime drift, broken links, competing lockfiles, 그리고 labeled lint rule 또는 branch ref처럼 오탐을 안전하게 피하는 non-path identifier. |
 | Instruction quality | 과도한 context, README 전체 복사, silent adjudication, overlap, same-scope conflict. |
 | Scope | root부터 가장 가까운 `AGENTS.md`까지의 상속과 bounded Claude/Cursor/Copilot glob applicability. |
+| Maturity | 저장소의 ladder level — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — 및 다음 level에 부족한 항목과 이를 설치하는 command. |
 | Efficacy | Before/after 정확도, 안정성, latency, cost, evidence freshness, health grade. |
 
 보안 읽기는 감사 대상 저장소 안에만 머뭅니다. 큰 파일도 SHA-256, 줄 수, secret, permission-bypass를 전체 검사하며 `--max-bytes`는 semantic analysis만 제한합니다.
