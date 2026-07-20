@@ -829,10 +829,11 @@ def generate_tasks(repo_root, target=None):
             evidence=pm_evidence,
         )
         if pm in ("pnpm", "npm", "yarn", "bun"):
+            install_verbs = "install|i|add|ci" if pm == "npm" else "install|i|add"
             add(
                 "install",
                 "What is the exact command to install dependencies in this repo?",
-                r"(?i)\b" + re.escape(pm) + r"\s+(install|i|add)\b",
+                r"(?i)\b" + re.escape(pm) + r"\s+(" + install_verbs + r")\b",
                 evidence=pm_evidence,
             )
 
@@ -880,7 +881,7 @@ def generate_tasks(repo_root, target=None):
             if dep in deps:
                 add(
                     "formatter",
-                    "Which code formatter/linter does this repo use?",
+                    "Which code formatter does this repo use?",
                     r"(?i)" + re.escape(label),
                     evidence=package_evidence,
                 )
