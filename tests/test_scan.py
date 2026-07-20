@@ -950,6 +950,22 @@ class ApplicabilityParserTests(unittest.TestCase):
         self.assertFalse(applicability.matches(result["patterns"], "scripts/x.py"))
         self.assertEqual(result["signal_text"].splitlines()[4], "Use npm.")
 
+    def test_cursor_inline_globs_sequence_is_path_scoped(self):
+        result = applicability.classify(
+            '---\nglobs: ["**/*.py", "**/pyproject.toml", "**/uv.lock"]\nalwaysApply: false\n---\nUse uv.\n',
+            "cursor-mdc",
+            ".cursor/rules/python.mdc",
+        )
+        self.assertEqual(result["mode"], "path")
+        self.assertEqual(
+            result["patterns"],
+            ["**/*.py", "**/pyproject.toml", "**/uv.lock"],
+        )
+        self.assertTrue(applicability.matches(result["patterns"], "tools/build.py"))
+        self.assertTrue(applicability.matches(result["patterns"], "pkg/pyproject.toml"))
+        self.assertFalse(applicability.matches(result["patterns"], "src/index.ts"))
+        self.assertEqual(result["signal_text"].splitlines()[4], "Use uv.")
+
     def test_nested_brace_expansion_is_bounded_and_deterministic(self):
         result = applicability.classify(
             "---\n"

@@ -161,7 +161,10 @@ def parse_frontmatter(text, format_kind, truncated=False):
             raise FrontmatterError(f"field `{key}` is unsupported")
         if key in metadata:
             raise FrontmatterError(f"field `{key}` is duplicated")
-        metadata[key] = _decode_scalar(raw, key)
+        if key in {"applyTo", "globs"} and raw.strip().startswith("["):
+            metadata[key] = _decode_inline_sequence(raw, key)
+        else:
+            metadata[key] = _decode_scalar(raw, key)
 
     body = list(lines)
     for index in range(closing + 1):
@@ -350,8 +353,9 @@ def _expand_braces(pattern, limit=64):
 def _patterns(value, field):
     if value is None:
         return []
+    values = value if isinstance(value, list) else _split_outside_braces(str(value))
     patterns = []
-    for item in _split_outside_braces(str(value)):
+    for item in values:
         validated = _validate_glob(item)
         patterns.extend(_validate_glob(value) for value in _expand_braces(validated))
     if not patterns:
