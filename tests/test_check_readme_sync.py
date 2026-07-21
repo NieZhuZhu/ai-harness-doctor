@@ -110,6 +110,18 @@ class CompareTests(unittest.TestCase):
         problems = sync.compare("README.md", REFERENCE, "README.zh-CN.md", drifted)
         self.assertTrue(any("target differs" in p for p in problems), problems)
 
+    def test_external_url_fragment_drift_is_caught(self):
+        doc = "# Title\n\nSee [setup](https://example.com/docs#setup).\n"
+        drifted = "# タイトル\n\n参照 [setup](https://example.com/docs#install).\n"
+        problems = sync.compare("README.md", doc, "README.ja.md", drifted)
+        self.assertTrue(any("target differs" in p for p in problems), problems)
+
+    def test_fixed_link_filter_count_mismatch_is_caught(self):
+        doc = "# Title\n\nSee [guide](docs/guide.md#setup).\n"
+        drifted = "# Title\n\nSee [guide](#setup).\n"
+        problems = sync.compare("README.md", doc, "README.ja.md", drifted)
+        self.assertTrue(any("fixed link targets" in p for p in problems), problems)
+
     def test_translated_anchor_target_is_allowed(self):
         # In-page anchors are slugs of translated headings, so they legitimately
         # differ per language and must NOT be flagged.

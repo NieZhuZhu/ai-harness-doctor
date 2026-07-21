@@ -603,10 +603,13 @@ class SharedConstantConsistencyTests(unittest.TestCase):
     def test_labeled_nonpath_identifiers_cover_shadcn_improve(self):
         cases = [
             "Run the `shadcn/improve` action after updating components.",
+            "Run the `shadcn/improve-style` actions after updating components.",
             "The `shadcn/ui` library owns these component primitives.",
+            "These `shadcn/ui` libraries own component primitives.",
             "Use the `import/order` eslint rule for sorted imports.",
             "Use the `perfectionist/sort-imports` eslint rule for sorted imports.",
             "Invoke the `agent/review` command from the tool palette.",
+            "Invoke the `agent/review` commands from the tool palette.",
         ]
         for text in cases:
             self.assertEqual(registry.declared_paths(text), [], text)
@@ -614,6 +617,8 @@ class SharedConstantConsistencyTests(unittest.TestCase):
 
         kept = {
             "Edit the action file `shadcn/improve` before release.": ["shadcn/improve"],
+            "Edit `BaseComponent/Component` file before release.": ["BaseComponent/Component"],
+            "Open `AppButton/Button` component before release.": ["AppButton/Button"],
             "The `ui/button` component should be used by forms.": ["ui/button"],
             "The package path `packages/app` is checked.": ["packages/app"],
             "The library source path `packages/ui` is checked.": ["packages/ui"],
