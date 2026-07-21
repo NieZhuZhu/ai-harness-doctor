@@ -330,6 +330,12 @@ SNAPSHOT_FILE_GROUPS = [
             "pyrightconfig.json",
         ],
     ),
+    (
+        "ui_framework",
+        [
+            "components.json",
+        ],
+    ),
 ]
 
 
