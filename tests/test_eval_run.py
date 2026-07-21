@@ -1961,6 +1961,14 @@ class HealthScoreTests(unittest.TestCase):
         self.assertEqual(health["total"], 4)
         self.assertEqual(health["score"], 75)
 
+    def test_compute_health_from_empty_task_set_is_unscored(self):
+        health = eval_run.compute_health({"tasks": []})
+        self.assertIsNone(health["score"])
+        self.assertEqual(health["grade"], "N/A")
+        self.assertEqual(health["total"], 0)
+        self.assertIsNone(health["pass_rate"])
+        self.assertTrue(health["insufficient_evidence"])
+
     def test_grade_boundaries(self):
         self.assertEqual(eval_run.health_grade(90), "A")
         self.assertEqual(eval_run.health_grade(89), "B")
