@@ -780,6 +780,52 @@ class PruneWalkDirsTests(unittest.TestCase):
             registry.prune_walk_dirs(str(root), dirnames)
             self.assertEqual(dirnames, ["kept"])
 
+    def test_multilanguage_suppressions_agree_across_both_engines(self):
+        # Plan 070 parity: every multi-language suppression class must yield
+        # the IDENTICAL missing-path set from the Phase-2 D2 gate and the
+        # Phase-0 semantic engine over one combined fixture — the TD-02/TD-03
+        # invariant the shared classifier and facts helpers exist to enforce.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "go.mod").write_text(
+                "module code.example.org/team/backend\n\nrequire (\n"
+                "\tgithub.com/Shopify/sarama v1.30.1\n"
+                "\tgo.uber.org/fx v1.20.1\n"
+                ")\n",
+                encoding="utf-8",
+            )
+            (root / "package.json").write_text(
+                '{"dependencies": {"next": "14.0.0"}}', encoding="utf-8"
+            )
+            (root / "backend" / "image").mkdir(parents=True)
+            (root / "backend" / "image" / "runtime.dockerfile").write_text(
+                "FROM scratch\n", encoding="utf-8"
+            )
+            text = (
+                "Kafka uses `Shopify/sarama`; DI is wired with `uber/fx`.\n"
+                "The `net/http` server is wrapped; use `next/link` to navigate.\n"
+                "The unit is `core/agent.Agent`; transport is `remote/RemoteBus`.\n"
+                "Difficulty is `low/medium/high`; scan `.ts/.tsx` files.\n"
+                "- 示例：`feat/agent_memory`、`fix/session_timeout`。\n"
+                f"Same design as `{root.name}/backend/image/runtime.dockerfile`.\n"
+                "Keep `Sources/App/Views` intact.\n"
+                "Knit `docs/report.Rmd` before release.\n"
+                "Edit `src/missing.ts` now.\n"
+            )
+            drift_missing = {
+                finding["message"].split("`")[1]
+                for finding in check_drift.d2_path_drift(root, text)
+            }
+            semantic_missing = {
+                finding["declared"]
+                for finding in semantic.compare_paths(root, text)
+            }
+            self.assertEqual(drift_missing, semantic_missing)
+            self.assertEqual(
+                drift_missing,
+                {"Sources/App/Views", "docs/report.Rmd", "src/missing.ts"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -131,21 +131,25 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
                 continue
             if directory is not None:
                 # `make -C DIR target` names DIR's Makefile, not the scope's.
-                # Resolve DIR against each fact-chain directory (containment-
-                # checked); validate against the first Makefile found, and
-                # abstain when none resolves.
-                directory_targets = None
-                for base in directories:
-                    candidate = facts.resolve_within_root(
-                        base / directory, containment_root, strict=False
+                # Resolve DIR against every fact-chain directory (containment-
+                # checked) and accept the target if ANY resolved Makefile
+                # defines it — mirroring the any-of semantics of target_sets
+                # below, so a nearer unrelated Makefile can never mask (or
+                # manufacture) drift. Abstain when no candidate resolves.
+                candidate_target_sets = [
+                    targets
+                    for base in directories
+                    if (
+                        candidate := facts.resolve_within_root(
+                            base / directory, containment_root, strict=False
+                        )
                     )
-                    if candidate is None:
-                        continue
-                    targets = make_targets(candidate)
-                    if targets is not None:
-                        directory_targets = targets
-                        break
-                if directory_targets is not None and name not in directory_targets:
+                    is not None
+                    and (targets := make_targets(candidate)) is not None
+                ]
+                if candidate_target_sets and not any(
+                    name in targets for targets in candidate_target_sets
+                ):
                     findings.append(_make_finding(lineno, name))
                 continue
             if target_sets and not any(name in targets for targets in target_sets):
@@ -595,9 +599,15 @@ def d7_markdown_link_drift(root, text, fallback_root=None):
             continue
         if in_fence:
             continue
-        code_spans = [
-            (span.start(), span.end()) for span in re.finditer(r"`[^`]+`", line)
-        ]
+        # An odd number of backticks means the left-to-right span pairing is
+        # unreliable (a stray backtick would pair across real content and
+        # swallow a genuine broken link after it), so fall back to probing the
+        # whole line — conservative toward drift detection.
+        code_spans = (
+            [(span.start(), span.end()) for span in re.finditer(r"`[^`]+`", line)]
+            if line.count("`") % 2 == 0
+            else []
+        )
         for m in _MD_LINK_RE.finditer(line):
             if any(start <= m.start() < end for start, end in code_spans):
                 continue

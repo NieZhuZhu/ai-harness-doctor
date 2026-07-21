@@ -236,13 +236,16 @@ _BRANCH_TYPE_PREFIXES = (
 _BRANCH_CONTEXT_RE = re.compile(
     r"\bbranch(?:es)?\b|\bcheckout\b|\bgit\s+switch\b|分支|检出", re.I
 )
-# An example cue at the head of the line ("示例：`feat/a`、`fix/b`、`chore/c`",
-# "Examples: `feat/x`"). Searched in the LINE PREFIX before the token rather
-# than the bounded window: the marker sits once at the list-item head while the
-# example tokens run past any fixed-width window. It counts as the weak second
-# signal ONLY for tokens that already carry a conventional branch-type prefix,
-# so "示例：`docs/setup`" stays a checked path (Plan 070).
+# An example cue before the token ("示例：`feat/a`、`fix/b`、`chore/c`",
+# "Examples: `feat/x`"). Searched in a WIDER window than the branch-word cue —
+# the marker sits once at the list-item head while later example tokens run
+# past the ±40-char window — but still bounded, so a cue in a distant clause
+# of a long line never leaks in. It counts as the weak second signal ONLY for
+# tokens that carry a conventional branch-type prefix AND no file extension:
+# "示例：`docs/setup`" (no branch prefix) and "e.g. `release/notes.md`" (an
+# extension — a file, not a branch) both stay checked paths (Plan 070).
 _BRANCH_EXAMPLE_CUE_RE = re.compile(r"\bexamples?\b|\be\.g\.|示例|例如", re.I)
+_BRANCH_EXAMPLE_WINDOW = 80
 # A STRONG equative branch cue directly names the token as a branch ("the
 # current branch is `X`", "on branch `X`", "branch named `X`"). Unlike the weak
 # cue above (a mere mention of "branch" on the line), this equates the token to
@@ -475,8 +478,10 @@ def _is_labeled_runtime_identifier(line, match):
 
 
 # Uppercase-start file extensions that DO appear in real repos; the dotted-
-# symbol rule must not eat them (`server.Dockerfile`).
-_UPPERCASE_FILE_EXTENSIONS = frozenset({"Dockerfile"})
+# symbol rule must not eat them (`server.Dockerfile`, R's `analysis.Rproj`).
+# Short mixed-case extensions (`.Rmd`) are excluded by the symbol rule's
+# minimum-length requirement instead.
+_UPPERCASE_FILE_EXTENSIONS = frozenset({"Dockerfile", "Rproj"})
 # An identifier segment of a value enum (`GetTools`, `errorType`, `Params`).
 _ENUM_IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 # GOOS / GOARCH values for the platform-pair rule (`linux/amd64`). Fixed lists;
@@ -494,17 +499,35 @@ _GOARCH_VALUES = frozenset(
 _VALUE_ENUM_WORDS = frozenset(
     {"low", "medium", "high", "true", "false", "yes", "no", "on", "off"}
 )
+# Conventional TitleCase directory names (Swift/iOS, .NET, Java trees). A
+# slash token containing one of these is a directory path, never a
+# method/field inventory, so the >=3-uppercase-start enum rule must not eat it
+# (`Sources/MyLib/Models`).
+_TITLECASE_DIR_WORDS = frozenset(
+    {"Sources", "Source", "Tests", "Test", "Models", "Views", "Controllers",
+     "ViewModels", "Assets", "Resources", "Packages", "Modules", "Components",
+     "Pages", "Docs", "Apps", "App", "Core", "Common", "Shared", "Lib", "Libs",
+     "Src", "Public", "Internal", "Images", "Icons", "Scripts", "Tools",
+     "Utils", "Helpers", "Services", "Features", "Screens", "Widgets"}
+)
 
 
 def _is_code_symbol_token(token):
     """True when the token's final dotted component is a code-symbol identifier
-    (`.Agent`, `.RDSConfig`, `.MustGetAgentRunEvents`), not a file extension."""
+    (`.Agent`, `.RDSConfig`, `.MustGetAgentRunEvents`), not a file extension.
+
+    Symbols are word-length identifiers (the shortest observed in the wild is
+    `Agent`), while real uppercase-start extensions are short (`.Rmd`) or on
+    the explicit denylist (`.Dockerfile`, `.Rproj`) — so a minimum length of
+    four keeps extension-bearing file paths checked.
+    """
     last_segment = token.rsplit("/", 1)[-1]
     if "." not in last_segment:
         return False
     final = last_segment.rsplit(".", 1)[1]
     return (
-        final not in _UPPERCASE_FILE_EXTENSIONS
+        len(final) >= 4
+        and final not in _UPPERCASE_FILE_EXTENSIONS
         and re.fullmatch(r"[A-Z][A-Za-z0-9_]*", final) is not None
         and any(ch.islower() for ch in final)
     )
@@ -533,34 +556,39 @@ def _is_slash_separated_value_list(token):
         return True
     if not all(_ENUM_IDENTIFIER_RE.fullmatch(segment) for segment in segments):
         return False
-    # Camel-case identifier list: a MAJORITY of segments carry an internal
-    # uppercase letter alongside a lowercase one (`errorType/reason/botType`,
-    # `defaultAssistantSubagentMaxSteps/MaxFailures`) — a shape directory names
-    # essentially never take in the majority. A single camel-case component
-    # (`src/MyComponent`, `components/DatePicker`) stays a path candidate.
-    compound = sum(
-        1
+    is_compound = [
+        any(ch.isupper() for ch in segment[1:]) and any(ch.islower() for ch in segment)
         for segment in segments
-        if any(ch.isupper() for ch in segment[1:]) and any(ch.islower() for ch in segment)
-    )
-    if compound * 2 > len(segments):
+    ]
+    # Camel-case identifier list: the FIRST segment and a MAJORITY of segments
+    # carry an internal uppercase letter alongside a lowercase one
+    # (`errorType/reason/botType`, `defaultAssistantSubagentMaxSteps/
+    # MaxFailures`). Requiring the first segment to be compound keeps
+    # dir-rooted paths whose first segment is a plain word checked
+    # (`services/apiClient/httpClient`, `src/MyComponent`).
+    if is_compound[0] and sum(is_compound) * 2 > len(segments):
         return True
-    # Method/field inventory: three or more segments ALL starting uppercase
-    # (`GetTools/Compose/Run`, `Host/Port/User/Password/DBName/Params`).
-    # Two-segment TitleCase dir conventions (`Sources/App`) stay paths.
-    if len(segments) >= 3 and all(segment[0].isupper() for segment in segments):
-        return True
-    # Variant pair whose names contain each other, case-folded
-    # (`Register/Unregister`: "register" ⊂ "unregister").
+    # Method/field inventory: three or more segments ALL starting uppercase,
+    # at least one compound, and none being a conventional TitleCase directory
+    # word (`GetTools/Compose/Run`, `Host/Port/User/Password/DBName/Params`).
+    # TitleCase directory trees — `Sources/App/Views`, `Assets/Images/Icons`
+    # (no compound segment), `Sources/MyLib/Models` (directory word) — stay
+    # path candidates.
     if (
-        len(segments) == 2
+        len(segments) >= 3
         and all(segment[0].isupper() for segment in segments)
-        and (
-            segments[0].lower() in segments[1].lower()
-            or segments[1].lower() in segments[0].lower()
-        )
+        and any(is_compound)
+        and not any(segment in _TITLECASE_DIR_WORDS for segment in segments)
     ):
         return True
+    # Variant pair: one name is a case-folded SUFFIX of the other
+    # (`Register/Unregister`). Prefix containment is deliberately excluded —
+    # `Modal/ModalHeader` is the ubiquitous parent/child component-folder
+    # convention, not a variant pair.
+    if len(segments) == 2 and all(segment[0].isupper() for segment in segments):
+        first, second = segments[0].lower(), segments[1].lower()
+        if first != second and (second.endswith(first) or first.endswith(second)):
+            return True
     return False
 
 
@@ -592,14 +620,19 @@ def _is_labeled_branch_ref(line, match):
     if _STRONG_BRANCH_CUE_RE.search(window):
         return True
     # Otherwise require both signals: a branch-type prefix AND a weaker cue —
-    # either a branch word in the bounded window, or an example marker anywhere
-    # in the line prefix ("示例：`feat/a`、`fix/b`、`chore/c`" runs its later
-    # tokens past any fixed-width window; the marker sits once at the head).
+    # either a branch word in the bounded window, or an example marker in a
+    # wider (but still bounded) window before the token. The example cue never
+    # applies to an extension-bearing token: `release/notes.md` is a file that
+    # happens to share a branch-prefix word, exactly the case the prefix list
+    # comment above promises to keep checked.
     if not token.startswith(_BRANCH_TYPE_PREFIXES):
         return False
-    return bool(
-        _BRANCH_CONTEXT_RE.search(window)
-        or _BRANCH_EXAMPLE_CUE_RE.search(line[: match.start()])
+    if _BRANCH_CONTEXT_RE.search(window):
+        return True
+    return "." not in token.rsplit("/", 1)[-1] and bool(
+        _BRANCH_EXAMPLE_CUE_RE.search(
+            line[max(0, match.start() - _BRANCH_EXAMPLE_WINDOW): match.start()]
+        )
     )
 
 

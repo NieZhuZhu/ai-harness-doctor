@@ -1927,6 +1927,46 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
             text = "```bash\nmake -C sub init \\\n  ARG=1\n```\n"
             self.assertEqual(check_drift.d1_command_drift(root, text), [])
 
+    def test_make_long_jobs_option_does_not_swallow_the_target(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Makefile").write_text("build:\n\techo ok\n", encoding="utf-8")
+            text = (
+                "Run `make --jobs 4 build` for speed.\n"
+                "Run `make --jobs build` too.\n"
+                "Run `make --jobs gone` to see drift.\n"
+            )
+            messages = [f["message"] for f in check_drift.d1_command_drift(root, text)]
+            # GNU optional-argument long options bind only in the `=` form: a
+            # following bare number is the intended jobs count, but a bare
+            # WORD is the goal — it must be validated, never swallowed.
+            self.assertEqual(messages, ["Unknown Makefile target `gone`"])
+
+    def test_make_dash_c_accepts_target_from_any_fact_chain_candidate(self):
+        # Nested scope: `make -C sub deploy` where the nearer `sub/Makefile`
+        # lacks the target but the repository-root `sub/Makefile` defines it.
+        # Any-of semantics accept it (mirroring target_sets); only a target in
+        # NO candidate Makefile is drift.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            (repo / "sub").mkdir()
+            (repo / "sub" / "Makefile").write_text("deploy:\n\techo ok\n", encoding="utf-8")
+            nested = repo / "deploy"
+            (nested / "sub").mkdir(parents=True)
+            (nested / "sub" / "Makefile").write_text("other:\n\techo ok\n", encoding="utf-8")
+            (nested / "AGENTS.md").write_text(
+                "Run `make -C sub deploy` first.\nRun `make -C sub nowhere` next.\n",
+                encoding="utf-8",
+            )
+            report = check_drift.run_checks(repo, 32768)
+            messages = [
+                f["message"]
+                for f in report["findings"]
+                if f["check"] == "D1" and f.get("path") == "deploy/AGENTS.md"
+            ]
+            self.assertEqual(messages, ["Unknown Makefile target `nowhere`"])
+
     # --- G: markdown links inside code (D7) ----------------------------
 
     def test_d7_ignores_bracket_calls_in_fenced_code(self):
@@ -1955,6 +1995,17 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
             text = "The conv[v](run, err) helper pattern.\n"
             self.assertEqual(check_drift.d7_markdown_link_drift(root, text), [])
 
+    def test_d7_odd_backtick_line_still_probes_a_real_broken_link(self):
+        # A stray unpaired backtick earlier on the line would make span
+        # pairing swallow the genuine link after it; odd-count lines fall
+        # back to probing everything.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "A stray ` here, then [runbook](docs/gone.md) after it.\n"
+            findings = check_drift.d7_markdown_link_drift(root, text)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("docs/gone.md", findings[0]["message"])
+
     # --- A: branch examples with CJK / example cues (D2) ---------------
 
     def test_branch_examples_after_cjk_example_cue_are_not_paths(self):
@@ -1963,11 +2014,19 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
             text = (
                 "- 示例：`feat/agent_memory`、`fix/session_timeout`、`chore/upgrade_go`。\n"
                 "- 示例：`docs/setup`。\n"
+                "- 示例：`fix/notes.md`。\n"
+                "See the release notes, e.g. `release/notes.md`, for details.\n"
                 "在 `feat/login` 分支上开发。\n"
                 "Examples: `feature/add_login`.\n"
             )
-            # Only the example WITHOUT a branch-type prefix stays a checked path.
-            self.assertEqual(self._missing_paths(root, text), {"docs/setup"})
+            # The example cue only suppresses extension-free branch-prefixed
+            # tokens: an example WITHOUT a branch-type prefix and any
+            # extension-bearing token (a file that shares a branch-prefix
+            # word, like `release/notes.md`) stay checked paths.
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {"docs/setup", "fix/notes.md", "release/notes.md"},
+            )
 
     # --- B: Go / npm import paths (D2) ---------------------------------
 
@@ -2027,6 +2086,35 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
             text = "Use `next/link` for internal navigation.\n"
             self.assertEqual(self._missing_paths(root, text), {"next/link"})
 
+    def test_locally_anchored_token_stays_checked_despite_dependency_name(self):
+        # A dependency named like a real local directory (`config` is both a
+        # popular npm package and a ubiquitous dir name) must not swallow a
+        # missing file under that directory.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "config").mkdir()
+            (root / "package.json").write_text(
+                json.dumps({"dependencies": {"config": "3.0.0", "next": "14.0.0"}}),
+                encoding="utf-8",
+            )
+            text = (
+                "Read `config/settings.ts` at boot.\n"
+                "Use `next/link` for navigation.\n"
+            )
+            self.assertEqual(self._missing_paths(root, text), {"config/settings.ts"})
+
+    def test_go_stdlib_matching_is_exact_not_first_segment(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "go.mod").write_text("module example.com/m\n", encoding="utf-8")
+            text = (
+                "The `net/http` server is wrapped.\n"
+                "Rotation config lives in `os/config` and `log/rotate`.\n"
+            )
+            # `net/http` is a real stdlib package; `os/config`/`log/rotate`
+            # merely share a stdlib first segment and stay checked.
+            self.assertEqual(self._missing_paths(root, text), {"os/config", "log/rotate"})
+
     # --- C: code symbols (D2) ------------------------------------------
 
     def test_dotted_code_symbols_are_not_paths(self):
@@ -2039,12 +2127,20 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
                 "Add `Tests/Missing.swift` for coverage.\n"
                 "Build from `docker/missing.Dockerfile` instead.\n"
                 "See `docs/README.MD` for details.\n"
+                "Knit `docs/report.Rmd` before release.\n"
             )
             # Uppercase-start final components with a lowercase letter are
-            # symbols; real extensions (lowercase, all-caps, Dockerfile) stay.
+            # symbols; real extensions stay — lowercase, all-caps, the
+            # uppercase denylist (Dockerfile/Rproj), and short mixed-case
+            # extensions like `.Rmd` (below the symbol minimum length).
             self.assertEqual(
                 self._missing_paths(root, text),
-                {"Tests/Missing.swift", "docker/missing.Dockerfile", "docs/README.MD"},
+                {
+                    "Tests/Missing.swift",
+                    "docker/missing.Dockerfile",
+                    "docs/README.MD",
+                    "docs/report.Rmd",
+                },
             )
 
     def test_dotless_exported_symbol_requires_go_context(self):
@@ -2072,13 +2168,29 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
                 "Branches only set `errorType/reason/botType`.\n"
                 "Reuse `Host/Port/User/Password/DBName/Params` fields.\n"
                 "Keep `Sources/App` intact.\n"
+                "Keep `Sources/App/Views` intact.\n"
+                "Keep `Sources/MyLib/Models` intact.\n"
+                "Keep `Assets/Images/Icons` intact.\n"
                 "Keep `src/Components` intact.\n"
+                "Keep `services/apiClient/httpClient` intact.\n"
+                "Keep `Modal/ModalHeader` intact.\n"
                 "Aggregates fill `domain/intent/sub_intent` directly.\n"
             )
-            # TitleCase/camel-case dir shapes and lowercase tuples stay checked.
+            # TitleCase directory trees (2- AND 3-segment, with or without a
+            # camel-case component), dir-rooted camelCase paths, parent/child
+            # component folders, and lowercase tuples all stay checked.
             self.assertEqual(
                 self._missing_paths(root, text),
-                {"Sources/App", "src/Components", "domain/intent/sub_intent"},
+                {
+                    "Sources/App",
+                    "Sources/App/Views",
+                    "Sources/MyLib/Models",
+                    "Assets/Images/Icons",
+                    "src/Components",
+                    "services/apiClient/httpClient",
+                    "Modal/ModalHeader",
+                    "domain/intent/sub_intent",
+                },
             )
 
     # --- F: unique cross-subtree references from nested scopes (D2) ----
@@ -2109,6 +2221,31 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
             # The unique suffix resolves cross-subtree; the ambiguous one
             # (two dal/po sources) stays a finding.
             self.assertEqual(nested_missing, {"dal/po"})
+
+    def test_nested_locally_anchored_token_stays_drift_despite_unique_suffix(self):
+        # The doc sits beside its own `cmd/` directory, so `cmd/enterprise`
+        # plainly means the local tree — the repository-wide unique match in
+        # another subtree must NOT resolve it.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            (repo / "backend" / "cmd" / "enterprise").mkdir(parents=True)
+            (repo / "backend" / "cmd" / "enterprise" / "main.go").write_text(
+                "package main\n", encoding="utf-8"
+            )
+            nested = repo / "deploy" / "harness"
+            (nested / "cmd").mkdir(parents=True)
+            (nested / "AGENTS.md").write_text(
+                "- `cmd/enterprise` must not import port internals.\n",
+                encoding="utf-8",
+            )
+            report = check_drift.run_checks(repo, 32768)
+            nested_missing = {
+                f["message"].split("`")[1]
+                for f in report["findings"]
+                if f["check"] == "D2" and f.get("path") == "deploy/harness/AGENTS.md"
+            }
+            self.assertEqual(nested_missing, {"cmd/enterprise"})
 
     # --- Baseline: suppressed findings become prunable resolved debt ----
 
@@ -2146,10 +2283,41 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
             text = (
                 f"- Same design as `{root.name}/backend/image/runtime.dockerfile`.\n"
                 f"- See `{root.name}/backend/image/gone.dockerfile` too.\n"
+                f"- A `{root.name}/present.txt` two-segment token stays checked.\n"
+            )
+            (root / "present.txt").write_text("x\n", encoding="utf-8")
+            # A missing remainder and a two-segment token (an ordinary repo
+            # path shape) both stay findings.
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {
+                    f"{root.name}/backend/image/gone.dockerfile",
+                    f"{root.name}/present.txt",
+                },
+            )
+
+    def test_repository_name_comes_from_git_remote_when_available(self):
+        # With a readable .git/config, remote URL basenames are the repo's
+        # identity; the ambient checkout directory name (a Docker mount like
+        # /app) is no longer trusted as a strippable prefix.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / ".git").mkdir()
+            (root / ".git" / "config").write_text(
+                '[remote "origin"]\n\turl = git@example.com:devgpt/kiwis.git\n',
+                encoding="utf-8",
+            )
+            (root / "backend" / "image").mkdir(parents=True)
+            (root / "backend" / "image" / "runtime.dockerfile").write_text(
+                "FROM scratch\n", encoding="utf-8"
+            )
+            text = (
+                "- Same design as `kiwis/backend/image/runtime.dockerfile`.\n"
+                f"- The `{root.name}/backend/image/runtime.dockerfile` form is not the repo name.\n"
             )
             self.assertEqual(
                 self._missing_paths(root, text),
-                {f"{root.name}/backend/image/gone.dockerfile"},
+                {f"{root.name}/backend/image/runtime.dockerfile"},
             )
 
 

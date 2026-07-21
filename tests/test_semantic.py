@@ -1285,6 +1285,18 @@ class MultiLanguageFalsePositiveParityTests(unittest.TestCase):
                 {f"{root.name}/backend/image/gone.dockerfile"},
             )
 
+    def test_make_dash_c_uses_fact_chain_for_nested_scopes(self):
+        # Mirrors d1_command_drift: DIR resolves against every fact-chain
+        # ancestor (nearest scope through repository root), any-of semantics.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            write(td, "sub/Makefile", "deploy:\n\techo ok\n")
+            nested = repo / "packages" / "app"
+            nested.mkdir(parents=True)
+            text = "Run `make -C sub deploy`.\nRun `make -C sub gone`.\n"
+            findings = semantic.compare_commands(nested, text, repository_root=repo)
+            self.assertEqual([f["declared"] for f in findings], ["make gone"])
+
     def test_nested_scope_unique_cross_subtree_reference_resolves(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)

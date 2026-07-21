@@ -775,17 +775,45 @@ def is_eslint_rule_identifier(root, token):
 # Found auditing a production Go+JS+Swift monorepo whose AGENTS.md files
 # produced ~50 such false "path does not exist" findings (Plan 070).
 
-# Go standard-library top-level packages (`net/http`, `encoding/json`). Fixed
-# list; extend only with observed-in-the-wild evidence.
-_GO_STDLIB_TOPLEVEL = frozenset(
+# Go standard-library MULTI-SEGMENT package paths, exact. A first-segment-only
+# heuristic misclassified ordinary local directory names (`os/config`,
+# `log/rotate`) as stdlib imports, eating genuine missing-path drift; exact
+# membership cannot. Single-segment stdlib names (`fmt`, `errors`) never reach
+# the path classifier as slash tokens, so only multi-segment paths are listed.
+_GO_STDLIB_PACKAGES = frozenset(
     {
-        "archive", "bufio", "builtin", "bytes", "cmp", "compress", "container",
-        "context", "crypto", "database", "debug", "embed", "encoding", "errors",
-        "expvar", "flag", "fmt", "go", "hash", "html", "image", "index", "io",
-        "iter", "log", "maps", "math", "mime", "net", "os", "path", "plugin",
-        "reflect", "regexp", "runtime", "slices", "sort", "strconv", "strings",
-        "structs", "sync", "syscall", "testing", "text", "time", "unicode",
-        "unsafe", "unique", "weak",
+        "archive/tar", "archive/zip", "compress/bzip2", "compress/flate",
+        "compress/gzip", "compress/lzw", "compress/zlib", "container/heap",
+        "container/list", "container/ring", "crypto/aes", "crypto/cipher",
+        "crypto/des", "crypto/dsa", "crypto/ecdh", "crypto/ecdsa",
+        "crypto/ed25519", "crypto/elliptic", "crypto/hmac", "crypto/md5",
+        "crypto/rand", "crypto/rc4", "crypto/rsa", "crypto/sha1",
+        "crypto/sha256", "crypto/sha512", "crypto/subtle", "crypto/tls",
+        "crypto/x509", "crypto/x509/pkix", "database/sql",
+        "database/sql/driver", "debug/buildinfo", "debug/dwarf", "debug/elf",
+        "debug/gosym", "debug/macho", "debug/pe", "debug/plan9obj",
+        "encoding/ascii85", "encoding/asn1", "encoding/base32",
+        "encoding/base64", "encoding/binary", "encoding/csv", "encoding/gob",
+        "encoding/hex", "encoding/json", "encoding/pem", "encoding/xml",
+        "go/ast", "go/build", "go/build/constraint", "go/constant", "go/doc",
+        "go/doc/comment", "go/format", "go/importer", "go/parser",
+        "go/printer", "go/scanner", "go/token", "go/types", "go/version",
+        "hash/adler32", "hash/crc32", "hash/crc64", "hash/fnv",
+        "hash/maphash", "html/template", "image/color", "image/color/palette",
+        "image/draw", "image/gif", "image/jpeg", "image/png",
+        "index/suffixarray", "io/fs", "io/ioutil", "log/slog", "log/syslog",
+        "math/big", "math/bits", "math/cmplx", "math/rand", "math/rand/v2",
+        "mime/multipart", "mime/quotedprintable", "net/http", "net/http/cgi",
+        "net/http/cookiejar", "net/http/fcgi", "net/http/httptest",
+        "net/http/httptrace", "net/http/httputil", "net/http/pprof",
+        "net/mail", "net/netip", "net/rpc", "net/rpc/jsonrpc", "net/smtp",
+        "net/textproto", "net/url", "os/exec", "os/signal", "os/user",
+        "path/filepath", "regexp/syntax", "runtime/cgo", "runtime/coverage",
+        "runtime/debug", "runtime/metrics", "runtime/pprof", "runtime/race",
+        "runtime/trace", "sync/atomic", "testing/fstest", "testing/iotest",
+        "testing/quick", "testing/slogtest", "text/scanner", "text/tabwriter",
+        "text/template", "text/template/parse", "time/tzdata",
+        "unicode/utf16", "unicode/utf8",
     }
 )
 
@@ -840,8 +868,18 @@ def go_import_suffixes(root, directories):
             host_labels = host.split(".")
             if len(host_labels) >= 2 and host_labels[-2]:
                 chain = [host_labels[-2]] + chain
-            for start in range(len(chain) - 1):
-                suffixes.add("/".join(chain[start:]))
+            # Only the shapes docs actually abbreviate to: the SLD-prefixed
+            # form (`uber/fx`), the org-rooted form (`Shopify/sarama`,
+            # `gopkg/logs`), and the repo-plus-major form for /vN modules
+            # (`rocketmq-client-go/v2`). Arbitrary deeper tail windows are
+            # deliberately NOT recorded — they collide with generic local
+            # paths and would eat genuine drift.
+            if len(chain) >= 2:
+                suffixes.add("/".join(chain))
+            if len(chain) >= 3:
+                suffixes.add("/".join(chain[1:]))
+            if len(chain) >= 2 and re.fullmatch(r"v\d+", chain[-1]):
+                suffixes.add("/".join(chain[-2:]))
     return frozenset(suffixes)
 
 
@@ -853,24 +891,24 @@ def _token_matches_go_import(token, suffixes):
 
 
 def _is_go_stdlib_import(token):
-    parts = token.split("/")
-    return (
-        len(parts) >= 2
-        and parts[0] in _GO_STDLIB_TOPLEVEL
-        and all(re.fullmatch(r"[a-z][a-z0-9]*", part) for part in parts)
-    )
+    return token in _GO_STDLIB_PACKAGES
 
 
 def _is_go_exported_symbol(token):
-    # `remote/RemoteBus`: a dotless final segment shaped like an exported Go
-    # identifier (uppercase start, some lowercase). All-caps segments (`docs/API`)
-    # stay path candidates.
-    last = token.rsplit("/", 1)[-1]
+    # `remote/RemoteBus`: lowercase Go-package-path segments ending in a
+    # COMPOUND exported identifier (internal uppercase — `RemoteBus`,
+    # `SessionService`). Plain TitleCase words (`Sources/App/Views`,
+    # `components/Button`) and all-caps segments (`docs/API`) are ordinary
+    # directory shapes and stay path candidates.
+    parts = token.split("/")
+    if len(parts) < 2 or "." in parts[-1]:
+        return False
+    last = parts[-1]
     return (
-        "/" in token
-        and "." not in last
+        all(re.fullmatch(r"[a-z][a-z0-9_]*", part) for part in parts[:-1])
         and re.fullmatch(r"[A-Z][A-Za-z0-9_]*", last) is not None
         and any(ch.islower() for ch in last)
+        and any(ch.isupper() for ch in last[1:])
     )
 
 
@@ -888,6 +926,8 @@ def non_path_reference_context(root, directories):
         if names:
             dependency_names.update(names)
     return {
+        "root": Path(root),
+        "directories": directories,
         "dependency_names": dependency_names,
         "go_suffixes": go_import_suffixes(root, directories),
         "has_go": any(
@@ -898,12 +938,28 @@ def non_path_reference_context(root, directories):
 
 def is_import_or_symbol_reference(token, context):
     """True when a missing backtick token is positively identified as a Go/npm
-    import path or a Go exported symbol rather than a repo-relative path."""
-    if "/" in token and token.split("/", 1)[0] in context["dependency_names"]:
-        return True
-    if context["go_suffixes"] and _token_matches_go_import(token, context["go_suffixes"]):
-        return True
-    if context["has_go"] and (_is_go_stdlib_import(token) or _is_go_exported_symbol(token)):
+    import path or a Go exported symbol rather than a repo-relative path.
+
+    Every import-shaped classification is additionally gated on the token
+    having NO local anchor: when the token's first segment exists as a
+    directory in the fact chain (a dependency named `config` beside a real
+    `config/` tree, a `docker/` dir beside a `docker/compose` import window),
+    the doc plausibly means that local tree, so the missing path stays a
+    finding. The exported-symbol shape needs no anchor gate — a CamelCase
+    dotless identifier is not a plausible file.
+    """
+    if "/" in token:
+        anchored = has_local_anchor(context["root"], context["directories"], token)
+        if not anchored:
+            if token.split("/", 1)[0] in context["dependency_names"]:
+                return True
+            if context["go_suffixes"] and _token_matches_go_import(
+                token, context["go_suffixes"]
+            ):
+                return True
+            if context["has_go"] and _is_go_stdlib_import(token):
+                return True
+    if context["has_go"] and _is_go_exported_symbol(token):
         return True
     return False
 
@@ -923,18 +979,43 @@ def has_local_anchor(root, directories, token):
     )
 
 
+def _repository_names(root):
+    """Candidate self-names of the repository: git remote URL basenames when a
+    readable ``.git/config`` declares any, else the checkout directory name.
+
+    The remote basename is the durable identity; the ambient checkout
+    directory name is only trusted as a fallback (CI checkouts conventionally
+    match the repo name, but a Docker mount like ``/app`` must not turn every
+    ``app/...`` token into a strippable prefix when the remotes say otherwise).
+    """
+    rootp = Path(root).resolve()
+    names = set()
+    config_text = read_text_within_root(rootp, rootp / ".git" / "config", errors="replace")
+    if config_text:
+        for m in re.finditer(r"(?m)^\s*url\s*=\s*(\S+)", config_text):
+            base = m.group(1).rstrip("/").rsplit("/", 1)[-1]
+            base = base.rsplit(":", 1)[-1]  # scp-like git@host:name.git
+            if base.endswith(".git"):
+                base = base[:-4]
+            if base:
+                names.add(base)
+    return names or {rootp.name}
+
+
 def strips_repository_name_prefix(root, token):
-    """True when ``token`` is the repository's own directory name plus a path
-    that exists under it.
+    """True when ``token`` is the repository's own name plus a multi-segment
+    path that exists under it.
 
     Deploy/Docker docs habitually spell repo paths from one level above the
     checkout (`kiwis/backend/agentsphere/image/runtime_general.dockerfile`
-    written inside the `kiwis` repo). Only the exact name match with an
-    existing remainder is suppressed; a missing remainder stays a finding.
+    written inside the `kiwis` repo). Only an exact self-name match with an
+    existing multi-segment remainder is suppressed: a missing remainder stays
+    a finding, and a two-segment token (`app/page.tsx`) is never treated as
+    name-prefixed — that shape is an ordinary repo path.
     """
     rootp = Path(root).resolve()
     first, sep, rest = token.partition("/")
-    if not sep or not rest or first != rootp.name:
+    if not sep or "/" not in rest or first not in _repository_names(rootp):
         return False
     candidate = resolve_within_root(rootp / rest, rootp, strict=False)
     return candidate is not None and exists_within_root(rootp, candidate)
@@ -987,10 +1068,16 @@ _MAKE_KEYWORD_RE = re.compile(r"(?:^|[\s;&|(`])make\s")
 # misread as the target.
 _MAKE_SEPARATE_ARG_FLAGS = frozenset({"-f", "-I", "-o", "-W"})
 # Long options that consume a following separate token unless written ``=``-joined.
+# ``--jobs``/``--load-average``/``--max-load`` are NOT here: GNU getopt_long
+# optional arguments bind only in the ``=`` form, so in ``make --jobs build``
+# the word ``build`` is a goal, not the jobs count. Like ``-j``, a following
+# bare NUMBER is still consumed as the intended argument.
 _MAKE_LONG_ARG_OPTIONS = frozenset(
     {"--directory", "--file", "--makefile", "--include-dir", "--old-file",
-     "--assume-old", "--what-if", "--new-file", "--assume-new", "--jobs",
-     "--load-average", "--max-load"}
+     "--assume-old", "--what-if", "--new-file", "--assume-new"}
+)
+_MAKE_LONG_OPTIONAL_NUMERIC_OPTIONS = frozenset(
+    {"--jobs", "--load-average", "--max-load"}
 )
 _MAKE_TARGET_NAME_RE = re.compile(r"[A-Za-z0-9_.-]+")
 _MAKE_SHELL_TERMINATORS = frozenset({"&&", "||", ";", "|"})
@@ -1030,6 +1117,13 @@ def iter_make_invocations(segment):
                         directory = directory or tokens[i]
                         i += 1
                 elif not sep and base in _MAKE_LONG_ARG_OPTIONS and i < len(tokens):
+                    i += 1
+                elif (
+                    not sep
+                    and base in _MAKE_LONG_OPTIONAL_NUMERIC_OPTIONS
+                    and i < len(tokens)
+                    and tokens[i].isdigit()
+                ):
                     i += 1
                 continue
             if tok.startswith("-") and len(tok) > 1:

@@ -746,8 +746,25 @@ _within_root = facts.within_root
 # ---------------------------------------------------------------------------
 
 
-def compare_commands(root, text):
+def compare_commands(root, text, repository_root=None):
     findings = []
+    root = Path(root).resolve()
+    repository_root = (
+        Path(repository_root).resolve() if repository_root is not None else root
+    )
+    try:
+        root.relative_to(repository_root)
+    except ValueError:
+        repository_root = root
+    # Fact chain for `make -C DIR` resolution only — kept in lock-step with
+    # check_drift.d1_command_drift so both engines resolve the same DIR the
+    # same way (TD-02, Plan 070). Script/target/binary checks below keep their
+    # historical root-scoped behavior.
+    make_directories = (
+        facts.ancestor_dirs(root, repository_root)
+        if root != repository_root
+        else [root]
+    )
     scripts = package_scripts(root)
     # Lazily computed only on a potential root-level mismatch, so the common
     # case (root package.json already has the script) never pays for a repo
@@ -794,11 +811,24 @@ def compare_commands(root, text):
             directory = decl.get("directory")
             if directory is not None:
                 # `make -C DIR target` names DIR's Makefile, not this scope's.
-                # Validate against it when it resolves inside the scope;
-                # abstain otherwise (Plan 070).
-                candidate = facts.resolve_within_root(root / directory, root, strict=False)
-                directory_targets = make_targets(candidate) if candidate is not None else None
-                if directory_targets is not None and name not in directory_targets:
+                # Resolve DIR against every fact-chain directory and accept the
+                # target if ANY resolved Makefile defines it (any-of, mirroring
+                # d1_command_drift); abstain when none resolves (Plan 070).
+                candidate_target_sets = [
+                    directory_targets
+                    for base in make_directories
+                    if (
+                        candidate := facts.resolve_within_root(
+                            base / directory, repository_root, strict=False
+                        )
+                    )
+                    is not None
+                    and (directory_targets := make_targets(candidate)) is not None
+                ]
+                if candidate_target_sets and not any(
+                    name in directory_targets
+                    for directory_targets in candidate_target_sets
+                ):
                     findings.append(
                         _finding(
                             "command",
@@ -1143,7 +1173,7 @@ def analyze(root, text, repository_root=None):
     root = Path(root)
     findings = []
     if text:
-        findings.extend(compare_commands(root, text))
+        findings.extend(compare_commands(root, text, repository_root=repository_root))
         findings.extend(compare_paths(root, text, repository_root=repository_root))
         findings.extend(compare_package_manager(root, text))
         findings.extend(compare_node_version(root, text))
