@@ -705,11 +705,12 @@ def node_modules_bin_names(root):
         return None
 
 
-# Yarn and pnpm can execute a binary straight out of ``node_modules/.bin``
-# without an explicit ``run``/``exec`` token — e.g. `yarn vitest` and
-# `pnpm mastra dev`. npm has no such fallback (`npm vitest` is an unknown
-# command). Keep this fact shared by semantic.py and check_drift.py.
-_BIN_PASSTHROUGH_TOOLS = {"yarn", "pnpm"}
+# Yarn, pnpm, and Bun can execute a binary straight out of
+# ``node_modules/.bin`` without an explicit ``run``/``exec`` token — e.g.
+# `yarn vitest`, `pnpm mastra dev`, and `bun vitest`. npm has no such fallback
+# (`npm vitest` is an unknown command). Keep this fact shared by semantic.py and
+# check_drift.py.
+_BIN_PASSTHROUGH_TOOLS = {"yarn", "pnpm", "bun"}
 
 
 def is_node_bin_passthrough(root, tool, name):

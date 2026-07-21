@@ -85,6 +85,15 @@ class SemanticCommandTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
 
+    def test_bun_bin_passthrough_via_dependency_not_flagged(self):
+        # Bun, like Yarn and pnpm, can execute a dependency binary directly when
+        # no package script exists (`bun vitest`).
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}, "devDependencies": {"vitest": "^2.0.0"}}')
+            text = "Run `bun vitest` to test everything."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
     def test_bin_passthrough_does_not_apply_to_npm(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "package.json", '{"scripts": {}, "devDependencies": {"vitest": "^2.0.0"}}')

@@ -50,7 +50,7 @@ Ninguno de estos comandos modifica el repositorio auditado.
 |---|---|
 | Inventario | Archivos canónicos, reglas, scopes anidados, MCP, hooks, comandos, permisos y subagentes. |
 | Seguridad | Secretos en texto plano, permisos amplios, transportes MCP inseguros, hooks peligrosos y bypasses. |
-| Consistencia | Scripts ausentes, rutas movidas, drift de gestor o runtime, enlaces rotos, lockfiles rivales e identificadores que no son rutas —como reglas lint o refs de rama etiquetadas— sin falsos positivos. |
+| Consistencia | Scripts ausentes, binarios directos de dependencias, rutas movidas, drift de gestor o runtime, enlaces rotos, lockfiles rivales e identificadores que no son rutas —como reglas lint o refs de rama etiquetadas— sin falsos positivos. |
 | Calidad de instrucciones | Contexto excesivo, copias del README, decisiones silenciosas, solapamientos y conflictos locales. |
 | Scope | Herencia hasta el `AGENTS.md` más cercano y globs acotados de Claude, Cursor y Copilot. |
 | Madurez | El nivel de la escalera del repositorio —Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced— más lo que exige el siguiente nivel y el comando que lo instala. |
