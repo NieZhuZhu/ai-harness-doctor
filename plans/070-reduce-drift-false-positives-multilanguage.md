@@ -29,6 +29,49 @@
   `registry.declared_paths`
 - **Category**: correctness / false-positive reduction
 - **Planned at**: commit `e52d091`, 2026-07-21
+- **Status**: DONE — plan PR
+  [#304](https://github.com/NieZhuZhu/ai-harness-doctor/pull/304);
+  implementation PR
+  [#305](https://github.com/NieZhuZhu/ai-harness-doctor/pull/305), squash
+  merge `cac2e5c`; both passed all nine required contexts.
+
+## Implementation evidence
+
+- All eight false-positive classes ship with suppression tests and
+  true-positive twins in both engines: shared option-aware make parser
+  (`facts.iter_make_invocations`) with any-of `-C` resolution across the fact
+  chain in d1 AND `semantic.compare_commands` (new `repository_root`
+  parameter); code-aware D7 (fences, inline spans, comma targets,
+  odd-backtick fallback); text-only symbol/enum/branch-example rules in
+  `registry.declared_paths`; go.mod/npm/stdlib import awareness, exported-
+  symbol shape, repo-name-prefix stripping, and the uniqueness-plus-no-local-
+  anchor cross-subtree fallback in facts.py consumed by both engines.
+- Pre-PR adversarial review (4 lenses, 22 findings, every one confirmed by a
+  per-finding verification agent, every one fixed and test-pinned): TitleCase
+  directory-tree guards (`Sources/App/Views`, `Sources/MyLib/Models`,
+  `Assets/Images/Icons`), compound-first-segment camelCase guard
+  (`services/apiClient/httpClient`), suffix-only variant pairs
+  (`Modal/ModalHeader` stays), bounded extension-aware example cue
+  (`release/notes.md` stays), length-gated dotted symbols (`docs/report.Rmd`
+  stays), exact multi-segment Go stdlib set (`os/config` stays), restricted
+  go.mod suffix windows, local-anchor gating on every import-shaped
+  suppression (a `config` dependency beside a real `config/` tree stays),
+  git-remote-corroborated repo-name stripping with multi-segment remainder,
+  GNU-correct `--jobs` handling, compound-identifier exported-symbol shape,
+  and a cross-engine parity test in test_registry_consistency.
+- Audited-monorepo evidence: 135 findings → 38 (D1 20→5, D2 106→31,
+  D7 9→2), zero new findings, byte-identical before/after the review
+  tightenings. Every issue with a verifiably absent target retained; five
+  needs-confirmation entries resolved with their on-disk targets verified
+  (`frontend/common/git-hooks/pre-commit`,
+  `frontend/apps/agent/src/pages/assistant/index.tsx`,
+  `backend/.../larkbot_runtime/ppe_forward.go`,
+  `backend/.../byted/runtime/nexthandler/llm_resource_handler.go` — matched
+  by both the `nexthandler/...` and `runtime/nexthandler/...` references).
+  Phase-0 semantic on the same repo: 0 findings, scan exit 0.
+- Final gates: `npm run check` green end-to-end (ruff, readme-sync 7
+  aligned, adapters, Python 954/954, Node 51/51, package candidate); self
+  drift `--strict` 100/A; self scan exit 0.
 
 ## Why this matters
 
