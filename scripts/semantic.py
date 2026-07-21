@@ -165,8 +165,9 @@ _NODE_CMD_RE = re.compile(
     r"\b(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_][A-Za-z0-9:_-]*)\b"
     r"|\byarn\s+([A-Za-z0-9:_][A-Za-z0-9:_-]*)\b"
 )
-# Makefile target invocations: ``make X``.
-_MAKE_CMD_RE = re.compile(r"\bmake\s+([A-Za-z0-9_.-]+)\b")
+# Makefile target invocations are extracted by the shared option-aware parser
+# (facts.iter_make_invocations) so ``make -C deploy <target>`` never misreads
+# ``-C`` as the target and globs (``make ep-local-*``) abstain (Plan 070).
 # Rust binary invocations: ``cargo run|build|install ... --bin NAME``.
 _CARGO_BIN_RE = re.compile(r"\bcargo\s+(?:run|build|install)\b[^`\n]*?--bin[= ]\s*([A-Za-z0-9._-]+)")
 # Go package/file invocations that reference a filesystem path: ``go run|build|test|vet ./pkg`` or ``foo.go``.
@@ -203,15 +204,24 @@ def declared_commands(text):
             if key not in seen:
                 seen.add(key)
                 out.append({"kind": "node", "tool": tool, "name": name, "line": lineno})
-        for m in _MAKE_CMD_RE.finditer(token):
+        for invocation in facts.iter_make_invocations(token):
+            name, directory = invocation["name"], invocation["directory"]
             # A make "target" that is a bare English word ("make sure",
             # "make the ...") is prose, not a Makefile target (CORR-02).
-            if m.group(1) in _PROSE_TARGET_WORDS:
+            if directory is None and name in _PROSE_TARGET_WORDS:
                 continue
-            key = ("make", m.group(1), lineno)
+            key = ("make", name, directory, lineno)
             if key not in seen:
                 seen.add(key)
-                out.append({"kind": "make", "tool": "make", "name": m.group(1), "line": lineno})
+                out.append(
+                    {
+                        "kind": "make",
+                        "tool": "make",
+                        "name": name,
+                        "directory": directory,
+                        "line": lineno,
+                    }
+                )
         for m in _CARGO_BIN_RE.finditer(token):
             key = ("cargo_bin", m.group(1), lineno)
             if key not in seen:
@@ -736,8 +746,25 @@ _within_root = facts.within_root
 # ---------------------------------------------------------------------------
 
 
-def compare_commands(root, text):
+def compare_commands(root, text, repository_root=None):
     findings = []
+    root = Path(root).resolve()
+    repository_root = (
+        Path(repository_root).resolve() if repository_root is not None else root
+    )
+    try:
+        root.relative_to(repository_root)
+    except ValueError:
+        repository_root = root
+    # Fact chain for `make -C DIR` resolution only — kept in lock-step with
+    # check_drift.d1_command_drift so both engines resolve the same DIR the
+    # same way (TD-02, Plan 070). Script/target/binary checks below keep their
+    # historical root-scoped behavior.
+    make_directories = (
+        facts.ancestor_dirs(root, repository_root)
+        if root != repository_root
+        else [root]
+    )
     scripts = package_scripts(root)
     # Lazily computed only on a potential root-level mismatch, so the common
     # case (root package.json already has the script) never pays for a repo
@@ -781,6 +808,39 @@ def compare_commands(root, text):
                 )
         elif kind == "make":
             name = decl["name"]
+            directory = decl.get("directory")
+            if directory is not None:
+                # `make -C DIR target` names DIR's Makefile, not this scope's.
+                # Resolve DIR against every fact-chain directory and accept the
+                # target if ANY resolved Makefile defines it (any-of, mirroring
+                # d1_command_drift); abstain when none resolves (Plan 070).
+                candidate_target_sets = [
+                    directory_targets
+                    for base in make_directories
+                    if (
+                        candidate := facts.resolve_within_root(
+                            base / directory, repository_root, strict=False
+                        )
+                    )
+                    is not None
+                    and (directory_targets := make_targets(candidate)) is not None
+                ]
+                if candidate_target_sets and not any(
+                    name in directory_targets
+                    for directory_targets in candidate_target_sets
+                ):
+                    findings.append(
+                        _finding(
+                            "command",
+                            "MISMATCH",
+                            f"AGENTS.md references `make {name}` but the Makefile has no `{name}` target.",
+                            "Add the Makefile target or update AGENTS.md to a real target.",
+                            f"make {name}",
+                            "no such Makefile target",
+                            line,
+                        )
+                    )
+                continue
             if targets is not None and name not in targets:
                 findings.append(
                     _finding(
@@ -867,7 +927,9 @@ def compare_paths(root, text, repository_root=None):
     # compare_commands's all_scripts laziness so the common case (path
     # exists) never pays for a repo walk.
     package_names = "not computed"
+    non_path_context = None
     subtree_index = None
+    repository_index = None
     declarations = declared_paths(text)
     missing = []
     for decl in declarations:
@@ -891,6 +953,24 @@ def compare_paths(root, text, repository_root=None):
                 continue
             if facts.is_eslint_rule_identifier(root, token):
                 continue
+            # Go/npm import paths and Go exported symbols wear the same
+            # backtick-and-slash clothes as repo paths; classify them against
+            # the scope's own manifests (go.mod, package.json) before flagging
+            # — same rule as check_drift.d2_path_drift (TD-02/TD-03, Plan 070).
+            if non_path_context is None:
+                non_path_context = facts.non_path_reference_context(
+                    repository_root,
+                    facts.ancestor_dirs(root, repository_root)
+                    if root != repository_root
+                    else [root],
+                )
+            if facts.is_import_or_symbol_reference(token, non_path_context):
+                continue
+            # Deploy/Docker docs spell paths from one level above the checkout
+            # (`<repo-name>/backend/...`); strip the repository's own name when
+            # the remainder exists (Plan 070).
+            if facts.strips_repository_name_prefix(repository_root, token):
+                continue
             # A root AGENTS.md section scoped to a subdirectory (codex-rs's
             # Rust section, opencode's packages/opencode section) documents
             # paths relative to that subdir; resolve them against the subtree
@@ -900,6 +980,22 @@ def compare_paths(root, text, repository_root=None):
                 subtree_index = facts.build_subtree_path_index(root)
             if subtree_index is not None and facts.path_resolves_in_subtree(root, token, subtree_index):
                 continue
+            # One narrow exception to the sibling-package bound for nested
+            # scopes: a suffix with exactly ONE source in the whole repository
+            # AND no local anchor (its first segment exists under no fact-chain
+            # directory) is an unambiguous cross-subtree reference, not drift;
+            # ambiguous or locally anchored names stay findings (Plan 070).
+            if (
+                root != repository_root
+                and facts.is_subtree_path_candidate(token)
+                and not facts.has_local_anchor(
+                    repository_root, facts.ancestor_dirs(root, repository_root), token
+                )
+            ):
+                if repository_index is None:
+                    repository_index = facts.build_subtree_path_index(repository_root)
+                if repository_index.resolves_uniquely(repository_root, token):
+                    continue
             findings.append(
                 _finding(
                     "path",
@@ -1077,7 +1173,7 @@ def analyze(root, text, repository_root=None):
     root = Path(root)
     findings = []
     if text:
-        findings.extend(compare_commands(root, text))
+        findings.extend(compare_commands(root, text, repository_root=repository_root))
         findings.extend(compare_paths(root, text, repository_root=repository_root))
         findings.extend(compare_package_manager(root, text))
         findings.extend(compare_node_version(root, text))

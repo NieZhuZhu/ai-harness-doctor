@@ -1226,5 +1226,94 @@ class SemanticMultiEcosystemTests(unittest.TestCase):
             self.assertIn("rust_version", cats)
 
 
+class MultiLanguageFalsePositiveParityTests(unittest.TestCase):
+    """Plan 070: the Phase-0 engine applies the same multi-language
+    suppressions as the Phase-2 D2/D1 gates (TD-02/TD-03 parity)."""
+
+    def _missing_paths(self, root, text, repository_root=None):
+        return {
+            finding["declared"]
+            for finding in semantic.compare_paths(root, text, repository_root=repository_root)
+        }
+
+    def test_make_dash_c_validates_against_directory_makefile(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "Makefile", "build:\n\techo ok\n")
+            write(td, "sub/Makefile", "deploy:\n\techo ok\n")
+            text = (
+                "Run `make -C sub deploy` first.\n"
+                "Run `make -C sub gone` next.\n"
+                "Run `make -C absent whatever` too.\n"
+                "Run `make ep-local-*` locally.\n"
+                "Run `make build` last.\n"
+            )
+            findings = semantic.compare_commands(Path(td), text)
+            self.assertEqual([f["declared"] for f in findings], ["make gone"])
+
+    def test_import_symbol_and_enum_tokens_are_not_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(
+                td,
+                "go.mod",
+                "module code.example.org/team/backend\n\nrequire (\n"
+                "\tgithub.com/Shopify/sarama v1.30.1\n"
+                "\tgo.uber.org/fx v1.20.1\n"
+                ")\n",
+            )
+            write(td, "package.json", '{"dependencies": {"next": "14.0.0"}}')
+            text = (
+                "Kafka uses `Shopify/sarama`; DI is wired with `uber/fx`.\n"
+                "The `net/http` server is wrapped.\n"
+                "Use `next/link` for navigation.\n"
+                "The unit is `core/agent.Agent`; transport is `remote/RemoteBus`.\n"
+                "Difficulty is `low/medium/high`; scan `.ts/.tsx` files.\n"
+                "- 示例：`feat/agent_memory`、`fix/session_timeout`。\n"
+                "Edit `src/missing.ts` now.\n"
+            )
+            self.assertEqual(self._missing_paths(Path(td), text), {"src/missing.ts"})
+
+    def test_repository_name_prefix_is_stripped_when_remainder_exists(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(td, "backend/image/runtime.dockerfile", "FROM scratch\n")
+            text = (
+                f"- Same design as `{root.name}/backend/image/runtime.dockerfile`.\n"
+                f"- See `{root.name}/backend/image/gone.dockerfile` too.\n"
+            )
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {f"{root.name}/backend/image/gone.dockerfile"},
+            )
+
+    def test_make_dash_c_uses_fact_chain_for_nested_scopes(self):
+        # Mirrors d1_command_drift: DIR resolves against every fact-chain
+        # ancestor (nearest scope through repository root), any-of semantics.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            write(td, "sub/Makefile", "deploy:\n\techo ok\n")
+            nested = repo / "packages" / "app"
+            nested.mkdir(parents=True)
+            text = "Run `make -C sub deploy`.\nRun `make -C sub gone`.\n"
+            findings = semantic.compare_commands(nested, text, repository_root=repo)
+            self.assertEqual([f["declared"] for f in findings], ["make gone"])
+
+    def test_nested_scope_unique_cross_subtree_reference_resolves(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            write(td, "backend/agentsphere/cmd/enterprise/main.go", "package main\n")
+            write(td, "packages/a/dal/po/keep.go", "package po\n")
+            write(td, "packages/b/dal/po/keep.go", "package po\n")
+            nested = repo / "deploy" / "harness"
+            nested.mkdir(parents=True)
+            text = (
+                "- `cmd/enterprise` must not import port internals.\n"
+                "- Keep generated PO files under `dal/po`.\n"
+            )
+            self.assertEqual(
+                self._missing_paths(nested, text, repository_root=repo),
+                {"dal/po"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

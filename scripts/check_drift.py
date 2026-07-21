@@ -83,9 +83,20 @@ def _package_name_at(root):
     return facts.package_name(root)
 
 
+def _make_finding(lineno, name):
+    return {
+        "check": "D1",
+        "level": "ERROR",
+        "line": lineno,
+        "message": f"Unknown Makefile target `{name}`",
+        "suggestion": "Update AGENTS.md or add the Makefile target.",
+    }
+
+
 def d1_command_drift(root, text, fallback_root=None, ancestors=None):
     findings = []
     directories = _fact_ancestors(root, fallback_root, ancestors)
+    containment_root = directories[-1]
     script_sets = [
         scripts
         for directory in directories
@@ -100,43 +111,59 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
     # Keep the package-manager alternation in lock-step with semantic.py's
     # _NODE_CMD_RE (npm|pnpm|bun); omitting bun left this CI gate blind to
     # `bun run <script>` references that the Phase-0 engine already audits.
+    # `make` invocations go through the shared option-aware parser instead
+    # (facts.iter_make_invocations) so `-C`/globs are never misread (Plan 070).
     cmd_re = re.compile(
         r"\b(?:(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_][A-Za-z0-9:_-]*)"
-        r"|yarn\s+([A-Za-z0-9:_][A-Za-z0-9:_-]*)|make\s+([A-Za-z0-9_.-]+))\b"
+        r"|yarn\s+([A-Za-z0-9:_][A-Za-z0-9:_-]*))\b"
     )
     for lineno, code in line_collected_code(text):
         # Skip English prose sentences so imperatives like "make sure the tests
         # pass" are not parsed into phantom command targets (CORR-02).
         if _looks_like_prose(code):
             continue
-        for m in cmd_re.finditer(code):
-            tool = m.group(1) or ("yarn" if m.group(3) else "make")
-            name = m.group(2) or m.group(3) or m.group(4)
+        for invocation in facts.iter_make_invocations(code):
+            name = invocation["name"]
+            directory = invocation["directory"]
             # A make "target" that is a bare English word ("make sure",
             # "make the ...") is prose, not a Makefile target (CORR-02).
-            if tool == "make" and name in _PROSE_TARGET_WORDS:
+            if directory is None and name in _PROSE_TARGET_WORDS:
                 continue
-            if (
-                tool == "make"
-                and target_sets
-                and not any(name in targets for targets in target_sets)
-            ):
-                findings.append(
-                    {
-                        "check": "D1",
-                        "level": "ERROR",
-                        "line": lineno,
-                        "message": f"Unknown Makefile target `{name}`",
-                        "suggestion": "Update AGENTS.md or add the Makefile target.",
-                    }
-                )
+            if directory is not None:
+                # `make -C DIR target` names DIR's Makefile, not the scope's.
+                # Resolve DIR against every fact-chain directory (containment-
+                # checked) and accept the target if ANY resolved Makefile
+                # defines it — mirroring the any-of semantics of target_sets
+                # below, so a nearer unrelated Makefile can never mask (or
+                # manufacture) drift. Abstain when no candidate resolves.
+                candidate_target_sets = [
+                    targets
+                    for base in directories
+                    if (
+                        candidate := facts.resolve_within_root(
+                            base / directory, containment_root, strict=False
+                        )
+                    )
+                    is not None
+                    and (targets := make_targets(candidate)) is not None
+                ]
+                if candidate_target_sets and not any(
+                    name in targets for targets in candidate_target_sets
+                ):
+                    findings.append(_make_finding(lineno, name))
+                continue
+            if target_sets and not any(name in targets for targets in target_sets):
+                findings.append(_make_finding(lineno, name))
+        for m in cmd_re.finditer(code):
+            tool = m.group(1) or "yarn"
+            name = m.group(2) or m.group(3)
             # Treat package-manager builtins as valid unconditionally; false negatives
             # are cheaper than noisy false positives here.
-            if tool != "make" and name in PACKAGE_MANAGER_BUILTINS:
+            if name in PACKAGE_MANAGER_BUILTINS:
                 continue
             # Same for yarn/pnpm node_modules/.bin passthrough (`yarn vitest`,
             # `pnpm mastra`) — see facts.is_node_bin_passthrough (TD-02).
-            if tool != "make" and (
+            if (
                 any(
                     facts.is_node_bin_passthrough(directory, tool, name)
                     for directory in directories
@@ -160,11 +187,7 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
                         directories[0]
                     )
                 continue
-            if (
-                tool != "make"
-                and script_sets
-                and not any(name in scripts for scripts in script_sets)
-            ):
+            if script_sets and not any(name in scripts for scripts in script_sets):
                 findings.append(
                     {
                         "check": "D1",
@@ -183,11 +206,16 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
 _within_root = facts.within_root
 
 
-def d2_path_drift(root, text, fallback_root=None, ancestors=None):
+def d2_path_drift(root, text, fallback_root=None, ancestors=None, repository_index_cache=None):
     findings = []
     directories = _fact_ancestors(root, fallback_root, ancestors)
     containment_root = directories[-1]
     nested_scope = len(directories) > 1
+    # Shared per-run memo for the repository-root suffix index used by the
+    # nested-scope uniqueness fallback below; run_checks passes one dict for
+    # all scopes so the repository is walked at most once per run.
+    if repository_index_cache is None:
+        repository_index_cache = {}
     # Use the shared registry.declared_paths classifier so this Phase-2 gate and
     # the Phase-0 semantic check agree on exactly what counts as a declared path
     # (TD-03). Candidacy is decided by the shared token rules; this gate then
@@ -197,6 +225,7 @@ def d2_path_drift(root, text, fallback_root=None, ancestors=None):
     # semantic.compare_paths so the common case (path exists) never pays for a
     # repo walk.
     package_names = "not computed"
+    non_path_context = None
     subtree_index = None
     missing = []
     for decl in registry.declared_paths(text):
@@ -248,6 +277,21 @@ def d2_path_drift(root, text, fallback_root=None, ancestors=None):
             for directory in directories
         ):
             continue
+        # Go/npm import paths and Go exported symbols wear the same
+        # backtick-and-slash clothes as repo paths; classify them against the
+        # scope's own manifests (go.mod, package.json) before flagging — same
+        # rule as semantic.compare_paths (TD-02/TD-03, Plan 070).
+        if non_path_context is None:
+            non_path_context = facts.non_path_reference_context(
+                containment_root, directories
+            )
+        if facts.is_import_or_symbol_reference(token, non_path_context):
+            continue
+        # Deploy/Docker docs spell paths from one level above the checkout
+        # (`<repo-name>/backend/...`); strip the repository's own name when the
+        # remainder exists (Plan 070).
+        if facts.strips_repository_name_prefix(containment_root, token):
+            continue
         # Root keeps repository-wide suffix lookup. A nested canonical scope
         # may describe conventions in its own descendants, so its suffix index
         # is bounded to that scope root; it must never search sibling packages.
@@ -258,6 +302,26 @@ def d2_path_drift(root, text, fallback_root=None, ancestors=None):
             and facts.path_resolves_in_subtree(directories[0], token, subtree_index)
         ):
             continue
+        # One narrow exception to the sibling-package bound: a suffix with
+        # exactly ONE source in the whole repository AND no local anchor (its
+        # first segment exists under no fact-chain directory) is an unambiguous
+        # cross-subtree reference (`cmd/enterprise` named from `deploy/`), not
+        # drift; ambiguous names (`dal/po` in many modules) and locally
+        # anchored ones (`src/only.ts` beside an existing `src/`) stay findings
+        # (Plan 070).
+        if (
+            nested_scope
+            and facts.is_subtree_path_candidate(token)
+            and not facts.has_local_anchor(containment_root, directories, token)
+        ):
+            if "index" not in repository_index_cache:
+                repository_index_cache["index"] = facts.build_subtree_path_index(
+                    containment_root
+                )
+            if repository_index_cache["index"].resolves_uniquely(
+                containment_root, token
+            ):
+                continue
         findings.append(
             {
                 "check": "D2",
@@ -495,6 +559,10 @@ def _link_target_is_probeable(target):
         # PR review comment by pr_review.py); a real repo-relative path never
         # contains one.
         return None
+    if "," in target:
+        # No real repo-relative path contains a comma; `[T](ctx, c)`-shaped
+        # code that leaks past the code-span guards is not a link (Plan 070).
+        return None
     if target.startswith(("~", "/", "$")) or ":" in target:
         # Home-relative, absolute, env-var or scheme/drive-like targets are not
         # repo-relative paths; skip them exactly like d2_path_drift does.
@@ -516,8 +584,33 @@ def d7_markdown_link_drift(root, text, fallback_root=None):
     if not text:
         return findings
     containment_root = Path(fallback_root).resolve() if fallback_root is not None else Path(root).resolve()
+    in_fence = False
     for lineno, line in enumerate(text.splitlines(), 1):
+        # Bracket-and-paren source code is not Markdown link syntax. Skip
+        # fenced-code lines entirely (Go generics like
+        # `iris.UpdateStore[MyStore](run, store)` match the link regex), and
+        # skip matches that OPEN inside an inline backtick code span
+        # (`hertz.BindValidate[T](ctx, c)`). A genuine link whose *label*
+        # contains a code span (`[`docs/x.md`](../docs/x.md)`) opens before the
+        # span and is still probed. Same fence contract as
+        # facts.iter_code_tokens (Plan 070).
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        # An odd number of backticks means the left-to-right span pairing is
+        # unreliable (a stray backtick would pair across real content and
+        # swallow a genuine broken link after it), so fall back to probing the
+        # whole line — conservative toward drift detection.
+        code_spans = (
+            [(span.start(), span.end()) for span in re.finditer(r"`[^`]+`", line)]
+            if line.count("`") % 2 == 0
+            else []
+        )
         for m in _MD_LINK_RE.finditer(line):
+            if any(start <= m.start() < end for start, end in code_spans):
+                continue
             target = _link_target_is_probeable(m.group(1))
             if target is None:
                 continue
@@ -766,6 +859,9 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
     scopes = drift_scopes(root)
     root_text = ""
     findings = []
+    # One repository-root suffix index shared by every nested scope's
+    # uniqueness fallback; built lazily on the first nested miss (Plan 070).
+    repository_index_cache = {}
     for scope in scopes:
         text = facts.read_text_within_root(root, root / scope["path"], errors="replace") or ""
         if scope["is_root"]:
@@ -791,6 +887,7 @@ def run_checks(root, max_bytes, strict=False, rules_dirs=None, allow_plugins=Fal
                 text,
                 fallback_root=fallback_root,
                 ancestors=ancestors,
+                repository_index_cache=repository_index_cache,
             )
         )
         scoped.extend(
