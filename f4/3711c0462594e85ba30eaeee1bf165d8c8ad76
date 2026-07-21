@@ -1,0 +1,33 @@
+SKILL.md
+  s_da394e20280a0e::t_c6b672744785ef 64,194
+scripts/check_drift.py
+  s_da394e20280a0e::t_9e26457f8f71b7 86-95,99,114-115,118,125-127,130,132-155,158,162,186,205,210-214,224,276-290,301-320,558-561,583,585-600,602-603,852-854,880
+scripts/facts.py
+  s_da394e20280a0e::t_54d6e2a43fcf29 536-551,553,577-595,626,630-632,634-638,642,767-942,976-1064
+scripts/registry.py
+  s_da394e20280a0e::t_1aab2c0e34f2af 232-245,477-566,594-597,600-603,701-721
+scripts/semantic.py
+  s_da394e20280a0e::t_393cf7b5c29852 168-170,207-208,211,213,216-224,794-813,900,902,926-943,953-968
+tests/test_check_drift.py
+  s_da394e20280a0e::t_f119a3431cbf10 1878-2155
+tests/test_semantic.py
+  s_da394e20280a0e::t_29310d471e1daa 1229-1305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f43711c0462594e85ba30eaeee1bf165d8c8ad76",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
