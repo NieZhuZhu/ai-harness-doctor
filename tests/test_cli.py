@@ -1124,6 +1124,18 @@ class CliInstallerTests(unittest.TestCase):
                 "ai-harness-doctor:maintenance-contract:start", (repo / "AGENTS.md").read_text(encoding="utf-8")
             )
 
+    def test_guard_ignores_disabled_git_hooks_path(self):
+        with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
+            home = Path(home_dir)
+            repo = self.make_git_repo(Path(parent_dir))
+            subprocess.run(["git", "config", "core.hooksPath", "/dev/null"], cwd=repo, check=True)
+
+            proc = self.run_cli(["guard", str(repo)], home, repo)
+
+            self.assertIn("Guard install plan", proc.stdout)
+            self.assertIn(str(repo / ".git" / "hooks" / "pre-commit"), proc.stdout)
+            self.assertNotIn("/dev/null/pre-commit", proc.stdout)
+
     def test_guard_apply_installs_and_is_idempotent(self):
         with ResilientTemporaryDirectory() as home_dir, ResilientTemporaryDirectory() as parent_dir:
             home = Path(home_dir)

@@ -2507,7 +2507,7 @@ function guardPotentialParentPaths(authorizedRoots) {
 }
 
 function guardAuthorizedRootForPath(transaction, file) {
-  const hookPath = gitPath(transaction.targetRoot, 'hooks/pre-commit');
+  const hookPath = guardHookPath(transaction.targetRoot);
   const roots = guardAuthorizedPathRoots(transaction.targetRoot, hookPath);
   const root = roots.get(path.resolve(file));
   if (!root) throw new Error(`guard transaction path is no longer authorized: ${file}`);
@@ -2515,7 +2515,7 @@ function guardAuthorizedRootForPath(transaction, file) {
 }
 
 function guardAuthorizedRootForParent(transaction, parent) {
-  const hookPath = gitPath(transaction.targetRoot, 'hooks/pre-commit');
+  const hookPath = guardHookPath(transaction.targetRoot);
   const parents = guardPotentialParentPaths(
     guardAuthorizedPathRoots(transaction.targetRoot, hookPath)
   );
@@ -3157,7 +3157,7 @@ function readGuardTransaction(target) {
     );
   }
   journal.targetRoot = recordedTarget;
-  const hookPath = gitPath(recordedTarget, 'hooks/pre-commit');
+  const hookPath = guardHookPath(recordedTarget);
   const authorizedRoots = guardAuthorizedPathRoots(recordedTarget, hookPath);
   const parentAllowList = guardPotentialParentPaths(authorizedRoots);
   const seen = new Set();
@@ -3298,10 +3298,8 @@ function isGitRepo(target) {
   return commandOutput('git', ['rev-parse', '--is-inside-work-tree'], target) === 'true';
 }
 
-function gitPath(target, gitRelativePath) {
-  const output = commandOutput('git', ['rev-parse', '--git-path', gitRelativePath], target);
-  if (!output) return path.join(target, '.git', gitRelativePath);
-  return path.isAbsolute(output) ? output : path.join(target, output);
+function guardHookPath(target) {
+  return path.join(gitCommonDir(target), 'hooks', 'pre-commit');
 }
 
 function gitCommonDir(target) {
@@ -3429,7 +3427,7 @@ function describeChange(change) {
 function plannedGuardInstallChanges(target, provider) {
   const changes = [];
   const marker = '# ai-harness-doctor:guard';
-  const hookPath = gitPath(target, 'hooks/pre-commit');
+  const hookPath = guardHookPath(target);
   assertSafeMutationPath(gitCommonDir(target), hookPath);
   const hookBefore = readTextIfExists(hookPath);
   const hookAfter = guardTemplate('pre-commit.sh');
@@ -3482,7 +3480,7 @@ function plannedGuardInstallChanges(target, provider) {
 function plannedGuardRemoveChanges(target) {
   const changes = [];
   const marker = '# ai-harness-doctor:guard';
-  const hookPath = gitPath(target, 'hooks/pre-commit');
+  const hookPath = guardHookPath(target);
   assertSafeMutationPath(gitCommonDir(target), hookPath);
   const hookBefore = readTextIfExists(hookPath);
   const hookTemplate = guardTemplate('pre-commit.sh');
@@ -3622,7 +3620,7 @@ function guard(argv) {
       applyGuardChanges(
         changes,
         target,
-        gitPath(target, 'hooks/pre-commit'),
+        guardHookPath(target),
         remove ? 'remove' : 'install'
       );
     } catch (error) {
