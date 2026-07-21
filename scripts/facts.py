@@ -533,10 +533,24 @@ class SubtreePathIndex:
     in-repository alias.
     """
 
-    __slots__ = ("suffixes", "manifest_basenames", "search_roots", "has_safe_dir_alias")
+    __slots__ = (
+        "suffixes",
+        "ambiguous_suffixes",
+        "manifest_basenames",
+        "search_roots",
+        "has_safe_dir_alias",
+    )
 
-    def __init__(self, suffixes, manifest_basenames, search_roots, has_safe_dir_alias):
+    def __init__(
+        self,
+        suffixes,
+        manifest_basenames,
+        search_roots,
+        has_safe_dir_alias,
+        ambiguous_suffixes=(),
+    ):
         self.suffixes = frozenset(suffixes)
+        self.ambiguous_suffixes = frozenset(ambiguous_suffixes)
         self.manifest_basenames = frozenset(manifest_basenames)
         self.search_roots = tuple(search_roots)
         self.has_safe_dir_alias = bool(has_safe_dir_alias)
@@ -559,6 +573,25 @@ class SubtreePathIndex:
         if self.has_safe_dir_alias:
             return any(exists_within_root(root, current / token) for current in self.search_roots)
         return False
+
+    def resolves_uniquely(self, root, token):
+        """True when ``token`` matches as a trailing path of exactly ONE entry.
+
+        A nested canonical scope may legitimately reference a directory in a
+        *different* subtree of the same repository ("`cmd/enterprise` must not
+        import `aimeserver/byted`" written from `deploy/harness/`). The bounded
+        per-scope lookup rightly refuses to search sibling packages — a generic
+        name (`src/utils`, `dal/po`) existing in several packages is exactly the
+        drift that bound exists to catch — but a suffix with exactly one source
+        in the whole repository is an unambiguous cross-subtree reference, not
+        drift. Uniqueness is required; ambiguous suffixes never resolve here.
+        The directory-symlink alias fallback is deliberately excluded: probing
+        through aliases cannot establish uniqueness.
+        """
+        if "/" not in token:
+            return False
+        normalized = Path(os.path.normpath(token)).as_posix()
+        return normalized in self.suffixes and normalized not in self.ambiguous_suffixes
 
 
 def build_subtree_path_index(root):
@@ -590,16 +623,23 @@ def build_subtree_path_index(root):
             entries.add(path.relative_to(rootp).as_posix())
 
     suffixes = set()
+    ambiguous = set()
     for entry in entries:
         parts = entry.split("/")
         # The old resolver skipped the repo root, so a path only resolves as a
-        # subtree suffix after removing at least one leading directory.
+        # subtree suffix after removing at least one leading directory. A suffix
+        # produced by more than one entry is recorded as ambiguous so
+        # ``resolves_uniquely`` can refuse it.
         for index in range(1, len(parts)):
-            suffixes.add("/".join(parts[index:]))
+            suffix = "/".join(parts[index:])
+            if suffix in suffixes:
+                ambiguous.add(suffix)
+            else:
+                suffixes.add(suffix)
         if len(parts) > 1 and parts[-1] in _MANIFEST_BASENAMES:
             manifests.add(parts[-1])
 
-    return SubtreePathIndex(suffixes, manifests, search_roots, has_safe_dir_alias)
+    return SubtreePathIndex(suffixes, manifests, search_roots, has_safe_dir_alias, ambiguous)
 
 
 def path_resolves_in_subtree(root, token, index=None):
@@ -724,6 +764,182 @@ def is_eslint_rule_identifier(root, token):
     return False
 
 
+# --- Import-path / code-symbol classification (repo context) ----------------
+# Multi-language monorepo docs routinely backtick NON-filesystem identifiers
+# whose interior `/` makes them look like repo paths: short-form Go import
+# paths (`gopkg/logs`, `Shopify/sarama`, `net/http`), npm package subpath
+# imports (`next/link`), and Go exported symbols (`remote/RemoteBus`). Ground
+# truth lives in repository manifests (go.mod, package.json), so this is
+# repo-context classification that belongs here — consumed identically by
+# ``semantic.compare_paths`` and ``check_drift.d2_path_drift`` (TD-02/TD-03).
+# Found auditing a production Go+JS+Swift monorepo whose AGENTS.md files
+# produced ~50 such false "path does not exist" findings (Plan 070).
+
+# Go standard-library top-level packages (`net/http`, `encoding/json`). Fixed
+# list; extend only with observed-in-the-wild evidence.
+_GO_STDLIB_TOPLEVEL = frozenset(
+    {
+        "archive", "bufio", "builtin", "bytes", "cmp", "compress", "container",
+        "context", "crypto", "database", "debug", "embed", "encoding", "errors",
+        "expvar", "flag", "fmt", "go", "hash", "html", "image", "index", "io",
+        "iter", "log", "maps", "math", "mime", "net", "os", "path", "plugin",
+        "reflect", "regexp", "runtime", "slices", "sort", "strconv", "strings",
+        "structs", "sync", "syscall", "testing", "text", "time", "unicode",
+        "unsafe", "unique", "weak",
+    }
+)
+
+
+def _go_module_import_paths(text):
+    """Import/module paths declared in a go.mod: module, require, replace."""
+    paths = []
+    in_require = False
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if not line:
+            continue
+        if in_require:
+            if line == ")":
+                in_require = False
+                continue
+            head = line.split()[0]
+            if "/" in head and not head.startswith((".", "/")):
+                paths.append(head)
+            continue
+        parts = line.split()
+        if parts[0] == "require" and len(parts) >= 2 and parts[1] == "(":
+            in_require = True
+            continue
+        if parts[0] in ("module", "require") and len(parts) >= 2 and "/" in parts[1]:
+            paths.append(parts[1])
+        elif parts[0] == "replace" and "=>" in parts:
+            for candidate in (parts[1], parts[parts.index("=>") + 1] if parts.index("=>") + 1 < len(parts) else ""):
+                if "/" in candidate and not candidate.startswith((".", "/")):
+                    paths.append(candidate)
+    return paths
+
+
+def go_import_suffixes(root, directories):
+    """Frozenset of ≥2-segment trailing forms of Go import paths visible to a scope.
+
+    For each ``host/p1/…/pn`` import path in a fact-chain go.mod, every trailing
+    suffix of ``[p1…pn]`` with at least two segments is recorded — that is how
+    docs abbreviate imports (`Shopify/sarama`, `rocketmq-client-go/v2`,
+    `gopkg/logs`). The host's second-level domain is prepended first so vanity
+    imports match their conventional short form too (`go.uber.org/fx` →
+    `uber/fx`).
+    """
+    suffixes = set()
+    for directory in directories:
+        text = read_text_within_root(root, Path(directory) / "go.mod", errors="replace")
+        if text is None:
+            continue
+        for path in _go_module_import_paths(text):
+            parts = [p for p in path.split("/") if p]
+            host, chain = parts[0], parts[1:]
+            host_labels = host.split(".")
+            if len(host_labels) >= 2 and host_labels[-2]:
+                chain = [host_labels[-2]] + chain
+            for start in range(len(chain) - 1):
+                suffixes.add("/".join(chain[start:]))
+    return frozenset(suffixes)
+
+
+def _token_matches_go_import(token, suffixes):
+    # A token equal to a recorded suffix, or extending one with subpackage
+    # segments (`sourcegraph/conc/pool` on a `…/sourcegraph/conc` require).
+    parts = token.split("/")
+    return any("/".join(parts[:end]) in suffixes for end in range(len(parts), 1, -1))
+
+
+def _is_go_stdlib_import(token):
+    parts = token.split("/")
+    return (
+        len(parts) >= 2
+        and parts[0] in _GO_STDLIB_TOPLEVEL
+        and all(re.fullmatch(r"[a-z][a-z0-9]*", part) for part in parts)
+    )
+
+
+def _is_go_exported_symbol(token):
+    # `remote/RemoteBus`: a dotless final segment shaped like an exported Go
+    # identifier (uppercase start, some lowercase). All-caps segments (`docs/API`)
+    # stay path candidates.
+    last = token.rsplit("/", 1)[-1]
+    return (
+        "/" in token
+        and "." not in last
+        and re.fullmatch(r"[A-Z][A-Za-z0-9_]*", last) is not None
+        and any(ch.islower() for ch in last)
+    )
+
+
+def non_path_reference_context(root, directories):
+    """Precompute the per-scope facts ``is_import_or_symbol_reference`` needs.
+
+    Callers build this lazily on the first missing token (the common all-paths-
+    exist case never pays for it) and reuse it for every later token in the
+    same scope.
+    """
+    directories = [Path(directory) for directory in directories]
+    dependency_names = set()
+    for directory in directories:
+        names = package_dependency_names(directory)
+        if names:
+            dependency_names.update(names)
+    return {
+        "dependency_names": dependency_names,
+        "go_suffixes": go_import_suffixes(root, directories),
+        "has_go": any(
+            is_file_within_root(root, directory / "go.mod") for directory in directories
+        ),
+    }
+
+
+def is_import_or_symbol_reference(token, context):
+    """True when a missing backtick token is positively identified as a Go/npm
+    import path or a Go exported symbol rather than a repo-relative path."""
+    if "/" in token and token.split("/", 1)[0] in context["dependency_names"]:
+        return True
+    if context["go_suffixes"] and _token_matches_go_import(token, context["go_suffixes"]):
+        return True
+    if context["has_go"] and (_is_go_stdlib_import(token) or _is_go_exported_symbol(token)):
+        return True
+    return False
+
+
+def has_local_anchor(root, directories, token):
+    """True when the token's first segment exists as a directory under any
+    fact-chain directory.
+
+    The reference then plausibly means that local tree (`src/only.ts` written
+    next to an existing `src/`), so a repository-wide uniqueness fallback must
+    not resolve it into a sibling package — a missing local file is exactly the
+    drift the bounded lookup exists to catch.
+    """
+    first = token.split("/", 1)[0]
+    return any(
+        is_dir_within_root(root, Path(directory) / first) for directory in directories
+    )
+
+
+def strips_repository_name_prefix(root, token):
+    """True when ``token`` is the repository's own directory name plus a path
+    that exists under it.
+
+    Deploy/Docker docs habitually spell repo paths from one level above the
+    checkout (`kiwis/backend/agentsphere/image/runtime_general.dockerfile`
+    written inside the `kiwis` repo). Only the exact name match with an
+    existing remainder is suppressed; a missing remainder stays a finding.
+    """
+    rootp = Path(root).resolve()
+    first, sep, rest = token.partition("/")
+    if not sep or not rest or first != rootp.name:
+        return False
+    candidate = resolve_within_root(rootp / rest, rootp, strict=False)
+    return candidate is not None and exists_within_root(rootp, candidate)
+
+
 # Matches a rule/assignment header: one or more whitespace-separated names,
 # then `:` or `::`, then an optional immediately-following `=`. Group 3 only
 # captures when `=` has NO whitespace before it, which is what distinguishes an
@@ -755,6 +971,95 @@ def make_targets(root):
             if not name.startswith("."):
                 targets.add(name)
     return targets
+
+
+# ``make`` invocation parsing, shared by the Phase-0 semantic engine and the
+# Phase-2 D1 gate (TD-02). The historical extractor was a bare regex
+# (``make\s+([A-Za-z0-9_.-]+)``) that misread option flags as targets: every
+# ``make -C deploy/harness <target>`` in a real monorepo's AGENTS.md produced an
+# "Unknown Makefile target `-C`" finding (14 in one audit), and a glob like
+# ``make ep-local-*`` was truncated at the ``*`` and reported as a missing
+# ``ep-local`` target (Plan 070).
+_MAKE_KEYWORD_RE = re.compile(r"(?:^|[\s;&|(`])make\s")
+# Short options that always consume a following separate token as their
+# argument. ``-C DIR`` is semantically load-bearing (it moves which Makefile
+# defines the target); the others are consumed only so their argument is never
+# misread as the target.
+_MAKE_SEPARATE_ARG_FLAGS = frozenset({"-f", "-I", "-o", "-W"})
+# Long options that consume a following separate token unless written ``=``-joined.
+_MAKE_LONG_ARG_OPTIONS = frozenset(
+    {"--directory", "--file", "--makefile", "--include-dir", "--old-file",
+     "--assume-old", "--what-if", "--new-file", "--assume-new", "--jobs",
+     "--load-average", "--max-load"}
+)
+_MAKE_TARGET_NAME_RE = re.compile(r"[A-Za-z0-9_.-]+")
+_MAKE_SHELL_TERMINATORS = frozenset({"&&", "||", ";", "|"})
+
+
+def iter_make_invocations(segment):
+    """Yield ``{"name", "directory"}`` for each ``make`` invocation in a code span.
+
+    ``name`` is the first non-option word after ``make`` (first-target-only,
+    matching the historical extractor); ``directory`` is the ``-C``/
+    ``--directory`` argument or ``None``. Invocations whose target cannot be
+    read confidently — a glob (``ep-local-*``), a shell/Make expansion, a
+    quoted fragment — yield nothing, so callers abstain instead of flagging a
+    phantom target.
+    """
+    for keyword in _MAKE_KEYWORD_RE.finditer(segment):
+        tokens = segment[keyword.end():].split()
+        directory = None
+        name = None
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            i += 1
+            if tok in _MAKE_SHELL_TERMINATORS or tok.startswith("#"):
+                break
+            # A lone line-continuation backslash or a quoted fragment (a
+            # ``VAR="a b"`` value split by the whitespace tokenizer) is never a
+            # target.
+            if tok == "\\" or '"' in tok or "'" in tok:
+                continue
+            if tok.startswith("--"):
+                base, sep, value = tok.partition("=")
+                if base == "--directory":
+                    if sep:
+                        directory = directory or value
+                    elif i < len(tokens):
+                        directory = directory or tokens[i]
+                        i += 1
+                elif not sep and base in _MAKE_LONG_ARG_OPTIONS and i < len(tokens):
+                    i += 1
+                continue
+            if tok.startswith("-") and len(tok) > 1:
+                flag, attached = tok[:2], tok[2:]
+                if flag == "-C":
+                    if attached:
+                        directory = directory or attached
+                    elif i < len(tokens):
+                        directory = directory or tokens[i]
+                        i += 1
+                elif flag in _MAKE_SEPARATE_ARG_FLAGS and not attached and i < len(tokens):
+                    i += 1
+                elif flag in ("-j", "-l") and not attached and i < len(tokens) and tokens[i].isdigit():
+                    # ``-j``/``-l`` take an OPTIONAL argument; only a bare
+                    # number can be one (``make -j 4 build`` vs ``make -j build``).
+                    i += 1
+                continue
+            if "=" in tok:  # VAR=value assignment
+                continue
+            name = tok
+            break
+        if name is None:
+            continue
+        # Trailing sentence punctuation ("run `make build`.") is not part of a
+        # target name; a remaining non-target-charset token (glob, ``$(VAR)``)
+        # means the invocation cannot be validated confidently — abstain.
+        name = name.rstrip(".,;:")
+        if not name or not _MAKE_TARGET_NAME_RE.fullmatch(name):
+            continue
+        yield {"name": name, "directory": directory}
 
 
 def nvmrc_node_version(root):

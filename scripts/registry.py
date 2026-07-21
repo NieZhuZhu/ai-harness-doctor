@@ -229,8 +229,20 @@ _BRANCH_TYPE_PREFIXES = (
     "chore/",
     "refactor/",
 )
-# Same-line cue that a token is being introduced as a git branch name.
-_BRANCH_CONTEXT_RE = re.compile(r"\bbranch(?:es)?\b|\bcheckout\b|\bgit\s+switch\b", re.I)
+# Same-line cue that a token is being introduced as a git branch name. CJK
+# alternatives carry no \b word boundaries (Chinese has none): 分支 = branch,
+# 检出 = checkout. Found auditing a production monorepo whose CJK AGENTS.md
+# documents its branch convention in Chinese (Plan 070).
+_BRANCH_CONTEXT_RE = re.compile(
+    r"\bbranch(?:es)?\b|\bcheckout\b|\bgit\s+switch\b|分支|检出", re.I
+)
+# An example cue at the head of the line ("示例：`feat/a`、`fix/b`、`chore/c`",
+# "Examples: `feat/x`"). Searched in the LINE PREFIX before the token rather
+# than the bounded window: the marker sits once at the list-item head while the
+# example tokens run past any fixed-width window. It counts as the weak second
+# signal ONLY for tokens that already carry a conventional branch-type prefix,
+# so "示例：`docs/setup`" stays a checked path (Plan 070).
+_BRANCH_EXAMPLE_CUE_RE = re.compile(r"\bexamples?\b|\be\.g\.|示例|例如", re.I)
 # A STRONG equative branch cue directly names the token as a branch ("the
 # current branch is `X`", "on branch `X`", "branch named `X`"). Unlike the weak
 # cue above (a mere mention of "branch" on the line), this equates the token to
@@ -462,6 +474,96 @@ def _is_labeled_runtime_identifier(line, match):
     return bool(_NONPATH_LIST_INTRO_RE.search(prefix))
 
 
+# Uppercase-start file extensions that DO appear in real repos; the dotted-
+# symbol rule must not eat them (`server.Dockerfile`).
+_UPPERCASE_FILE_EXTENSIONS = frozenset({"Dockerfile"})
+# An identifier segment of a value enum (`GetTools`, `errorType`, `Params`).
+_ENUM_IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+# GOOS / GOARCH values for the platform-pair rule (`linux/amd64`). Fixed lists;
+# extend only with observed-in-the-wild evidence.
+_GOOS_VALUES = frozenset(
+    {"aix", "android", "darwin", "dragonfly", "freebsd", "illumos", "ios",
+     "js", "linux", "netbsd", "openbsd", "plan9", "solaris", "wasip1", "windows"}
+)
+_GOARCH_VALUES = frozenset(
+    {"386", "amd64", "arm", "arm64", "loong64", "mips", "mips64", "mips64le",
+     "mipsle", "ppc64", "ppc64le", "riscv64", "s390x", "wasm"}
+)
+# Qualitative value words that appear in `a/b/c` alternative lists
+# (`low/medium/high`). Deliberately tiny so real directory names never match.
+_VALUE_ENUM_WORDS = frozenset(
+    {"low", "medium", "high", "true", "false", "yes", "no", "on", "off"}
+)
+
+
+def _is_code_symbol_token(token):
+    """True when the token's final dotted component is a code-symbol identifier
+    (`.Agent`, `.RDSConfig`, `.MustGetAgentRunEvents`), not a file extension."""
+    last_segment = token.rsplit("/", 1)[-1]
+    if "." not in last_segment:
+        return False
+    final = last_segment.rsplit(".", 1)[1]
+    return (
+        final not in _UPPERCASE_FILE_EXTENSIONS
+        and re.fullmatch(r"[A-Z][A-Za-z0-9_]*", final) is not None
+        and any(ch.islower() for ch in final)
+    )
+
+
+def _is_slash_separated_value_list(token):
+    """True when `a/b/c` reads as a set of alternative VALUES, not a path."""
+    segments = token.split("/")
+    if len(segments) < 2 or not all(segments):
+        return False
+    # Extension list: `.ts/.tsx`.
+    if all(re.fullmatch(r"\.\w+", segment) for segment in segments):
+        return True
+    # Numeric sizes/quantities: `1k/2k/4k`.
+    if all(re.fullmatch(r"\d+[A-Za-z]{0,3}", segment) for segment in segments):
+        return True
+    # GOOS/GOARCH platform pair: `linux/amd64` (docker --platform, go build).
+    if (
+        len(segments) == 2
+        and segments[0] in _GOOS_VALUES
+        and segments[1] in _GOARCH_VALUES
+    ):
+        return True
+    # Qualitative value words: `low/medium/high`.
+    if all(segment.lower() in _VALUE_ENUM_WORDS for segment in segments):
+        return True
+    if not all(_ENUM_IDENTIFIER_RE.fullmatch(segment) for segment in segments):
+        return False
+    # Camel-case identifier list: a MAJORITY of segments carry an internal
+    # uppercase letter alongside a lowercase one (`errorType/reason/botType`,
+    # `defaultAssistantSubagentMaxSteps/MaxFailures`) — a shape directory names
+    # essentially never take in the majority. A single camel-case component
+    # (`src/MyComponent`, `components/DatePicker`) stays a path candidate.
+    compound = sum(
+        1
+        for segment in segments
+        if any(ch.isupper() for ch in segment[1:]) and any(ch.islower() for ch in segment)
+    )
+    if compound * 2 > len(segments):
+        return True
+    # Method/field inventory: three or more segments ALL starting uppercase
+    # (`GetTools/Compose/Run`, `Host/Port/User/Password/DBName/Params`).
+    # Two-segment TitleCase dir conventions (`Sources/App`) stay paths.
+    if len(segments) >= 3 and all(segment[0].isupper() for segment in segments):
+        return True
+    # Variant pair whose names contain each other, case-folded
+    # (`Register/Unregister`: "register" ⊂ "unregister").
+    if (
+        len(segments) == 2
+        and all(segment[0].isupper() for segment in segments)
+        and (
+            segments[0].lower() in segments[1].lower()
+            or segments[1].lower() in segments[0].lower()
+        )
+    ):
+        return True
+    return False
+
+
 def _is_labeled_branch_ref(line, match):
     """True when a backtick token is an example git BRANCH NAME rather than a
     repo path.
@@ -489,10 +591,16 @@ def _is_labeled_branch_ref(line, match):
     # branch-type prefix is required.
     if _STRONG_BRANCH_CUE_RE.search(window):
         return True
-    # Otherwise require both signals: a branch-type prefix AND a weaker cue.
+    # Otherwise require both signals: a branch-type prefix AND a weaker cue —
+    # either a branch word in the bounded window, or an example marker anywhere
+    # in the line prefix ("示例：`feat/a`、`fix/b`、`chore/c`" runs its later
+    # tokens past any fixed-width window; the marker sits once at the head).
     if not token.startswith(_BRANCH_TYPE_PREFIXES):
         return False
-    return bool(_BRANCH_CONTEXT_RE.search(window))
+    return bool(
+        _BRANCH_CONTEXT_RE.search(window)
+        or _BRANCH_EXAMPLE_CUE_RE.search(line[: match.start()])
+    )
 
 
 def declared_paths(text):
@@ -589,6 +697,27 @@ def declared_paths(text):
             # filename like `go.mod` or `Cargo.toml` (single-segment tokens
             # are handled entirely by the KNOWN_ROOT_FILES check below).
             if "/" in token and _GO_IMPORT_HOST_RE.match(token.split("/", 1)[0]):
+                continue
+            # A dotted code SYMBOL (`core/agent.Agent`, `lib/config.LoadConfig`,
+            # `service.SessionService.InitializeAssistantRuntime`): Go and other
+            # compiled-language docs qualify types/functions with their package
+            # path, so the token ends in `.Component` where the component starts
+            # uppercase and contains a lowercase letter — a shape no real file
+            # extension takes (extensions are lowercase, or all-caps like `.MD`,
+            # or on the explicit uppercase-extension denylist like
+            # `server.Dockerfile`; all three stay path candidates). Found
+            # auditing a production Go monorepo whose AGENTS.md files produced
+            # 35 such false "path does not exist" findings (Plan 070).
+            if _is_code_symbol_token(token):
+                continue
+            # A `/`-separated VALUE ENUM (`low/medium/high`, `linux/amd64`,
+            # `.ts/.tsx`, `1k/2k/4k`, `GetTools/Compose/Run`) documents a set of
+            # alternatives, not a nested path. Each accepted shape carries
+            # positive evidence — extension lists, numeric sizes, GOOS/GOARCH
+            # platform pairs, camel-case identifier lists — so ordinary
+            # lowercase directory paths (`src/utils`, `docs/setup`) and
+            # TitleCase dir conventions (`Sources/App`) never match (Plan 070).
+            if _is_slash_separated_value_list(token):
                 continue
             # A two-segment `org/name` token explicitly labeled as a Docker/OCI
             # image or an RPC/API method by adjacent same-line context is a

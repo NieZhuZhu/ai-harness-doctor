@@ -1875,5 +1875,283 @@ class BaselineTests(unittest.TestCase):
         self.assertNotIn(check_drift.finding_fingerprint(web), baseline)
 
 
+class MultiLanguageFalsePositiveTests(unittest.TestCase):
+    """Plan 070: false-positive classes found auditing a Go+JS+Swift monorepo
+    with CJK AGENTS.md files. Every suppression has a true-positive twin."""
+
+    def _missing_paths(self, root, text):
+        return {
+            finding["message"].split("`")[1]
+            for finding in check_drift.d2_path_drift(root, text)
+        }
+
+    # --- E: make option parsing (D1) -----------------------------------
+
+    def test_make_dash_c_validates_against_directory_makefile(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Makefile").write_text("build:\n\techo ok\n", encoding="utf-8")
+            (root / "sub").mkdir()
+            (root / "sub" / "Makefile").write_text("deploy:\n\techo ok\n", encoding="utf-8")
+            text = (
+                "Run `make -C sub deploy` first.\n"
+                "Run `make -C sub gone` next.\n"
+                "Run `make -C absent whatever` too.\n"
+                "Run `make build` last.\n"
+            )
+            messages = [f["message"] for f in check_drift.d1_command_drift(root, text)]
+            # The present -C target passes, the absent one is flagged with the
+            # REAL target name (never `-C`), a -C directory without a Makefile
+            # abstains, and plain make behavior is unchanged.
+            self.assertEqual(messages, ["Unknown Makefile target `gone`"])
+
+    def test_make_glob_flags_and_assignments_abstain(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Makefile").write_text(
+                "ep-local-up:\n\techo ok\nbuild:\n\techo ok\n", encoding="utf-8"
+            )
+            text = (
+                "`make ep-local-*` starts local containers.\n"
+                "`make -j 4 build` runs a parallel build.\n"
+                "`make VAR=1 build` passes a variable.\n"
+                "`make $(TARGET)` is templated.\n"
+            )
+            self.assertEqual(check_drift.d1_command_drift(root, text), [])
+
+    def test_make_continuation_line_target_is_validated(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "sub").mkdir()
+            (root / "sub" / "Makefile").write_text("init:\n\techo ok\n", encoding="utf-8")
+            text = "```bash\nmake -C sub init \\\n  ARG=1\n```\n"
+            self.assertEqual(check_drift.d1_command_drift(root, text), [])
+
+    # --- G: markdown links inside code (D7) ----------------------------
+
+    def test_d7_ignores_bracket_calls_in_fenced_code(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "```go\niris.UpdateStore[MyStore](run, store)\nconv.DefaultAny[bool](v)\n```\n"
+            self.assertEqual(check_drift.d7_markdown_link_drift(root, text), [])
+
+    def test_d7_ignores_bracket_calls_in_inline_code_spans(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "1. `hertz.BindValidate[T](ctx, c)` binds the params.\n"
+            self.assertEqual(check_drift.d7_markdown_link_drift(root, text), [])
+
+    def test_d7_still_probes_link_with_backticked_label(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "See [`docs/x.md`](docs/missing-x.md) for details.\n"
+            findings = check_drift.d7_markdown_link_drift(root, text)
+            self.assertEqual(len(findings), 1)
+            self.assertIn("docs/missing-x.md", findings[0]["message"])
+
+    def test_d7_rejects_comma_bearing_targets(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "The conv[v](run, err) helper pattern.\n"
+            self.assertEqual(check_drift.d7_markdown_link_drift(root, text), [])
+
+    # --- A: branch examples with CJK / example cues (D2) ---------------
+
+    def test_branch_examples_after_cjk_example_cue_are_not_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = (
+                "- 示例：`feat/agent_memory`、`fix/session_timeout`、`chore/upgrade_go`。\n"
+                "- 示例：`docs/setup`。\n"
+                "在 `feat/login` 分支上开发。\n"
+                "Examples: `feature/add_login`.\n"
+            )
+            # Only the example WITHOUT a branch-type prefix stays a checked path.
+            self.assertEqual(self._missing_paths(root, text), {"docs/setup"})
+
+    # --- B: Go / npm import paths (D2) ---------------------------------
+
+    GO_MOD = (
+        "module code.example.org/team/backend\n"
+        "\n"
+        "go 1.22\n"
+        "\n"
+        "require (\n"
+        "\tgithub.com/Shopify/sarama v1.30.1 // indirect\n"
+        "\tgithub.com/sourcegraph/conc v0.3.0\n"
+        "\tgo.uber.org/fx v1.20.1\n"
+        "\tcode.example.org/gopkg/logs v1.2.27\n"
+        "\tcode.example.org/gopkg/logs/v2 v2.2.2\n"
+        ")\n"
+    )
+    IMPORT_TEXT = (
+        "Use `Shopify/sarama` for Kafka and `sourcegraph/conc/pool` for pools.\n"
+        "DI is wired through `uber/fx`; logging via `gopkg/logs/v2`.\n"
+        "The `net/http` server is wrapped by Hertz.\n"
+        "Edit `src/missing.ts` now.\n"
+    )
+
+    def test_go_import_paths_with_go_mod_are_not_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "go.mod").write_text(self.GO_MOD, encoding="utf-8")
+            self.assertEqual(self._missing_paths(root, self.IMPORT_TEXT), {"src/missing.ts"})
+
+    def test_import_shaped_tokens_without_go_mod_stay_checked(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self.assertEqual(
+                self._missing_paths(root, self.IMPORT_TEXT),
+                {
+                    "Shopify/sarama",
+                    "sourcegraph/conc/pool",
+                    "uber/fx",
+                    "gopkg/logs/v2",
+                    "net/http",
+                    "src/missing.ts",
+                },
+            )
+
+    def test_npm_dependency_subpath_import_is_not_a_path(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "package.json").write_text(
+                json.dumps({"dependencies": {"next": "14.0.0"}}), encoding="utf-8"
+            )
+            text = "Use `next/link` for internal navigation.\n"
+            self.assertEqual(self._missing_paths(root, text), set())
+
+    def test_dependency_shaped_token_without_dependency_stays_checked(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "Use `next/link` for internal navigation.\n"
+            self.assertEqual(self._missing_paths(root, text), {"next/link"})
+
+    # --- C: code symbols (D2) ------------------------------------------
+
+    def test_dotted_code_symbols_are_not_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = (
+                "The unit is `core/agent.Agent`.\n"
+                "Pull events from `runtime/service.Service.MustGetAgentRunEvents`.\n"
+                "Read config with `lib/config.LoadConfig` and `lib/config.RDSConfig`.\n"
+                "Add `Tests/Missing.swift` for coverage.\n"
+                "Build from `docker/missing.Dockerfile` instead.\n"
+                "See `docs/README.MD` for details.\n"
+            )
+            # Uppercase-start final components with a lowercase letter are
+            # symbols; real extensions (lowercase, all-caps, Dockerfile) stay.
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {"Tests/Missing.swift", "docker/missing.Dockerfile", "docs/README.MD"},
+            )
+
+    def test_dotless_exported_symbol_requires_go_context(self):
+        text = "The `remote/RemoteBus` type wraps the WebSocket transport.\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "go.mod").write_text("module example.com/m\n", encoding="utf-8")
+            self.assertEqual(self._missing_paths(root, text), set())
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self.assertEqual(self._missing_paths(root, text), {"remote/RemoteBus"})
+
+    # --- D: slash-separated value enums (D2) ---------------------------
+
+    def test_value_enum_tokens_are_not_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = (
+                "Scan `.ts/.tsx` files.\n"
+                "Sizes accept `1k/2k/4k`.\n"
+                "Deliver `linux/amd64` images.\n"
+                "Difficulty is `low/medium/high`.\n"
+                "`GetTools/Compose/Run` live in the core agent.\n"
+                "`Register/Unregister` manage external IDs.\n"
+                "Branches only set `errorType/reason/botType`.\n"
+                "Reuse `Host/Port/User/Password/DBName/Params` fields.\n"
+                "Keep `Sources/App` intact.\n"
+                "Keep `src/Components` intact.\n"
+                "Aggregates fill `domain/intent/sub_intent` directly.\n"
+            )
+            # TitleCase/camel-case dir shapes and lowercase tuples stay checked.
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {"Sources/App", "src/Components", "domain/intent/sub_intent"},
+            )
+
+    # --- F: unique cross-subtree references from nested scopes (D2) ----
+
+    def test_nested_unique_cross_subtree_reference_is_not_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            (repo / "backend" / "agentsphere" / "cmd" / "enterprise").mkdir(parents=True)
+            (repo / "backend" / "agentsphere" / "cmd" / "enterprise" / "main.go").write_text(
+                "package main\n", encoding="utf-8"
+            )
+            (repo / "packages" / "a" / "dal" / "po").mkdir(parents=True)
+            (repo / "packages" / "b" / "dal" / "po").mkdir(parents=True)
+            nested = repo / "deploy" / "harness"
+            nested.mkdir(parents=True)
+            (nested / "AGENTS.md").write_text(
+                "- `cmd/enterprise` must not import port internals.\n"
+                "- Keep generated PO files under `dal/po`.\n",
+                encoding="utf-8",
+            )
+            report = check_drift.run_checks(repo, 32768)
+            nested_missing = {
+                f["message"].split("`")[1]
+                for f in report["findings"]
+                if f["check"] == "D2" and f.get("path") == "deploy/harness/AGENTS.md"
+            }
+            # The unique suffix resolves cross-subtree; the ambiguous one
+            # (two dal/po sources) stays a finding.
+            self.assertEqual(nested_missing, {"dal/po"})
+
+    # --- Baseline: suppressed findings become prunable resolved debt ----
+
+    def test_suppressed_false_positive_resolves_from_baseline(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "AGENTS.md").write_text("# Root\n", encoding="utf-8")
+            baseline = check_drift.parse_baseline(
+                {
+                    "version": check_drift.BASELINE_VERSION,
+                    "findings": [
+                        {
+                            "check": "D1",
+                            "message": "Unknown Makefile target `-C`",
+                            "path": None,
+                        }
+                    ],
+                }
+            )
+            report = check_drift.run_checks(repo, 32768, baseline=baseline)
+            self.assertEqual(
+                [entry["message"] for entry in report["resolved_baseline"]],
+                ["Unknown Makefile target `-C`"],
+            )
+
+    # --- H: repository-name-prefixed paths (D2) ------------------------
+
+    def test_repository_name_prefix_with_existing_remainder_is_stripped(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "backend" / "image").mkdir(parents=True)
+            (root / "backend" / "image" / "runtime.dockerfile").write_text(
+                "FROM scratch\n", encoding="utf-8"
+            )
+            text = (
+                f"- Same design as `{root.name}/backend/image/runtime.dockerfile`.\n"
+                f"- See `{root.name}/backend/image/gone.dockerfile` too.\n"
+            )
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {f"{root.name}/backend/image/gone.dockerfile"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
