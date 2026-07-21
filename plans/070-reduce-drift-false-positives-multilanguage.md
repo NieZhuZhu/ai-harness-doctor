@@ -164,11 +164,16 @@ extends the same doctrine to Go/multi-language monorepos and CJK documentation.
    (multiple sources). The repository-root index is built at most once per
    engine run (cached; today every nested scope with a miss already builds its
    own bounded index, so this is not a new walk class). A nested-scope missing
-   token that resolves **uniquely** at repository level is suppressed
-   (`cmd/enterprise` → the one `backend/agentsphere/cmd/enterprise`);
-   ambiguous suffixes (`dal/po` exists in many modules) remain findings, so
-   the historical "never search sibling packages" false-negative guard is
-   preserved in the case it was built for. Root-scope behavior is unchanged.
+   token is suppressed only when BOTH hold: it resolves **uniquely** at
+   repository level (`cmd/enterprise` → the one
+   `backend/agentsphere/cmd/enterprise`), AND it has **no local anchor** — its
+   first segment exists as a directory under no fact-chain directory. The
+   anchor guard keeps `src/only.ts` written beside an existing `src/` a
+   finding (the doc plainly means its own tree) even when a sibling package
+   happens to hold the only `src/only.ts`. Ambiguous suffixes (`dal/po` exists
+   in many modules) remain findings, so the historical "never search sibling
+   packages" false-negative guard is preserved in the cases it was built for.
+   Root-scope behavior is unchanged.
 6. **No surface changes**: no new flags, no message-shape changes, no exit
    semantic changes, no SARIF/baseline/schema changes. Suppressed findings
    simply disappear; their baseline entries become prunable resolved debt.
@@ -176,10 +181,15 @@ extends the same doctrine to Go/multi-language monorepos and CJK documentation.
    through the existing containment primitives; no new repository walks beyond
    the cached root index in (5).
 8. **Acceptance on the audited monorepo** (local evidence, not CI): total
-   findings drop 135 → ≈43; the ~15 human-confirmed real/needs-confirmation
-   issues (missing Swift test files, dead doc link `aime-plugin-dynamic-ui.md`,
-   `app/api/kani.ts`, `make dev_local`/`all_local`, `pnpm starling`, …) ALL
-   remain reported. CI reproduces every class with synthetic fixtures.
+   findings drop 135 → ≈40 with ZERO new findings; every issue whose target is
+   verifiably absent (missing Swift test files, dead doc link
+   `aime-plugin-dynamic-ui.md`, `app/api/kani.ts`, `make dev_local`/
+   `all_local`, `pnpm starling`, …) remains reported. A needs-confirmation
+   entry may resolve instead of flagging ONLY when its target verifiably
+   exists in the repository (a unique cross-subtree file the message wrongly
+   called nonexistent) — each such resolution is listed in the implementation
+   evidence with the on-disk path. CI reproduces every class with synthetic
+   fixtures.
 
 ## Scope
 
@@ -297,7 +307,9 @@ implementation PR → nine green checks → squash-merge → closeout PR.
 - **D**: each enum shape suppressed; `Sources/App`, `pages/Home` kept;
   `domain/intent/sub_intent` (lowercase, no internal uppercase) kept.
 - **F**: unique repo-wide suffix from a nested scope → suppressed; the same
-  suffix existing in two sibling packages → kept; root scope unchanged.
+  suffix existing in two sibling packages → kept; a locally anchored token
+  (first segment exists beside the doc) → kept even when the full suffix is
+  unique elsewhere; root scope unchanged.
 - **H**: `<rootname>/existing/path` → suppressed; `<rootname>/missing/path` →
   kept; a first segment merely resembling the root name → kept.
 - **Parity**: identical fixture results from `d2_path_drift` and
