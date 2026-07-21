@@ -1,0 +1,35 @@
+SKILL.md
+  s_da394e20280a0e::t_0e3d6ba51f4853 64
+scripts/check_drift.py
+  s_da394e20280a0e::t_c5d332ed57b0b3 134-145,147-152,602-610
+scripts/facts.py
+  s_da394e20280a0e::t_959f5ca4f7115f 778-783,785-816,871-882,894,898-906,908,911,929-930,941-962,982-1004,1006-1007,1011-1014,1018,1071-1074,1077-1080,1121-1127
+scripts/registry.py
+  s_da394e20280a0e::t_057ca17a12c704 239-246,248,481-484,502-512,517-523,529-530,559-560,562-569,571-576,578,580-581,584-591,623-627,630-635
+scripts/semantic.py
+  s_da394e20280a0e::t_43c7ad5a09735b 749,751-767,814-831,1176
+tests/test_check_drift.py
+  s_da394e20280a0e::t_3bc4f5ead24a2f 1930-1969,1998-2008,2017-2018,2022-2029,2089-2117,2130,2133-2135,2138-2143,2171-2173,2175-2176,2179-2181,2184-2193,2225-2249,2286-2316,2320
+tests/test_registry_consistency.py
+  s_da394e20280a0e::t_2fa3c03a86db2b 783-828
+tests/test_semantic.py
+  s_da394e20280a0e::t_368792bee26c18 1288-1299
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1027cd5235abe60b27a05ae19f05b280e356a477",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
