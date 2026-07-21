@@ -182,7 +182,7 @@ python3 scripts/check_drift.py /path/to/repo --baseline .ai-harness-doctor/drift
 
 Checks:
 
-- D1: command drift, comparing referenced commands against `package.json` scripts and `Makefile` targets.
+- D1: command drift, comparing referenced commands against `package.json` scripts, direct Yarn/pnpm/Bun dependency binaries, and `Makefile` targets.
 - D2: path drift, checking whether backtick-quoted paths exist or are deliberately absent under repository `.gitignore` rules.
 - D3: stub re-divergence, checking size and the `AGENTS.md` pointer.
 - D4: `AGENTS.md` size.

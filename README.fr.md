@@ -50,7 +50,7 @@ Aucune de ces commandes ne modifie le dépôt audité.
 |---|---|
 | Inventaire | Fichiers canoniques, règles, scopes imbriqués, MCP, hooks, commandes, permissions et sous-agents. |
 | Sécurité | Secrets en clair, permissions trop larges, transports MCP non sûrs, hooks dangereux et contournements. |
-| Cohérence | Scripts absents, chemins déplacés, drift du gestionnaire/runtime, liens cassés, lockfiles concurrents et identifiants non-chemins — comme des règles lint ou refs de branche libellées — sans faux positifs. |
+| Cohérence | Scripts absents, binaires directs de dépendances, chemins déplacés, drift du gestionnaire/runtime, liens cassés, lockfiles concurrents et identifiants non-chemins — comme des règles lint ou refs de branche libellées — sans faux positifs. |
 | Qualité des instructions | Contexte excessif, copie du README, arbitrage silencieux, chevauchements et conflits locaux. |
 | Scope | Héritage jusqu’au `AGENTS.md` le plus proche et globs bornés de Claude, Cursor et Copilot. |
 | Maturité | Le niveau de l’échelle du dépôt — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — plus ce qu’exige le niveau suivant et la commande qui l’installe. |

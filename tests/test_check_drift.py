@@ -803,6 +803,26 @@ class DriftTests(unittest.TestCase):
         report = json.loads(proc.stdout)
         self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
 
+    def test_bun_bin_passthrough_does_not_trigger_d1(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "package.json").write_text(
+            json.dumps({"scripts": {"test": "node src/index.js"}, "devDependencies": {"vitest": "^2.0.0"}}),
+            encoding="utf-8",
+        )
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\nbun vitest\n```\n", encoding="utf-8"
+        )
+        self._stub_pointers(repo)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--json"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
+
     def test_pnpm_bin_passthrough_and_option_are_not_scripts(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)

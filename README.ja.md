@@ -50,7 +50,7 @@ npx ai-harness-doctor --version
 |---|---|
 | Inventory | Canonical files、tool rules、nested scopes、MCP、hooks、commands、permissions、subagents。 |
 | Security | Plaintext secrets、広すぎる権限、安全でない MCP transport、危険な hook、権限 bypass 指示。 |
-| Consistency | 存在しない script、移動済み path、package manager/runtime drift、broken links、競合 lockfiles、および labeled lint rule や branch ref など誤検知を安全に避ける non-path identifier。 |
+| Consistency | 存在しない script、直接 dependency binary、移動済み path、package manager/runtime drift、broken links、競合 lockfiles、および labeled lint rule や branch ref など誤検知を安全に避ける non-path identifier。 |
 | Instruction quality | 大きすぎる context、README の丸ごとコピー、silent adjudication、overlap、same-scope conflict。 |
 | Scope | root から最寄り `AGENTS.md` までの継承と、bounded な Claude/Cursor/Copilot glob applicability。 |
 | Maturity | リポジトリの ladder level — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — と、次の level に足りないもの、それを入れるコマンド。 |
