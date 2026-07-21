@@ -1075,6 +1075,19 @@ def _collect_records(data):
     return data.get("tasks", []) or []
 
 
+def _format_health_score(health):
+    if health.get("score") is None:
+        return f"health score: N/A (grade {health['grade']}), {health['passed']}/{health['total']} tasks passed"
+    return (
+        f"health score: {health['score']}/100 (grade {health['grade']}), "
+        f"{health['passed']}/{health['total']} tasks passed"
+    )
+
+
+def _fails_threshold(health, fail_under):
+    return fail_under is not None and (health.get("score") is None or health["score"] < fail_under)
+
+
 def compute_health(data):
     """Compute an automated efficacy health score (0-100) with a letter grade.
 
@@ -1086,7 +1099,17 @@ def compute_health(data):
     total = len(records)
     passed = sum(1 for r in records if r.get("passed"))
     timed_out = sum(1 for r in records if r.get("timed_out"))
-    pass_rate = (passed / total) if total else 0.0
+    if not total:
+        return {
+            "score": None,
+            "grade": "N/A",
+            "passed": 0,
+            "total": 0,
+            "timed_out": 0,
+            "pass_rate": None,
+            "insufficient_evidence": True,
+        }
+    pass_rate = passed / total
     score = round(100 * pass_rate)
     return {
         "score": score,
@@ -1095,6 +1118,7 @@ def compute_health(data):
         "total": total,
         "timed_out": timed_out,
         "pass_rate": round(pass_rate, 4),
+        "insufficient_evidence": False,
     }
 
 
@@ -1961,13 +1985,11 @@ def run_tasks(args):
         output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"wrote {output}")
         health = results["health"]
-        print(
-            f"health score: {health['score']}/100 (grade {health['grade']}), "
-            f"{health['passed']}/{health['total']} tasks passed"
-        )
+        print(_format_health_score(health))
         rc = apply_baseline(args, health, workdir)
-        if args.fail_under is not None and health["score"] < args.fail_under:
-            print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+        if _fails_threshold(health, args.fail_under):
+            score = "N/A" if health.get("score") is None else health["score"]
+            print(f"health score {score} is below --fail-under {args.fail_under}", file=sys.stderr)
             return rc or 5
         return rc
 
@@ -1997,8 +2019,9 @@ def run_tasks(args):
     print(f"wrote {output}")
     print(render_stats_summary(stats, results["health"]), end="")
     rc = apply_baseline(args, results["health"], workdir)
-    if args.fail_under is not None and results["health"]["score"] < args.fail_under:
-        print(f"health score {results['health']['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+    if _fails_threshold(results["health"], args.fail_under):
+        score = "N/A" if results["health"].get("score") is None else results["health"]["score"]
+        print(f"health score {score} is below --fail-under {args.fail_under}", file=sys.stderr)
         return rc or 5
     return rc
 
@@ -2008,10 +2031,16 @@ def render_stats_summary(stats, overall_health=None):
     lines = []
     lines.append(f"ran {stats['rounds']} round(s) over {stats['task_count']} task(s)")
     if overall_health is not None:
-        lines.append(
-            f"overall health score: {overall_health['score']}/100 (grade {overall_health['grade']}), "
-            f"{overall_health['passed']}/{overall_health['total']} task-runs passed"
-        )
+        if overall_health.get("score") is None:
+            lines.append(
+                f"overall health score: N/A (grade {overall_health['grade']}), "
+                f"{overall_health['passed']}/{overall_health['total']} task-runs passed"
+            )
+        else:
+            lines.append(
+                f"overall health score: {overall_health['score']}/100 (grade {overall_health['grade']}), "
+                f"{overall_health['passed']}/{overall_health['total']} task-runs passed"
+            )
     lines.append(
         f"mean per-round health: {stats['mean_health']}/100 "
         f"(stddev {stats['stddev']}, variance {stats['variance']}, "
@@ -2274,13 +2303,11 @@ def run_matrix(args, runners):
     print(f"wrote {json_out}")
     print(f"wrote {report_out}")
     health = matrix["health"]
-    print(
-        f"health score: {health['score']}/100 (grade {health['grade']}), "
-        f"{health['passed']}/{health['total']} tasks passed"
-    )
+    print(_format_health_score(health))
     rc = apply_baseline(args, health, workdir)
-    if args.fail_under is not None and health["score"] < args.fail_under:
-        print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+    if _fails_threshold(health, args.fail_under):
+        score = "N/A" if health.get("score") is None else health["score"]
+        print(f"health score {score} is below --fail-under {args.fail_under}", file=sys.stderr)
         return rc or 5
     return rc
 
@@ -2299,12 +2326,16 @@ def score_report(args, tasks=None):
     if args.as_json:
         print(json.dumps(health, ensure_ascii=False, indent=2))
     else:
-        print(f"Health score: {health['score']}/100 (grade {health['grade']})")
+        if health.get("score") is None:
+            print(f"Health score: N/A (grade {health['grade']})")
+        else:
+            print(f"Health score: {health['score']}/100 (grade {health['grade']})")
         print(f"{health['passed']}/{health['total']} tasks passed; {health.get('timed_out', 0)} timed out")
     workdir = Path(args.workdir).resolve() if getattr(args, "workdir", None) else None
     rc = apply_baseline(args, health, workdir)
-    if args.fail_under is not None and health["score"] < args.fail_under:
-        print(f"health score {health['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+    if _fails_threshold(health, args.fail_under):
+        score = "N/A" if health.get("score") is None else health["score"]
+        print(f"health score {score} is below --fail-under {args.fail_under}", file=sys.stderr)
         return rc or 5
     return rc
 
@@ -2335,8 +2366,9 @@ def stats_report(args):
         print(render_stats_summary(stats, overall), end="")
     workdir = Path(args.workdir).resolve() if getattr(args, "workdir", None) else None
     rc = apply_baseline(args, overall, workdir)
-    if args.fail_under is not None and overall["score"] < args.fail_under:
-        print(f"health score {overall['score']} is below --fail-under {args.fail_under}", file=sys.stderr)
+    if _fails_threshold(overall, args.fail_under):
+        score = "N/A" if overall.get("score") is None else overall["score"]
+        print(f"health score {score} is below --fail-under {args.fail_under}", file=sys.stderr)
         return rc or 5
     return rc
 
@@ -2539,7 +2571,11 @@ def apply_baseline(args, health, workdir=None):
     store = load_baseline_store(args.baseline)
     rc = 0
     if getattr(args, "check_regression", False):
-        reg = detect_regression(store, health["score"], args.regression_threshold)
+        if health.get("score") is None:
+            print("no efficacy tasks to score; skipping regression check")
+            reg = None
+        else:
+            reg = detect_regression(store, health["score"], args.regression_threshold)
         if reg is None:
             print("no prior baseline snapshot to compare against; skipping regression check")
         else:
