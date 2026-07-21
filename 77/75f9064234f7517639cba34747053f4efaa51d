@@ -1,0 +1,33 @@
+README.es.md
+  s_da394e20280a0e::t_4eac9203f601c2 120
+README.fr.md
+  s_da394e20280a0e::t_01105c64dd36ae 120
+README.ja.md
+  s_da394e20280a0e::t_272579cdcfeba7 120
+README.ko.md
+  s_da394e20280a0e::t_89fe00012a369d 120
+README.md
+  s_da394e20280a0e::t_b886698d2cab51 120
+README.pt-BR.md
+  s_da394e20280a0e::t_ace2f925d32987 120
+README.zh-CN.md
+  s_da394e20280a0e::t_2d0f9522aae07e 120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "7775f9064234f7517639cba34747053f4efaa51d",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
