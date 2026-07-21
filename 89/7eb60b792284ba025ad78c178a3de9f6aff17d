@@ -1,0 +1,21 @@
+plans/070-reduce-drift-false-positives-multilanguage.md
+  s_da394e20280a0e::t_6521056703d228 167-176,184-192,310-312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "897eb60b792284ba025ad78c178a3de9f6aff17d",
+  "prompts": {},
+  "sessions": {
+    "s_da394e20280a0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9c613bc7-23e4-4305-af4f-ac2fe0c5c304",
+        "model": "unknown"
+      },
+      "human_author": "NieZhuZhu <44939961+NieZhuZhu@users.noreply.github.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
