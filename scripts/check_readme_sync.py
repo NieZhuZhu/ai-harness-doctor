@@ -177,12 +177,15 @@ def _is_fixed_target(target):
     """True if a link target is non-translatable (a URL or a stable file path).
 
     Excludes (a) the sibling READMEs, which the per-file language switcher links
-    to, and (b) any target containing an in-page anchor (``#...``), whose slug is
-    derived from a *translated* heading and therefore differs by design.
+    to, (b) pure in-page anchors, and (c) sibling README anchors. Anchors on
+    external URLs or ordinary file paths are fixed targets and must not drift.
     """
     if target in README_FILES:
         return False
-    if "#" in target:
+    if target.startswith("#"):
+        return False
+    path_part = target.split("#", 1)[0]
+    if path_part in README_FILES:
         return False
     return True
 
@@ -236,6 +239,10 @@ def compare(reference_name, reference_text, name, text):
     # match byte-for-byte, in order, so a drifted URL/path is caught.
     ref_body = [t for t in ref_links if _is_fixed_target(t)]
     body = [t for t in links if _is_fixed_target(t)]
+    if len(body) != len(ref_body):
+        problems.append(
+            f"{name} has {len(body)} fixed link targets but {reference_name} has {len(ref_body)}"
+        )
     for index in range(min(len(body), len(ref_body))):
         if body[index] != ref_body[index]:
             problems.append(

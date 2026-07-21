@@ -393,8 +393,8 @@ _PATH_LABEL_RE = re.compile(
 
 # Explicit runtime-identifier cues that mark the token as NOT a filesystem path.
 _NONPATH_LABEL_RE = re.compile(
-    r"\b(?:docker\s+image|container\s+image|image|"
-    r"rpc\s+method|method|endpoint|operation|route|action|skill|command|tool|library)\b",
+    r"\b(?:docker\s+images?|container\s+images?|images?|"
+    r"rpc\s+methods?|methods?|endpoints?|operations?|routes?|actions?|skills?|commands?|tools?|librar(?:y|ies))\b",
     re.I,
 )
 # List-introduction cue for compact API/RPC method inventories where the label
@@ -584,9 +584,15 @@ def _is_slash_separated_value_list(token):
     # Variant pair: one name is a case-folded SUFFIX of the other
     # (`Register/Unregister`). Prefix containment is deliberately excluded —
     # `Modal/ModalHeader` is the ubiquitous parent/child component-folder
-    # convention, not a variant pair.
+    # convention, not a variant pair. Do not suppress component-style parent /
+    # child paths such as `BaseComponent/Component` or `AppButton/Button`: those
+    # are common real filesystem layouts and an explicit path cue cannot rescue
+    # them after this value-list filter runs.
     if len(segments) == 2 and all(segment[0].isupper() for segment in segments):
         first, second = segments[0].lower(), segments[1].lower()
+        component_suffixes = ("component", "button", "card", "dialog", "modal")
+        if first.endswith(component_suffixes) or second.endswith(component_suffixes):
+            return False
         if first != second and (second.endswith(first) or first.endswith(second)):
             return True
     return False
