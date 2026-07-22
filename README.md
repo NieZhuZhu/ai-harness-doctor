@@ -49,6 +49,7 @@ Nothing above changes the audited repository.
 | Area | What the doctor looks for |
 |---|---|
 | Inventory | Canonical files, tool rules, nested scopes, MCP, hooks, commands, permissions, and subagents. |
+| Coverage | Recognized agents: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer, and JetBrains Junie. |
 | Security | Plaintext secrets, broad permissions, insecure MCP transports, dangerous hook bodies, and bypass guidance. |
 | Consistency | Missing scripts, direct dependency binaries, moved paths, package-manager drift, runtime-version drift, broken links, competing lockfiles, and false-positive-safe non-path identifiers such as labeled lint rules or branch refs. |
 | Instruction quality | Oversized context, wholesale README copying, silent conflict adjudication, overlaps, and same-scope conflicts. |

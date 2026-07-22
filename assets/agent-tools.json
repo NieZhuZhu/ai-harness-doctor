@@ -97,6 +97,25 @@
       "stub_content": "",
       "canonicalizable": false,
       "canonicalizable_note": "Trae's project rules live at .trae/rules/project_rules.md (Markdown, with an optional user_rules.md for personal/global preferences that is intentionally not scanned as a repo config file) with no flat single-file legacy location to stub, the same shape as Roo. Marked canonicalizable:false so it is an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
+    },
+    {
+      "id": "amazonq",
+      "label": "Amazon Q Developer",
+      "scan_patterns": [".amazonq/rules/*.md", ".amazonq/rules/**/*.md"],
+      "stub_paths": [],
+      "stub_kind": "none",
+      "stub_content": "",
+      "canonicalizable": false,
+      "canonicalizable_note": "Amazon Q Developer reads project rules from the .amazonq/rules/ directory (Markdown files, per AWS docs) with no flat single-file legacy location to stub, the same rules-directory shape as Roo and Trae. Collapsing a rules directory into one canonical pointer needs the bespoke directory handling that is semantic-merge logic owned by SKILL.md, so it is marked canonicalizable:false as an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
+    },
+    {
+      "id": "junie",
+      "label": "Junie",
+      "scan_patterns": [".junie/guidelines.md", ".junie/guidelines/**/*.md"],
+      "stub_paths": [".junie/guidelines.md"],
+      "stub_kind": "pointer",
+      "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
+      "canonicalizable": true
     }
   ]
 }

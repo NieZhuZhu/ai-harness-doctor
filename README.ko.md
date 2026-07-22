@@ -49,6 +49,7 @@ npx ai-harness-doctor --version
 | 영역 | Doctor가 확인하는 내용 |
 |---|---|
 | Inventory | Canonical files, tool rules, nested scopes, MCP, hooks, commands, permissions, subagents. |
+| Coverage | 인식하는 에이전트: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer, JetBrains Junie. |
 | Security | Plaintext secrets, 과도한 권한, 안전하지 않은 MCP transport, 위험한 hook, bypass 지침. |
 | Consistency | 없는 script, 직접 dependency binary, 이동한 path, package manager/runtime drift, broken links, competing lockfiles, 그리고 labeled lint rule 또는 branch ref처럼 오탐을 안전하게 피하는 non-path identifier. |
 | Instruction quality | 과도한 context, README 전체 복사, silent adjudication, overlap, same-scope conflict. |

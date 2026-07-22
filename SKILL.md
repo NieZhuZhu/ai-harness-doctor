@@ -9,7 +9,7 @@ One-line purpose: run a repository's AI harness configuration through Checkup ->
 
 ## When to use
 
-- The repository contains multiple rule files, such as `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md`, `GEMINI.md`, or `.clinerules`.
+- The repository contains multiple rule files, such as `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md`, `GEMINI.md`, `.clinerules`, `.amazonq/rules/*.md`, or `.junie/guidelines.md`.
 - The user asks to migrate, unify, or organize agent configs; run an agent config checkup; check agent config drift; consolidate agent configs; or audit an AI harness.
 - Tool-specific configs need to be downgraded to minimal stubs pointing at `AGENTS.md`, with CI or pre-commit drift guards added afterward.
 
@@ -152,7 +152,7 @@ python3 scripts/canonicalize.py --validate /path/to/repo --require-sections "Pro
 ### Outputs
 
 - Canonical root `AGENTS.md`.
-- Minimal tool stubs: `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, `.cursor/rules/agents-md.mdc`, `copilot-instructions`, `GEMINI.md`, and `.clinerules`.
+- Minimal tool stubs: `CLAUDE.md`, `.cursorrules`, `.windsurfrules`, `.cursor/rules/agents-md.mdc`, `copilot-instructions`, `GEMINI.md`, `.clinerules`, and `.junie/guidelines.md`.
 - Validation report.
 
 ### Explicit stop condition

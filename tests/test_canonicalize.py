@@ -684,6 +684,38 @@ class CanonicalizeTests(unittest.TestCase):
             stub_findings = [f for f in report["findings"] if f["check"] == "STUB" and f["path"] == ".continuerules"]
             self.assertEqual(len(stub_findings), 1)
 
+    def test_junie_guidelines_downgrades_to_canonical_pointer_stub(self):
+        # Junie (.junie/guidelines.md) is a single-file canonicalizable tool:
+        # once AGENTS.md is canonical, an existing guidelines file downgrades to
+        # the shared pointer stub, and validate passes on the resulting stub.
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            junie = repo / ".junie" / "guidelines.md"
+            junie.parent.mkdir(parents=True, exist_ok=True)
+            junie.write_text("old junie guidelines, not yet a stub\n", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo)], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("--- a/.junie/guidelines.md", proc.stdout)
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo), "--apply"], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("AGENTS.md", junie.read_text(encoding="utf-8"))
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True
+            )
+            report = json.loads(proc.stdout)
+            self.assertTrue(report["ok"], report)
+
     def test_validate_missing_and_present(self):
         proc = subprocess.run([sys.executable, str(CANON), "--validate", str(FIXTURE)], text=True, capture_output=True)
         self.assertNotEqual(proc.returncode, 0)
