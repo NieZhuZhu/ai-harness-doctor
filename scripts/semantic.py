@@ -787,7 +787,7 @@ def compare_commands(root, text, repository_root=None):
                 continue
             if decl["tool"] in {"yarn", "pnpm"}:
                 if all_dependencies == "not computed":
-                    all_dependencies = facts.all_package_dependency_names(root)
+                    all_dependencies = facts.all_package_dependency_bin_names(root)
                 if name in all_dependencies:
                     continue
             if scripts is not None and name not in scripts:

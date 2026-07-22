@@ -269,6 +269,7 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             "Glob `src/**/*.ts`.\n"
             "Command `./gradlew build` and `go build ./cmd`.\n"
             "Bare tool `pytest`.\n"
+            "Paths under command-like names `python/utils.py` and `pytest/helpers.py`.\n"
             "Home `~/.claude`, absolute `/etc/hosts`, escape `../outside.txt`.\n"
             "Scoped package `@ai-sdk/provider` and alias `@/components`.\n"
             "Existing root `README.md`.\n"
@@ -291,7 +292,16 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             }
             self.assertEqual(sem_missing, d2_missing)
             # Sanity: the shared classifier's in-repo, existence-failing tokens.
-            self.assertEqual(sem_missing, {"docs/missing.md", "go.mod", "Cargo.toml"})
+            self.assertEqual(
+                sem_missing,
+                {
+                    "docs/missing.md",
+                    "go.mod",
+                    "Cargo.toml",
+                    "python/utils.py",
+                    "pytest/helpers.py",
+                },
+            )
 
     def test_subtree_path_existence_policy_agrees_across_stages(self):
         # Candidate extraction was already shared, but Phase 0 and Phase 2 also

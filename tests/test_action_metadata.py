@@ -287,9 +287,9 @@ class ActionMetadataTests(unittest.TestCase):
                 self.assertIn("][0] // empty", block)
                 self.assertNotIn("head -n 1", block)
                 self.assertIn('if [ "$CHECKUP_STATUS" != "0" ]', block)
-                self.assertIn("gh issue comment", block)
-                self.assertIn("gh issue create", block)
-                self.assertIn("gh issue close", block)
+                self.assertIn('"$gh_cli" issue comment', block)
+                self.assertIn('"$gh_cli" issue create', block)
+                self.assertIn('"$gh_cli" issue close', block)
                 self.assertIn("Harness checkup recovered", block)
                 self.assertIn("no open incident issue", block)
                 self.assertNotIn("|| true", block)
@@ -337,6 +337,7 @@ class ActionMetadataTests(unittest.TestCase):
                 env.update(
                     {
                         "PATH": f"{root}{os.pathsep}{env.get('PATH', '')}",
+                        "GH_CLI": str(fake_gh),
                         "GH_TEST_LOG": str(log),
                         "GH_TEST_ISSUE_NUMBER": issue_number,
                         "CHECKUP_STATUS": status,
