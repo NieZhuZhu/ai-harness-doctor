@@ -1088,6 +1088,28 @@ class ScanTests(unittest.TestCase):
             self.assertEqual(by_path.get(".trae/rules/project_rules.md"), "Trae")
             self.assertNotIn(".trae/rules/user_rules.md", by_path)
 
+    def test_amazon_q_and_junie_config_files_are_detected(self):
+        # Amazon Q Developer (.amazonq/rules/) and JetBrains Junie
+        # (.junie/guidelines.md) are widely-used agents whose config layouts
+        # are documented by AWS and JetBrains but were absent from the registry
+        # until now. Amazon Q is a rules-directory tool (scan-only like Roo);
+        # Junie has a single canonical guidelines file plus a rules directory.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nDemo.\n")
+            _write(repo / ".amazonq" / "rules" / "coding.md", "# team rules\n")
+            _write(repo / ".amazonq" / "rules" / "python" / "hints.md", "# nested\n")
+            _write(repo / ".junie" / "guidelines.md", "# junie guidelines\n")
+            _write(repo / ".junie" / "guidelines" / "extra.md", "# more\n")
+            proc = subprocess.run([sys.executable, str(SCAN), str(repo), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads(proc.stdout)
+            by_path = {f["path"]: f["tool"] for f in report["files"]}
+            self.assertEqual(by_path.get(".amazonq/rules/coding.md"), "Amazon Q Developer")
+            self.assertEqual(by_path.get(".amazonq/rules/python/hints.md"), "Amazon Q Developer")
+            self.assertEqual(by_path.get(".junie/guidelines.md"), "Junie")
+            self.assertEqual(by_path.get(".junie/guidelines/extra.md"), "Junie")
+
     def test_size_warning_for_generated_big_file(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td) / "repo"
