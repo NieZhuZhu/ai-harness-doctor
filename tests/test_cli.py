@@ -1185,7 +1185,7 @@ class CliInstallerTests(unittest.TestCase):
             self.assertIn("Reconcile harness issue", checkup_text)
             self.assertIn("CHECKUP_STATUS: ${{ steps.drift.outputs.status }}", checkup_text)
             self.assertIn("select(.title == env.TITLE)", checkup_text)
-            self.assertIn("gh issue close", checkup_text)
+            self.assertIn('"$gh_cli" issue close', checkup_text)
             self.assertIn("Harness checkup recovered", checkup_text)
             self.assertIn("Fail when harness issues remain", checkup_text)
             self.assertNotIn("|| true", checkup_text)

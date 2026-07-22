@@ -174,7 +174,7 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
                     in (
                         scope_dependencies
                         if scope_dependencies != "not computed"
-                        else facts.all_package_dependency_names(directories[0])
+                        else facts.all_package_dependency_bin_names(directories[0])
                     )
                 )
             ):
@@ -183,7 +183,7 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
                     # AGENTS.md may describe a binary supplied by one of its
                     # descendant packages. Scripts/paths/facts below never use
                     # this descendant fallback.
-                    scope_dependencies = facts.all_package_dependency_names(
+                    scope_dependencies = facts.all_package_dependency_bin_names(
                         directories[0]
                     )
                 continue

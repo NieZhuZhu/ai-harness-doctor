@@ -69,6 +69,18 @@ class PackageManagerConflictTests(unittest.TestCase):
             self._pm_conflict_values("Main SDK package (`ai` on npm). Run `pnpm install` to set up."),
             set(),
         )
+        self.assertEqual(
+            self._pm_conflict_values("These tests rely on a local npm registry. Run `pnpm install`."),
+            set(),
+        )
+
+    def test_script_name_containing_npm_is_not_an_npm_conflict(self):
+        # OpenAI Agents JS has a pnpm script named local-npm:publish; the
+        # substring is part of a script name, not a declaration to use npm.
+        self.assertEqual(
+            self._pm_conflict_values("Run `pnpm local-npm:publish` and `pnpm install`."),
+            set(),
+        )
 
     def test_real_npm_usage_still_conflicts_with_pnpm(self):
         self.assertEqual(

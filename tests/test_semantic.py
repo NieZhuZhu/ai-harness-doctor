@@ -94,6 +94,15 @@ class SemanticCommandTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
 
+    def test_pnpm_bin_passthrough_via_dependency_alias_not_flagged(self):
+        # Some packages expose a binary whose name differs from the package name;
+        # OpenAI Agents JS documents `pnpm changeset`, provided by @changesets/cli.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}, "devDependencies": {"@changesets/cli": "^2.0.0"}}')
+            text = "Run `pnpm changeset` before publishing."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+
     def test_bin_passthrough_does_not_apply_to_npm(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "package.json", '{"scripts": {}, "devDependencies": {"vitest": "^2.0.0"}}')

@@ -83,8 +83,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          gh_cli="${GH_CLI:-gh}"
           issue_number="$(
-            gh issue list \
+            "$gh_cli" issue list \
               --state open \
               --limit 100 \
               --search "$TITLE in:title" \
@@ -94,12 +95,12 @@ jobs:
           if [ "$CHECKUP_STATUS" != "0" ]; then
             body="$(cat harness-checkup-report.md)"
             if [ -n "$issue_number" ]; then
-              gh issue comment "$issue_number" --body "$body"
+              "$gh_cli" issue comment "$issue_number" --body "$body"
             else
-              gh issue create --title "$TITLE" --body "$body"
+              "$gh_cli" issue create --title "$TITLE" --body "$body"
             fi
           elif [ -n "$issue_number" ]; then
-            gh issue close \
+            "$gh_cli" issue close \
               "$issue_number" \
               --comment "✅ Harness checkup recovered at \`$COMMIT_SHA\`. Verified by $RUN_URL."
           else

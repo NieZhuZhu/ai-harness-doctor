@@ -494,6 +494,18 @@ def all_package_names(root):
     return names
 
 
+_PACKAGE_BIN_ALIASES = {
+    "@changesets/cli": {"changeset"},
+}
+
+
+def _dependency_bin_names(names):
+    bins = set(names)
+    for package_name in names:
+        bins.update(_PACKAGE_BIN_ALIASES.get(package_name, ()))
+    return bins
+
+
 def all_package_dependency_names(root):
     """Union of dependency names across every contained package.json."""
     names = set()
@@ -503,6 +515,11 @@ def all_package_dependency_names(root):
             if isinstance(section, dict):
                 names.update(section.keys())
     return names
+
+
+def all_package_dependency_bin_names(root):
+    """Union of dependency-provided binary names across contained package.json files."""
+    return _dependency_bin_names(all_package_dependency_names(root))
 
 
 # Build-system manifest/lockfile basenames that are ubiquitous and routinely
@@ -727,7 +744,7 @@ def is_node_bin_passthrough(root, tool, name):
     if bin_names is not None:
         return name in bin_names
     deps = package_dependency_names(root)
-    return deps is not None and name in deps
+    return deps is not None and name in _dependency_bin_names(deps)
 
 
 def is_yarn_bin_passthrough(root, tool, name):

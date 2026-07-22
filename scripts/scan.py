@@ -886,7 +886,11 @@ SIGNAL_PATTERNS = {
         # Both manufactured a bogus npm-vs-pnpm conflict.
         (
             "npm",
-            re.compile(r"(?<!on )\bnpm\b(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"),
+            re.compile(
+                r"(?<!on )(?<![A-Za-z0-9_-])npm\b"
+                r"(?!\s+registry\b)"
+                r"(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"
+            ),
         ),
         ("yarn", re.compile(r"\byarn\b")),
         ("bun", re.compile(r"\bbun\b")),

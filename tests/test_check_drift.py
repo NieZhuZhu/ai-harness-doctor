@@ -850,6 +850,32 @@ class DriftTests(unittest.TestCase):
         report = json.loads(proc.stdout)
         self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
 
+    def test_pnpm_bin_passthrough_dependency_alias_does_not_trigger_d1(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "package.json").write_text(
+            json.dumps(
+                {
+                    "scripts": {"test": "node src/index.js"},
+                    "devDependencies": {"@changesets/cli": "^2.0.0"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "```bash\npnpm changeset\n```\n",
+            encoding="utf-8",
+        )
+        self._stub_pointers(repo)
+        proc = subprocess.run(
+            [sys.executable, str(DRIFT), str(repo), "--json"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        report = json.loads(proc.stdout)
+        self.assertEqual([f for f in report["findings"] if f["check"] == "D1"], [])
+
     def test_pnpm_descendant_dependency_binary_not_flagged_from_parent_scope(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
