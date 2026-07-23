@@ -201,8 +201,13 @@ _PLACEHOLDER_SEGMENT_RE = re.compile(r"^[a-z][a-z0-9]*-name$")
 # Code-expression punctuation that never appears in a legitimate repo-relative
 # path an AGENTS.md would reference. A backtick token carrying any of these is a
 # code snippet — an attribute macro, a function/index expression, or a
-# quoted-argument literal — not a filesystem path; see declared_paths.
-_CODE_EXPR_CHARS = frozenset("#()[]{}\"'!=;|&<>")
+# quoted-argument literal — not a filesystem path; see declared_paths. `@` is
+# included because a mid-token `@` marks a versioned runtime identifier
+# (`actions/checkout@v4`, `pnpm@9`, `node:20@sha256:...`) or a pinned Docker/OCI
+# tag — no legitimate repo-relative path carries an `@`. Leading-`@` npm scopes
+# (`@ai-sdk/provider`) are handled separately below, but the interior form slips
+# past that guard, so it belongs here.
+_CODE_EXPR_CHARS = frozenset("#()[]{}\"'!=;|&<>@")
 # Matches a git branch-type prefix written as a namespace convention: a single
 # path segment followed by a trailing slash and nothing else (`feat/`, `fix/`,
 # `release/`). AGENTS.md documents these as branch-naming rules, not as concrete
@@ -571,15 +576,20 @@ def _is_slash_separated_value_list(token):
     if is_compound[0] and sum(is_compound) * 2 > len(segments):
         return True
     # Method/field inventory: three or more segments ALL starting uppercase,
-    # at least one compound, and none being a conventional TitleCase directory
-    # word (`GetTools/Compose/Run`, `Host/Port/User/Password/DBName/Params`).
+    # at least one compound OR every segment fully upper-case, and none being a
+    # conventional TitleCase directory word (`GetTools/Compose/Run`,
+    # `Host/Port/User/Password/DBName/Params`, `GET/POST/PUT`,
+    # `INFO/WARN/ERROR`). The fully-upper-case allowance covers HTTP-verb and
+    # log-level enumerations that carry no compound segment; real directory
+    # trees are TitleCase (guarded by `_TITLECASE_DIR_WORDS`) rather than
+    # SCREAMING_CASE, so no ordinary path is suppressed.
     # TitleCase directory trees — `Sources/App/Views`, `Assets/Images/Icons`
     # (no compound segment), `Sources/MyLib/Models` (directory word) — stay
     # path candidates.
     if (
         len(segments) >= 3
         and all(segment[0].isupper() for segment in segments)
-        and any(is_compound)
+        and (any(is_compound) or all(segment.isupper() for segment in segments))
         and not any(segment in _TITLECASE_DIR_WORDS for segment in segments)
     ):
         return True

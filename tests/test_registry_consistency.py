@@ -481,6 +481,51 @@ class SharedConstantConsistencyTests(unittest.TestCase):
                 expected,
             )
 
+    def test_versioned_and_screaming_case_identifiers_are_not_declared_paths(self):
+        # A backtick token carrying a mid-token `@` is a versioned runtime
+        # identifier or a pinned Docker/OCI tag (`actions/checkout@v4`,
+        # `pnpm/action-setup@v4`), not a repo-relative path — no legitimate path
+        # carries an `@`. And a `/`-joined run of SCREAMING_CASE segments is an
+        # enum of HTTP verbs / log levels (`GET/POST/PUT`, `INFO/WARN/ERROR`),
+        # not a nested directory tree. Both slipped through as false "path does
+        # not exist" findings before this guard.
+        suppressed = [
+            "Pin the workflow to `actions/checkout@v4` for reproducibility.",
+            "Use `pnpm/action-setup@v4` in the CI job.",
+            "Bump `actions/setup-node@v4` before release.",
+            "The API accepts `GET/POST/PUT` verbs.",
+            "Log at `INFO/WARN/ERROR` levels only.",
+        ]
+        for line in suppressed:
+            text = line + "\n"
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"identifier in {line!r} was wrongly classified as a path",
+            )
+            # Both stages share the classifier, so neither the Phase-0 semantic
+            # check nor the Phase-2 D2 gate can flag it.
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # Real filesystem references sharing a nearby shape keep being checked:
+        # an all-lowercase or TitleCase directory tree is never SCREAMING_CASE,
+        # and a real two-segment path has no `@`.
+        kept = [
+            ("Edit `src/utils/helpers.py` now.", ["src/utils/helpers.py"]),
+            ("Open the `Sources/App/Views` directory.", ["Sources/App/Views"]),
+        ]
+        for line, expected in kept:
+            text = line + "\n"
+            self.assertEqual(
+                [d["path"] for d in registry.declared_paths(text)],
+                expected,
+                f"path reference in {line!r} was wrongly suppressed",
+            )
+            self.assertEqual(
+                [d["path"] for d in semantic.declared_paths(text)],
+                expected,
+            )
+
     def test_example_branch_names_are_not_declared_paths(self):
         # A concrete `<branch-type-prefix>/<name>` token is an EXAMPLE branch
         # name, not a repo directory, when the same line names a git branch. The
