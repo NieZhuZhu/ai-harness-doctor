@@ -49,7 +49,7 @@ Ninguno de estos comandos modifica el repositorio auditado.
 | Área | Qué busca el doctor |
 |---|---|
 | Inventario | Archivos canónicos, reglas, scopes anidados, MCP, hooks, comandos, permisos y subagentes. |
-| Cobertura | Agentes reconocidos: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer y JetBrains Junie. |
+| Cobertura | Agentes reconocidos: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer, JetBrains Junie, Warp, Firebase Studio, Goose y Kiro. |
 | Seguridad | Secretos en texto plano, permisos amplios, transportes MCP inseguros, hooks peligrosos y bypasses. |
 | Consistencia | Scripts ausentes, binarios directos de dependencias, rutas movidas, drift de gestor o runtime, enlaces rotos, lockfiles rivales e identificadores que no son rutas —como reglas lint o refs de rama etiquetadas— sin falsos positivos. |
 | Calidad de instrucciones | Contexto excesivo, copias del README, decisiones silenciosas, solapamientos y conflictos locales. |
