@@ -74,6 +74,27 @@ class PackageManagerConflictTests(unittest.TestCase):
             set(),
         )
 
+    def test_npm_packages_and_scripts_ecosystem_phrases_are_not_an_npm_conflict(self):
+        # "npm packages" (registry packages) and "npm scripts" (package.json
+        # `scripts` entries) are ecosystem nouns, not a declaration that this
+        # repo installs deps with npm. Found scanning lobehub/lobe-chat's
+        # AGENTS.md (package manager is pnpm+bun): "`bun` to run npm scripts"
+        # and "`bunx` for executable npm packages".
+        self.assertEqual(
+            self._pm_conflict_values(
+                "- `bun` to run npm scripts\n- `bunx` for executable npm packages\n"
+                "- `pnpm` for dependency management"
+            ),
+            {"pnpm", "bun"},
+        )
+        for text in (
+            "Use `bunx` for executable npm packages. Run `pnpm install`.",
+            "Add the dependency as an npm package, then `pnpm install`.",
+            "`bun` to run npm scripts, but `pnpm install` for deps.",
+            "Define an npm script in package.json; use `pnpm install`.",
+        ):
+            self.assertNotIn("npm", self._pm_conflict_values(text), text)
+
     def test_script_name_containing_npm_is_not_an_npm_conflict(self):
         # OpenAI Agents JS has a pnpm script named local-npm:publish; the
         # substring is part of a script name, not a declaration to use npm.
