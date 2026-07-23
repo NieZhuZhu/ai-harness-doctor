@@ -889,7 +889,13 @@ SIGNAL_PATTERNS = {
         #    scanning lobehub/lobe-chat's AGENTS.md, whose package manager is
         #    pnpm+bun: "`bun` to run npm scripts" and "`bunx` for executable npm
         #    packages" each manufactured a bogus npm-vs-pnpm/bun conflict.
-        # All three manufactured a bogus npm-vs-pnpm conflict.
+        # 4. "npm provenance" names npm's publish/supply-chain attestation
+        #    feature, a release concern — not a declaration that this repo
+        #    installs deps with npm. Found self-scanning this repo's own
+        #    AGENTS.md release line ("Verify npm provenance/Release"), which
+        #    manufactured a bogus npm-vs-pnpm conflict against the pnpm test
+        #    fixtures.
+        # All four manufactured a bogus npm-vs-pnpm conflict.
         (
             "npm",
             re.compile(
@@ -897,6 +903,7 @@ SIGNAL_PATTERNS = {
                 r"(?!\s+registry\b)"
                 r"(?!\s+packages?\b)"
                 r"(?!\s+scripts?\b)"
+                r"(?!\s+provenance\b)"
                 r"(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"
             ),
         ),

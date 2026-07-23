@@ -95,6 +95,17 @@ class PackageManagerConflictTests(unittest.TestCase):
         ):
             self.assertNotIn("npm", self._pm_conflict_values(text), text)
 
+    def test_npm_provenance_release_phrase_is_not_an_npm_conflict(self):
+        # "npm provenance" names npm's publish/supply-chain attestation feature
+        # (a release concern), not a declaration that this repo installs deps
+        # with npm. Found self-scanning this repo's own AGENTS.md release line:
+        # "Verify npm provenance/Release" manufactured a bogus npm-vs-pnpm
+        # conflict against the pnpm test fixtures.
+        self.assertEqual(
+            self._pm_conflict_values("Verify npm provenance/Release. Run `pnpm install` to set up."),
+            set(),
+        )
+
     def test_script_name_containing_npm_is_not_an_npm_conflict(self):
         # OpenAI Agents JS has a pnpm script named local-npm:publish; the
         # substring is part of a script name, not a declaration to use npm.
