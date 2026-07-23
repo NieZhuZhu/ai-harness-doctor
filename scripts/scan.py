@@ -883,12 +883,20 @@ SIGNAL_PATTERNS = {
         #    install the others globally): "`npm install -g pnpm@10`".
         # 2. "`ai` on npm" names the npm REGISTRY a package is published to,
         #    regardless of which tool the project itself uses to install.
-        # Both manufactured a bogus npm-vs-pnpm conflict.
+        # 3. "npm packages"/"npm scripts" are ecosystem nouns — a package
+        #    published to the npm registry and a package.json `scripts` entry —
+        #    not a declaration that this repo installs deps with npm. Found
+        #    scanning lobehub/lobe-chat's AGENTS.md, whose package manager is
+        #    pnpm+bun: "`bun` to run npm scripts" and "`bunx` for executable npm
+        #    packages" each manufactured a bogus npm-vs-pnpm/bun conflict.
+        # All three manufactured a bogus npm-vs-pnpm conflict.
         (
             "npm",
             re.compile(
                 r"(?<!on )(?<![A-Za-z0-9_-])npm\b"
                 r"(?!\s+registry\b)"
+                r"(?!\s+packages?\b)"
+                r"(?!\s+scripts?\b)"
                 r"(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"
             ),
         ),
