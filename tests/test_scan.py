@@ -1131,6 +1131,27 @@ class ScanTests(unittest.TestCase):
             self.assertEqual(by_path.get(".junie/guidelines.md"), "Junie")
             self.assertEqual(by_path.get(".junie/guidelines/extra.md"), "Junie")
 
+    def test_warp_firebase_goose_and_kiro_config_files_are_detected(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _write(repo / "AGENTS.md", "# Project overview\nDemo.\n")
+            _write(repo / "WARP.md", "# warp rules\n")
+            _write(repo / "packages" / "web" / "WARP.md", "# nested warp\n")
+            _write(repo / ".idx" / "airules.md", "# firebase studio rules\n")
+            _write(repo / ".goosehints", "goose hints\n")
+            _write(repo / ".kiro" / "steering" / "product.md", "# steering\n")
+            _write(repo / ".kiro" / "steering" / "backend" / "api.md", "# nested steering\n")
+            proc = subprocess.run([sys.executable, str(SCAN), str(repo), "--json"], text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            report = json.loads(proc.stdout)
+            by_path = {f["path"]: f["tool"] for f in report["files"]}
+            self.assertEqual(by_path.get("WARP.md"), "Warp")
+            self.assertEqual(by_path.get("packages/web/WARP.md"), "Warp")
+            self.assertEqual(by_path.get(".idx/airules.md"), "Firebase Studio")
+            self.assertEqual(by_path.get(".goosehints"), "Goose")
+            self.assertEqual(by_path.get(".kiro/steering/product.md"), "Kiro")
+            self.assertEqual(by_path.get(".kiro/steering/backend/api.md"), "Kiro")
+
     def test_size_warning_for_generated_big_file(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td) / "repo"

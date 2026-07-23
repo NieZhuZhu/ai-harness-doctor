@@ -716,6 +716,47 @@ class CanonicalizeTests(unittest.TestCase):
             report = json.loads(proc.stdout)
             self.assertTrue(report["ok"], report)
 
+    def test_warp_firebase_and_goose_downgrade_to_canonical_pointer_stubs(self):
+        # Warp (WARP.md), Firebase Studio (.idx/airules.md) and Goose
+        # (.goosehints) are single-file canonicalizable tools: once AGENTS.md is
+        # canonical, an existing rules file downgrades to a pointer stub, and
+        # validate passes on the resulting stubs.
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            warp = repo / "WARP.md"
+            warp.write_text("old warp rules, not yet a stub\n", encoding="utf-8")
+            airules = repo / ".idx" / "airules.md"
+            airules.parent.mkdir(parents=True, exist_ok=True)
+            airules.write_text("old firebase studio rules\n", encoding="utf-8")
+            goose = repo / ".goosehints"
+            goose.write_text("old goose hints, not yet a stub\n", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo)], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("--- a/WARP.md", proc.stdout)
+            self.assertIn("--- a/.idx/airules.md", proc.stdout)
+            self.assertIn("--- a/.goosehints", proc.stdout)
+            subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--write-stubs", str(repo), "--apply"], text=True, capture_output=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("AGENTS.md", warp.read_text(encoding="utf-8"))
+            self.assertIn("AGENTS.md", airules.read_text(encoding="utf-8"))
+            self.assertIn("AGENTS.md", goose.read_text(encoding="utf-8"))
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"], text=True, capture_output=True
+            )
+            report = json.loads(proc.stdout)
+            self.assertTrue(report["ok"], report)
+
     def test_validate_missing_and_present(self):
         proc = subprocess.run([sys.executable, str(CANON), "--validate", str(FIXTURE)], text=True, capture_output=True)
         self.assertNotEqual(proc.returncode, 0)

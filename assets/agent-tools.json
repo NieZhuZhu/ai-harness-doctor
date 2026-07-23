@@ -116,6 +116,43 @@
       "stub_kind": "pointer",
       "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
       "canonicalizable": true
+    },
+    {
+      "id": "warp",
+      "label": "Warp",
+      "scan_patterns": ["WARP.md", "**/WARP.md"],
+      "stub_paths": ["WARP.md"],
+      "stub_kind": "pointer",
+      "stub_content": "# Warp instructions\n\nCanonical agent instructions live in `AGENTS.md`, which Warp reads as its default project rules file. Keep this file as a pointer only; do not duplicate rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "firebasestudio",
+      "label": "Firebase Studio",
+      "scan_patterns": [".idx/airules.md"],
+      "stub_paths": [".idx/airules.md"],
+      "stub_kind": "pointer",
+      "stub_content": "# Firebase Studio instructions\n\nCanonical agent instructions live in `AGENTS.md`, which Firebase Studio also loads. Keep this file as a pointer only; do not duplicate rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "goose",
+      "label": "Goose",
+      "scan_patterns": [".goosehints"],
+      "stub_paths": [".goosehints"],
+      "stub_kind": "pointer",
+      "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "kiro",
+      "label": "Kiro",
+      "scan_patterns": [".kiro/steering/*.md", ".kiro/steering/**/*.md"],
+      "stub_paths": [],
+      "stub_kind": "none",
+      "stub_content": "",
+      "canonicalizable": false,
+      "canonicalizable_note": "Kiro reads steering directives from the .kiro/steering/ directory (Markdown files, per Kiro docs) and also supports the AGENTS.md standard directly; there is no flat single-file legacy location to stub, the same rules-directory shape as Roo, Trae and Amazon Q Developer. Collapsing a rules directory into one canonical pointer needs the bespoke directory handling that is semantic-merge logic owned by SKILL.md, so it is marked canonicalizable:false as an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
     }
   ]
 }

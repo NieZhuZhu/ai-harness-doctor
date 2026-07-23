@@ -49,7 +49,7 @@ npx ai-harness-doctor --version
 | 范围 | Doctor 检查什么 |
 |---|---|
 | 清单 | Canonical 文件、工具规则、嵌套作用域、MCP、hooks、commands、权限和 subagents。 |
-| 覆盖范围 | 识别的 agent：Claude Code、Cursor、Windsurf、GitHub Copilot、Gemini CLI、Cline、Roo、Continue、Trae、Amazon Q Developer、JetBrains Junie。 |
+| 覆盖范围 | 识别的 agent：Claude Code、Cursor、Windsurf、GitHub Copilot、Gemini CLI、Cline、Roo、Continue、Trae、Amazon Q Developer、JetBrains Junie、Warp、Firebase Studio、Goose、Kiro。 |
 | 安全 | 明文 secret、过宽权限、不安全 MCP transport、危险 hook 以及权限绕过指引。 |
 | 一致性 | 缺失脚本、直接依赖二进制命令、移动路径、包管理器漂移、运行时版本漂移、坏链接、多套 lockfile，以及带标签的 lint rule 或 branch ref 等安全排除误报的非路径标识符。 |
 | 指令质量 | 上下文过大、照搬 README、静默裁决、重复内容和同作用域冲突。 |

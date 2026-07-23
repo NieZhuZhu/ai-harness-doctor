@@ -9,7 +9,7 @@ One-line purpose: run a repository's AI harness configuration through Checkup ->
 
 ## When to use
 
-- The repository contains multiple rule files, such as `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md`, `GEMINI.md`, `.clinerules`, `.amazonq/rules/*.md`, or `.junie/guidelines.md`.
+- The repository contains multiple rule files, such as `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules/*.mdc`, `.windsurfrules`, `.github/copilot-instructions.md`, `GEMINI.md`, `.clinerules`, `.amazonq/rules/*.md`, `.junie/guidelines.md`, `WARP.md`, `.idx/airules.md`, `.goosehints`, or `.kiro/steering/*.md`.
 - The user asks to migrate, unify, or organize agent configs; run an agent config checkup; check agent config drift; consolidate agent configs; or audit an AI harness.
 - Tool-specific configs need to be downgraded to minimal stubs pointing at `AGENTS.md`, with CI or pre-commit drift guards added afterward.
 
