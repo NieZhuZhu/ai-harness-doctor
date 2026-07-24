@@ -51,7 +51,7 @@ Nothing above changes the audited repository.
 | Inventory | Canonical files, tool rules, nested scopes, MCP, hooks, commands, permissions, and subagents. |
 | Coverage | Recognized agents: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer, JetBrains Junie, Warp, Firebase Studio, Goose, and Kiro. |
 | Security | Plaintext secrets, broad permissions, insecure MCP transports, dangerous hook bodies, and bypass guidance. |
-| Consistency | Missing scripts, direct dependency binaries, moved paths, package-manager drift, runtime-version drift, broken links, competing lockfiles, and false-positive-safe non-path identifiers such as labeled lint rules or branch refs. |
+| Consistency | Missing scripts, direct dependency binaries, moved paths, package-manager drift, runtime-version drift, broken links, competing lockfiles, and false-positive-safe non-path identifiers such as labeled lint rules, branch refs, or GitHub Actions `uses` references. |
 | Instruction quality | Oversized context, wholesale README copying, silent conflict adjudication, overlaps, and same-scope conflicts. |
 | Scope | Root-to-nearest `AGENTS.md` inheritance plus bounded Claude, Cursor, and Copilot glob applicability. |
 | Maturity | The repository's ladder level — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — plus what the next level requires and the command that installs it. |
