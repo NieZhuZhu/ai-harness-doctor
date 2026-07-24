@@ -791,6 +791,33 @@ class SemanticPathTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
 
+    def test_local_override_config_paths_not_flagged(self):
+        # `*.local.<ext>` files (`.claude/settings.local.json`,
+        # `.continue/settings.local.json`, `config.local.yaml`) are user-local
+        # overrides — gitignored by convention and never committed. AGENTS.md
+        # documents them as the project-local tier of a config-search precedence
+        # chain, not as paths the repo contains. Found running the full chain
+        # against continuedev/continue's extensions/cli/AGENTS.md.
+        with tempfile.TemporaryDirectory() as td:
+            text = (
+                "Config locations (lowest to highest precedence):\n"
+                "- `.claude/settings.local.json`, `.continue/settings.local.json` (local)"
+            )
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            messages = " ".join(p["message"] for p in paths)
+            self.assertNotIn(".local.json", messages)
+
+    def test_local_override_keeps_tracked_sibling_checked(self):
+        # Only the `.local.<ext>` override is exempt; a tracked `settings.json`
+        # sibling that is genuinely absent must still be flagged as drift.
+        with tempfile.TemporaryDirectory() as td:
+            text = "Config lives in `config/app.json`."
+            result = semantic.analyze(td, text)
+            paths = [f for f in result["findings"] if f["category"] == "path"]
+            self.assertEqual(len(paths), 1)
+            self.assertIn("config/app.json", paths[0]["message"])
+
     def test_committed_dotenv_template_still_flagged(self):
         # The committed *template* variants ARE meant to be tracked, so a
         # reference to a missing one is genuine drift and must still be caught.

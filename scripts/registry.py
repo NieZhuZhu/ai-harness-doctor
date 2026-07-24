@@ -330,6 +330,24 @@ def _is_gitignored_dotenv(token):
     return False
 
 
+# A ``*.local.<ext>`` basename (`settings.local.json`, `config.local.yaml`,
+# `mcp.local.json`) is a user-local override file by universal convention —
+# gitignored and never committed, exactly like `.env.local`. AGENTS.md documents
+# these as the place to PUT machine-specific overrides in a config-search
+# precedence chain (e.g. Claude Code / Continue "Config locations": project
+# `.claude/settings.json` then project-local `.claude/settings.local.json`), so
+# probing `root/.../settings.local.json` always misses. A committed
+# `settings.local.json` would itself be the bug. Bounded and fail-closed: only
+# the `.local.<ext>` infix matches, so the tracked `settings.json` sibling and
+# ordinary names like `locale.json` stay checked and real drift is still caught.
+_LOCAL_OVERRIDE_RE = re.compile(r"\.local\.[^.]+$")
+
+
+def _is_local_override_config(token):
+    """True when ``token`` names a conventional ``*.local.<ext>`` override file."""
+    return bool(_LOCAL_OVERRIDE_RE.search(token.rsplit("/", 1)[-1]))
+
+
 # A slash-joined run of two or more package-manager names — e.g.
 # "npm/yarn/pnpm workspaces" or "pnpm/yarn" — enumerates the tools a doc
 # *supports* or *detects*, it does not declare the ONE package manager the repo
@@ -798,6 +816,20 @@ def declared_paths(text):
             # those ARE meant to be tracked, so a reference to a missing one is
             # genuine drift and stays checked.
             if _is_gitignored_dotenv(token):
+                continue
+            # A `*.local.<ext>` override file (`.claude/settings.local.json`,
+            # `.continue/settings.local.json`, `config.local.yaml`) is a
+            # user-local, gitignored-by-convention override — never committed.
+            # AGENTS.md documents these as config-search locations (the
+            # project-local tier of a precedence chain), not as paths the repo
+            # is expected to contain, so probing them always misses. Found
+            # running the full chain against continuedev/continue, whose
+            # extensions/cli/AGENTS.md lists a hook "Config locations" precedence
+            # chain ending in `.claude/settings.local.json` /
+            # `.continue/settings.local.json` — flagged MISSING by the Phase-0
+            # semantic scan and the Phase-2 D2 gate. The tracked `settings.json`
+            # sibling stays checked (see _is_local_override_config).
+            if _is_local_override_config(token):
                 continue
             # Conventional generated-output roots are absent from a clean
             # checkout by design. An instruction can document where a build
