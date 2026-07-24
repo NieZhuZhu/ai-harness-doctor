@@ -526,7 +526,55 @@ class SharedConstantConsistencyTests(unittest.TestCase):
                 expected,
             )
 
-    def test_example_branch_names_are_not_declared_paths(self):
+    def test_github_action_references_are_not_declared_paths(self):
+        # A GitHub Actions `uses` reference shares the two-segment `owner/repo`
+        # shape of a repo path but names a published action, not a directory. The
+        # reserved first-party `actions/` org is a standalone signal (like the
+        # `origin/` / `upstream/` remotes); any other `owner/repo` needs an
+        # explicit same-line `uses:` cue. Pinned forms (`actions/checkout@v4`) are
+        # already handled by the `@` guard; this covers the bare form used in
+        # prose and version-standard tables. Found running the full chain against
+        # yzhao062/anywhere-agents, whose "GitHub Actions Standards" table pins
+        # `actions/checkout`, `actions/setup-python`, etc. — all falsely flagged
+        # MISSING by the Phase-0 semantic scan and the Phase-2 D2 gate.
+        suppressed = [
+            "Keep `actions/checkout` at or above the first Node.js 24 major.",
+            "Bump `actions/setup-python` and `actions/setup-node` in CI.",
+            "| `actions/upload-artifact` | **v6** | v4, v5 |",
+            "| `actions/download-artifact` | **v7** | v4, v5, v6 |",
+            "Set `uses:` to `docker/build-push-action` in the job.",
+        ]
+        for line in suppressed:
+            text = line + "\n"
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"action reference in {line!r} was wrongly classified as a path",
+            )
+            # Both stages share the classifier, so neither the Phase-0 semantic
+            # check nor the Phase-2 D2 gate can flag it.
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # Real filesystem references sharing the two-segment shape keep being
+        # checked: an extension-bearing final segment is a file, an explicit
+        # filesystem cue (`directory`, `file`) forces a path even under the
+        # reserved org, and a bare `owner/repo` with no `uses:` cue stays a path.
+        kept = [
+            ("Edit the `actions/config.py` file.", ["actions/config.py"]),
+            ("The `actions/handlers` directory holds jobs.", ["actions/handlers"]),
+            ("See `src/utils` for shared helpers.", ["src/utils"]),
+        ]
+        for line, expected in kept:
+            text = line + "\n"
+            self.assertEqual(
+                [d["path"] for d in registry.declared_paths(text)],
+                expected,
+                f"path reference in {line!r} was wrongly suppressed",
+            )
+            self.assertEqual(
+                [d["path"] for d in semantic.declared_paths(text)],
+                expected,
+            )
         # A concrete `<branch-type-prefix>/<name>` token is an EXAMPLE branch
         # name, not a repo directory, when the same line names a git branch. The
         # bare-prefix form (`feat/`) is handled elsewhere; this covers the full

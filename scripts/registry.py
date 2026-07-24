@@ -277,6 +277,25 @@ _BRANCH_PATH_CUE_RE = re.compile(
 # Bounded window (chars) scanned around the token so section-level prose intent
 # never leaks into the branch classification.
 _BRANCH_LABEL_WINDOW = 40
+# A GitHub Actions `uses` reference (`actions/checkout`, `docker/build-push-action`)
+# shares the two-segment `owner/repo` shape of a repo path but names a published
+# GitHub Action, not a directory the repo is expected to contain. The `actions/`
+# org is owned by GitHub and reserved for its first-party actions
+# (`actions/checkout`, `actions/setup-node`, `actions/upload-artifact`, ...), so
+# an `actions/<name>` token is always an action reference — treated like the
+# reserved `origin/` / `upstream/` remote prefixes above. Any other `owner/repo`
+# token needs the explicit workflow-step `uses:` cue on the same line before it
+# is read as an action ref, so real two-segment directories (`src/utils`) stay
+# checked. Pinned forms (`actions/checkout@v4`) are already handled by the `@`
+# code-expr guard; this covers the bare form used in prose and version-standard
+# tables. See _is_github_action_reference. Found running the full chain against
+# yzhao062/anywhere-agents, whose "GitHub Actions Standards" table pins
+# `actions/checkout`, `actions/setup-python`, etc. — every entry falsely flagged
+# MISSING by the Phase-0 semantic scan and the Phase-2 D2 gate.
+_GITHUB_ACTIONS_ORG = "actions"
+_GITHUB_ACTION_USES_CUE_RE = re.compile(r"\buses\s*:", re.I)
+_GITHUB_ACTION_NAME_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
+_GITHUB_ACTION_LABEL_WINDOW = 40
 # A path segment that looks like a hostname (contains a literal `.`, not a
 # leading one like `.github`) — the first component of a Go import/module
 # path (`github.com/org/pkg`, `charm.land/bubbletea/v2`), never a real
@@ -672,6 +691,46 @@ def _is_labeled_branch_ref(line, match):
     )
 
 
+def _is_github_action_reference(line, match):
+    """True when a backtick token is a GitHub Actions ``uses`` reference
+    (``actions/checkout``, ``docker/build-push-action``) rather than a repo path.
+
+    Two signals mirror the branch / runtime-identifier guards and stay
+    fail-closed toward paths. The first-party ``actions/`` org is owned by GitHub
+    and reserved for official actions, so an ``actions/<name>`` token is always an
+    action reference and suppresses on its own — like the ``origin/`` /
+    ``upstream/`` remote prefixes. Any other ``owner/repo`` token needs the
+    explicit workflow ``uses:`` cue on the same line before it is treated as an
+    action ref, so real two-segment directories (``src/utils``) stay checked. An
+    explicit filesystem cue (file, directory, edit, ...) always wins and keeps the
+    token a path, and a final segment that carries a file extension
+    (``actions/deploy.yml``) is a file path, never a bare action ref.
+    """
+    token = match.group(1).strip()
+    segments = token.split("/")
+    if len(segments) < 2 or not all(segments):
+        return False
+    # An extension-bearing final segment is a file, not a bare action ref.
+    if "." in segments[-1]:
+        return False
+    owner, repo = segments[0], segments[1]
+    if (
+        _GITHUB_ACTION_NAME_RE.fullmatch(owner) is None
+        or _GITHUB_ACTION_NAME_RE.fullmatch(repo) is None
+    ):
+        return False
+    before = line[max(0, match.start() - _GITHUB_ACTION_LABEL_WINDOW):match.start()]
+    after = line[match.end():match.end() + _GITHUB_ACTION_LABEL_WINDOW]
+    # Explicit filesystem intent wins over the action cue (fail-closed to path).
+    if _BRANCH_PATH_CUE_RE.search(before + " " + after):
+        return False
+    # Strong signal: the reserved first-party GitHub Actions org.
+    if owner == _GITHUB_ACTIONS_ORG:
+        return True
+    # Weak signal: an explicit workflow `uses:` step introduces the action ref.
+    return bool(_GITHUB_ACTION_USES_CUE_RE.search(before))
+
+
 def declared_paths(text):
     """Return repo-relative paths referenced in inline backticks as ``{path, line}``.
 
@@ -754,6 +813,17 @@ def declared_paths(text):
             # feature`)" — flagged MISSING by the Phase-0 semantic scan and the
             # Phase-2 D2 gate even though no such directory should exist.
             if _is_labeled_branch_ref(line, m):
+                continue
+            # A GitHub Actions `uses` reference (`actions/checkout`,
+            # `actions/setup-node`) shares the two-segment `owner/repo` shape of a
+            # repo path but names a published action, not a directory. The
+            # reserved first-party `actions/` org suppresses on its own; any other
+            # `owner/repo` needs an explicit same-line `uses:` cue. Pinned forms
+            # (`actions/checkout@v4`) are already handled by the `@` code-expr
+            # guard above; this covers the bare form used in prose and
+            # version-standard tables (found scanning yzhao062/anywhere-agents'
+            # "GitHub Actions Standards" table). See _is_github_action_reference.
+            if _is_github_action_reference(line, m):
                 continue
             # Go import/module paths are conventionally `domain.tld/org/pkg`
             # (a "vanity" or SCM-hosted path) — the first segment looks like
