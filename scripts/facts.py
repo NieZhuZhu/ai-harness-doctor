@@ -126,11 +126,19 @@ def iter_code_tokens(text):
         if line.strip().startswith("```"):
             in_fence = not in_fence
             continue
-        # Inside a fenced block a line beginning with `#` is a shell comment, not
-        # a command; skip it so prose in comments (e.g. "# make sure the tests
-        # pass") is not misread as a command (CORR-02).
-        if in_fence and not line.strip().startswith("#"):
-            yield lineno, line
+        if in_fence:
+            # Inside a fenced block a line beginning with `#` is a shell comment,
+            # not a command; skip it so prose in comments (e.g. "# make sure the
+            # tests pass") is not misread as a command (CORR-02). Backticks here
+            # are literal shell characters (command substitution etc.), not
+            # Markdown inline code spans, so the whole line — already yielded
+            # above — is the token; running the inline-span regex on fenced
+            # content would both re-yield substrings of a command AND leak
+            # tokens out of comment lines the guard just skipped, defeating
+            # CORR-02. Only scan inline spans outside fences.
+            if not line.strip().startswith("#"):
+                yield lineno, line
+            continue
         for m in re.finditer(r"`([^`]+)`", line):
             yield lineno, m.group(1)
 
