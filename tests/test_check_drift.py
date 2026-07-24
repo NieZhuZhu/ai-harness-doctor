@@ -640,6 +640,27 @@ class DriftTests(unittest.TestCase):
             }
             self.assertEqual(missing, {"src/gone.ts"})
 
+    def test_local_override_config_paths_do_not_trigger_d2(self):
+        # `*.local.<ext>` files are user-local, gitignored-by-convention
+        # overrides documented as the project-local tier of a config-search
+        # precedence chain (found in continuedev/continue's
+        # extensions/cli/AGENTS.md). Only the `.local.<ext>` override is exempt;
+        # the tracked `settings.json` sibling stays checked.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = (
+                "Config locations (lowest to highest precedence):\n"
+                "- `.claude/settings.json`, `.continue/settings.json` (project)\n"
+                "- `.claude/settings.local.json`, `.continue/settings.local.json`"
+            )
+            missing = {
+                finding["message"].split("`")[1]
+                for finding in check_drift.d2_path_drift(root, text)
+            }
+            self.assertEqual(
+                missing, {".claude/settings.json", ".continue/settings.json"}
+            )
+
     def test_fully_missing_path_still_triggers_d2_with_subtrees_present(self):
         # Subtree leniency must not mask genuine drift merely because the repo
         # has nested packages; only an exact trailing-path match is accepted.
