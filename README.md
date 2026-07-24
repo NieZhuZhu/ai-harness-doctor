@@ -118,7 +118,7 @@ Already use the pre-commit framework?
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/NieZhuZhu/ai-harness-doctor
-    rev: v1.16.2
+    rev: v1.16.3
     hooks:
       - id: ai-harness-doctor-drift
       - id: ai-harness-doctor-scan
