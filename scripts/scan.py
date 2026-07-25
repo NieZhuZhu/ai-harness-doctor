@@ -923,7 +923,23 @@ SIGNAL_PATTERNS = {
         # `uv pip install` is uv's pip *interface*, not a competing pip package
         # manager; the negative lookbehind stops it from also matching as "pip"
         # and manufacturing a bogus uv-vs-pip conflict.
-        ("pip", re.compile(r"(?<!uv )\bpip3?\s+install\b")),
+        #
+        # `pip install uv`/`poetry`/`pipenv`/`pdm`/`pipx` bootstraps ANOTHER
+        # Python package manager via pip (pip ships with CPython, so it's the
+        # standard documented way to obtain the others) — the installed tool is
+        # the declared manager, not pip. Mirrors the `npm install -g pnpm`
+        # bootstrap guard above. Found scanning browser-use/browser-use's
+        # AGENTS.md ("pip install uv" then "uv pip install browser-use"), whose
+        # package manager is uv, which manufactured a bogus uv-vs-pip conflict.
+        # The trailing `(?![\w-])` keeps real hyphenated packages such as
+        # `pip install pdm-backend` / `poetry-core` as genuine pip usage.
+        (
+            "pip",
+            re.compile(
+                r"(?<!uv )\bpip3?\s+install\b"
+                r"(?!\s+(?:-{1,2}[\w.-]+\s+)*[\"']?(?:uv|poetry|pipenv|pdm|pipx)(?![\w-]))"
+            ),
+        ),
         ("cargo", re.compile(r"\bcargo\b")),
         ("go modules", re.compile(r"\bgo\s+(?:mod|get|build|test|run)\b")),
         ("maven", re.compile(r"\bmvn\b|\bmaven\b")),
