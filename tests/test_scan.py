@@ -106,6 +106,23 @@ class PackageManagerConflictTests(unittest.TestCase):
             set(),
         )
 
+    def test_npm_scope_registry_namespace_is_not_an_npm_conflict(self):
+        # "npm scope" names the npm REGISTRY namespace a package publishes under
+        # (`@elizaos/*`), a publishing/naming concern, not a declaration that
+        # this repo installs deps with npm. Found scanning elizaOS/eliza's root
+        # AGENTS.md ("npm scope is `@elizaos/*`") — package manager is bun —
+        # which manufactured a bogus npm-vs-bun conflict.
+        self.assertEqual(
+            self._pm_conflict_values(
+                "Write **elizaOS**. npm scope is `@elizaos/*`. Run `bun run build`."
+            ),
+            set(),
+        )
+        self.assertNotIn(
+            "npm",
+            self._pm_conflict_values("Published under the `@scope/pkg` npm scope; use `pnpm install`."),
+        )
+
     def test_script_name_containing_npm_is_not_an_npm_conflict(self):
         # OpenAI Agents JS has a pnpm script named local-npm:publish; the
         # substring is part of a script name, not a declaration to use npm.
