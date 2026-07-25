@@ -171,6 +171,49 @@ class PackageManagerConflictTests(unittest.TestCase):
         )
         self.assertEqual([c for c in conflicts if c["signal"] == "test_command"], [])
 
+    def test_instead_of_rejected_pm_alternatives_are_not_a_conflict(self):
+        # The ubiquitous Bun-starter CLAUDE.md boilerplate names the preferred
+        # tool before the cue and the rejected alternatives after it. Found
+        # scanning humanlayer/humanlayer: "Use `bun run <script>` instead of
+        # `npm run <script>` or `yarn run <script>` or `pnpm run <script>`"
+        # manufactured a bogus 4-way npm/yarn/pnpm/bun package_manager conflict.
+        self.assertEqual(
+            self._pm_conflict_values(
+                "- Use `bun run <script>` instead of `npm run <script>` "
+                "or `yarn run <script>` or `pnpm run <script>`"
+            ),
+            set(),
+        )
+
+    def test_rather_than_rejected_pm_alternatives_are_not_a_conflict(self):
+        # "rather than" is the same preference cue as "instead of".
+        self.assertEqual(
+            self._pm_conflict_values("Prefer `pnpm` rather than `npm` or `yarn`."),
+            set(),
+        )
+
+    def test_preferred_pm_before_instead_of_is_still_extracted(self):
+        # The preference-negation exclusion must only suppress the rejected
+        # alternatives after the cue, not the preferred tool named before it —
+        # `bun` here must still register as a real signal.
+        sigs = [
+            s
+            for s in scan.extract_signals(
+                {"path": "AGENTS.md", "text": "Use `bun run <script>` instead of `npm run <script>`."}
+            )
+            if s["signal"] == "package_manager"
+        ]
+        self.assertEqual({s["value"] for s in sigs}, {"bun"})
+
+    def test_instead_of_rejected_test_framework_alternatives_are_not_a_conflict(self):
+        # Same Bun-starter boilerplate for the test_command signal: "Use `bun
+        # test` instead of `jest` or `vitest`" manufactured a bogus jest-vs-
+        # vitest test_command conflict in humanlayer/humanlayer.
+        conflicts = scan.find_conflicts(
+            [{"path": "AGENTS.md", "text": "- Use `bun test` instead of `jest` or `vitest`"}]
+        )
+        self.assertEqual([c for c in conflicts if c["signal"] == "test_command"], [])
+
 
 class FormatterConflictTests(unittest.TestCase):
     """ESLint and Prettier are a complementary, standard combination, not two
