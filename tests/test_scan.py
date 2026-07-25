@@ -50,6 +50,35 @@ class PackageManagerConflictTests(unittest.TestCase):
             {"uv", "pip"},
         )
 
+    def test_pip_install_pm_bootstrap_is_not_a_pip_conflict(self):
+        # `pip install uv` bootstraps uv via pip (pip ships with CPython); it is
+        # not a declaration that this repo installs deps with pip. Found scanning
+        # browser-use/browser-use's AGENTS.md: "pip install uv" then
+        # "uv pip install browser-use", whose package manager is uv, which
+        # manufactured a bogus uv-vs-pip conflict.
+        self.assertEqual(
+            self._pm_conflict_values("Run `pip install uv`, then `uv pip install browser-use`."),
+            set(),
+        )
+        for text in (
+            "First `pip install poetry`, then `poetry install`.",
+            "Bootstrap with `pip install -U pdm` and run `pdm install`.",
+            "`pip install --user pipenv` then `pipenv sync`.",
+            "Run `python -m pip install uv` and `uv sync`.",
+            "Setup: `pip3 install uv` then `uv run app`.",
+        ):
+            self.assertEqual(self._pm_conflict_values(text), set(), text)
+
+    def test_pip_install_hyphenated_package_still_conflicts(self):
+        # A hyphenated build/backend package (`poetry-core`, `pdm-backend`) is a
+        # real pip-installed dependency, not a package-manager bootstrap: the
+        # trailing `(?![\w-])` boundary keeps the leading `pip` a genuine signal
+        # (assertIn tolerates the standalone `poetry` also matched here).
+        values = self._pm_conflict_values(
+            "Build backend is `pip install poetry-core`, but deps use `uv sync`."
+        )
+        self.assertIn("pip", values)
+
     def test_npm_install_g_bootstrap_is_not_an_npm_conflict(self):
         # `npm install -g pnpm` bootstraps pnpm via npm (npm ships with Node);
         # it is not a declaration that this project uses npm. Found scanning
