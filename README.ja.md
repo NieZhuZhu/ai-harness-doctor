@@ -118,7 +118,7 @@ GitHub guard は scan と drift を 1 つの詳細な PR review に統合しま�
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/NieZhuZhu/ai-harness-doctor
-    rev: v1.16.3
+    rev: v1.16.4
     hooks:
       - id: ai-harness-doctor-drift
       - id: ai-harness-doctor-scan
