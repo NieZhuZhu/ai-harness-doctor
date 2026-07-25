@@ -895,7 +895,13 @@ SIGNAL_PATTERNS = {
         #    AGENTS.md release line ("Verify npm provenance/Release"), which
         #    manufactured a bogus npm-vs-pnpm conflict against the pnpm test
         #    fixtures.
-        # All four manufactured a bogus npm-vs-pnpm conflict.
+        # 5. "npm scope" names the npm REGISTRY namespace a package publishes
+        #    under (`@elizaos/*`, `@scope/pkg`) — a publishing/naming concern,
+        #    not a declaration that this repo installs deps with npm. Found
+        #    scanning elizaOS/eliza's root AGENTS.md ("npm scope is
+        #    `@elizaos/*`"), whose package manager is bun, which manufactured a
+        #    bogus npm-vs-bun conflict.
+        # All five manufactured a bogus npm-vs-pnpm/bun conflict.
         (
             "npm",
             re.compile(
@@ -904,6 +910,7 @@ SIGNAL_PATTERNS = {
                 r"(?!\s+packages?\b)"
                 r"(?!\s+scripts?\b)"
                 r"(?!\s+provenance\b)"
+                r"(?!\s+scopes?\b)"
                 r"(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"
             ),
         ),

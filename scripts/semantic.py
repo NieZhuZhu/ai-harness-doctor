@@ -299,14 +299,49 @@ _PM_TOKEN_RE = re.compile(r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|
 _GO_TOOL_RE = re.compile(r"\bgo\s+(?:build|test|run|mod|vet|install|get|work|generate)\b")
 
 
+def _iter_code_tokens_with_offset(text):
+    """Like ``facts.iter_code_tokens`` but also yields ``(line, offset)``.
+
+    ``offset`` is the token's start column within its source ``line`` so callers
+    can test a match position against ``registry.negated_spans(line)``. Mirrors
+    the fence/inline logic of the shared tokenizer exactly.
+    """
+    in_fence = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            if not line.strip().startswith("#"):
+                yield lineno, line, line, 0
+            continue
+        for m in re.finditer(r"`([^`]+)`", line):
+            yield lineno, m.group(1), line, m.start(1)
+
+
 def declared_package_managers_by_ecosystem(text):
-    """Return ``{ecosystem: {pm, ...}}`` for package managers named in AGENTS.md code spans."""
+    """Return ``{ecosystem: {pm, ...}}`` for package managers named in AGENTS.md code spans.
+
+    A tool named only inside a negation clause — "Do not run `python` or `pip`
+    directly" (deepset-ai/haystack's AGENTS.md, whose canonical manager is
+    Hatch) — is an explicit prohibition, not a declaration that the repo uses
+    that tool, so it must not seed a package_manager MISMATCH. The Phase-0 scan
+    conflict path already suppresses negated matches via
+    ``registry.negated_spans``; this comparison now does the same for
+    consistency.
+    """
     by = {}
-    for _lineno, token in iter_code_tokens(text):
+    for _lineno, token, line, offset in _iter_code_tokens_with_offset(text):
+        negated = registry.negated_spans(line)
         for m in _PM_TOKEN_RE.finditer(token):
+            if any(start <= offset + m.start() < end for start, end in negated):
+                continue
             pm = _PM_NORMALIZE.get(m.group(1), m.group(1))
             by.setdefault(PM_TO_ECOSYSTEM[pm], set()).add(pm)
-        if _GO_TOOL_RE.search(token):
+        go_match = _GO_TOOL_RE.search(token)
+        if go_match and not any(
+            start <= offset + go_match.start() < end for start, end in negated
+        ):
             by.setdefault("go", set()).add("go")
     return by
 

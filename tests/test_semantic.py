@@ -912,6 +912,31 @@ class SemanticPackageManagerTests(unittest.TestCase):
             self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
 
 
+    def test_negated_package_manager_not_declared(self):
+        # A tool named only inside a negation clause — "Do not run `python` or
+        # `pip` directly" (deepset-ai/haystack's AGENTS.md, canonical manager
+        # Hatch) — is an explicit prohibition, not a declaration that the repo
+        # uses pip, so it must not seed a package_manager MISMATCH. The Phase-0
+        # scan conflict path already suppresses negated matches; this comparison
+        # now agrees.
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "pyproject.toml", "[tool.uv]\n")
+            text = "Haystack uses Hatch.\nDo not run `python` or `pip` directly."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
+            self.assertEqual(semantic.declared_package_managers_by_ecosystem(text), {})
+
+    def test_non_negated_pip_still_declared(self):
+        # A real pip invocation on its own line is still extracted and flagged
+        # against a conflicting ground truth (regression guard for the negation
+        # fix — it must not over-suppress genuine declarations).
+        text = "Do not touch the CI.\nInstall with `pip install -r requirements.txt`."
+        self.assertEqual(
+            semantic.declared_package_managers_by_ecosystem(text),
+            {"python": {"pip"}},
+        )
+
+
 class SemanticNodeVersionTests(unittest.TestCase):
     def test_nvmrc_and_engines_mismatch(self):
         with tempfile.TemporaryDirectory() as td:
