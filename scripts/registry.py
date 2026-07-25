@@ -315,13 +315,27 @@ _GO_IMPORT_HOST_RE = re.compile(r"^[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+$")
 #   and "NEVER run `pnpm test` ... Use `vitest ...`" both manufactured a
 #   package_manager/test_command conflict out of the explicitly-rejected
 #   alternatives, even though the doc is unusually unambiguous.
+# - humanlayer/humanlayer: the ubiquitous Bun-starter CLAUDE.md boilerplate
+#   ("Use `bun run <script>` instead of `npm run <script>` or `yarn run
+#   <script>` or `pnpm run <script>`" and "Use `bun test` instead of `jest` or
+#   `vitest`") names the preferred tool BEFORE the trigger and the rejected
+#   alternatives AFTER it — the same shape as "never ...", just introduced by a
+#   preference cue ("instead of" / "rather than"). Every alternative listed
+#   after the cue is something the doc tells the agent NOT to use, so extracting
+#   them manufactured a bogus 4-way package_manager conflict (npm/yarn/pnpm/bun)
+#   and a bogus jest-vs-vitest test_command conflict. The preferred tool stays a
+#   real signal because its position is before the cue, outside the span.
 _NEGATED_CLAUSE_RE = re.compile(
     r"\b(?:do not|don't|never|avoid|shouldn't|should not"
     # Existence negations — "There are no per-package npm lockfiles" states a
     # tool is ABSENT, so the manager named inside must not be extracted as a
     # declared signal (found scanning cline/cline, a false package_manager
     # conflict).
-    r"|there are no|there is no|there's no|have no|has no)\b[^.;)\n]*",
+    r"|there are no|there is no|there's no|have no|has no"
+    # Preference negations — "use X instead of Y (or Z)" / "X rather than Y"
+    # reject every tool named after the cue (found scanning humanlayer's
+    # Bun-starter CLAUDE.md files).
+    r"|instead of|rather than)\b[^.;)\n]*",
     re.I,
 )
 
