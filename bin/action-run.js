@@ -24,9 +24,8 @@ function parseExtraArgs({ argsJson = '', legacyArgs = '' } = {}) {
   legacyArgs = String(legacyArgs || '');
   if (argsJson && legacyArgs) argumentError('args and args-json are mutually exclusive');
   if (!argsJson) {
-    const firstLine = legacyArgs.split('\n', 1)[0];
-    const trimmed = firstLine.replace(/^[ \t]+|[ \t]+$/g, '');
-    return trimmed ? trimmed.split(/[ \t]+/) : [];
+    const trimmed = legacyArgs.replace(/^\s+|\s+$/g, '');
+    return trimmed ? trimmed.split(/\s+/) : [];
   }
   if (Buffer.byteLength(argsJson, 'utf8') > MAX_JSON_BYTES) {
     argumentError('args-json exceeds 64 KiB');

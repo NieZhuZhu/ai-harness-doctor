@@ -10,7 +10,7 @@ const actionRun = require('./action-run.js');
 
 const ACTION_RUN = path.join(__dirname, 'action-run.js');
 
-test('legacy args preserve first-line whitespace splitting', () => {
+test('legacy args split all whitespace across YAML block lines', () => {
   assert.deepStrictEqual(actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '' }), []);
   assert.deepStrictEqual(
     actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '  --a   b\t--c ' }),
@@ -21,8 +21,8 @@ test('legacy args preserve first-line whitespace splitting', () => {
     ['--a', '"x', 'y"'],
   );
   assert.deepStrictEqual(
-    actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a\n--b' }),
-    ['--a'],
+    actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a\n--b\n  --fail-on-security' }),
+    ['--a', '--b', '--fail-on-security'],
   );
   assert.deepStrictEqual(
     actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a\\ value' }),
@@ -30,7 +30,7 @@ test('legacy args preserve first-line whitespace splitting', () => {
   );
   assert.deepStrictEqual(
     actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a\r\n--b' }),
-    ['--a\r'],
+    ['--a', '--b'],
   );
 });
 

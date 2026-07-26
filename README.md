@@ -77,7 +77,8 @@ Create a reviewable plan, write `AGENTS.md`, validate it, then replace duplicate
 ```bash
 npx ai-harness-doctor scan .
 npx ai-harness-doctor plan . -o merge-plan.md
-# Write and review AGENTS.md, then:
+npx ai-harness-doctor draft . -o AGENTS.md
+# Review AGENTS.md, then:
 npx ai-harness-doctor validate .
 npx ai-harness-doctor stubs . --apply
 npx ai-harness-doctor guard . --apply
