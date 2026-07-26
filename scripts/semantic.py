@@ -160,10 +160,12 @@ _looks_like_prose = facts.looks_like_prose
 # Declaration extractors — what AGENTS.md *claims*.
 # ---------------------------------------------------------------------------
 
-# Node script invocations: ``npm/pnpm/bun run X`` (``run`` optional) or ``yarn X``.
+# Node script invocations: ``npm/pnpm/bun run X`` (``run`` optional), ``yarn X``,
+# or one-shot package executors such as ``npx shadcn/improve``.
 _NODE_CMD_RE = re.compile(
     r"\b(npm|pnpm|bun)\s+(?:run\s+)?([A-Za-z0-9:_][A-Za-z0-9:_-]*)\b"
     r"|\byarn\s+([A-Za-z0-9:_][A-Za-z0-9:_-]*)\b"
+    r"|\b(npx|pnpx|bunx)\s+([^\s`|]+)"
 )
 # Makefile target invocations are extracted by the shared option-aware parser
 # (facts.iter_make_invocations) so ``make -C deploy <target>`` never misreads
@@ -178,7 +180,7 @@ _GO_PKG_RE = re.compile(r"\bgo\s+(?:run|build|test|vet)\s+(\.{1,2}/[A-Za-z0-9._/
 # filters it out below, while a backtick/pipe can never enter the captured name
 # and break out of the single-backtick code span that carries it into a finding
 # message posted verbatim as a PR review comment by pr_review.py.
-_PY_RUN_RE = re.compile(r"\b(?:poetry|pdm|uv)\s+run\s+([^\s`|]+)")
+_PY_RUN_RE = re.compile(r"\b(?:(poetry|pdm|uv)\s+run|(uvx|pipx))\s+([^\s`|]+)")
 # Extensions that mark a ``... run <arg>`` target as a script *file* to execute
 # rather than a project console script.
 _PY_RUN_SCRIPT_SUFFIXES = (".py", ".pyw", ".sh")
@@ -198,8 +200,8 @@ def declared_commands(text):
         if _looks_like_prose(token):
             continue
         for m in _NODE_CMD_RE.finditer(token):
-            tool = m.group(1) or "yarn"
-            name = m.group(2) or m.group(3)
+            tool = m.group(1) or m.group(4) or "yarn"
+            name = m.group(2) or m.group(3) or m.group(5)
             key = ("node", tool, name, lineno)
             if key not in seen:
                 seen.add(key)
@@ -233,9 +235,10 @@ def declared_commands(text):
                 seen.add(key)
                 out.append({"kind": "go_pkg", "tool": "go", "path": m.group(1), "line": lineno})
         for m in _PY_RUN_RE.finditer(token):
-            name = m.group(1)
+            tool = m.group(1) or m.group(2)
+            name = m.group(3)
             if name.startswith("-"):
-                args = re.findall(r"[^\s`|]+", token[m.start(1) :])
+                args = re.findall(r"[^\s`|]+", token[m.start(3) :])
                 name = None
                 skip_next = False
                 value_options = {
@@ -272,7 +275,7 @@ def declared_commands(text):
             key = ("py_run", name, lineno)
             if key not in seen:
                 seen.add(key)
-                out.append({"kind": "py_run", "tool": "python", "name": name, "line": lineno})
+                out.append({"kind": "py_run", "tool": tool, "name": name, "line": lineno})
     return out
 
 
@@ -816,6 +819,8 @@ def compare_commands(root, text, repository_root=None):
         line = decl["line"]
         if kind == "node":
             name = decl["name"]
+            if decl["tool"] in {"npx", "pnpx", "bunx"}:
+                continue
             if name in PACKAGE_MANAGER_BUILTINS:
                 continue
             if facts.is_node_bin_passthrough(root, decl["tool"], name):
@@ -921,6 +926,8 @@ def compare_commands(root, text, repository_root=None):
                 )
         elif kind == "py_run":
             name = decl["name"]
+            if decl["tool"] in {"uvx", "pipx"}:
+                continue
             if name in PYTHON_RUN_BUILTINS or name.startswith("<"):
                 continue
             if py_dependencies == "not computed":

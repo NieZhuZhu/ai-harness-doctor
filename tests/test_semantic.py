@@ -122,6 +122,25 @@ class SemanticCommandTests(unittest.TestCase):
             self.assertEqual(len(cmds), 1)
             self.assertIn("totally-made-up-tool", cmds[0]["message"])
 
+    def test_one_shot_package_executors_are_commands_not_missing_scripts(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {}}')
+            write(
+                td,
+                "pyproject.toml",
+                '[project]\nname = "demo"\nversion = "0.1.0"\n[project.scripts]\ndemo = "demo:main"\n',
+            )
+            text = "Run `npx shadcn/improve`, `pnpx @scope/tool`, `bunx create-app`, `uvx ruff`, and `pipx black`."
+            declared = semantic.declared_commands(text)
+            self.assertIn({"kind": "node", "tool": "npx", "name": "shadcn/improve", "line": 1}, declared)
+            self.assertIn({"kind": "node", "tool": "pnpx", "name": "@scope/tool", "line": 1}, declared)
+            self.assertIn({"kind": "node", "tool": "bunx", "name": "create-app", "line": 1}, declared)
+            self.assertIn({"kind": "py_run", "tool": "uvx", "name": "ruff", "line": 1}, declared)
+            self.assertIn({"kind": "py_run", "tool": "pipx", "name": "black", "line": 1}, declared)
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
+            self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])
+
     def test_make_target_missing(self):
         with tempfile.TemporaryDirectory() as td:
             write(td, "Makefile", "build:\n\techo hi\n")

@@ -77,7 +77,8 @@ Review 可能な plan を作り、`AGENTS.md` を記述して検証し、重複�
 ```bash
 npx ai-harness-doctor scan .
 npx ai-harness-doctor plan . -o merge-plan.md
-# Write and review AGENTS.md, then:
+npx ai-harness-doctor draft . -o AGENTS.md
+# Review AGENTS.md, then:
 npx ai-harness-doctor validate .
 npx ai-harness-doctor stubs . --apply
 npx ai-harness-doctor guard . --apply

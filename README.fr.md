@@ -77,7 +77,8 @@ Créez un plan révisable, écrivez `AGENTS.md`, validez-le puis remplacez les f
 ```bash
 npx ai-harness-doctor scan .
 npx ai-harness-doctor plan . -o merge-plan.md
-# Write and review AGENTS.md, then:
+npx ai-harness-doctor draft . -o AGENTS.md
+# Review AGENTS.md, then:
 npx ai-harness-doctor validate .
 npx ai-harness-doctor stubs . --apply
 npx ai-harness-doctor guard . --apply
