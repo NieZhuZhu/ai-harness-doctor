@@ -972,7 +972,10 @@ def compare_paths(root, text, repository_root=None):
         if not _within_root(root, token):
             continue
         if not facts.exists_within_root(root, root / token):
-            missing.append((decl, (scope_prefix / token).as_posix()))
+            repository_token = (scope_prefix / token).as_posix()
+            if token.endswith("/") and not repository_token.endswith("/"):
+                repository_token += "/"
+            missing.append((decl, repository_token))
     ignored = facts.repository_ignored_paths(
         repository_root,
         [repository_token for _decl, repository_token in missing],

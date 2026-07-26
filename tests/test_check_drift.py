@@ -767,6 +767,26 @@ class DriftTests(unittest.TestCase):
                 )
             )
 
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_repo_internal_stub_symlink_to_agents_is_allowed(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / ".github").mkdir()
+            (repo / "AGENTS.md").write_text(CLEAN_AGENTS, encoding="utf-8")
+            (repo / "CLAUDE.md").symlink_to("AGENTS.md")
+            (repo / ".cursorrules").symlink_to("AGENTS.md")
+            (repo / ".github" / "copilot-instructions.md").symlink_to("../AGENTS.md")
+
+            proc = subprocess.run(
+                [sys.executable, str(DRIFT), str(repo), "--json"],
+                text=True,
+                capture_output=True,
+            )
+            report = json.loads(proc.stdout)
+
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertFalse([f for f in report["findings"] if f["check"] == "D3"])
+
     def test_package_manager_builtins_do_not_trigger_d1(self):
         td, repo = self.copy_repo()
         self.addCleanup(td.cleanup)
@@ -987,6 +1007,25 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         report = json.loads(proc.stdout)
         self.assertFalse([f for f in report["findings"] if f["check"] == "D2"])
+
+    def test_gitignored_directory_with_trailing_slash_does_not_trigger_d2(self):
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / ".gitignore").write_text(".agent-config/\n", encoding="utf-8")
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS
+            + "Bootstrap writes `.agent-config/`; the source path `src/missing.ts` must exist.\n",
+            encoding="utf-8",
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo), "--json"], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1)
+        report = json.loads(proc.stdout)
+        d2 = [f for f in report["findings"] if f["check"] == "D2"]
+        self.assertEqual(len(d2), 1)
+        self.assertIn("src/missing.ts", d2[0]["message"])
 
     def test_placeholder_name_segment_does_not_trigger_d2(self):
         # A leading `<word>-name` segment (`skill-name/SKILL.md`) documents a
@@ -1228,9 +1267,10 @@ class DriftTests(unittest.TestCase):
             self.assertLessEqual(len(rewritten.encode("utf-8")), 600)
 
     @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
-    def test_fix_dry_run_lists_safe_stub_despite_unrelated_unsafe_symlink(self):
-        # Regression: an unsafe symlink stub must not silently drop unrelated,
-        # safely-fixable regrown stubs from the dry-run --fix report.
+    def test_fix_dry_run_lists_safe_stub_despite_repo_internal_pointer_symlink(self):
+        # Regression: a repo-internal pointer symlink to AGENTS.md must not block or
+        # pollute the dry-run --fix report for unrelated, safely-fixable regrown
+        # stubs.
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
             repo.mkdir()
@@ -1245,7 +1285,7 @@ class DriftTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
             self.assertIn("would rewrite `CLAUDE.md`", proc.stdout)
             self.assertIn("1 fixable", proc.stdout)
-            self.assertIn("unsafe", proc.stdout.lower())
+            self.assertIn("None.", proc.stdout)
             # The safe stub is untouched by a dry run.
             self.assertEqual(
                 "@AGENTS.md\n" + "lots\n" * 200,
