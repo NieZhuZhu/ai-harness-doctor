@@ -153,6 +153,25 @@
       "stub_content": "",
       "canonicalizable": false,
       "canonicalizable_note": "Kiro reads steering directives from the .kiro/steering/ directory (Markdown files, per Kiro docs) and also supports the AGENTS.md standard directly; there is no flat single-file legacy location to stub, the same rules-directory shape as Roo, Trae and Amazon Q Developer. Collapsing a rules directory into one canonical pointer needs the bespoke directory handling that is semantic-merge logic owned by SKILL.md, so it is marked canonicalizable:false as an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
+    },
+    {
+      "id": "augment",
+      "label": "Augment Code",
+      "scan_patterns": [".augment-guidelines", ".augment/rules/*.md", ".augment/rules/**/*.md"],
+      "stub_paths": [".augment-guidelines"],
+      "stub_kind": "pointer",
+      "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",
+      "canonicalizable": true
+    },
+    {
+      "id": "kilocode",
+      "label": "Kilo Code",
+      "scan_patterns": [".kilocode/rules/*.md", ".kilocode/rules/**/*.md"],
+      "stub_paths": [],
+      "stub_kind": "none",
+      "stub_content": "",
+      "canonicalizable": false,
+      "canonicalizable_note": "Kilo Code reads project rules from the .kilocode/rules/ directory (Markdown files, per Kilo Code docs) with no flat single-file legacy location to stub, the same rules-directory shape as Roo, Trae, Amazon Q Developer and Kiro. Collapsing a rules directory into one canonical pointer needs the bespoke directory handling that is semantic-merge logic owned by SKILL.md, so it is marked canonicalizable:false as an explicit, documented scan-only opt-out rather than a silent drop; the consistency test enforces this."
     }
   ]
 }
