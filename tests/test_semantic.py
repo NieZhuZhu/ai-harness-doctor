@@ -477,6 +477,24 @@ class SemanticPathTests(unittest.TestCase):
             self.assertEqual(missing, {"src/missing.ts"})
             self.assertEqual(result["checked"], 2)
 
+    def test_repository_gitignored_directory_with_trailing_slash_is_not_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            write(root, ".gitignore", ".agent-config/\n")
+            text = (
+                "Bootstrap writes `.agent-config/`; "
+                "the source path `src/missing.ts` must exist."
+            )
+            result = semantic.analyze(root, text)
+            missing = {
+                finding["declared"]
+                for finding in result["findings"]
+                if finding["category"] == "path"
+            }
+
+            self.assertEqual(missing, {"src/missing.ts"})
+            self.assertEqual(result["checked"], 2)
+
     def test_labeled_runtime_identifiers_are_not_missing_paths(self):
         # Phase-0 must not report a Docker image or RPC/API method as a missing
         # path. Real filesystem references (existing and missing) are still

@@ -241,7 +241,10 @@ def d2_path_drift(root, text, fallback_root=None, ancestors=None, repository_ind
                 continue
             if facts.exists_within_root(containment_root, candidate):
                 break
-            candidates.append(candidate.relative_to(containment_root).as_posix())
+            repository_token = candidate.relative_to(containment_root).as_posix()
+            if token.endswith("/") and not repository_token.endswith("/"):
+                repository_token += "/"
+            candidates.append(repository_token)
         else:
             if candidates:
                 missing.append((decl, candidates))
@@ -336,11 +339,15 @@ def d2_path_drift(root, text, fallback_root=None, ancestors=None, repository_ind
 
 def d3_stub_regrowth(root):
     findings = []
-    if not facts.is_file_within_root(root, root / "AGENTS.md"):
+    agents_path = facts.resolve_within_root(root / "AGENTS.md", root)
+    if agents_path is None or not agents_path.is_file():
         return findings
     for rel in STUB_FILES:
         path = root / rel
         if path.is_symlink():
+            resolved = facts.resolve_within_root(path, root)
+            if resolved == agents_path:
+                continue
             findings.append(
                 {
                     "check": "D3",
