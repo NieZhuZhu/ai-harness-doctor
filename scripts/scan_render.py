@@ -348,12 +348,15 @@ def render_maturity(lines, maturity):
         "they are not a judgement, carry no severity, and never change the default exit code."
     )
     for rung in maturity.get("levels", []):
-        status = "achieved" if rung.get("achieved") else "not achieved"
+        if rung.get("achieved"):
+            status = "achieved" if rung["level"] <= level else "satisfied but blocked by a lower rung"
+        else:
+            status = "not achieved"
         lines.append("")
         lines.append(f"### Level {rung['level']} — {rung['name']} ({status})")
         for item in rung.get("items", []):
             mark = "x" if item.get("status") == "present" else " "
-            evidence = f" — {item['evidence']}" if item.get("evidence") else ""
+            evidence = f" — {item['evidence']}" if item.get('evidence') else ""
             lines.append(f"- [{mark}] {item['label']}{evidence}")
     nxt = maturity.get("next")
     if nxt:

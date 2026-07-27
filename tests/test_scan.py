@@ -4125,6 +4125,13 @@ class MaturityTests(unittest.TestCase):
             self.assertFalse(levels[3])  # maintenance contract is still absent
             self.assertTrue(levels[4])
 
+            proc = self.scan(repo)
+            self.assertIn(
+                "### Level 4 — Evidenced (satisfied but blocked by a lower rung)",
+                proc.stdout,
+            )
+            self.assertNotIn("### Level 4 — Evidenced (achieved)", proc.stdout)
+
     def test_draft_markers_block_canonicalized(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td) / "repo"
