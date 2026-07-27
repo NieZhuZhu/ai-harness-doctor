@@ -277,6 +277,23 @@ _BRANCH_PATH_CUE_RE = re.compile(
 # Bounded window (chars) scanned around the token so section-level prose intent
 # never leaks into the branch classification.
 _BRANCH_LABEL_WINDOW = 40
+# A hyphenated placeholder tail on the token's final segment (`descriptive-name`,
+# `issue-description`, `short-slug`, `task-description`, `<x>-goes-here`). When
+# it sits behind a conventional branch-type prefix (`feature/`, `fix/`, ...) it
+# is a documentation branch example: real directories never carry these generic
+# slot descriptors as their leaf name. Deliberately narrow — only well-known
+# placeholder suffixes qualify — so real paths like `feature/user-auth` (no
+# descriptor tail) or `feature/notes.md` (extension) stay checked. Found running
+# the full chain against Skyvern-AI/skyvern, whose AGENTS.md documents a
+# "Branch Naming" convention with `feature/descriptive-name`,
+# `fix/issue-description`, `chore/task-description` — flagged MISSING by the
+# Phase-0 semantic scan and the Phase-2 D2 gate even though the section header
+# ("Branch Naming") sits on a separate line and no such directory should exist.
+_BRANCH_PLACEHOLDER_TAIL_RE = re.compile(
+    r"-(?:name|description|desc|title|slug|id|text|placeholder|topic|"
+    r"goes[-_]?here)$",
+    re.I,
+)
 # A GitHub Actions `uses` reference (`actions/checkout`, `docker/build-push-action`)
 # shares the two-segment `owner/repo` shape of a repo path but names a published
 # GitHub Action, not a directory the repo is expected to contain. The `actions/`
@@ -296,6 +313,48 @@ _GITHUB_ACTIONS_ORG = "actions"
 _GITHUB_ACTION_USES_CUE_RE = re.compile(r"\buses\s*:", re.I)
 _GITHUB_ACTION_NAME_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
 _GITHUB_ACTION_LABEL_WINDOW = 40
+# A two-segment `owner/repo` backtick token can also name a GitHub REPOSITORY
+# referenced in AGENTS.md prose — a sister repo (`langchain-ai/langchain-google`
+# as "separate repos, such as ..."), a monorepo self-reference (`OMI monorepo
+# (BasedHardware/omi)`), or a GitHub Action mentioned outside a workflow-step
+# `uses:` line (`(using ncipollo/release-action)`). These share the `owner/repo`
+# shape of a repo-relative directory but always reference a github.com
+# repository, not something the audited repo is expected to contain — probing
+# `<root>/owner/repo` always misses and produced false "path does not exist"
+# findings. Two independent signals stay fail-closed toward paths, mirroring the
+# labeled branch / runtime / action guards: (1) a bounded same-line WORD cue
+# names it as a repository or GitHub, and (2) a bounded STRUCTURAL cue wraps the
+# token in a parenthetical or introduces it with a list marker (`such as`,
+# `like`, `e.g.`, `for example`, `including`) or, for actions specifically, a
+# trailing `-action` suffix on the repo name. Found running the full chain
+# against langchain-ai/langchain (D2 flagged `langchain-ai/langchain-google`,
+# `langchain-ai/langchain-aws`, `ncipollo/release-action` in prose about sister
+# repos and the release workflow) and BasedHardware/omi (D2 flagged
+# `BasedHardware/omi` as the monorepo self-reference).
+_GITHUB_REPO_WORD_CUE_RE = re.compile(
+    r"\b(?:mono)?repos?\b|\brepositor(?:y|ies)\b|\bGitHub\b",
+    re.I,
+)
+_GITHUB_REPO_LIST_CUE_RE = re.compile(
+    r"\bsuch\s+as\b|\bfor\s+example\b|\be\.g\.|\bincluding\b|\blike\s+`",
+    re.I,
+)
+# A repo name ending in `-action`, `-actions`, or starting with `action-` is a
+# self-labeling GitHub Action name (`ncipollo/release-action`,
+# `softprops/action-gh-release`, `docker/build-push-action`) — no real repo
+# directory carries this suffix. Combined with the two-signal guard below, this
+# lets bare-form action references outside `uses:` blocks stay suppressed.
+_GITHUB_ACTION_SELF_LABEL_RE = re.compile(r"(?:^action-|-actions?$)", re.I)
+# Path cues that force a filesystem classification and override the GitHub-repo
+# guard (fail-closed toward paths). Deliberately narrower than
+# `_BRANCH_PATH_CUE_RE` because the WORD cue below already treats `repo` /
+# `repository` as the positive signal — keeping those in the override would
+# cancel the guard.
+_GITHUB_REPO_PATH_OVERRIDE_RE = re.compile(
+    r"\b(?:files?|directory|directories|folder|edit|open|modify|located)\b",
+    re.I,
+)
+_GITHUB_REPO_LABEL_WINDOW = 80
 # A path segment that looks like a hostname (contains a literal `.`, not a
 # leading one like `.github`) — the first component of a Go import/module
 # path (`github.com/org/pkg`, `charm.land/bubbletea/v2`), never a real
@@ -698,6 +757,9 @@ def _is_labeled_branch_ref(line, match):
         return False
     if _BRANCH_CONTEXT_RE.search(window):
         return True
+    last_segment = token.rsplit("/", 1)[-1]
+    if "." not in last_segment and _BRANCH_PLACEHOLDER_TAIL_RE.search(last_segment):
+        return True
     return "." not in token.rsplit("/", 1)[-1] and bool(
         _BRANCH_EXAMPLE_CUE_RE.search(
             line[max(0, match.start() - _BRANCH_EXAMPLE_WINDOW): match.start()]
@@ -743,6 +805,67 @@ def _is_github_action_reference(line, match):
         return True
     # Weak signal: an explicit workflow `uses:` step introduces the action ref.
     return bool(_GITHUB_ACTION_USES_CUE_RE.search(before))
+
+
+def _is_labeled_github_repo_ref(line, match):
+    """True when a two-segment ``owner/repo`` backtick token is a GitHub
+    repository reference in AGENTS.md prose rather than a repo-relative path.
+
+    Covers three real-world classes surfaced by the round-48 validation run
+    against langchain-ai/langchain, BasedHardware/omi, and Skyvern-AI/skyvern:
+    sister repos listed with "such as `owner/repo`", monorepo self-references
+    like "OMI monorepo (`BasedHardware/omi`)", and GitHub Actions mentioned in
+    prose about workflows ("(using `ncipollo/release-action`)") outside a
+    workflow-step ``uses:`` line where the existing action guard would catch
+    them.
+
+    Two independent signals stay fail-closed toward paths, mirroring the
+    branch / runtime / action guards: a bounded same-line WORD cue names it as
+    a repository or GitHub (``repo``, ``monorepo``, ``repository``, ``GitHub``),
+    AND either a bounded STRUCTURAL cue introduces the token (``such as``,
+    ``like``, ``e.g.``, ``for example``, ``including``) or wraps it in a
+    parenthetical (``(<token>)``), or the repo name is a self-labeling GitHub
+    Action name (``-action`` / ``-actions`` suffix, ``action-`` prefix). An
+    explicit filesystem cue (``edit``, ``file``, ``folder``, ``directory``,
+    ``path``, ``located``, ``modify``, ``open``) always wins and keeps the
+    token a path. A final segment that carries a file extension is a file
+    path and never a bare repo ref.
+    """
+    token = match.group(1).strip()
+    segments = token.split("/")
+    if len(segments) != 2 or not all(segments):
+        return False
+    owner, repo = segments
+    if "." in repo:
+        return False
+    if (
+        _GITHUB_ACTION_NAME_RE.fullmatch(owner) is None
+        or _GITHUB_ACTION_NAME_RE.fullmatch(repo) is None
+    ):
+        return False
+    start = match.start()
+    end = match.end()
+    before = line[max(0, start - _GITHUB_REPO_LABEL_WINDOW):start]
+    after = line[end:end + _GITHUB_REPO_LABEL_WINDOW]
+    window = before + " " + after
+    # An explicit filesystem cue always wins.
+    if _GITHUB_REPO_PATH_OVERRIDE_RE.search(window):
+        return False
+    if not _GITHUB_REPO_WORD_CUE_RE.search(window):
+        return False
+    # Structural cue A: a list marker introduces the token.
+    if _GITHUB_REPO_LIST_CUE_RE.search(before):
+        return True
+    # Structural cue B: the token is wrapped in a parenthetical `(...)`.
+    # The `match` span covers the backticks around the token, so a wrap looks
+    # like `(` immediately before the opening backtick and `)` immediately
+    # after the closing backtick.
+    if start > 0 and line[start - 1] == "(" and end < len(line) and line[end] == ")":
+        return True
+    # Structural cue C: the repo name itself is a self-labeling GitHub Action.
+    if _GITHUB_ACTION_SELF_LABEL_RE.search(repo):
+        return True
+    return False
 
 
 def declared_paths(text):
@@ -838,6 +961,17 @@ def declared_paths(text):
             # version-standard tables (found scanning yzhao062/anywhere-agents'
             # "GitHub Actions Standards" table). See _is_github_action_reference.
             if _is_github_action_reference(line, m):
+                continue
+            # A two-segment `owner/repo` token can also name a GitHub REPOSITORY
+            # referenced in prose — a sister repo, monorepo self-reference, or
+            # a GitHub Action mentioned outside a workflow-step `uses:` line.
+            # Two-signal guard (word cue + structural/self-label cue) keeps
+            # real two-segment directories checked. Found scanning
+            # langchain-ai/langchain (`langchain-ai/langchain-google`,
+            # `langchain-ai/langchain-aws`, `ncipollo/release-action`) and
+            # BasedHardware/omi (`BasedHardware/omi` in the monorepo self-
+            # reference). See _is_labeled_github_repo_ref.
+            if _is_labeled_github_repo_ref(line, m):
                 continue
             # Go import/module paths are conventionally `domain.tld/org/pkg`
             # (a "vanity" or SCM-hosted path) — the first segment looks like

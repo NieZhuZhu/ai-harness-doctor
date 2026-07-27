@@ -2135,6 +2135,79 @@ class MultiLanguageFalsePositiveTests(unittest.TestCase):
                 {"docs/setup", "fix/notes.md", "release/notes.md"},
             )
 
+    def test_branch_placeholder_tail_examples_are_not_paths(self):
+        # Round-48 validation against Skyvern-AI/skyvern surfaced a "Branch
+        # Naming" convention listed as three bullet items where the section
+        # header sits on a separate line — none of the existing example cues
+        # (`Examples:`, `e.g.`, `示例`, `分支`) match within the ±80 char
+        # window, so the tokens were flagged MISSING. Every token here pairs
+        # a conventional branch-type prefix with a generic placeholder tail
+        # (`-name`, `-description`, `-slug`, `-title`) which no real directory
+        # carries as its leaf. Real paths like `feature/user-auth` (no
+        # descriptor tail) or `fix/notes.md` (extension) stay checked.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = (
+                "1. **Branch Naming**\n"
+                "   - `feature/descriptive-name` for new features\n"
+                "   - `fix/issue-description` for bug fixes\n"
+                "   - `chore/task-description` for maintenance tasks\n"
+                "   - `hotfix/short-slug` for urgent patches\n"
+                "   - `feature/user-auth` is a real path\n"
+                "   - `fix/notes.md` is a real file\n"
+            )
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {"feature/user-auth", "fix/notes.md"},
+            )
+
+    # --- A2: GitHub owner/repo prose references (D2) --------------------
+
+    def test_github_repo_prose_references_are_not_paths(self):
+        # Round-48 validation surfaced three real-world classes: sister repos
+        # in list prose (langchain-ai/langchain), a monorepo self-reference
+        # inside a parenthetical (BasedHardware/omi), and a GitHub Action
+        # named outside a workflow-step `uses:` line (ncipollo/release-action).
+        # Two independent cues (a repo/monorepo/GitHub word AND either a list
+        # marker, a parenthetical wrap, or an action self-label) keep the
+        # guard fail-closed toward paths.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = (
+                "Some are maintained in separate repos, such as "
+                "`langchain-ai/langchain-google` and `langchain-ai/langchain-aws`.\n"
+                "This is a subfolder of the OMI monorepo "
+                "(`BasedHardware/omi`) — see the top-level AGENTS.md.\n"
+                "The mark-release job (using `ncipollo/release-action`) "
+                "creates the GitHub release.\n"
+            )
+            self.assertEqual(self._missing_paths(root, text), set())
+
+    def test_two_segment_directories_stay_checked_without_repo_cue(self):
+        # Sanity: a bare two-segment `owner/repo`-shaped token without a
+        # repo/monorepo/GitHub word cue in the ±80 char window is still
+        # audited as a repo-relative path. Prevents the new guard from over-
+        # suppressing real directories like `src/utils`.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "Edit the `src/utils` module and `packages/api` package.\n"
+            # Both are missing paths (neither exists in the temp root); the
+            # guard must not swallow them.
+            self.assertEqual(
+                self._missing_paths(root, text),
+                {"src/utils", "packages/api"},
+            )
+
+    def test_repo_word_alone_does_not_suppress_paths(self):
+        # A bare `repo` word in a sentence about a real path must NOT trigger
+        # the GitHub-repo guard: the guard requires a second signal (list
+        # marker, parenthetical wrap, or `-action` self-label). Fail-closed
+        # toward path when only the word cue fires.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            text = "In this repo, the `src/utils` module handles helpers.\n"
+            self.assertEqual(self._missing_paths(root, text), {"src/utils"})
+
     # --- B: Go / npm import paths (D2) ---------------------------------
 
     GO_MOD = (
