@@ -334,6 +334,91 @@ class TestFrameworkVsRunnerConflictTests(unittest.TestCase):
         )
 
 
+class TestFrameworkAndFormatterEnumerationTests(unittest.TestCase):
+    """A slash-joined enumeration lists SUPPORTED test frameworks or
+    formatters, not the ONE the repo uses. Extends the round-8
+    ``pm_enumeration`` guard to the test_command and formatter signals so a
+    doc saying "compatible with jest/vitest test runners" or "supports
+    prettier/biome/dprint formatters" no longer manufactures a
+    ``--fail-on-conflicts`` CI killer. Real declarations on a different line
+    from the enumeration must still register."""
+
+    def _values(self, text, signal):
+        conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
+        matches = [c for c in conflicts if c["signal"] == signal]
+        return set(matches[0]["values"].keys()) if matches else set()
+
+    def _extracted_values(self, text, signal):
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+            if s["signal"] == signal
+        ]
+        return {s["value"] for s in sigs}
+
+    def test_slash_joined_test_framework_enumeration_is_not_a_conflict(self):
+        # A doc listing "jest/vitest/mocha frameworks" or "compatible with
+        # jest/vitest" enumerates supported frameworks; each was previously
+        # extracted as a declared test_command and manufactured a bogus
+        # jest-vs-vitest (or 3-way) conflict.
+        self.assertEqual(
+            self._values("This tool auto-detects jest/vitest/mocha frameworks.", "test_command"),
+            set(),
+        )
+        self.assertEqual(
+            self._values("Compatible with jest/vitest test runners.", "test_command"),
+            set(),
+        )
+
+    def test_test_framework_declaration_on_other_line_still_extracted(self):
+        # The enumeration guard is scoped per-line: a real declaration on a
+        # different line from the enumeration must still register.
+        text = "Supports jest/vitest frameworks.\nRun `pytest -q` locally.\n"
+        self.assertEqual(
+            self._extracted_values(text, "test_command"),
+            {"pytest"},
+        )
+
+    def test_slash_joined_formatter_enumeration_is_not_a_conflict(self):
+        # "prettier/biome/dprint formatters" enumerates supported formatters,
+        # not competing declarations; previously manufactured a genuine-
+        # looking biome-vs-prettier conflict that the round-16 ESLint+Prettier
+        # complementary guard does not cover.
+        self.assertEqual(
+            self._values("Formatters supported: prettier/biome/dprint.", "formatter"),
+            set(),
+        )
+        self.assertEqual(
+            self._values("Auto-detects prettier/biome formatters in this monorepo.", "formatter"),
+            set(),
+        )
+
+    def test_formatter_declaration_on_other_line_still_extracted(self):
+        text = "Supports prettier/biome formatters.\nUse `eslint` for linting.\n"
+        self.assertEqual(
+            self._extracted_values(text, "formatter"),
+            {"eslint"},
+        )
+
+    def test_two_rival_frameworks_across_files_still_conflict(self):
+        # Regression guard: the round-28 real-conflict case must survive —
+        # jest in one context and vitest in another are still a genuine
+        # test_command conflict, not merely an enumeration.
+        self.assertEqual(
+            self._values("Use `jest` in core and `vitest` in the cli package.", "test_command"),
+            {"jest", "vitest"},
+        )
+
+    def test_biome_vs_prettier_across_files_still_conflict(self):
+        # Regression guard: the round-16 real-conflict case must survive —
+        # biome and prettier on different lines still register a genuine
+        # formatter conflict.
+        self.assertEqual(
+            self._values("Use `biome` here, but `prettier` there.", "formatter"),
+            {"biome", "prettier"},
+        )
+
+
 class NegatedExistenceClauseTests(unittest.TestCase):
     """Existence negations ("There are no ... npm lockfiles") state a tool is
     ABSENT, so a manager named inside must not be extracted as a declared

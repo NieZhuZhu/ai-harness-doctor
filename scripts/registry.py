@@ -466,6 +466,56 @@ def pm_enumeration_spans(line):
     return [m.span() for m in _PM_ENUMERATION_RE.finditer(line)]
 
 
+# A slash-joined run of two or more test-framework names — e.g.
+# "jest/vitest/mocha" or "compatible with jest/vitest test runners" —
+# enumerates the frameworks a doc *supports* or *lists*, not the ONE framework
+# this repo uses. Mirrors ``_PM_ENUMERATION_RE`` for the package_manager signal
+# so ``scan.extract_signals`` treats the same false-positive class the same way
+# across signals. Found running the full chain against docs whose "Supports
+# jest/vitest" or "auto-detects jest/vitest/mocha" language manufactured a
+# bogus jest-vs-vitest test_command conflict against the real framework
+# declaration elsewhere in the same file.
+_TEST_FRAMEWORK_TOKEN = r"(?:jest|vitest|mocha|pytest)"
+_TEST_FRAMEWORK_ENUMERATION_RE = re.compile(
+    rf"\b{_TEST_FRAMEWORK_TOKEN}(?:\s*/\s*{_TEST_FRAMEWORK_TOKEN})+\b",
+    re.I,
+)
+
+
+def test_command_enumeration_spans(line):
+    """Return ``[(start, end), ...]`` char spans of slash-joined test-framework
+    enumerations (see ``_TEST_FRAMEWORK_ENUMERATION_RE``). A match whose start
+    falls inside one of these spans lists a framework as *supported*, not
+    *declared*, so ``scan.extract_signals`` skips it instead of manufacturing
+    a false test_command conflict. Mirrors ``pm_enumeration_spans`` for the
+    package_manager signal.
+    """
+    return [m.span() for m in _TEST_FRAMEWORK_ENUMERATION_RE.finditer(line)]
+
+
+# A slash-joined run of two or more formatter names — e.g. "prettier/biome"
+# or "auto-detects prettier/biome/dprint formatters" — enumerates the
+# formatters a doc *supports*, not the ONE formatter this repo uses. Mirrors
+# ``_PM_ENUMERATION_RE``. The round-16 conflict-suppression already handles the
+# specific ESLint+Prettier complementary pair, but a doc that lists three or
+# more formatters (or a biome-vs-prettier enumeration) still manufactured a
+# genuine-looking conflict; this closes that class the same way as
+# package_manager and test_command.
+_FORMATTER_TOKEN = r"(?:prettier|biome|eslint|dprint)"
+_FORMATTER_ENUMERATION_RE = re.compile(
+    rf"\b{_FORMATTER_TOKEN}(?:\s*/\s*{_FORMATTER_TOKEN})+\b",
+    re.I,
+)
+
+
+def formatter_enumeration_spans(line):
+    """Return ``[(start, end), ...]`` char spans of slash-joined formatter
+    enumerations (see ``_FORMATTER_ENUMERATION_RE``). Mirrors
+    ``pm_enumeration_spans`` for the formatter signal.
+    """
+    return [m.span() for m in _FORMATTER_ENUMERATION_RE.finditer(line)]
+
+
 def negated_spans(line):
     """Return ``[(start, end), ...]`` character spans of ``line`` that fall
     inside a negation clause (see ``_NEGATED_CLAUSE_RE``). Shared by
