@@ -914,8 +914,15 @@ SIGNAL_PATTERNS = {
                 r"(?!\s+(?:install|i|add)\s+(?:-g|--global)\s+(?:pnpm|yarn|bun)\b)"
             ),
         ),
-        ("yarn", re.compile(r"\byarn\b")),
-        ("bun", re.compile(r"\bbun\b")),
+        # A trailing ``.<word>`` after ``yarn``/``bun`` names a filename or a
+        # domain, not the tool itself: ``yarn.lock`` (the deleted-lockfile note
+        # a pnpm/npm repo often leaves for cleanup), ``bun.sh`` (the vendor
+        # homepage a repo links to before actually installing another manager),
+        # ``bun.lockb`` (the lockfile name), etc. Blocking these dotted-suffix
+        # spellings stops incidental mentions from manufacturing a bogus
+        # yarn/bun package_manager conflict against the repo's real manager.
+        ("yarn", re.compile(r"\byarn\b(?!\.\w)")),
+        ("bun", re.compile(r"\bbun\b(?!\.\w)")),
         ("poetry", re.compile(r"\bpoetry\b")),
         ("pipenv", re.compile(r"\bpipenv\b")),
         ("pdm", re.compile(r"\bpdm\b")),
@@ -979,7 +986,22 @@ SIGNAL_PATTERNS = {
 
 def extract_signals(file_entry):
     signals = []
+    # Track fenced code blocks so we can skip comment lines *inside* a fence
+    # (``# Legacy: npm install``) — comments describe historical or example
+    # commands, not the tool this repo currently uses, so treating them as
+    # declared signals manufactures conflicts against the real declaration
+    # sitting outside the fence. Mirrors the fence/comment treatment already
+    # used by ``semantic._iter_code_tokens_with_offset`` so the Phase-0 scan,
+    # the semantic engine and the Phase-2 drift gate agree on what counts as
+    # a real declaration (TD-02/TD-03/TD-06).
+    in_fence = False
     for lineno, line in enumerate(file_entry["text"].splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence and stripped.startswith("#"):
+            continue
         negated = registry.negated_spans(line)
         pm_enumeration = registry.pm_enumeration_spans(line)
         for signal, patterns in SIGNAL_PATTERNS.items():

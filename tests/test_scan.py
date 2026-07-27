@@ -361,6 +361,143 @@ class NegatedExistenceClauseTests(unittest.TestCase):
         self.assertEqual([c for c in conflicts if c["signal"] == "package_manager"], [])
 
 
+class DottedYarnBunSpellingTests(unittest.TestCase):
+    """A dotted suffix after ``yarn``/``bun`` — ``yarn.lock``, ``bun.sh``,
+    ``bun.lockb`` — names a filename or vendor domain, not the tool itself.
+    A pnpm/npm repo that documents deleting a stray ``yarn.lock`` or that
+    links to ``bun.sh`` is not declaring yarn/bun as its package manager, so
+    the incidental mention must not manufacture a false PM conflict against
+    the repo's real declaration."""
+
+    def _pm_conflict_values(self, text):
+        conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
+        pm = [c for c in conflicts if c["signal"] == "package_manager"]
+        return set(pm[0]["values"].keys()) if pm else set()
+
+    def _pm_values(self, text):
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+            if s["signal"] == "package_manager"
+        ]
+        return {s["value"] for s in sigs}
+
+    def test_yarn_lock_cleanup_note_is_not_a_yarn_declaration(self):
+        # Common pnpm/npm-repo housekeeping: "Delete stray yarn.lock files"
+        # must not surface yarn as a declared package manager.
+        self.assertEqual(
+            self._pm_conflict_values("Delete stray `yarn.lock` files. Run `pnpm install`."),
+            set(),
+        )
+        self.assertEqual(self._pm_values("Delete stray yarn.lock files."), set())
+
+    def test_bun_lockb_mention_is_not_a_bun_declaration(self):
+        self.assertEqual(
+            self._pm_conflict_values("The `bun.lockb` snapshot is historical; run `pnpm install`."),
+            set(),
+        )
+        self.assertEqual(self._pm_values("Historical `bun.lockb` remains in the tree."), set())
+
+    def test_bun_sh_vendor_link_is_not_a_bun_declaration(self):
+        # A link to the vendor homepage bun.sh is documentation, not a
+        # declaration that this repo uses bun. Found in READMEs that link
+        # "See bun.sh for install instructions" while actually using another PM.
+        self.assertEqual(
+            self._pm_values("See bun.sh for the installer. This repo uses `pnpm install`."),
+            {"pnpm"},
+        )
+
+    def test_real_yarn_and_bun_commands_still_extracted(self):
+        # The tightened boundary must not drop genuine ``yarn`` / ``bun``
+        # command declarations (no trailing ``.<word>`` suffix).
+        self.assertEqual(self._pm_values("Run `yarn install` to set up."), {"yarn"})
+        self.assertEqual(self._pm_values("Use `bun run build`."), {"bun"})
+
+    def test_real_yarn_declaration_alongside_lockfile_cleanup(self):
+        # A repo that both declares yarn AND documents deleting stale
+        # ``yarn.lock`` should still register yarn — the dotted spelling is
+        # skipped, but the bare command remains a genuine declaration.
+        self.assertEqual(
+            self._pm_values("Run `yarn install`, then delete stray yarn.lock files."),
+            {"yarn"},
+        )
+
+
+class FencedCommentDeclarationTests(unittest.TestCase):
+    """A ``#``-prefixed comment line inside a fenced code block describes an
+    example or a historical command, not the tool this repo currently uses.
+    Extracting a signal from such a comment manufactures conflicts against
+    the real declaration outside (or below) the fence. Mirrors the
+    fence/comment treatment already used by
+    ``semantic._iter_code_tokens_with_offset`` so the Phase-0 scan, the
+    semantic engine and the Phase-2 drift gate agree on what counts as a
+    declared signal (TD-02/TD-03/TD-06)."""
+
+    def _pm_values(self, text):
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+            if s["signal"] == "package_manager"
+        ]
+        return {s["value"] for s in sigs}
+
+    def _pm_conflict_values(self, text):
+        conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
+        pm = [c for c in conflicts if c["signal"] == "package_manager"]
+        return set(pm[0]["values"].keys()) if pm else set()
+
+    def test_shell_comment_inside_fence_is_not_a_declaration(self):
+        text = "\n".join(
+            [
+                "We use `pnpm`.",
+                "",
+                "```bash",
+                "# Legacy: npm install",
+                "pnpm install",
+                "```",
+            ]
+        )
+        self.assertEqual(self._pm_values(text), {"pnpm"})
+        self.assertEqual(self._pm_conflict_values(text), set())
+
+    def test_real_command_inside_fence_is_still_extracted(self):
+        # The fence guard only suppresses ``#``-comment lines; a real
+        # command line inside the fence must still register (this is how
+        # semantic.py sees fenced content too).
+        text = "\n".join(
+            [
+                "```bash",
+                "npm install",
+                "pnpm install",
+                "```",
+            ]
+        )
+        self.assertEqual(self._pm_values(text), {"npm", "pnpm"})
+
+    def test_hash_heading_outside_fence_still_extracts_signals(self):
+        # A leading ``#`` outside any fence is a Markdown heading, not a
+        # shell comment — signals on that line must still be extracted so
+        # section titles like "## npm scripts we run" continue to work.
+        text = "## Run `npm test` before pushing.\n\nAlso `pnpm install`."
+        self.assertEqual(self._pm_values(text), {"npm", "pnpm"})
+
+    def test_nested_fence_toggle_is_balanced(self):
+        # Two fenced blocks in a row — comments in EACH must be skipped, and
+        # signals between the blocks must still be extracted.
+        text = "\n".join(
+            [
+                "```",
+                "# npm install",
+                "```",
+                "Outside: `pnpm install`.",
+                "```",
+                "# yarn install",
+                "```",
+            ]
+        )
+        self.assertEqual(self._pm_values(text), {"pnpm"})
+
+
 class NodeVersionConflictTests(unittest.TestCase):
     """CORR-05: Node version conflicts must be compared as normalized semantic
     versions, so a bare major is compatible with a fuller version and only a
