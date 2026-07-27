@@ -1004,6 +1004,8 @@ def extract_signals(file_entry):
             continue
         negated = registry.negated_spans(line)
         pm_enumeration = registry.pm_enumeration_spans(line)
+        tc_enumeration = registry.test_command_enumeration_spans(line)
+        fmt_enumeration = registry.formatter_enumeration_spans(line)
         for signal, patterns in SIGNAL_PATTERNS.items():
             for value, pattern in patterns:
                 match = pattern.search(line)
@@ -1015,6 +1017,25 @@ def extract_signals(file_entry):
                 # does not manufacture a false package_manager conflict.
                 if signal == "package_manager" and any(
                     start <= match.start() < end for start, end in pm_enumeration
+                ):
+                    continue
+                # A test framework named inside a slash-joined enumeration —
+                # "compatible with jest/vitest test runners" or "auto-detects
+                # jest/vitest/mocha frameworks" — lists a supported framework,
+                # not the one this repo uses; skip it so the enumeration does
+                # not manufacture a false test_command conflict. Mirrors the
+                # package_manager enumeration guard above (round 8).
+                if signal == "test_command" and any(
+                    start <= match.start() < end for start, end in tc_enumeration
+                ):
+                    continue
+                # A formatter named inside a slash-joined enumeration —
+                # "supports prettier/biome/dprint formatters" — lists a
+                # supported formatter, not the one this repo uses; skip it
+                # so the enumeration does not manufacture a false formatter
+                # conflict. Mirrors the package_manager enumeration guard.
+                if signal == "formatter" and any(
+                    start <= match.start() < end for start, end in fmt_enumeration
                 ):
                     continue
                 # A value named only as a rejected alternative — "ALWAYS use
