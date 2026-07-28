@@ -623,6 +623,12 @@ def collect_stub_targets(root, tools):
         for rel_path in spec["paths"]:
             path = root / rel_path
             if path.is_file():
+                # A same-directory symlink to `AGENTS.md` is already the
+                # strongest canonical pointer possible; overwriting it with
+                # the pointer-text stub would only weaken the state and
+                # `write_stubs` cannot mutate through a symlink anyway.
+                if facts.is_canonical_agents_pointer_symlink(root, path):
+                    continue
                 changes.append({"action": "write", "path": path, "content": spec["content"]})
     if "cursor" in tools:
         rules_dir = root / ".cursor" / "rules"
@@ -854,6 +860,13 @@ def validate(args):
         all_canonicalizable = [t["id"] for t in registry.canonicalizable_tools()]
         for change in collect_stub_targets(root, all_canonicalizable):
             path = change["path"]
+            # A same-directory symlink from the stub to `AGENTS.md` is already
+            # the strongest possible canonical pointer (one byte-for-byte
+            # body; no drift is representable). Do not raise UNSAFE_PATH for
+            # this pattern — the state is ready, and the stub applier still
+            # skips the write because `safe_mutation_path` refuses symlinks.
+            if facts.is_canonical_agents_pointer_symlink(root, path):
+                continue
             if path.is_symlink() or facts.safe_mutation_path(root, path) is None:
                 findings.append(
                     {

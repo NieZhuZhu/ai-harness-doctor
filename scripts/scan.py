@@ -669,7 +669,12 @@ def file_info(
 
     data = b"".join(prefix_chunks)
     truncated = size > len(data)
-    if size > budget:
+    # A same-directory symlink from a tool stub (e.g. `CLAUDE.md`) to
+    # `AGENTS.md` shares its body byte-for-byte with the canonical file, so
+    # size warnings for the alias would double-report the same content. The
+    # canonical `AGENTS.md` still emits its own WARN/NOTICE.
+    is_canonical_symlink = facts.is_canonical_agents_pointer_symlink(root, path)
+    if size > budget and not is_canonical_symlink:
         warnings.append(
             {
                 "level": "WARN",
@@ -678,15 +683,14 @@ def file_info(
                 f"project_doc_max_bytes defaults to 32KB and may silently truncate context.",
             }
         )
-    else:
-        if size > 12 * 1024:
-            warnings.append(
-                {
-                    "level": "NOTICE",
-                    "path": rp,
-                    "message": f"{rp} is {size} bytes; this may cause context bloat.",
-                }
-            )
+    elif size > 12 * 1024 and not is_canonical_symlink:
+        warnings.append(
+            {
+                "level": "NOTICE",
+                "path": rp,
+                "message": f"{rp} is {size} bytes; this may cause context bloat.",
+            }
+        )
     text = data.decode("utf-8", errors="replace")
     if not truncated:
         # Preserve the historical Unicode-aware regex semantics when the full
@@ -1797,6 +1801,11 @@ def non_minimal_stubs(root, ctx=None):
     for rel_path in GAP_STUB_FILES:
         path = root / rel_path
         if not facts.is_file_within_root(root, path):
+            continue
+        # A same-directory symlink from the stub to `AGENTS.md` is already
+        # the strongest possible canonical pointer: there is one byte-for-byte
+        # body, so drift is not representable. Do not flag it as bloated.
+        if facts.is_canonical_agents_pointer_symlink(root, path):
             continue
         data = ctx.read_bytes(path)
         if data is None:

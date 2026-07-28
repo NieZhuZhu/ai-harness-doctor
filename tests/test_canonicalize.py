@@ -838,6 +838,33 @@ class CanonicalizeTests(unittest.TestCase):
             unsafe = [f for f in report["findings"] if f["check"] == "UNSAFE_PATH"]
             self.assertEqual({f.get("path") for f in unsafe}, {"AGENTS.md", "CLAUDE.md"})
 
+    @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+    def test_validate_accepts_canonical_sibling_symlink_stub(self):
+        # A same-directory symlink from `CLAUDE.md` to `AGENTS.md` is a
+        # drift-proof canonical pointer (one shared body, no independent
+        # text). It must pass --validate without raising UNSAFE_PATH.
+        with ResilientTemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(AGENTS_MIN, encoding="utf-8")
+            (repo / "CLAUDE.md").symlink_to("AGENTS.md")
+
+            proc = subprocess.run(
+                [sys.executable, str(CANON), "--validate", str(repo), "--json"],
+                text=True,
+                capture_output=True,
+            )
+            report = json.loads(proc.stdout)
+
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertTrue(report["ok"])
+            unsafe = [f for f in report["findings"] if f["check"] == "UNSAFE_PATH"]
+            self.assertEqual(
+                unsafe,
+                [],
+                f"canonical CLAUDE.md -> AGENTS.md symlink must not be UNSAFE_PATH: {unsafe}",
+            )
+
     def test_validate_missing_required_section_still_fails(self):
         with ResilientTemporaryDirectory() as td:
             repo = Path(td) / "repo"

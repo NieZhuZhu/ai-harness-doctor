@@ -4490,5 +4490,86 @@ class MaturityTests(unittest.TestCase):
             self.assertIn("never change the default exit code", proc.stdout)
 
 
+@unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+class CanonicalAgentsPointerSymlinkTests(unittest.TestCase):
+    """A same-directory symlink from a tool stub (e.g. `CLAUDE.md`) to
+    `AGENTS.md` is a drift-proof canonical pointer. pydantic-ai (and any
+    repo that runs `ln -s AGENTS.md CLAUDE.md`) uses exactly this pattern.
+    Scan must not falsely flag it as bloated content or a non-minimal stub.
+    """
+
+    @staticmethod
+    def _write_repo_with_symlink(root):
+        # Size ~15KB: above the 12KB context-bloat NOTICE threshold but
+        # below the 32KB Codex WARN budget, so the canonical AGENTS.md
+        # deterministically emits a NOTICE we can assert on.
+        agents_body = (
+            "# Project overview\n\n"
+            + "Long instructions section explaining what agents cannot infer "
+              "from the code alone. " * 170
+            + "\n"
+        )
+        (root / "AGENTS.md").write_text(agents_body, encoding="utf-8")
+        (root / "CLAUDE.md").symlink_to("AGENTS.md")
+        return len(agents_body.encode("utf-8"))
+
+    def test_canonical_symlink_stub_is_not_flagged_as_g3_gap(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve() / "repo"
+            repo.mkdir()
+            self._write_repo_with_symlink(repo)
+            report = scan.scan_repo(repo, 32768)
+            g3 = [g for g in report["gaps"] if g["check"] == "G3"]
+            self.assertEqual(
+                g3,
+                [],
+                f"canonical CLAUDE.md -> AGENTS.md symlink must not raise G3: {g3}",
+            )
+
+    def test_canonical_symlink_stub_does_not_double_report_context_bloat(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve() / "repo"
+            repo.mkdir()
+            size = self._write_repo_with_symlink(repo)
+            self.assertGreater(size, 12 * 1024)  # sanity: >12KB triggers NOTICE
+            report = scan.scan_repo(repo, 32768)
+            claude_warnings = [
+                w for w in report["warnings"] if w.get("path") == "CLAUDE.md"
+            ]
+            self.assertEqual(
+                claude_warnings,
+                [],
+                "context-bloat warning for a CLAUDE.md symlink alias must be "
+                "suppressed (the canonical AGENTS.md still emits its own)",
+            )
+            agents_notices = [
+                w
+                for w in report["warnings"]
+                if w.get("path") == "AGENTS.md" and w.get("level") == "NOTICE"
+            ]
+            self.assertTrue(
+                agents_notices,
+                "canonical AGENTS.md size NOTICE must still be reported",
+            )
+
+    def test_regular_pointer_stub_over_budget_still_flagged(self):
+        # Regression guard: only symlink pointers get the pass. A regular file
+        # that is too large must still surface as a G3 gap so real drift is
+        # not hidden.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve() / "repo"
+            repo.mkdir()
+            (repo / "AGENTS.md").write_text(
+                "# Project overview\nUse `npm test`.\n", encoding="utf-8"
+            )
+            (repo / "CLAUDE.md").write_text(
+                "Canonical instructions live in AGENTS.md.\n" + "x" * 2000,
+                encoding="utf-8",
+            )
+            report = scan.scan_repo(repo, 32768)
+            g3 = [g for g in report["gaps"] if g["check"] == "G3"]
+            self.assertTrue(g3, "oversized regular pointer file must still raise G3")
+
+
 if __name__ == "__main__":
     unittest.main()
