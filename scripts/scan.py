@@ -997,6 +997,16 @@ SIGNAL_PATTERNS = {
 
 def extract_signals(file_entry):
     signals = []
+    # Markdown HTML comments (``<!-- previously we used npm and yarn -->``)
+    # are hidden from readers, so tool mentions that live only inside one are
+    # a legacy/example note rather than a real declaration; masking them here
+    # keeps the fence guard below and every regex offset intact while stopping
+    # comment prose from manufacturing bogus package_manager / test_command /
+    # node_version / formatter conflicts against the real declaration outside
+    # the comment. Mirrors the same guard in ``facts.iter_code_tokens`` so the
+    # Phase-0 scan and the semantic engine / drift D6 agree on what a doc
+    # actually declares.
+    text = facts.mask_html_comments(file_entry["text"])
     # Track fenced code blocks so we can skip comment lines *inside* a fence
     # (``# Legacy: npm install``) — comments describe historical or example
     # commands, not the tool this repo currently uses, so treating them as
@@ -1006,7 +1016,7 @@ def extract_signals(file_entry):
     # the semantic engine and the Phase-2 drift gate agree on what counts as
     # a real declaration (TD-02/TD-03/TD-06).
     in_fence = False
-    for lineno, line in enumerate(file_entry["text"].splitlines(), 1):
+    for lineno, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()
         if stripped.startswith("```"):
             in_fence = not in_fence

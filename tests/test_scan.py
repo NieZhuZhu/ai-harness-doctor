@@ -16,6 +16,7 @@ MONOREPO_FIXTURE = ROOT / "tests" / "fixtures" / "monorepo"
 SCAN = ROOT / "scripts" / "scan.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 import applicability  # noqa: E402
+import facts  # noqa: E402
 import pr_review  # noqa: E402
 import sarif  # noqa: E402
 import scan  # noqa: E402
@@ -581,6 +582,83 @@ class FencedCommentDeclarationTests(unittest.TestCase):
             ]
         )
         self.assertEqual(self._pm_values(text), {"pnpm"})
+
+
+class HtmlCommentGuardTests(unittest.TestCase):
+    """Markdown HTML comments (``<!-- ... -->``) are hidden from readers, so
+    tool mentions that live only inside one are a legacy or example note and
+    must not manufacture a conflict against the real declaration outside the
+    comment (round 50 — same false-positive class as the fenced-# guard and
+    the negated/enumeration guards)."""
+
+    def _pm_values(self, text):
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+            if s["signal"] == "package_manager"
+        ]
+        return {s["value"] for s in sigs}
+
+    def _pm_conflict_values(self, text):
+        conflicts = scan.find_conflicts([{"path": "AGENTS.md", "text": text}])
+        pm = [c for c in conflicts if c["signal"] == "package_manager"]
+        return set(pm[0]["values"].keys()) if pm else set()
+
+    def _values(self, text, signal):
+        return {
+            s["value"]
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+            if s["signal"] == signal
+        }
+
+    def test_single_line_html_comment_pm_mentions_are_not_declarations(self):
+        text = "\n".join(
+            [
+                "Use pnpm to install dependencies.",
+                "",
+                "<!-- Legacy note: previously we used npm and yarn -->",
+            ]
+        )
+        self.assertEqual(self._pm_values(text), {"pnpm"})
+        self.assertEqual(self._pm_conflict_values(text), set())
+
+    def test_multi_line_html_comment_is_masked_end_to_end(self):
+        text = "\n".join(
+            [
+                "Use pnpm.",
+                "<!--",
+                "Legacy: previously we used npm and yarn as package managers,",
+                "and node 16 was required.",
+                "-->",
+                "Node 20 is required.",
+            ]
+        )
+        self.assertEqual(self._pm_values(text), {"pnpm"})
+        self.assertEqual(self._values(text, "node_version"), {"node 20"})
+
+    def test_html_comment_before_real_declaration_on_same_line(self):
+        # A comment ends mid-line; the tail after ``-->`` must still register.
+        text = "<!-- old test runner: jest --> Use vitest for tests."
+        self.assertEqual(self._values(text, "test_command"), {"vitest"})
+
+    def test_backtick_span_inside_html_comment_does_not_declare(self):
+        # ``facts.iter_code_tokens`` is the semantic engine's declaration
+        # reader; a ``<!-- `npm` -->`` note must not flow into
+        # ``declared_package_managers`` either.
+        text = "Use `pnpm`. <!-- previously we used `npm` and `yarn` -->"
+        self.assertEqual(facts.declared_package_managers(text), {"pnpm"})
+
+    def test_real_conflict_across_html_comments_is_still_detected(self):
+        # Genuine conflict outside any comment must still fire.
+        text = "\n".join(
+            [
+                "Use pnpm to install.",
+                "<!-- ignore this: yarn -->",
+                "Use npm install for CI.",
+            ]
+        )
+        # Only the two real declarations conflict; the comment mention does not.
+        self.assertEqual(self._pm_conflict_values(text), {"pnpm", "npm"})
 
 
 class NodeVersionConflictTests(unittest.TestCase):

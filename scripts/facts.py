@@ -114,6 +114,41 @@ def looks_like_prose(segment):
     return any(w in _PROSE_WORDS for w in words)
 
 
+def mask_html_comments(text):
+    """Return ``text`` with the interior of every ``<!-- ... -->`` block —
+    including the ``<!--`` and ``-->`` markers themselves — replaced with
+    spaces, so downstream extractors do not treat tool mentions that live
+    only in a Markdown author's hidden reminder (``<!-- previously we used
+    `npm` and `yarn` -->``) as real declarations. Newlines are preserved so
+    line numbers, the fenced-code tracker, and every ``re.finditer`` offset
+    the callers already report stay unchanged. HTML comments do not nest
+    per the HTML spec, so a single ``in_comment`` state machine is enough
+    and multi-line comments are handled naturally.
+    """
+    out = []
+    i = 0
+    n = len(text)
+    in_comment = False
+    while i < n:
+        ch = text[i]
+        if not in_comment and text.startswith("<!--", i):
+            out.append("    ")
+            i += 4
+            in_comment = True
+            continue
+        if in_comment and text.startswith("-->", i):
+            out.append("   ")
+            i += 3
+            in_comment = False
+            continue
+        if in_comment:
+            out.append("\n" if ch == "\n" else " ")
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def iter_code_tokens(text):
     """Yield ``(lineno, token)`` for fenced-code lines and inline backtick spans.
 
@@ -121,6 +156,11 @@ def iter_code_tokens(text):
     ``code`` spans, so both are scanned. This is the single shared code-span
     tokenizer used by both the semantic engine and the drift gate.
     """
+    # HTML comments in Markdown are hidden from readers, so any backtick span
+    # inside one (``<!-- previously we used `npm` -->``) is a legacy note, not
+    # a declaration; masking here keeps ``semantic.py`` / drift D6 from turning
+    # those notes into false ``declared_package_managers`` entries.
+    text = mask_html_comments(text)
     in_fence = False
     for lineno, line in enumerate(text.splitlines(), 1):
         if line.strip().startswith("```"):
