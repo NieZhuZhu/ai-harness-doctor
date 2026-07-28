@@ -137,7 +137,14 @@ BROAD_PERMISSION_RE = re.compile(r"^(?:Bash|Execute|Shell)?\(\s*\*+\s*\)$|^\*$|\
 # Hook / command bodies that fetch-and-run remote code or do destructive things.
 RISKY_COMMAND_RES = [
     ("remote code execution", re.compile(r"(?:curl|wget)\b[^\n|]*\|\s*(?:sh|bash|zsh|python[0-9.]*|node)\b", re.I)),
-    ("recursive force delete", re.compile(r"\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r", re.I)),
+    (
+        "recursive force delete",
+        re.compile(
+            r"\brm\s+-[a-z]*r[a-z]*f\b|\brm\s+-[a-z]*f[a-z]*r\b|"
+            r"\brm\s+--recursive\s+--force\b|\brm\s+--force\s+--recursive\b",
+            re.I,
+        ),
+    ),
     ("shell eval of input", re.compile(r"\beval\s+\"?\$", re.I)),
     ("permission bypass flag", re.compile(r"--dangerously-skip-permissions|--yolo\b", re.I)),
 ]
@@ -1712,7 +1719,7 @@ def security_findings(root, files, mcp, hooks, permissions, ctx=None):
                 if pattern.search(f.get("text", ""))
             ]
         for label in labels:
-            if label == "permission bypass flag":
+            if label in {"permission bypass flag", "recursive force delete"}:
                 findings.append(
                     {
                         "level": "MEDIUM",

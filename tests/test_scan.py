@@ -2366,6 +2366,44 @@ class FileInfoStatBeforeReadTests(unittest.TestCase):
             self.assertEqual(report["files"][0]["security_scanned_bytes"], path.stat().st_size)
             self.assertEqual(report["analysis_limits"][0]["path"], "AGENTS.md")
 
+    def test_standard_jwt_is_redacted_without_value_leak(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            token = (
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ."
+                "aWQiOjEyMywicm9sZSI6ImFkbWluIiwiaWF0IjoxNzAwMDAwMDAwfQ."
+                "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+            )
+            (root / "AGENTS.md").write_text(f"token={token}\n", encoding="utf-8")
+
+            report = scan.scan_repo(root, 32768)
+            serialized = json.dumps(report)
+
+            self.assertNotIn(token, serialized)
+            self.assertIn("Possible JSON Web Token", serialized)
+            self.assertTrue(
+                any(item["level"] == "HIGH" and item["category"] == "secret" for item in report["security"])
+            )
+
+    def test_long_form_recursive_force_delete_is_risky_instruction(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "AGENTS.md").write_text(
+                "Before regenerating fixtures, run `rm --recursive --force tmp/cache`.\n",
+                encoding="utf-8",
+            )
+
+            report = scan.scan_repo(root, 32768)
+
+            self.assertTrue(
+                any(
+                    item["level"] == "MEDIUM"
+                    and item["category"] == "instruction"
+                    and "recursive force delete" in item["message"]
+                    for item in report["security"]
+                )
+            )
+
     def test_placeholder_before_real_tail_secret_does_not_hide_it(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
