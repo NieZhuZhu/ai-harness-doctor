@@ -58,6 +58,54 @@ class IterCodeTokensTests(unittest.TestCase):
         tokens = [tok for _lineno, tok in facts.iter_code_tokens(text)]
         self.assertEqual(tokens, ["pnpm install", "npm install"])
 
+    def test_html_comment_backtick_spans_are_masked(self):
+        # A ``<!-- `npm` -->`` note is hidden Markdown commentary, not a
+        # command declaration; ``iter_code_tokens`` must not leak backtick
+        # spans out of it or ``declared_package_managers`` picks up phantom
+        # legacy managers (round 50, same false-positive class as fenced-#).
+        text = "Prefer `pnpm install`. <!-- previously we ran `npm install` -->\n"
+        tokens = [tok for _lineno, tok in facts.iter_code_tokens(text)]
+        self.assertEqual(tokens, ["pnpm install"])
+
+    def test_multiline_html_comment_masks_across_lines(self):
+        text = (
+            "Prefer `pnpm`.\n"
+            "<!--\n"
+            "Older setup used `npm` and `yarn`.\n"
+            "-->\n"
+            "Run `pnpm test`.\n"
+        )
+        tokens = [tok for _lineno, tok in facts.iter_code_tokens(text)]
+        # Legacy tokens inside the multi-line comment are dropped; real
+        # backtick spans outside it survive with their original line numbers.
+        self.assertEqual(tokens, ["pnpm", "pnpm test"])
+
+
+class MaskHtmlCommentsTests(unittest.TestCase):
+    def test_single_line_comment_preserves_surrounding_text(self):
+        masked = facts.mask_html_comments("keep <!-- drop this --> tail")
+        self.assertEqual(len(masked), len("keep <!-- drop this --> tail"))
+        self.assertTrue(masked.startswith("keep "))
+        self.assertTrue(masked.endswith(" tail"))
+        self.assertNotIn("drop", masked)
+
+    def test_multiline_comment_preserves_newlines(self):
+        original = "a\n<!--\nlegacy\ncontent\n-->\nb\n"
+        masked = facts.mask_html_comments(original)
+        # Line count must match so downstream line numbers stay stable.
+        self.assertEqual(masked.count("\n"), original.count("\n"))
+        self.assertNotIn("legacy", masked)
+        self.assertNotIn("content", masked)
+        self.assertTrue(masked.startswith("a\n"))
+        self.assertTrue(masked.endswith("\nb\n"))
+
+    def test_unterminated_comment_masks_to_end(self):
+        # A missing ``-->`` still masks everything after the opener so a
+        # dangling comment cannot leak a legacy tool mention.
+        masked = facts.mask_html_comments("ok <!-- yarn npm\nmore npm")
+        self.assertNotIn("yarn", masked)
+        self.assertNotIn("more npm", masked)
+
 
 @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
 class IsCanonicalAgentsPointerSymlinkTests(unittest.TestCase):
