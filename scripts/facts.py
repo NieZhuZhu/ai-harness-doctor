@@ -377,6 +377,47 @@ def load_json_within_root(root, path):
     return data if isinstance(data, dict) else None
 
 
+def is_canonical_agents_pointer_symlink(root, path):
+    """Return True when ``path`` is a same-directory symlink to ``AGENTS.md``.
+
+    A same-directory symlink from a tool stub (e.g. ``CLAUDE.md``) to
+    ``AGENTS.md`` is drift-proof by construction: the symlink and the canonical
+    file share one byte-for-byte body, so no independent text can diverge.
+    Callers that check for "minimal pointer stubs" or "safe stub state"
+    (Phase-0 G3 gap, Phase-1 canonical readiness, context-bloat NOTICE)
+    should treat such a symlink as an already-canonical pointer, not as a
+    bloated duplicate or an unsafe write target.
+
+    The contract is deliberately narrow so it cannot be spoofed:
+
+    * ``path`` must be a symlink (``path.is_symlink()``).
+    * The resolved target must remain inside ``root`` and be a regular file
+      named exactly ``AGENTS.md``.
+    * The target's parent directory must equal ``path``'s parent directory.
+      A symlink that reaches into a different subtree (e.g. ``CLAUDE.md ->
+      ../AGENTS.md``) is not accepted; the two files would no longer share
+      the "sibling AGENTS.md" invariant that makes this pattern drift-proof.
+
+    Broken symlinks, symlinks that escape ``root``, symlinks whose target
+    has a different name, and IO errors all return ``False``.
+    """
+    try:
+        candidate = Path(path)
+        if not candidate.is_symlink():
+            return False
+    except OSError:
+        return False
+    target = resolve_within_root(candidate, root, strict=True)
+    if target is None or not target.is_file():
+        return False
+    if target.name != "AGENTS.md":
+        return False
+    try:
+        return target.parent == candidate.parent.resolve()
+    except OSError:
+        return False
+
+
 def safe_mutation_path(root, path):
     """Return a lexical in-root path only when no existing component is a symlink.
 

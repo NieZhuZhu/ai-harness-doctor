@@ -1,10 +1,24 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import facts  # noqa: E402
+
+
+def _can_symlink_files():
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        target = root / "target"
+        link = root / "link"
+        target.write_text("target\n", encoding="utf-8")
+        try:
+            link.symlink_to(target)
+        except (OSError, NotImplementedError):
+            return False
+        return link.is_symlink()
 
 
 class IterCodeTokensTests(unittest.TestCase):
@@ -43,6 +57,88 @@ class IterCodeTokensTests(unittest.TestCase):
         text = "Prefer `pnpm install` over `npm install`.\n"
         tokens = [tok for _lineno, tok in facts.iter_code_tokens(text)]
         self.assertEqual(tokens, ["pnpm install", "npm install"])
+
+
+@unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
+class IsCanonicalAgentsPointerSymlinkTests(unittest.TestCase):
+    def test_sibling_symlink_to_agents_md_is_canonical(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve()
+            (repo / "AGENTS.md").write_text("# canonical\n", encoding="utf-8")
+            (repo / "CLAUDE.md").symlink_to("AGENTS.md")
+            self.assertTrue(
+                facts.is_canonical_agents_pointer_symlink(repo, repo / "CLAUDE.md")
+            )
+
+    def test_nested_sibling_symlink_to_agents_md_is_canonical(self):
+        # pydantic-ai puts one at the root AND inside `tests/`; both are safe.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve()
+            (repo / "tests").mkdir()
+            (repo / "tests" / "AGENTS.md").write_text("# tests\n", encoding="utf-8")
+            (repo / "tests" / "CLAUDE.md").symlink_to("AGENTS.md")
+            self.assertTrue(
+                facts.is_canonical_agents_pointer_symlink(
+                    repo, repo / "tests" / "CLAUDE.md"
+                )
+            )
+
+    def test_regular_file_pointer_is_not_a_canonical_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve()
+            (repo / "AGENTS.md").write_text("# canonical\n", encoding="utf-8")
+            (repo / "CLAUDE.md").write_text(
+                "Canonical instructions live in AGENTS.md.\n", encoding="utf-8"
+            )
+            self.assertFalse(
+                facts.is_canonical_agents_pointer_symlink(repo, repo / "CLAUDE.md")
+            )
+
+    def test_symlink_to_non_agents_target_is_not_canonical(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve()
+            (repo / "AGENTS.md").write_text("# canonical\n", encoding="utf-8")
+            (repo / "docs.md").write_text("# docs\n", encoding="utf-8")
+            (repo / "CLAUDE.md").symlink_to("docs.md")
+            self.assertFalse(
+                facts.is_canonical_agents_pointer_symlink(repo, repo / "CLAUDE.md")
+            )
+
+    def test_cross_directory_symlink_is_not_canonical(self):
+        # A cross-subtree symlink stops being trivially drift-proof at the
+        # canonical-pointer level (the sibling invariant is what makes the
+        # pattern safe), so we deliberately do not classify it as canonical.
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve()
+            (repo / "AGENTS.md").write_text("# canonical\n", encoding="utf-8")
+            (repo / "docs").mkdir()
+            (repo / "docs" / "CLAUDE.md").symlink_to("../AGENTS.md")
+            self.assertFalse(
+                facts.is_canonical_agents_pointer_symlink(
+                    repo, repo / "docs" / "CLAUDE.md"
+                )
+            )
+
+    def test_broken_symlink_is_not_canonical(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td).resolve()
+            (repo / "CLAUDE.md").symlink_to("AGENTS.md")  # target missing
+            self.assertFalse(
+                facts.is_canonical_agents_pointer_symlink(repo, repo / "CLAUDE.md")
+            )
+
+    def test_symlink_escaping_root_is_not_canonical(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td).resolve()
+            outside = base / "outside" / "AGENTS.md"
+            outside.parent.mkdir()
+            outside.write_text("# elsewhere\n", encoding="utf-8")
+            repo = base / "repo"
+            repo.mkdir()
+            (repo / "CLAUDE.md").symlink_to(outside)
+            self.assertFalse(
+                facts.is_canonical_agents_pointer_symlink(repo, repo / "CLAUDE.md")
+            )
 
 
 if __name__ == "__main__":
