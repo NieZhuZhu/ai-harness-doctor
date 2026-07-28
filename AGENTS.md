@@ -75,19 +75,28 @@ See `references/maintenance-contract.md`.
 
 Four repeatable loops reproduce repository maintenance through one gate/release scheme.
 
-- **External validation** — run the dev checkout read-only against varied real OSS repos and log repo/commit, date, scope, evidence boundary, result, clean worktree, and fixing PR in `EXTERNAL_VALIDATION.md`. Non-adoption alone is clean, not a bug.
-- **Incremental quality-check (bugfix) loop** — baseline on latest `main` (green `npm run check` + self-checkup at grade A), then find ONE high-value real issue (a `--fail-on-security` or `drift --strict` false positive, or a cross-engine inconsistency), reproduce it, and fix it with a matching regression test. No finding → no release.
-- **Premium-upgrade (feature) loop** — research ecosystem/product gaps, score impact × feasibility, then ship 1–3 stdlib-only items with tests and every public README.
-- **Deep improve loop** — independently audit all nine categories on current `main`, reconcile prior plans, and mechanically reproduce one top item. Land plan-only → nine green contexts → test-first implementation → Standards/Spec + real evidence → nine green → squash/delete → green plan closeout. Revalidate every candidate each round.
+- **External validation** — run the dev checkout read-only against real OSS repos and log the repo/commit and result in `EXTERNAL_VALIDATION.md`.
+- **Incremental quality-check (bugfix) loop** — baseline on latest `main`, find one high-value issue, fix it with a regression test; no finding → no release.
+- **Premium-upgrade (feature) loop** — pick 1–3 high-leverage improvements and ship them with tests and README updates.
+- **Deep improve loop** — audit all nine categories, land plan-only, then implement one top item with evidence and all gates green.
 
-**Shared gate & release.** One smallest stdlib-only PR; update every published-language README and `SKILL.md` for public behavior. Require lint, Python 3.9–3.12, Node 16–22, self-drift, and eval evidence green; squash/delete. From current main: feature=minor, fix=patch, breaking=major. Verify npm provenance/Release; stable moves `latest`/`vN` and opens one Marketplace reminder, prerelease uses `next` only.
+**Shared gate & release.** Land the smallest stdlib-only PR via squash; keep lint/tests (Py 3.9–3.12, Node 16–22), self-drift, and eval evidence green.
 
 # Commit & PR
 
-- See `CONTRIBUTING.md` for the full contribution workflow (when to open an issue, the PR checklist, and releasing).
-- Use Conventional Commits for messages, e.g. `feat(scan): ...`, `fix(drift): ...`, `docs(agents): ...`, `refactor(...)`, `chore(...)`. Commit messages are written in English.
+- See `CONTRIBUTING.md` for the full contribution workflow.
+- Use Conventional Commits, e.g. `feat(scan): ...`, `fix(drift): ...`, `docs(agents): ...`.
 - Land changes through pull requests; do not push directly to `main`.
-- Opening an issue first is optional: do it for larger features, externally reported bugs, or anything that benefits from a public record, and link it with `Closes #<n>`. Small, unambiguous changes may go straight to a PR.
+- Opening an issue is optional; link it with `Closes #<n>` when used.
 - Every behavior change to `scripts/*.py` or `bin/cli.js` must ship with matching tests in the same commit/PR (see Testing requirements).
-- Before opening a PR, run the full test suite (see Build & test) and a self-checkup with `python3 scripts/scan.py .` and `python3 scripts/check_drift.py .`; keep the drift health score at grade A.
-- Keep every required README listed in `scripts/check_readme_sync.py` synchronized in the same PR whenever public behavior or README content changes.
+- Before opening a PR, run the full test suite and a self-checkup (`python3 scripts/scan.py .`, `python3 scripts/check_drift.py .`).
+- Keep every required README listed in `scripts/check_readme_sync.py` synchronized when public behavior or README content changes.
+<!-- ai-harness-doctor:maintenance-contract:trailing-base64:Cg== -->
+<!-- ai-harness-doctor:maintenance-contract:start -->
+## Maintenance contract
+
+- When changing build/test commands, directory structure, or conventions, update `AGENTS.md` in the same change.
+- Before finishing, run `npx -y ai-harness-doctor drift .` and fix any reported drift.
+- Tool stub files (`CLAUDE.md`, `.cursorrules`, `.windsurfrules`, `GEMINI.md`, `.clinerules`, `.github/copilot-instructions.md`) are pointers.
+- Never add rules to tool stubs; keep canonical guidance in `AGENTS.md`.
+<!-- ai-harness-doctor:maintenance-contract:end -->
