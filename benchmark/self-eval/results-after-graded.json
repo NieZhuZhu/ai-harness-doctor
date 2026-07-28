@@ -290,7 +290,8 @@
     "passed": 40,
     "total": 40,
     "timed_out": 0,
-    "pass_rate": 1.0
+    "pass_rate": 1.0,
+    "insufficient_evidence": false
   },
   "evidence": {
     "schemaVersion": 1,
@@ -301,7 +302,7 @@
     "files": [
       {
         "path": "AGENTS.md",
-        "sha256": "2cc479f81df47472537f0bb4d74781b8953fc0f8803decc2d78156f1253ca613"
+        "sha256": "c6bcfa153b97a80a737b114d33017d4fa93c6eb5c51902947bffa7246c0a1dbb"
       }
     ]
   }
