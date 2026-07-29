@@ -59,6 +59,8 @@ Aucune de ces commandes ne modifie le dépôt audité.
 
 Les lectures de sécurité restent dans le dépôt. Les gros fichiers conservent une couverture complète de SHA-256, lignes, secrets et bypass ; `--max-bytes` ne limite que l’analyse sémantique.
 
+Les scans du dépôt parent ignorent les dépôts fixture/demo dans `tests/fixtures/*` et `benchmark/{repo-before,repo-after,corpus/repos}/*`. Scannez directement ces répertoires si vous voulez leur propre rapport de harness.
+
 ## Les quatre phases
 
 | Phase | Objectif | Commandes principales | Point d’arrêt humain |

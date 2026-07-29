@@ -59,6 +59,8 @@ Nenhum desses comandos altera o repositório auditado.
 
 As leituras de segurança ficam dentro do repositório. Arquivos grandes mantêm cobertura completa de SHA-256, linhas, segredos e bypasses; `--max-bytes` limita apenas a análise semântica.
 
+Scans do repositório pai ignoram repositórios fixture/demo em `tests/fixtures/*` e `benchmark/{repo-before,repo-after,corpus/repos}/*`. Faça scan desses diretórios diretamente se quiser o relatório de harness deles.
+
 ## As quatro fases
 
 | Fase | Objetivo | Comandos principais | Ponto de decisão humana |

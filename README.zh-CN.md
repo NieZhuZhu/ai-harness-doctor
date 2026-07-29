@@ -59,6 +59,8 @@ npx ai-harness-doctor --version
 
 安全读取不会越出被审计仓库。超大文件仍会完整计算 SHA-256、行数、secret 和权限绕过；`--max-bytes` 只限制语义分析。
 
+父仓库扫描会跳过 `tests/fixtures/*`、`benchmark/repo-before/*`、`benchmark/repo-after/*`、`benchmark/corpus/repos/*` 下内嵌的 fixture/demo 仓库。若想看它们各自的 harness 报告，请直接扫描对应目录。
+
 ## 四个阶段
 
 | 阶段 | 目标 | 主要命令 | 人工停点 |

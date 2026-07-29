@@ -3818,6 +3818,31 @@ class ScannerPerformanceTests(unittest.TestCase):
         index = scan.build_file_index(repo)
         self.assertFalse(any("node_modules" in rp for rp, _ in index))
 
+    def test_embedded_fixture_repos_are_pruned_from_parent_repo_scan(self):
+        repo = self._make_repo()
+        fixture = repo / "tests" / "fixtures" / "demo"
+        fixture.mkdir(parents=True)
+        (fixture / "CLAUDE.md").write_text("Use pnpm.\n", encoding="utf-8")
+        benchmark = repo / "benchmark" / "repo-before"
+        benchmark.mkdir(parents=True)
+        (benchmark / "CLAUDE.md").write_text("Use 4 spaces.\n", encoding="utf-8")
+
+        index = scan.build_file_index(repo)
+        relpaths = {rp for rp, _path in index}
+        self.assertNotIn("tests/fixtures/demo/CLAUDE.md", relpaths)
+        self.assertNotIn("benchmark/repo-before/CLAUDE.md", relpaths)
+
+        report = scan.scan_repo(repo, 32768)
+        self.assertEqual([entry["path"] for entry in report["files"]], ["AGENTS.md"])
+        self.assertFalse(report["conflicts"])
+
+    def test_fixture_repo_still_scans_when_selected_as_root(self):
+        report = scan.scan_repo(FIXTURE, 32768)
+        relpaths = {entry["path"] for entry in report["files"]}
+        self.assertIn("CLAUDE.md", relpaths)
+        self.assertIn(".cursorrules", relpaths)
+        self.assertIn(".github/copilot-instructions.md", relpaths)
+
     @unittest.skipUnless(_can_symlink_files(), "file symlinks unsupported on this platform")
     def test_external_file_symlink_is_excluded_from_every_scan_output(self):
         with tempfile.TemporaryDirectory() as td:
