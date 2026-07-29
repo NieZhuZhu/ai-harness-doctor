@@ -956,6 +956,27 @@ def generate_tasks(repo_root, target=None):
                 evidence=cargo_evidence,
             )
 
+    # .NET: *.csproj declares TargetFramework (e.g. net8.0) and global.json
+    # pins the SDK version. Both are file-derived ground truth, so they make
+    # verifiable golden-answer tasks. Only emit when all sources agree on one
+    # major version; conflicting declarations have no unambiguous ground truth.
+    dotnet_grounds = semantic.dotnet_ground_versions(fact_root)
+    dotnet_values = {value for _source, value in dotnet_grounds}
+    if len(dotnet_values) == 1:
+        major = next(iter(dotnet_values))
+        dotnet_evidence = []
+        for source, _value in dotnet_grounds:
+            filename = source.split()[0]
+            source_path = fact_root / filename
+            if facts.is_file_within_root(root, source_path):
+                dotnet_evidence.append(_logical_source(source_path, root))
+        add(
+            "dotnet-version",
+            "Which .NET major version does this project target (from TargetFramework or global.json)?",
+            r"\b" + re.escape(str(major)) + r"\b",
+            evidence=dotnet_evidence,
+        )
+
     # Python version: reuse the scan/drift fact engine's ground-truth sources
     # (semantic.python_ground_versions) instead of a private pyproject-first
     # heuristic. The two subsystems previously disagreed: eval fixed

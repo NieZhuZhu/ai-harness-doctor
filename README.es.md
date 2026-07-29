@@ -50,8 +50,8 @@ Ninguno de estos comandos modifica el repositorio auditado.
 |---|---|
 | Inventario | Archivos canónicos, reglas, scopes anidados, MCP, hooks, comandos, permisos y subagentes. |
 | Cobertura | Agentes reconocidos: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer, JetBrains Junie, Warp, Firebase Studio, Goose, Kiro, Augment Code y Kilo Code. |
-| Seguridad | Secretos en texto plano, permisos amplios, transportes MCP inseguros, hooks peligrosos y bypasses. |
-| Consistencia | Scripts ausentes, binarios directos de dependencias, rutas movidas, drift de gestor o runtime, enlaces rotos, lockfiles rivales e identificadores que no son rutas —como reglas lint o refs de rama etiquetadas— sin falsos positivos. |
+| Seguridad | Secretos en texto plano (AWS, GitHub, OpenAI, Anthropic, Google, HuggingFace, GitLab, npm, PyPI, Slack, Stripe y JWT), permisos amplios, transportes MCP inseguros, hooks peligrosos y bypasses. |
+| Consistencia | Scripts ausentes, binarios directos de dependencias, rutas movidas, drift de gestor, drift de versión de runtime (Node.js, Python, Go, Rust, Java, Ruby, .NET), enlaces rotos, lockfiles rivales e identificadores que no son rutas —como reglas lint o refs de rama etiquetadas— sin falsos positivos. |
 | Calidad de instrucciones | Contexto excesivo, copias del README, decisiones silenciosas, solapamientos y conflictos locales. |
 | Scope | Herencia hasta el `AGENTS.md` más cercano y globs acotados de Claude, Cursor y Copilot. |
 | Madurez | El nivel de la escalera del repositorio —Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced— más lo que exige el siguiente nivel y el comando que lo instala. |
