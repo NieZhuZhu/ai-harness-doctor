@@ -50,8 +50,8 @@ npx ai-harness-doctor --version
 |---|---|
 | Inventory | Canonical files, tool rules, nested scopes, MCP, hooks, commands, permissions, subagents. |
 | Coverage | 인식하는 에이전트: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer, JetBrains Junie, Warp, Firebase Studio, Goose, Kiro, Augment Code, Kilo Code. |
-| Security | Plaintext secrets, 과도한 권한, 안전하지 않은 MCP transport, 위험한 hook, bypass 지침. |
-| Consistency | 없는 script, 직접 dependency binary, 이동한 path, package manager/runtime drift, broken links, competing lockfiles, 그리고 labeled lint rule 또는 branch ref처럼 오탐을 안전하게 피하는 non-path identifier. |
+| Security | Plaintext secrets (AWS, GitHub, OpenAI, Anthropic, Google, HuggingFace, GitLab, npm, PyPI, Slack, Stripe 자격 증명과 JWT), 과도한 권한, 안전하지 않은 MCP transport, 위험한 hook, bypass 지침. |
+| Consistency | 없는 script, 직접 dependency binary, 이동한 path, package manager drift, runtime version drift (Node.js, Python, Go, Rust, Java, Ruby, .NET), broken links, competing lockfiles, 그리고 labeled lint rule 또는 branch ref처럼 오탐을 안전하게 피하는 non-path identifier. |
 | Instruction quality | 과도한 context, README 전체 복사, silent adjudication, overlap, same-scope conflict. |
 | Scope | root부터 가장 가까운 `AGENTS.md`까지의 상속과 bounded Claude/Cursor/Copilot glob applicability. |
 | Maturity | 저장소의 ladder level — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — 및 다음 level에 부족한 항목과 이를 설치하는 command. |

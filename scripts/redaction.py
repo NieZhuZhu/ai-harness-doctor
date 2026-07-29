@@ -20,6 +20,10 @@ SECRET_PATTERNS = [
     # `xoxe` covers Slack Enterprise Grid tokens alongside bot/app/refresh/etc.
     ("Slack token", re.compile(r"\bxox[baprse]-[0-9A-Za-z-]{10,}\b")),
     ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
+    ("HuggingFace token", re.compile(r"\bhf_[A-Za-z]{20,}\b")),
+    ("GitLab PAT", re.compile(r"\bglpat-[A-Za-z0-9\-_]{20,}\b")),
+    ("npm token", re.compile(r"\bnpm_[A-Za-z0-9]{20,}\b")),
+    ("PyPI token", re.compile(r"\bpypi-[A-Za-z0-9_\-]{16,}\b")),
     ("Stripe secret key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{16,}\b")),
     ("JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
     ("Private key block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),

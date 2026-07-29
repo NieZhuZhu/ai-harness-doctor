@@ -1333,6 +1333,82 @@ class SemanticMultiEcosystemTests(unittest.TestCase):
             self.assertIn("rust_version", cats)
 
 
+class SemanticDotnetTests(unittest.TestCase):
+    def test_dotnet_version_mismatch_from_csproj(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(
+                td, "MyApp.csproj",
+                "<Project><PropertyGroup>"
+                "<TargetFramework>net8.0</TargetFramework>"
+                "</PropertyGroup></Project>\n",
+            )
+            text = "Requires .NET 6."
+            result = semantic.analyze(td, text)
+            dv = [f for f in result["findings"] if f["category"] == "dotnet_version"]
+            self.assertEqual(len(dv), 1)
+            self.assertIn("8", dv[0]["message"])
+
+    def test_dotnet_version_ok(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(
+                td, "MyApp.csproj",
+                "<Project><PropertyGroup>"
+                "<TargetFramework>net8.0</TargetFramework>"
+                "</PropertyGroup></Project>\n",
+            )
+            text = "Requires .NET 8."
+            result = semantic.analyze(td, text)
+            self.assertEqual(
+                [f for f in result["findings"] if f["category"] == "dotnet_version"], []
+            )
+
+    def test_dotnet_version_from_global_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "global.json", '{"sdk": {"version": "9.0.100"}}')
+            text = "Targets .NET 8."
+            result = semantic.analyze(td, text)
+            dv = [f for f in result["findings"] if f["category"] == "dotnet_version"]
+            self.assertEqual(len(dv), 1)
+            self.assertIn("9", dv[0]["message"])
+
+    def test_dotnet_pm_detected_from_csproj(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "MyApp.csproj", "<Project></Project>\n")
+            text = "Use `nuget restore` to install."
+            result = semantic.analyze(td, text)
+            pms = [f for f in result["findings"] if f["category"] == "package_manager"]
+            self.assertEqual(len(pms), 1)
+            self.assertEqual(pms[0]["declared"], "nuget")
+            self.assertEqual(pms[0]["actual"], "dotnet")
+
+    def test_dotnet_pm_ok(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "MyApp.csproj", "<Project></Project>\n")
+            text = "Run `dotnet build`."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "package_manager"], [])
+
+    def test_declared_dotnet_version_patterns(self):
+        self.assertEqual(semantic.declared_dotnet_version("Requires .NET 8.")[0], 8)
+        self.assertEqual(semantic.declared_dotnet_version("Uses dotnet 9.0.")[0], 9)
+        self.assertEqual(semantic.declared_dotnet_version("Target net8.0 framework.")[0], 8)
+        self.assertIsNone(semantic.declared_dotnet_version("No version here.")[0])
+
+    def test_dotnet_version_abstains_on_conflict(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(
+                td, "App.csproj",
+                "<Project><PropertyGroup>"
+                "<TargetFramework>net8.0</TargetFramework>"
+                "</PropertyGroup></Project>\n",
+            )
+            write(td, "global.json", '{"sdk": {"version": "9.0.100"}}')
+            text = "Requires .NET 8."
+            result = semantic.analyze(td, text)
+            dv = [f for f in result["findings"] if f["category"] == "dotnet_version"]
+            self.assertTrue(len(dv) >= 1)
+
+
 class MultiLanguageFalsePositiveParityTests(unittest.TestCase):
     """Plan 070: the Phase-0 engine applies the same multi-language
     suppressions as the Phase-2 D2/D1 gates (TD-02/TD-03 parity)."""

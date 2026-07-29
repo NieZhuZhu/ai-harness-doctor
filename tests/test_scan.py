@@ -3138,6 +3138,22 @@ class SecretRecallTests(unittest.TestCase):
         token = "xoxe-1-" + ("A" * 24)
         self.assertIn("Slack token", scan.secret_hits(f"SLACK_TOKEN={token}"))
 
+    def test_huggingface_token_is_detected(self):
+        token = "hf_" + ("A" * 34)
+        self.assertIn("HuggingFace token", scan.secret_hits(f"HF_TOKEN={token}"))
+
+    def test_gitlab_pat_is_detected(self):
+        token = "glpat-" + ("a" * 20)
+        self.assertIn("GitLab PAT", scan.secret_hits(f"GITLAB_TOKEN={token}"))
+
+    def test_npm_token_is_detected(self):
+        token = "npm_" + ("A" * 36)
+        self.assertIn("npm token", scan.secret_hits(f"NPM_TOKEN={token}"))
+
+    def test_pypi_token_is_detected(self):
+        token = "pypi-" + ("A" * 100)
+        self.assertIn("PyPI token", scan.secret_hits(f"PYPI_TOKEN={token}"))
+
     def test_benign_text_is_not_flagged(self):
         for benign in (
             "This section explains how to configure your token before running.",

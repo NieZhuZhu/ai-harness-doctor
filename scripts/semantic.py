@@ -23,6 +23,8 @@ checkup time, exactly where the instructions no longer match the code. Python 3.
 standard library only; no runtime dependencies.
 """
 
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -85,7 +87,7 @@ LOCKFILE_MANAGERS = registry.LOCKFILE_MANAGERS
 
 # Ecosystems are compared in this fixed order so multi-ecosystem findings are
 # deterministic.
-ECOSYSTEM_ORDER = ("node", "python", "go", "rust", "java", "ruby")
+ECOSYSTEM_ORDER = ("node", "python", "go", "rust", "java", "ruby", "dotnet")
 
 # Package-manager token -> ecosystem it belongs to.
 PM_TO_ECOSYSTEM = {
@@ -113,6 +115,11 @@ PM_TO_ECOSYSTEM = {
     # but the repo has a Gemfile.lock, implying bundle" the same way it
     # already flags npm-vs-yarn.
     "gem": "ruby",
+    # .NET's CLI tool is `dotnet` (e.g. `dotnet build`, `dotnet test`);
+    # NuGet is the underlying package manager but the CLI is universally
+    # invoked through the dotnet driver.
+    "dotnet": "dotnet",
+    "nuget": "dotnet",
 }
 # Aliases spelled differently in prose than their canonical manager name.
 _PM_NORMALIZE = {"mvn": "maven"}
@@ -298,7 +305,9 @@ def declared_paths(text):
 declared_package_managers = facts.declared_package_managers
 
 
-_PM_TOKEN_RE = re.compile(r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|mvn|maven|gradle|bundle|gem)\b")
+_PM_TOKEN_RE = re.compile(
+    r"\b(npm|pnpm|yarn|bun|poetry|pipenv|pdm|uv|pip|cargo|mvn|maven|gradle|bundle|gem|dotnet|nuget)\b"
+)
 _GO_TOOL_RE = re.compile(r"\bgo\s+(?:build|test|run|mod|vet|install|get|work|generate)\b")
 
 
@@ -401,6 +410,24 @@ def declared_java_version(text):
             major = _java_major(m.group(1))
             if major is not None:
                 return major, lineno
+    return None, None
+
+
+def declared_dotnet_version(text):
+    """Return ``(major, line)`` for a .NET version declared in AGENTS.md, else ``(None, None)``.
+
+    Recognizes patterns like ``.NET 8``, ``.NET 8.0``, ``dotnet 9``, ``net8.0``.
+    """
+    pat = re.compile(
+        r"(?:\.\s*NET|dotnet)\s*(?:version\s*)?(?:>=?)?\s*v?(\d+)(?:\.\d+)?|"
+        r"\bnet(\d+)\.\d+\b",
+        re.I,
+    )
+    for lineno, line in enumerate(text.splitlines(), 1):
+        m = pat.search(line)
+        if m:
+            major = int(m.group(1) or m.group(2))
+            return major, lineno
     return None, None
 
 
@@ -646,6 +673,24 @@ def _ruby_ground_pm(root):
     return None, None
 
 
+def _dotnet_ground_pm(root):
+    # .NET projects are managed through the `dotnet` CLI. Detect by the
+    # presence of a project file (*.csproj, *.fsproj, *.vbproj) or a solution.
+    try:
+        entries = os.listdir(root)
+    except OSError:
+        return None, None
+    for entry in entries:
+        for ext in (".csproj", ".fsproj", ".vbproj"):
+            if entry.endswith(ext):
+                return "dotnet", entry
+    if "global.json" in entries:
+        gj = root / "global.json"
+        if facts.is_file_within_root(root, gj):
+            return "dotnet", "global.json"
+    return None, None
+
+
 ECOSYSTEM_GROUND_PM = {
     "node": _node_ground_pm,
     "python": _python_ground_pm,
@@ -653,6 +698,7 @@ ECOSYSTEM_GROUND_PM = {
     "rust": _rust_ground_pm,
     "java": _java_ground_pm,
     "ruby": _ruby_ground_pm,
+    "dotnet": _dotnet_ground_pm,
 }
 
 
@@ -772,6 +818,41 @@ def java_ground_versions(root):
                 if major is not None:
                     out.append((name, major))
                     break
+    return out
+
+
+def dotnet_ground_versions(root):
+    """Return ``[(source_label, major_int), ...]`` for .NET target framework versions.
+
+    Sources: ``<TargetFramework>net8.0</TargetFramework>`` in *.csproj (regex,
+    not full XML, matching the pom.xml approach); ``global.json`` SDK version.
+    """
+    out = []
+    # Check *.csproj in root for TargetFramework
+    try:
+        entries = os.listdir(root)
+    except OSError:
+        entries = []
+    for entry in entries:
+        if entry.endswith((".csproj", ".fsproj", ".vbproj")):
+            proj = root / entry
+            if facts.is_file_within_root(root, proj):
+                text = _read(proj, root)
+                m = re.search(r"<TargetFramework>\s*net(\d+)\.\d+", text)
+                if m:
+                    out.append((entry + " TargetFramework", int(m.group(1))))
+                    break
+    # global.json SDK version
+    gj = root / "global.json"
+    if facts.is_file_within_root(root, gj):
+        try:
+            data = json.loads(_read(gj, root))
+            sdk_ver = data.get("sdk", {}).get("version", "")
+            m = re.match(r"(\d+)\.", sdk_ver)
+            if m:
+                out.append(("global.json sdk.version", int(m.group(1))))
+        except (json.JSONDecodeError, AttributeError):
+            pass
     return out
 
 
@@ -1166,6 +1247,11 @@ def compare_ruby_version(root, text):
     return _compare_language_version("ruby_version", "Ruby", declared, line, ruby_ground_versions(root))
 
 
+def compare_dotnet_version(root, text):
+    declared, line = declared_dotnet_version(text)
+    return _compare_language_version("dotnet_version", ".NET", declared, line, dotnet_ground_versions(root))
+
+
 def _count_declarations(root, text):
     """How many concrete claims were checked (used for the consistency summary)."""
     count = 0
@@ -1188,6 +1274,7 @@ def _count_declarations(root, text):
         (declared_rust_version, rust_ground_versions),
         (declared_java_version, java_ground_versions),
         (declared_ruby_version, ruby_ground_versions),
+        (declared_dotnet_version, dotnet_ground_versions),
     ):
         declared_v, _ = declared_fn(text)
         if declared_v is not None:
@@ -1205,6 +1292,7 @@ ORDER = {
     "rust_version": 6,
     "java_version": 7,
     "ruby_version": 8,
+    "dotnet_version": 9,
 }
 
 
@@ -1227,6 +1315,7 @@ def analyze(root, text, repository_root=None):
         findings.extend(compare_rust_version(root, text))
         findings.extend(compare_java_version(root, text))
         findings.extend(compare_ruby_version(root, text))
-    findings.sort(key=lambda f: (ORDER.get(f["category"], 9), f.get("line", 0)))
+        findings.extend(compare_dotnet_version(root, text))
+    findings.sort(key=lambda f: (ORDER.get(f["category"], 10), f.get("line", 0)))
     checked = _count_declarations(root, text) if text else 0
     return {"findings": findings, "checked": checked, "mismatches": len(findings)}

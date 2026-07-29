@@ -3968,6 +3968,53 @@ class GenerateTasksTests(unittest.TestCase):
             by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
             self.assertNotIn("rust-edition", by_id)
 
+    def test_generate_tasks_from_dotnet_csproj_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "MyApp.csproj").write_text(
+                "<Project Sdk=\"Microsoft.NET.Sdk\">\n"
+                "  <PropertyGroup>\n"
+                "    <TargetFramework>net8.0</TargetFramework>\n"
+                "  </PropertyGroup>\n"
+                "</Project>\n",
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Overview\ndotnet build\n", encoding="utf-8")
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+            self.assertIn("dotnet-version", by_id)
+            self.assertTrue(eval_run.regex_passes(by_id["dotnet-version"]["check"]["value"], "8"))
+            self.assertFalse(eval_run.regex_passes(by_id["dotnet-version"]["check"]["value"], "6"))
+
+    def test_generate_tasks_from_dotnet_global_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "global.json").write_text(
+                '{"sdk": {"version": "9.0.100"}}',
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Overview\n", encoding="utf-8")
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+            self.assertIn("dotnet-version", by_id)
+            self.assertTrue(eval_run.regex_passes(by_id["dotnet-version"]["check"]["value"], "9"))
+
+    def test_generate_tasks_abstains_on_conflicting_dotnet_version(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            (repo / "App.csproj").write_text(
+                "<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>\n",
+                encoding="utf-8",
+            )
+            (repo / "global.json").write_text(
+                '{"sdk": {"version": "9.0.100"}}',
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Overview\n", encoding="utf-8")
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+            self.assertNotIn("dotnet-version", by_id)
+
     def test_generate_tasks_accepts_npm_ci_install_command(self):
         with tempfile.TemporaryDirectory() as td:
             repo = self._make_repo(td)
