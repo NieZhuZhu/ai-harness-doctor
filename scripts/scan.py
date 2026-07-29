@@ -48,6 +48,13 @@ from scan_render import (  # noqa: E402,F401  (re-exported for backward compatib
 )
 
 SKIP_DIRS = registry.SKIP_DIRS
+_EMBEDDED_FIXTURE_PREFIXES = (
+    ("tests", "fixtures"),
+    ("test", "fixtures"),
+    ("benchmark", "repo-before"),
+    ("benchmark", "repo-after"),
+    ("benchmark", "corpus", "repos"),
+)
 REPOS_FILE_OPERATIONAL_EXIT = 8
 # Exit for the opt-in `--min-maturity` gate (Plan 069). 5 was unused; 6 stays
 # free for future gates.
@@ -434,12 +441,20 @@ def rel(path, root):
     return path.relative_to(root).as_posix()
 
 
+def _is_embedded_fixture_subtree(parts, include_prefix=False):
+    return any(
+        (len(parts) >= len(prefix) if include_prefix else len(parts) > len(prefix))
+        and parts[: len(prefix)] == prefix
+        for prefix in _EMBEDDED_FIXTURE_PREFIXES
+    )
+
+
 def is_skipped(path, root):
     try:
         parts = path.relative_to(root).parts
     except ValueError:
         parts = path.parts
-    return any(part in SKIP_DIRS for part in parts)
+    return any(part in SKIP_DIRS for part in parts) or _is_embedded_fixture_subtree(parts)
 
 
 def _resolves_within_root(path, resolved_root):
@@ -452,10 +467,12 @@ def build_file_index(root):
 
     Returns a sorted list of ``(relposix, Path)`` for each regular file, with
     ``SKIP_DIRS`` (``.git`` / ``node_modules`` / ``dist`` / ``build`` /
-    ``__pycache__``) and nested-repository boundaries (subdirectories carrying
-    their own ``.git`` — submodules or vendored checkouts, whose instruction
-    files are not this repository's harness) pruned at the directory level so
-    their — often enormous — subtrees are never descended. Every glob matcher in the scanner then runs
+    ``__pycache__``), embedded fixture/sample repos (``tests/fixtures/*``,
+    ``benchmark/repo-before/*``, ...), and nested-repository boundaries
+    (subdirectories carrying their own ``.git`` — submodules or vendored
+    checkouts, whose instruction files are not this repository's harness) pruned
+    at the directory level so their — often enormous — subtrees are never
+    descended. Every glob matcher in the scanner then runs
     against this single inventory (see :func:`index_glob`) instead of calling
     ``Path.glob`` once per pattern, which re-walked (and re-filtered) the whole
     tree ~90 times per scan (PERF-01).
@@ -470,6 +487,9 @@ def build_file_index(root):
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         registry.prune_walk_dirs(dirpath, dirnames)
         base = Path(dirpath)
+        for dirname in list(dirnames):
+            if _is_embedded_fixture_subtree((base / dirname).relative_to(root).parts, include_prefix=True):
+                dirnames.remove(dirname)
         for name in filenames:
             path = base / name
             if not _resolves_within_root(path, root):

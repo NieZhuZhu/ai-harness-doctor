@@ -59,6 +59,8 @@ npx ai-harness-doctor --version
 
 보안 읽기는 감사 대상 저장소 안에만 머뭅니다. 큰 파일도 SHA-256, 줄 수, secret, permission-bypass를 전체 검사하며 `--max-bytes`는 semantic analysis만 제한합니다.
 
+상위 저장소 scan 은 `tests/fixtures/*`, `benchmark/repo-before/*`, `benchmark/repo-after/*`, `benchmark/corpus/repos/*` 아래의 내장 fixture/demo 저장소를 건너뜁니다. 각 디렉터리의 harness 보고서가 필요하면 해당 디렉터리를 직접 scan 하세요.
+
 ## 네 단계
 
 | 단계 | 목표 | 주요 명령 | 사람이 멈춰 결정할 지점 |

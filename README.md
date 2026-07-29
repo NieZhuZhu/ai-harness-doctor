@@ -59,6 +59,8 @@ Nothing above changes the audited repository.
 
 Security reads stay inside the audited repository. Oversized files still receive full-file SHA-256, line-count, secret, and permission-bypass coverage; `--max-bytes` limits semantic analysis only.
 
+Parent scans skip embedded fixture/demo repos under `tests/fixtures/*`, `benchmark/repo-before/*`, `benchmark/repo-after/*`, and `benchmark/corpus/repos/*`. Scan those directories directly if you want their own harness report.
+
 ## The four phases
 
 | Phase | Goal | Main commands | Human stop point |
