@@ -3923,6 +3923,51 @@ class GenerateTasksTests(unittest.TestCase):
             for t in tasks:
                 self.assertEqual(t["check"]["type"], "regex")
 
+    def test_generate_tasks_from_cargo_workspace_facts(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            # Virtual workspace (no root [package]) that pins edition and MSRV
+            # under [workspace.package], as goose and other Rust agents do.
+            (repo / "Cargo.toml").write_text(
+                "[workspace]\n"
+                'members = ["crates/*"]\n'
+                "resolver = \"2\"\n\n"
+                "[workspace.package]\n"
+                'edition = "2021"\n'
+                'version = "1.44.0"\n'
+                'rust-version = "1.94.1"\n',
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Overview\ncargo test\n", encoding="utf-8")
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+            self.assertIn("rust-edition", by_id)
+            self.assertIn("rust-version", by_id)
+            self.assertTrue(eval_run.regex_passes(by_id["rust-edition"]["check"]["value"], "2021"))
+            self.assertFalse(eval_run.regex_passes(by_id["rust-edition"]["check"]["value"], "2018"))
+            self.assertTrue(eval_run.regex_passes(by_id["rust-version"]["check"]["value"], "1.94.1"))
+            self.assertFalse(eval_run.regex_passes(by_id["rust-version"]["check"]["value"], "1.94"))
+            for t in by_id.values():
+                self.assertEqual(t["check"]["type"], "regex")
+
+    def test_generate_tasks_abstains_on_conflicting_cargo_edition(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            # A root [package] and [workspace.package] that disagree on the
+            # edition have no unambiguous ground truth, so abstain.
+            (repo / "Cargo.toml").write_text(
+                "[package]\n"
+                'name = "root-crate"\n'
+                'edition = "2024"\n\n'
+                "[workspace.package]\n"
+                'edition = "2021"\n',
+                encoding="utf-8",
+            )
+            (repo / "AGENTS.md").write_text("# Overview\n", encoding="utf-8")
+            by_id = {t["id"]: t for t in eval_run.generate_tasks(repo)}
+            self.assertNotIn("rust-edition", by_id)
+
     def test_generate_tasks_accepts_npm_ci_install_command(self):
         with tempfile.TemporaryDirectory() as td:
             repo = self._make_repo(td)

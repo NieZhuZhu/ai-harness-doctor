@@ -924,6 +924,38 @@ def generate_tasks(repo_root, target=None):
                 evidence=go_evidence,
             )
 
+    # Rust: Cargo.toml declares the edition and (optionally) the minimum
+    # supported Rust version. Both are file-derived ground truth, so they make
+    # verifiable golden-answer tasks just like the go.mod directives above. The
+    # keys live under either ``[package]`` or ``[workspace.package]`` (virtual
+    # workspaces such as goose have no root ``[package]`` but still pin them
+    # under ``[workspace.package]``), and dependency tables never open a line
+    # with a bare ``edition =``/``rust-version =`` key, so a line-anchored regex
+    # is a safe, tomllib-free parse (tomllib is 3.11+, but the CI matrix still
+    # runs 3.9/3.10). Only emit a task when every declaration agrees on one
+    # value; conflicting pins have no unambiguous ground truth, mirroring the
+    # Python-version block below.
+    cargo = fact_root / "Cargo.toml"
+    if facts.is_file_within_root(root, cargo):
+        cargo_evidence = [_logical_source(cargo, root)]
+        cargo_text = cargo.read_text(encoding="utf-8", errors="replace")
+        editions = set(re.findall(r'(?m)^\s*edition\s*=\s*"(\d{4})"', cargo_text))
+        if len(editions) == 1:
+            add(
+                "rust-edition",
+                "Which Rust edition does this crate target (the edition in Cargo.toml)?",
+                r"\b" + re.escape(next(iter(editions))) + r"\b",
+                evidence=cargo_evidence,
+            )
+        msrvs = set(re.findall(r'(?m)^\s*rust-version\s*=\s*"([^"]+)"', cargo_text))
+        if len(msrvs) == 1:
+            add(
+                "rust-version",
+                "What is the minimum supported Rust version (rust-version) declared in Cargo.toml?",
+                r"\b" + re.escape(next(iter(msrvs))) + r"\b",
+                evidence=cargo_evidence,
+            )
+
     # Python version: reuse the scan/drift fact engine's ground-truth sources
     # (semantic.python_ground_versions) instead of a private pyproject-first
     # heuristic. The two subsystems previously disagreed: eval fixed
@@ -996,7 +1028,11 @@ def generate_report(args):
     else:
         print(content)
     if not tasks:
-        print("warning: no facts detected; is this a supported repo (Node/Go/Python + AGENTS.md)?", file=sys.stderr)
+        print(
+            "warning: no facts detected; is this a supported repo "
+            "(Node/Go/Rust/Python + AGENTS.md)?",
+            file=sys.stderr,
+        )
     return 0
 
 
