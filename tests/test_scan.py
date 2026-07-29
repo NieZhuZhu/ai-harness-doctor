@@ -3120,6 +3120,24 @@ class SecretRecallTests(unittest.TestCase):
     def test_stripe_live_key_is_detected(self):
         self.assertIn("Stripe secret key", scan.secret_hits(self.STRIPE_KEY))
 
+    def test_github_fine_grained_pat_is_detected(self):
+        # Fine-grained PATs (`github_pat_<id>_<secret>`) are GitHub's default
+        # token shape now; the legacy `gh[pousr]_` pattern never matched them, so
+        # a leaked fine-grained PAT escaped both detection and redaction.
+        token = "github_pat_" + "11ABCDE0Y" + ("A" * 13) + "_" + ("b" * 59)
+        self.assertIn("GitHub token", scan.secret_hits(f"PAT={token}"))
+        self.assertNotIn(token, scan.redact_secret_values(f"PAT={token}"))
+
+    def test_aws_temporary_sts_access_key_is_detected(self):
+        # Temporary/STS access key ids use the `ASIA` prefix and are as sensitive
+        # as long-term `AKIA` ids; runners and assumed roles leak them most.
+        key = "ASIA" + "3B7C9D1E2F4A6B8C"
+        self.assertIn("AWS access key id", scan.secret_hits(f"AWS_ACCESS_KEY_ID={key}"))
+
+    def test_slack_enterprise_token_is_detected(self):
+        token = "xoxe-1-" + ("A" * 24)
+        self.assertIn("Slack token", scan.secret_hits(f"SLACK_TOKEN={token}"))
+
     def test_benign_text_is_not_flagged(self):
         for benign in (
             "This section explains how to configure your token before running.",

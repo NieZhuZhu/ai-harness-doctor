@@ -7,11 +7,18 @@ import re
 # minimization. Keep this list single-sourced: persisted/report text must redact
 # exactly the values the scanner calls high-confidence secrets.
 SECRET_PATTERNS = [
-    ("AWS access key id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b")),
+    # AWS long-term (AKIA) and temporary/STS (ASIA) access key ids are both
+    # 20-char credential material; the STS shape is what CI runners and assumed
+    # roles leak most often.
+    ("AWS access key id", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    # Legacy PATs/OAuth/app tokens (`gh[pousr]_...`) plus fine-grained PATs
+    # (`github_pat_...`), which are now GitHub's default token shape and carry an
+    # internal `_` separator between the id and secret halves.
+    ("GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b")),
     ("OpenAI API key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b")),
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}\b")),
-    ("Slack token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
+    # `xoxe` covers Slack Enterprise Grid tokens alongside bot/app/refresh/etc.
+    ("Slack token", re.compile(r"\bxox[baprse]-[0-9A-Za-z-]{10,}\b")),
     ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
     ("Stripe secret key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{16,}\b")),
     ("JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
