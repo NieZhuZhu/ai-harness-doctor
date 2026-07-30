@@ -94,6 +94,60 @@ class SemanticCommandTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
 
+    def test_bun_npm_pnpm_script_file_execution_not_a_named_script(self):
+        # `bun esbuild.mjs` / `pnpm dev.js` / `bun build.ts` execute a script
+        # *file*, not a package.json script. `_NODE_CMD_RE` captures the
+        # basename ("esbuild") and stops at the dot, so without a file-suffix
+        # guard the trailing ".mjs" is dropped and the file execution is
+        # misread as a missing `run esbuild` script. Found running the chain
+        # against cline/cline, whose AGENTS.md documents `bun esbuild.mjs`.
+        for cmd in (
+            "bun esbuild.mjs",
+            "pnpm dev.js",
+            "bun build.ts",
+            "npm build.cjs",
+            "bun build.tsx",
+            "bun build.mts",
+        ):
+            with self.subTest(cmd=cmd):
+                declared = semantic.declared_commands(f"Run `{cmd}` here.")
+                self.assertEqual(
+                    [d for d in declared if d.get("kind") == "node"],
+                    [],
+                    f"{cmd!r} should not produce a node command",
+                )
+
+    def test_bun_npm_pnpm_named_script_invocations_still_declared(self):
+        # Regression guard: normal `bun run esbuild` / `bun run package` /
+        # `bun test` / `npm run build` invocations must still surface as node
+        # commands so the script-file guard above does not over-suppress.
+        cases = {
+            "bun run esbuild": ("bun", "esbuild"),
+            "bun run package": ("bun", "package"),
+            "bun test": ("bun", "test"),
+            "npm run build": ("npm", "build"),
+            "pnpm run lint": ("pnpm", "lint"),
+        }
+        for cmd, (tool, name) in cases.items():
+            with self.subTest(cmd=cmd):
+                declared = semantic.declared_commands(f"Run `{cmd}` here.")
+                nodes = [d for d in declared if d.get("kind") == "node"]
+                self.assertEqual(len(nodes), 1, f"{cmd!r} expected one node command")
+                self.assertEqual(nodes[0]["tool"], tool)
+                self.assertEqual(nodes[0]["name"], name)
+
+    def test_bun_script_file_execution_does_not_report_missing_named_script(self):
+        # End-to-end: a `bun esbuild.mjs` reference against a package.json
+        # without an "esbuild" script must NOT produce a "no esbuild script"
+        # command finding (cline/cline false positive, fixed by this PR).
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {"build": "tsc"}}')
+            text = "Bundle with `bun esbuild.mjs` at release time."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            for finding in cmds:
+                self.assertNotIn("esbuild", finding["message"])
+
     def test_pnpm_bin_passthrough_via_dependency_alias_not_flagged(self):
         # Some packages expose a binary whose name differs from the package name;
         # OpenAI Agents JS documents `pnpm changeset`, provided by @changesets/cli.

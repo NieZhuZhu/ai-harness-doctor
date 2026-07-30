@@ -191,6 +191,14 @@ _PY_RUN_RE = re.compile(r"\b(?:(poetry|pdm|uv)\s+run|(uvx|pipx))\s+([^\s`|]+)")
 # Extensions that mark a ``... run <arg>`` target as a script *file* to execute
 # rather than a project console script.
 _PY_RUN_SCRIPT_SUFFIXES = (".py", ".pyw", ".sh")
+# A bare ``bun|npm|pnpm <file.ext>`` (no ``run``) executes a script *file*, not a
+# named package.json script. ``_NODE_CMD_RE`` captures the basename ("esbuild")
+# and stops at the dot, so the trailing ``.mjs``/``.ts``/... would otherwise be
+# dropped and the file execution misread as a missing ``run esbuild`` script.
+# Matched against the text immediately following the captured name. Mirrors
+# ``_PY_RUN_SCRIPT_SUFFIXES`` for ``uv run script.py``. Found running the chain
+# against cline/cline, whose AGENTS.md documents ``bun esbuild.mjs``.
+_NODE_SCRIPT_FILE_RE = re.compile(r"\A\.(?:mjs|cjs|js|jsx|ts|tsx|mts|cts)\b")
 
 
 def declared_commands(text):
@@ -209,6 +217,11 @@ def declared_commands(text):
         for m in _NODE_CMD_RE.finditer(token):
             tool = m.group(1) or m.group(4) or "yarn"
             name = m.group(2) or m.group(3) or m.group(5)
+            # `bun esbuild.mjs` / `bun build.ts` run a script *file*, not a
+            # package.json script; skip so the dropped extension is not misread
+            # as a missing `run esbuild` script (cline/cline false positive).
+            if m.group(2) is not None and _NODE_SCRIPT_FILE_RE.match(token[m.end(2):]):
+                continue
             key = ("node", tool, name, lineno)
             if key not in seen:
                 seen.add(key)
