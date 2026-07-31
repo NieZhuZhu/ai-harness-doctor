@@ -1075,6 +1075,13 @@ class SemanticNodeVersionTests(unittest.TestCase):
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "node_version"], [])
 
+    def test_slash_joined_node_version_enumeration_is_not_declared(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, ".nvmrc", "v20\n")
+            text = "Supports Node 16/18/20."
+            result = semantic.analyze(td, text)
+            self.assertEqual([f for f in result["findings"] if f["category"] == "node_version"], [])
+
 
 class SemanticSummaryTests(unittest.TestCase):
     def test_checked_and_mismatch_counts(self):

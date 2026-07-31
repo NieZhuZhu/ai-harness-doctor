@@ -1069,8 +1069,17 @@ def extract_signals(file_entry):
                 # Preserve the full declared Node version (e.g. "node 18.17.0")
                 # for user-facing evidence; conflict grouping normalizes it to
                 # the major so 18 and 18.17.0 are not a false conflict (CORR-05).
-                if signal == "node_version" and match.groupdict().get("version"):
-                    actual = f"node {match.group('version')}"
+                if signal == "node_version":
+                    # A slash-joined enumeration lists SUPPORTED Node versions,
+                    # not the one this repo requires; skip it so documentation
+                    # like "node 16/18/20" does not manufacture a false node
+                    # drift/conflict signal.
+                    if registry.node_version_major(line) is None:
+                        continue
+                    if match.groupdict().get("version"):
+                        actual = f"node {match.group('version')}"
+                    else:
+                        actual = value
                 else:
                     actual = value
                 signals.append(
