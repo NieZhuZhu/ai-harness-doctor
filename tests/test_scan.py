@@ -4229,6 +4229,36 @@ class NestedRepositoryBoundaryTests(unittest.TestCase):
             self.assertIn("AGENTS.md", paths)
             self.assertIn("CLAUDE.md", paths)
 
+    def test_fixture_repos_in_conventional_containers_are_excluded(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "AGENTS.md").write_text("Use `npm test`.\n", encoding="utf-8")
+
+            fixture = root / "tests" / "fixtures" / "messy"
+            fixture.mkdir(parents=True)
+            (fixture / "package.json").write_text('{"name": "fixture"}\n', encoding="utf-8")
+            (fixture / "CLAUDE.md").write_text("Use `pnpm test`.\n", encoding="utf-8")
+
+            benchmark = root / "benchmark" / "repo-before"
+            benchmark.mkdir(parents=True)
+            (benchmark / "package.json").write_text('{"name": "bench"}\n', encoding="utf-8")
+            (benchmark / "AGENTS.md").write_text("Use `yarn test`.\n", encoding="utf-8")
+
+            report = scan.scan_repo(root, 32768)
+            self.assertEqual({f["path"] for f in report["files"]}, {"AGENTS.md"})
+            self.assertEqual(report["conflicts"], [])
+
+    def test_non_repo_docs_inside_fixture_container_are_not_pruned(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "AGENTS.md").write_text("# root\n", encoding="utf-8")
+            nested = root / "tests" / "fixtures" / "notes"
+            nested.mkdir(parents=True)
+            (nested / "AGENTS.md").write_text("# notes\n", encoding="utf-8")
+
+            paths = {f["path"] for f in scan.scan_repo(root, 32768)["files"]}
+            self.assertIn("tests/fixtures/notes/AGENTS.md", paths)
+
 
 class MaturityTests(unittest.TestCase):
     """Plan 069: the harness maturity ladder (`report[\"maturity\"]`).

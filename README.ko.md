@@ -59,6 +59,8 @@ npx ai-harness-doctor --version
 
 보안 읽기는 감사 대상 저장소 안에만 머뭅니다. 큰 파일도 SHA-256, 줄 수, secret, permission-bypass를 전체 검사하며 `--max-bytes`는 semantic analysis만 제한합니다.
 
+`tests/fixtures`, `benchmark/`, `examples/` 같은 관례적 컨테이너 아래 커밋된 sandbox 저장소는 호스트 저장소의 live harness surface가 아니라 테스트 데이터로 취급합니다.
+
 ## 네 단계
 
 | 단계 | 목표 | 주요 명령 | 사람이 멈춰 결정할 지점 |

@@ -59,6 +59,8 @@ npx ai-harness-doctor --version
 
 Security read は監査対象リポジトリ内に限定されます。大きなファイルでも SHA-256、行数、secret、permission-bypass は全体を確認し、`--max-bytes` は semantic analysis だけを制限します。
 
+`tests/fixtures`、`benchmark/`、`examples/` のような慣例ディレクトリ配下にコミットされた sandbox リポジトリは、ホストリポジトリの live harness surface ではなくテストデータとして扱われます。
+
 ## 4 つのフェーズ
 
 | フェーズ | 目的 | 主なコマンド | 人間の停止点 |
