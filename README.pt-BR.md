@@ -59,6 +59,8 @@ Nenhum desses comandos altera o repositório auditado.
 
 As leituras de segurança ficam dentro do repositório. Arquivos grandes mantêm cobertura completa de SHA-256, linhas, segredos e bypasses; `--max-bytes` limita apenas a análise semântica.
 
+Repositórios sandbox versionados sob contêineres convencionais como `tests/fixtures`, `benchmark/` e `examples/` são tratados como dados de teste, não como a superfície harness ativa do repositório hospedeiro.
+
 ## As quatro fases
 
 | Fase | Objetivo | Comandos principais | Ponto de decisão humana |

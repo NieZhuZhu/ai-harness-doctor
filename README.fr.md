@@ -59,6 +59,8 @@ Aucune de ces commandes ne modifie le dépôt audité.
 
 Les lectures de sécurité restent dans le dépôt. Les gros fichiers conservent une couverture complète de SHA-256, lignes, secrets et bypass ; `--max-bytes` ne limite que l’analyse sémantique.
 
+Les dépôts sandbox versionnés sous des conteneurs conventionnels comme `tests/fixtures`, `benchmark/` et `examples/` sont traités comme des données de test, et non comme la surface harness active du dépôt hôte.
+
 ## Les quatre phases
 
 | Phase | Objectif | Commandes principales | Point d’arrêt humain |

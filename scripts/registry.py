@@ -41,23 +41,110 @@ DRAFT_SUGGESTED_MARKER = "(suggested default)"
 # repo-wide walk in one module can't drift from the other (TD-02).
 SKIP_DIRS = {".git", "node_modules", "dist", "build", "__pycache__"}
 
+# Conventional containers for checked-in sandbox/example repos. When one of
+# these directories holds a whole repo fixture (its own manifests plus nested
+# harness files), that subtree should not be inventoried as the host repo's
+# live harness surface.
+FIXTURE_REPO_CONTAINERS = {
+    "fixture",
+    "fixtures",
+    "example",
+    "examples",
+    "sample",
+    "samples",
+    "demo",
+    "demos",
+    "benchmark",
+    "benchmarks",
+    "testdata",
+}
+
+FIXTURE_REPO_MANIFESTS = {
+    "package.json",
+    "pyproject.toml",
+    "requirements.txt",
+    "setup.py",
+    "setup.cfg",
+    "go.mod",
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "Gemfile",
+    "composer.json",
+    "global.json",
+}
+
+
+def _literal_instruction_basenames():
+    data = json.loads(_REGISTRY_PATH.read_text(encoding="utf-8"))
+    basenames = set(data.get("canonical", []))
+    for tool in data.get("tools", []):
+        for pattern in tool.get("scan_patterns", []):
+            if any(ch in pattern for ch in "*?[]{}"):
+                continue
+            basenames.add(Path(pattern).name)
+    return basenames
+
+
+FIXTURE_REPO_INSTRUCTION_BASENAMES = _literal_instruction_basenames()
+
+
+def _looks_like_fixture_repo(path):
+    """Return True when ``path`` looks like a checked-in sandbox/example repo.
+
+    We only prune conventional fixture/example containers, and only when the
+    child subtree itself looks like a repository under test: it must contain at
+    least one project manifest and at least one recognized harness file
+    somewhere below it. This keeps ordinary docs/examples visible while
+    excluding self-benchmark and unit-test repos from the host repository scan.
+    """
+
+    if os.path.basename(os.path.dirname(path)) not in FIXTURE_REPO_CONTAINERS:
+        return False
+    saw_manifest = False
+    saw_instruction = False
+    for walk_dir, walk_dirs, walk_files in os.walk(path, followlinks=False):
+        walk_dirs[:] = [
+            d
+            for d in walk_dirs
+            if d not in SKIP_DIRS and not os.path.lexists(os.path.join(walk_dir, d, ".git"))
+        ]
+        if not saw_manifest and any(name in FIXTURE_REPO_MANIFESTS for name in walk_files):
+            saw_manifest = True
+        if not saw_instruction and any(name in FIXTURE_REPO_INSTRUCTION_BASENAMES for name in walk_files):
+            saw_instruction = True
+        if saw_manifest and saw_instruction:
+            return True
+    return False
+
 
 def prune_walk_dirs(dirpath, dirnames):
     """In-place ``os.walk`` pruning shared by every repository walk.
 
-    Drops ``SKIP_DIRS`` entries and nested-repository boundaries: a
-    subdirectory that carries its own ``.git`` (a submodule working tree or a
-    vendored checkout — ``.git`` is a file in the former, a directory in the
-    latter) is a different repository, so its instruction files, manifests and
-    paths are that repository's harness, not this one's. Scanning a nested
-    repository is still supported by passing it as the ``repo_root`` (its own
-    ``.git`` sits at the root, which this prune never inspects).
+    Drops ``SKIP_DIRS`` entries, nested-repository boundaries, and conventional
+    checked-in fixture/example repos: a subdirectory that carries its own
+    ``.git`` (a submodule working tree or a vendored checkout — ``.git`` is a
+    file in the former, a directory in the latter) is a different repository,
+    so its instruction files, manifests and paths are that repository's
+    harness, not this one's. Likewise, a repo-shaped subtree under
+    ``tests/fixtures``, ``benchmark/``, ``examples/`` and similar containers is
+    treated as sandboxed test data, not the host repository's live harness.
+    Scanning a nested repository is still supported by passing it as the
+    ``repo_root`` (its own ``.git`` or fixture container sits at the root, which
+    this prune never inspects).
     """
-    dirnames[:] = [
-        d
-        for d in dirnames
-        if d not in SKIP_DIRS and not os.path.lexists(os.path.join(dirpath, d, ".git"))
-    ]
+    kept = []
+    for d in dirnames:
+        candidate = os.path.join(dirpath, d)
+        if d in SKIP_DIRS:
+            continue
+        if os.path.lexists(os.path.join(candidate, ".git")):
+            continue
+        if _looks_like_fixture_repo(candidate):
+            continue
+        kept.append(d)
+    dirnames[:] = kept
 
 # Single source of truth mapping a committed lockfile name -> the package manager
 # it implies. Shared by semantic.py, check_drift.py and canonicalize.py so the

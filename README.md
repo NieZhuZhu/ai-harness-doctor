@@ -59,6 +59,8 @@ Nothing above changes the audited repository.
 
 Security reads stay inside the audited repository. Oversized files still receive full-file SHA-256, line-count, secret, and permission-bypass coverage; `--max-bytes` limits semantic analysis only.
 
+Checked-in sandbox repos under conventional containers such as `tests/fixtures`, `benchmark/`, and `examples/` are treated as test data, not the host repository's live harness surface.
+
 ## The four phases
 
 | Phase | Goal | Main commands | Human stop point |

@@ -59,6 +59,8 @@ npx ai-harness-doctor --version
 
 安全读取不会越出被审计仓库。超大文件仍会完整计算 SHA-256、行数、secret 和权限绕过；`--max-bytes` 只限制语义分析。
 
+像 `tests/fixtures`、`benchmark/`、`examples/` 这类约定目录下已提交的沙盒仓库，会被视为测试数据，而不是宿主仓库的在线 harness 表面。
+
 ## 四个阶段
 
 | 阶段 | 目标 | 主要命令 | 人工停点 |
