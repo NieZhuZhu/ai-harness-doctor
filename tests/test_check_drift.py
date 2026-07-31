@@ -1027,6 +1027,30 @@ class DriftTests(unittest.TestCase):
         self.assertEqual(len(d2), 1)
         self.assertIn("src/missing.ts", d2[0]["message"])
 
+    def test_root_finding_markdown_names_agents_file(self):
+        # Root-scope D2 findings omit `path` in the machine-readable shape (the
+        # historical SARIF/baseline contract), but the human-readable report must
+        # still name AGENTS.md so a bare `:<line>` never renders next to nested
+        # `path/AGENTS.md:<line>` findings. Found running the chain against
+        # n8n-io/n8n, whose root AGENTS.md referenced a renamed
+        # `packages/editor-ui` directory and rendered as `**ERROR**:126`.
+        td, repo = self.copy_repo()
+        self.addCleanup(td.cleanup)
+        (repo / "AGENTS.md").write_text(
+            CLEAN_AGENTS + "The frontend lives in `packages/editor-ui` today.\n",
+            encoding="utf-8",
+        )
+        (repo / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        (repo / ".cursorrules").write_text("All agent instructions live in AGENTS.md.\n", encoding="utf-8")
+        (repo / ".github" / "copilot-instructions.md").write_text("See AGENTS.md.\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(DRIFT), str(repo)], text=True, capture_output=True)
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("packages/editor-ui", proc.stdout)
+        # The finding is attributed to AGENTS.md with a line number...
+        self.assertRegex(proc.stdout, r"`AGENTS\.md:\d+`")
+        # ...and never rendered as a bare `**ERROR**:<line>` with no filename.
+        self.assertNotRegex(proc.stdout, r"\*\*ERROR\*\*:\d")
+
     def test_placeholder_name_segment_does_not_trigger_d2(self):
         # A leading `<word>-name` segment (`skill-name/SKILL.md`) documents a
         # naming pattern in prose, not a literal path (found scanning

@@ -428,6 +428,44 @@ class SharedConstantConsistencyTests(unittest.TestCase):
             ["src/generated/index.ts", "docs/guide/"],
         )
 
+    def test_tailwind_opacity_classes_are_not_declared_paths(self):
+        # A backtick token naming a Tailwind CSS opacity utility is a class name,
+        # not a repo path. Design-system AGENTS.md files document color utilities
+        # with an alpha suffix (`bg-primary/10`, `text-foreground/50`) and spell
+        # the modifier with a placeholder (`text-foreground/NN`); the single `/`
+        # made them look path-like, producing false "path does not exist"
+        # findings on BerriAI/litellm's
+        # ui/litellm-dashboard/src/components/chat/AGENTS.md.
+        non_path_tokens = [
+            "bg-primary/10",
+            "text-foreground/NN",
+            "border-input/20",
+            "shadow-sm/50",
+            "from-blue/30",
+            "to-red/10",
+            "ring-offset/40",
+        ]
+        for tok in non_path_tokens:
+            text = f"Avoid the `{tok}` opacity hack in prose.\n"
+            self.assertEqual(
+                registry.declared_paths(text),
+                [],
+                f"tailwind class {tok!r} wrongly classified as a declared path",
+            )
+            # Both stages go through the shared classifier, so neither the
+            # Phase-0 semantic check nor the Phase-2 D2 gate can flag it.
+            self.assertEqual(semantic.declared_paths(text), [])
+
+        # Ordinary two-segment paths whose first segment merely starts with a
+        # utility prefix stay checked — the prefix must be a hyphenated color
+        # utility, and the second segment must be an opacity value, so real
+        # directories are never suppressed.
+        keep = "See `bg/config.ts`, `text/README.md`, and `src/utils/helper.ts`.\n"
+        self.assertEqual(
+            [d["path"] for d in registry.declared_paths(keep)],
+            ["bg/config.ts", "text/README.md", "src/utils/helper.ts"],
+        )
+
     def test_labeled_runtime_identifiers_are_not_declared_paths(self):
         # A two-segment `org/name` token shares its shape with a repo directory,
         # a Docker/OCI image, and an RPC/API method. When bounded same-line

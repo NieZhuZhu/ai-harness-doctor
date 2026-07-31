@@ -700,6 +700,57 @@ def _is_code_symbol_token(token):
     )
 
 
+# Tailwind color-utility prefixes that accept an `/<opacity>` modifier
+# (`bg-primary/10`, `text-foreground/50`, `border-input/20`). The prefix is
+# always followed by a hyphenated color name, so the first segment reads as
+# `<prefix>-<name>` and never as a bare directory word.
+_TAILWIND_UTILITY_PREFIXES = (
+    "bg",
+    "text",
+    "border",
+    "ring",
+    "ring-offset",
+    "divide",
+    "outline",
+    "decoration",
+    "shadow",
+    "accent",
+    "caret",
+    "fill",
+    "stroke",
+    "placeholder",
+    "from",
+    "via",
+    "to",
+)
+_TAILWIND_OPACITY_RE = re.compile(
+    r"\A(?:" + "|".join(_TAILWIND_UTILITY_PREFIXES) + r")-[a-z][a-z0-9-]*\Z"
+)
+
+
+def _is_tailwind_opacity_modifier(token):
+    """True when `a/b` reads as a Tailwind opacity utility, not a path.
+
+    Tailwind CSS applies an alpha channel with a slash suffix
+    (`bg-primary/10`, `text-foreground/50`), and design-system docs also spell
+    the modifier with a placeholder (`text-foreground/NN`). Both shapes carry a
+    single slash whose first segment is a hyphenated color utility and whose
+    second segment is an opacity value (`0`-`999`) or a short uppercase
+    placeholder. Ordinary two-segment paths (`src/utils`, `nodes/Service`) fail
+    the utility-prefix test, so nothing real is suppressed. Found running the
+    chain against BerriAI/litellm, whose
+    ``ui/litellm-dashboard/src/components/chat/AGENTS.md`` documents
+    ``bg-primary/10`` and ``text-foreground/NN`` as anti-pattern classes.
+    """
+    segments = token.split("/")
+    if len(segments) != 2:
+        return False
+    first, second = segments
+    if not _TAILWIND_OPACITY_RE.match(first):
+        return False
+    return re.fullmatch(r"\d{1,3}", second) is not None or re.fullmatch(r"[A-Z]{1,3}", second) is not None
+
+
 def _is_slash_separated_value_list(token):
     """True when `a/b/c` reads as a set of alternative VALUES, not a path."""
     segments = token.split("/")
@@ -1055,6 +1106,12 @@ def declared_paths(text):
             # lowercase directory paths (`src/utils`, `docs/setup`) and
             # TitleCase dir conventions (`Sources/App`) never match (Plan 070).
             if _is_slash_separated_value_list(token):
+                continue
+            # A Tailwind opacity utility (`bg-primary/10`, `text-foreground/NN`)
+            # spells a CSS class, not a nested path. The first segment is always
+            # a hyphenated color utility, so directory paths never match (see
+            # _is_tailwind_opacity_modifier).
+            if _is_tailwind_opacity_modifier(token):
                 continue
             # A two-segment `org/name` token explicitly labeled as a Docker/OCI
             # image or an RPC/API method by adjacent same-line context is a

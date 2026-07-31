@@ -1058,7 +1058,11 @@ def _finding_loc(f):
     if "path" in f and "line" in f:
         return f" `{f['path']}:{f['line']}`"
     if "line" in f:
-        return f":{f['line']}"
+        # Root-scope findings intentionally omit `path` to preserve the
+        # historical SARIF/baseline shape (AGENTS.md is the implicit source),
+        # but the human-readable report still names the file so a bare `:126`
+        # never appears next to nested `path/AGENTS.md:line` findings.
+        return f" `AGENTS.md:{f['line']}`"
     if "path" in f:
         return f" `{f.get('path')}`"
     return ""
