@@ -51,7 +51,7 @@ npx ai-harness-doctor --version
 | Inventory | Canonical files、tool rules、nested scopes、MCP、hooks、commands、permissions、subagents。 |
 | Coverage | 認識するエージェント: Claude Code、Cursor、Windsurf、GitHub Copilot、Gemini CLI、Cline、Roo、Continue、Trae、Amazon Q Developer、JetBrains Junie、Warp、Firebase Studio、Goose、Kiro、Augment Code、Kilo Code。 |
 | Security | Plaintext secrets（AWS、GitHub、OpenAI、Anthropic、Google、HuggingFace、GitLab、npm、PyPI、Slack、Stripe 資格情報と JWT）、広すぎる権限、安全でない MCP transport、危険な hook、権限 bypass 指示。 |
-| Consistency | 存在しない script、直接 dependency binary、移動済み path、package manager drift、runtime version drift（Node.js、Python、Go、Rust、Java、Ruby、.NET）、broken links、競合 lockfiles、labeled lint rule、branch ref、GitHub Actions `uses` 参照など誤検知を安全に避ける non-path identifier、およびスラッシュで連結された supported-tool 列挙（`npm/yarn/pnpm`、`jest/vitest/mocha`、`prettier/biome/dprint`）——選択肢の列挙であり単一の使用宣言ではないため、conflict を発生させません。 |
+| Consistency | 存在しない script、直接 dependency binary、移動済み path、package manager drift、runtime version drift（Node.js、Python、Go、Rust、Java、Ruby、.NET）、broken links、競合 lockfiles、labeled lint rule、branch ref、GitHub Actions `uses` 参照など誤検知を安全に避ける non-path identifier、およびスラッシュで連結された supported-tool 列挙（`npm/yarn/pnpm`、`jest/vitest/mocha`、`prettier/biome/dprint`、`node 16/18/20`）——選択肢の列挙であり単一の使用宣言ではないため、conflict を発生させません。 |
 | Instruction quality | 大きすぎる context、README の丸ごとコピー、silent adjudication、overlap、same-scope conflict。 |
 | Scope | root から最寄り `AGENTS.md` までの継承と、bounded な Claude/Cursor/Copilot glob applicability。 |
 | Maturity | リポジトリの ladder level — Ungoverned → Inventoried → Canonicalized → Guarded → Evidenced — と、次の level に足りないもの、それを入れるコマンド。 |

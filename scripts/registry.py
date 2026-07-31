@@ -88,6 +88,18 @@ LOCKFILE_MANAGERS = {
 # group. ``node_version_major`` normalizes to the major for cross-stage
 # comparison, while ``node_version_ref`` preserves the full token for display
 # and for semantic-version conflict comparison (CORR-05).
+_NODE_VERSION_TOKEN = r"\d+(?:\.\d+|\.x)*"
+# A slash-joined run of two or more Node.js version tokens — e.g. "node 16/18/20"
+# or "Node.js 18.x/20.x" — enumerates the versions a project supports, not the
+# one version it actually requires. Suppress it so the Phase-0 scan signal, the
+# semantic engine, and the Phase-2 D6 drift gate do not manufacture a false
+# declared Node version from documentation that lists options.
+_NODE_VERSION_ENUMERATION_RE = re.compile(
+    rf"\bnode(?:\.js)?\s*:?\s*(?:v|version)?\s*(?:>=?|<=?|==?|\^|~)?\s*v?"
+    rf"{_NODE_VERSION_TOKEN}(?:\s*/\s*{_NODE_VERSION_TOKEN})+\b",
+    re.I,
+)
+
 NODE_VERSION_RE = re.compile(
     r"\bnode(?:\.js)?\s*:?\s*(?:v|version)?\s*(?:>=?|<=?|==?|\^|~)?\s*v?[\"']?"
     r"(?P<version>(?P<major>\d+)(?:\.\d+|\.x)*)",
@@ -100,6 +112,8 @@ def node_version_major(line):
 
     Single shared extractor used by scan.py, semantic.py and check_drift.py so all
     three stages normalize a Node version reference to the same value (TD-06)."""
+    if _NODE_VERSION_ENUMERATION_RE.search(line):
+        return None
     m = NODE_VERSION_RE.search(line)
     return int(m.group("major")) if m else None
 
@@ -112,6 +126,8 @@ def node_version_ref(line):
     declared version. Semantic conflict comparison still normalizes to the major
     via ``node_version_major`` so ``18`` and ``18.17.0`` are treated as
     compatible, not a false conflict (CORR-05)."""
+    if _NODE_VERSION_ENUMERATION_RE.search(line):
+        return None
     m = NODE_VERSION_RE.search(line)
     return m.group("version") if m else None
 

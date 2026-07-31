@@ -714,6 +714,25 @@ class NodeVersionConflictTests(unittest.TestCase):
         # Full version kept for display (not collapsed to the bare major).
         self.assertEqual(sigs[0]["value"], "node 18.17.0")
 
+    def test_slash_joined_node_version_enumeration_is_not_a_conflict(self):
+        sigs = [
+            s
+            for s in scan.extract_signals({"path": "AGENTS.md", "text": "Supports Node 16/18/20."})
+            if s["signal"] == "node_version"
+        ]
+        self.assertEqual(sigs, [])
+        # The enumeration guard is scoped per-line: a real declaration on a
+        # different line from the enumeration must still register.
+        text = "Supports Node 16/18/20.\nRequires node 20."
+        self.assertEqual(
+            {
+                s["value"]
+                for s in scan.extract_signals({"path": "AGENTS.md", "text": text})
+                if s["signal"] == "node_version"
+            },
+            {"node 20"},
+        )
+
 
 class ScopedConflictTests(unittest.TestCase):
     def _analyze(self, files):
