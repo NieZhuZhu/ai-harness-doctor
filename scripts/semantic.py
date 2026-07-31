@@ -26,6 +26,7 @@ standard library only; no runtime dependencies.
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -199,6 +200,64 @@ _PY_RUN_SCRIPT_SUFFIXES = (".py", ".pyw", ".sh")
 # ``_PY_RUN_SCRIPT_SUFFIXES`` for ``uv run script.py``. Found running the chain
 # against cline/cline, whose AGENTS.md documents ``bun esbuild.mjs``.
 _NODE_SCRIPT_FILE_RE = re.compile(r"\A\.(?:mjs|cjs|js|jsx|ts|tsx|mts|cts)\b")
+_NODE_TOOLS = {"npm", "pnpm", "bun", "yarn"}
+_NODE_OPTION_VALUE_FLAGS = {
+    "--filter",
+    "-F",
+    "--workspace",
+    "-w",
+    "--dir",
+    "-C",
+    "--prefix",
+    "--cwd",
+}
+_NODE_SHELL_SEPARATORS = {"&&", "||", ";", "|"}
+
+
+def _iter_option_aware_node_invocations(token):
+    """Yield node package-script invocations whose script follows CLI options.
+
+    The regex fast path above intentionally stays simple, but real monorepo
+    instructions often spell commands as ``pnpm --filter app test`` or
+    ``npm --workspace app run test``. Without this option-aware pass those
+    commands disappear entirely, so command-drift checks silently miss stale
+    scripts in pnpm/npm workspaces.
+    """
+    try:
+        parts = shlex.split(token, posix=True)
+    except ValueError:
+        return
+    for idx, part in enumerate(parts):
+        if part not in _NODE_TOOLS:
+            continue
+        j = idx + 1
+        saw_option = False
+        while j < len(parts):
+            current = parts[j]
+            if current in _NODE_SHELL_SEPARATORS:
+                break
+            if current == "--":
+                j += 1
+                break
+            if not current.startswith("-"):
+                break
+            saw_option = True
+            flag = current.split("=", 1)[0]
+            j += 1
+            if "=" not in current and flag in _NODE_OPTION_VALUE_FLAGS and j < len(parts):
+                j += 1
+        if not saw_option or j >= len(parts) or parts[j] in _NODE_SHELL_SEPARATORS:
+            continue
+        if parts[j] == "run" and j + 1 < len(parts) and parts[j + 1] not in _NODE_SHELL_SEPARATORS:
+            yield part, parts[j + 1]
+            continue
+        name = parts[j]
+        if name in PACKAGE_MANAGER_BUILTINS:
+            yield part, name
+            continue
+        if part != "yarn" and re.search(r"\.(?:mjs|cjs|js|jsx|ts|tsx|mts|cts)\Z", name):
+            continue
+        yield part, name
 
 
 def declared_commands(text):
@@ -222,6 +281,11 @@ def declared_commands(text):
             # as a missing `run esbuild` script (cline/cline false positive).
             if m.group(2) is not None and _NODE_SCRIPT_FILE_RE.match(token[m.end(2):]):
                 continue
+            key = ("node", tool, name, lineno)
+            if key not in seen:
+                seen.add(key)
+                out.append({"kind": "node", "tool": tool, "name": name, "line": lineno})
+        for tool, name in _iter_option_aware_node_invocations(token):
             key = ("node", tool, name, lineno)
             if key not in seen:
                 seen.add(key)

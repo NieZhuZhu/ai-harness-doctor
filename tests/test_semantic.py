@@ -136,6 +136,36 @@ class SemanticCommandTests(unittest.TestCase):
                 self.assertEqual(nodes[0]["tool"], tool)
                 self.assertEqual(nodes[0]["name"], name)
 
+    def test_option_prefixed_node_script_invocations_declared(self):
+        # Monorepo docs commonly put package-manager options before the script
+        # (`pnpm --filter web test`, `npm --workspace web run build`). These
+        # used to vanish from declared_commands entirely, so stale workspace
+        # scripts were never checked.
+        cases = {
+            "pnpm --filter web test": ("pnpm", "test"),
+            "pnpm -C apps/web lint": ("pnpm", "lint"),
+            "npm --workspace web run build": ("npm", "build"),
+            "bun --cwd examples/app test": ("bun", "test"),
+        }
+        for cmd, (tool, name) in cases.items():
+            with self.subTest(cmd=cmd):
+                declared = semantic.declared_commands(f"Run `{cmd}` here.")
+                nodes = [d for d in declared if d.get("kind") == "node"]
+                self.assertEqual(nodes, [{"kind": "node", "tool": tool, "name": name, "line": 1}])
+
+    def test_option_prefixed_node_script_drift_is_reported(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "package.json", '{"scripts": {"build": "tsc"}}')
+            text = "Run `pnpm --filter web lint` before opening a PR."
+            result = semantic.analyze(td, text)
+            cmds = [f for f in result["findings"] if f["category"] == "command"]
+            self.assertEqual(len(cmds), 1)
+            self.assertIn("lint", cmds[0]["message"])
+
+    def test_option_prefixed_node_script_file_execution_not_declared(self):
+        declared = semantic.declared_commands("Run `pnpm --filter web dev.js` for local debugging.")
+        self.assertEqual([d for d in declared if d.get("kind") == "node"], [])
+
     def test_bun_script_file_execution_does_not_report_missing_named_script(self):
         # End-to-end: a `bun esbuild.mjs` reference against a package.json
         # without an "esbuild" script must NOT produce a "no esbuild script"
