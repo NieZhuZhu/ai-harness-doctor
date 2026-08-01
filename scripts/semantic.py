@@ -201,6 +201,7 @@ _PY_RUN_SCRIPT_SUFFIXES = (".py", ".pyw", ".sh")
 # against cline/cline, whose AGENTS.md documents ``bun esbuild.mjs``.
 _NODE_SCRIPT_FILE_RE = re.compile(r"\A\.(?:mjs|cjs|js|jsx|ts|tsx|mts|cts)\b")
 _NODE_TOOLS = {"npm", "pnpm", "bun", "yarn"}
+_NODE_ONE_SHOT_TOOLS = {"npx", "pnpx", "bunx"}
 _NODE_OPTION_VALUE_FLAGS = {
     "--filter",
     "-F",
@@ -211,7 +212,53 @@ _NODE_OPTION_VALUE_FLAGS = {
     "--prefix",
     "--cwd",
 }
+_NODE_ONE_SHOT_OPTION_VALUE_FLAGS = {
+    "--cache",
+    "--call",
+    "-c",
+    "--node-arg",
+    "--package",
+    "-p",
+    "--prefix",
+    "--registry",
+    "--userconfig",
+}
 _NODE_SHELL_SEPARATORS = {"&&", "||", ";", "|"}
+
+
+def _iter_option_aware_one_shot_node_invocations(token):
+    """Yield ``npx``/``pnpx``/``bunx`` package names after CLI options.
+
+    Real docs often recommend forms such as ``npx --yes shadcn/improve`` or
+    ``pnpx --package shadcn shadcn/improve``. The regex fast path sees the
+    option flag as the package name, so this option-aware pass skips bounded
+    package-executor flags and returns the actual one-shot package/command.
+    """
+    try:
+        parts = shlex.split(token, posix=True)
+    except ValueError:
+        return
+    for idx, part in enumerate(parts):
+        if part not in _NODE_ONE_SHOT_TOOLS:
+            continue
+        j = idx + 1
+        saw_option = False
+        while j < len(parts):
+            current = parts[j]
+            if current in _NODE_SHELL_SEPARATORS:
+                break
+            if current == "--":
+                j += 1
+                break
+            if not current.startswith("-"):
+                break
+            saw_option = True
+            flag = current.split("=", 1)[0]
+            j += 1
+            if "=" not in current and flag in _NODE_ONE_SHOT_OPTION_VALUE_FLAGS and j < len(parts):
+                j += 1
+        if saw_option and j < len(parts) and parts[j] not in _NODE_SHELL_SEPARATORS:
+            yield part, parts[j]
 
 
 def _iter_option_aware_node_invocations(token):
@@ -276,11 +323,21 @@ def declared_commands(text):
         for m in _NODE_CMD_RE.finditer(token):
             tool = m.group(1) or m.group(4) or "yarn"
             name = m.group(2) or m.group(3) or m.group(5)
+            # `npx --yes shadcn/improve` / `bunx -y create-app` use options
+            # before the one-shot package name. Let the option-aware pass below
+            # emit the real package instead of recording the flag as a command.
+            if tool in _NODE_ONE_SHOT_TOOLS and name.startswith("-"):
+                continue
             # `bun esbuild.mjs` / `bun build.ts` run a script *file*, not a
             # package.json script; skip so the dropped extension is not misread
             # as a missing `run esbuild` script (cline/cline false positive).
             if m.group(2) is not None and _NODE_SCRIPT_FILE_RE.match(token[m.end(2):]):
                 continue
+            key = ("node", tool, name, lineno)
+            if key not in seen:
+                seen.add(key)
+                out.append({"kind": "node", "tool": tool, "name": name, "line": lineno})
+        for tool, name in _iter_option_aware_one_shot_node_invocations(token):
             key = ("node", tool, name, lineno)
             if key not in seen:
                 seen.add(key)
