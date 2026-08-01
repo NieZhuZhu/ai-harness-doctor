@@ -299,6 +299,8 @@ def write_plan(args):
     root = Path(args.repo_root).resolve()
     report = scan.scan_repo(root, args.max_bytes)
     content = render_plan(report, root)
+    if args.as_json:
+        content = json.dumps({"ok": True, "report": report, "plan": content}, indent=2) + "\n"
     if args.output:
         Path(args.output).write_text(content, encoding="utf-8")
     else:

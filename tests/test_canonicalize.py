@@ -147,6 +147,18 @@ class CanonicalizeTests(unittest.TestCase):
         self.assertIn("Conflict list", proc.stdout)
         self.assertIn("package_manager", proc.stdout)
 
+    def test_plan_json_outputs_machine_readable_payload(self):
+        proc = subprocess.run(
+            [sys.executable, str(CANON), "--plan", str(FIXTURE), "--json"],
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        payload = json.loads(proc.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertIn("files", payload["report"])
+        self.assertIn("# Phase 1", payload["plan"])
+
     def test_plan_contains_merge_suggestions_section(self):
         proc = subprocess.run([sys.executable, str(CANON), "--plan", str(FIXTURE)], text=True, capture_output=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
