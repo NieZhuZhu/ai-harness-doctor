@@ -3173,6 +3173,35 @@ class SecretRecallTests(unittest.TestCase):
         token = "pypi-" + ("A" * 100)
         self.assertIn("PyPI token", scan.secret_hits(f"PYPI_TOKEN={token}"))
 
+    def test_google_oauth_client_secret_is_detected(self):
+        # Google OAuth 2.0 client secrets use the `GOCSPX-` prefix and leak in
+        # MCP/OAuth env blocks; the bare `AIza` API-key pattern never matched
+        # them, so a leaked client secret escaped detection and redaction.
+        secret = "GOCSPX-" + "a1B2c3D4e5F6g7H8i9J0"
+        self.assertIn("Google OAuth client secret", scan.secret_hits(f"CLIENT_SECRET={secret}"))
+        self.assertNotIn(secret, scan.redact_secret_values(f"CLIENT_SECRET={secret}"))
+
+    def test_openrouter_key_is_detected(self):
+        # OpenRouter keys (`sk-or-v1-…`) are the default credential for the most
+        # common LLM gateway wired into agents. The `-or-v1-` infix breaks the
+        # contiguous run the OpenAI `sk-` pattern needs, so without a dedicated
+        # entry the key escaped both detection and redaction.
+        key = "sk-or-v1-" + ("a1b2c3d4" * 8)
+        self.assertIn("OpenRouter API key", scan.secret_hits(f"OPENROUTER_API_KEY={key}"))
+        self.assertNotIn(key, scan.redact_secret_values(f"OPENROUTER_API_KEY={key}"))
+
+    def test_groq_key_is_detected(self):
+        key = "gsk_" + ("A1b2C3d4" * 6)
+        self.assertIn("Groq API key", scan.secret_hits(f"GROQ_API_KEY={key}"))
+
+    def test_xai_key_is_detected(self):
+        key = "xai-" + ("A1b2C3d4" * 8)
+        self.assertIn("xAI API key", scan.secret_hits(f"XAI_API_KEY={key}"))
+
+    def test_perplexity_key_is_detected(self):
+        key = "pplx-" + ("A1b2C3d4" * 6)
+        self.assertIn("Perplexity API key", scan.secret_hits(f"PERPLEXITY_API_KEY={key}"))
+
     def test_benign_text_is_not_flagged(self):
         for benign in (
             "This section explains how to configure your token before running.",

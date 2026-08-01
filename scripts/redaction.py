@@ -17,9 +17,22 @@ SECRET_PATTERNS = [
     ("GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b")),
     ("OpenAI API key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9]{20,}\b")),
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_\-]{20,}\b")),
+    # Google OAuth 2.0 client secrets carry the distinctive `GOCSPX-` prefix and
+    # commonly leak inside MCP/OAuth env blocks alongside the `AIza` API key.
+    ("Google OAuth client secret", re.compile(r"\bGOCSPX-[A-Za-z0-9_\-]{20,}\b")),
     # `xoxe` covers Slack Enterprise Grid tokens alongside bot/app/refresh/etc.
     ("Slack token", re.compile(r"\bxox[baprse]-[0-9A-Za-z-]{10,}\b")),
     ("Anthropic API key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
+    # LLM-provider API keys frequently pasted into MCP server `env` blocks and
+    # agent settings. Each shape carries a distinctive prefix, so recall stays
+    # high without the false positives of matching bare high-entropy strings.
+    # OpenRouter (`sk-or-v1-…`) must have its own entry: the `-or-v1-` infix
+    # breaks the contiguous run the OpenAI `sk-` pattern requires, so it would
+    # otherwise escape both detection and redaction.
+    ("OpenRouter API key", re.compile(r"\bsk-or-v1-[A-Za-z0-9]{20,}\b")),
+    ("Groq API key", re.compile(r"\bgsk_[A-Za-z0-9]{20,}\b")),
+    ("xAI API key", re.compile(r"\bxai-[A-Za-z0-9]{20,}\b")),
+    ("Perplexity API key", re.compile(r"\bpplx-[A-Za-z0-9]{20,}\b")),
     ("HuggingFace token", re.compile(r"\bhf_[A-Za-z]{20,}\b")),
     ("GitLab PAT", re.compile(r"\bglpat-[A-Za-z0-9\-_]{20,}\b")),
     ("npm token", re.compile(r"\bnpm_[A-Za-z0-9]{20,}\b")),
