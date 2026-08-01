@@ -10,15 +10,15 @@ const actionRun = require('./action-run.js');
 
 const ACTION_RUN = path.join(__dirname, 'action-run.js');
 
-test('legacy args split all whitespace across YAML block lines', () => {
+test('legacy args preserve quoted values and escaped whitespace', () => {
   assert.deepStrictEqual(actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '' }), []);
   assert.deepStrictEqual(
     actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '  --a   b\t--c ' }),
     ['--a', 'b', '--c'],
   );
   assert.deepStrictEqual(
-    actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a "x y"' }),
-    ['--a', '"x', 'y"'],
+    actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a "x y" --b \'z q\'' }),
+    ['--a', 'x y', '--b', 'z q'],
   );
   assert.deepStrictEqual(
     actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a\n--b\n  --fail-on-security' }),
@@ -26,11 +26,15 @@ test('legacy args split all whitespace across YAML block lines', () => {
   );
   assert.deepStrictEqual(
     actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a\\ value' }),
-    ['--a\\', 'value'],
+    ['--a value'],
   );
   assert.deepStrictEqual(
     actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a\r\n--b' }),
     ['--a', '--b'],
+  );
+  assert.throws(
+    () => actionRun.parseExtraArgs({ argsJson: '', legacyArgs: '--a "unterminated' }),
+    /unterminated quote/,
   );
 });
 

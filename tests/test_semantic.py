@@ -214,13 +214,21 @@ class SemanticCommandTests(unittest.TestCase):
                 "pyproject.toml",
                 '[project]\nname = "demo"\nversion = "0.1.0"\n[project.scripts]\ndemo = "demo:main"\n',
             )
-            text = "Run `npx shadcn/improve`, `pnpx @scope/tool`, `bunx create-app`, `uvx ruff`, and `pipx black`."
+            text = (
+                "Run `npx shadcn/improve`, `npx --yes shadcn/improve`, "
+                "`pnpx @scope/tool`, `pnpx --package shadcn shadcn/improve`, "
+                "`bunx create-app`, `bunx -y create-app`, `uvx ruff`, and `pipx black`."
+            )
             declared = semantic.declared_commands(text)
             self.assertIn({"kind": "node", "tool": "npx", "name": "shadcn/improve", "line": 1}, declared)
             self.assertIn({"kind": "node", "tool": "pnpx", "name": "@scope/tool", "line": 1}, declared)
+            self.assertIn({"kind": "node", "tool": "pnpx", "name": "shadcn/improve", "line": 1}, declared)
             self.assertIn({"kind": "node", "tool": "bunx", "name": "create-app", "line": 1}, declared)
             self.assertIn({"kind": "py_run", "tool": "uvx", "name": "ruff", "line": 1}, declared)
             self.assertIn({"kind": "py_run", "tool": "pipx", "name": "black", "line": 1}, declared)
+            self.assertNotIn({"kind": "node", "tool": "npx", "name": "--yes", "line": 1}, declared)
+            self.assertNotIn({"kind": "node", "tool": "pnpx", "name": "--package", "line": 1}, declared)
+            self.assertNotIn({"kind": "node", "tool": "bunx", "name": "-y", "line": 1}, declared)
             result = semantic.analyze(td, text)
             self.assertEqual([f for f in result["findings"] if f["category"] == "command"], [])
             self.assertEqual([f for f in result["findings"] if f["category"] == "path"], [])

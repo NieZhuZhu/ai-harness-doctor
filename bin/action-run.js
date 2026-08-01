@@ -19,13 +19,54 @@ function argumentError(message) {
   throw new ActionArgumentsError(`Action arguments error: ${message}`);
 }
 
+function parseLegacyArgs(input) {
+  const args = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+  for (const char of input) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        args.push(current);
+        current = '';
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (escaped) current += '\\';
+  if (quote) argumentError('args contains an unterminated quote');
+  if (current) args.push(current);
+  return args;
+}
+
 function parseExtraArgs({ argsJson = '', legacyArgs = '' } = {}) {
   argsJson = String(argsJson || '');
   legacyArgs = String(legacyArgs || '');
   if (argsJson && legacyArgs) argumentError('args and args-json are mutually exclusive');
   if (!argsJson) {
-    const trimmed = legacyArgs.replace(/^\s+|\s+$/g, '');
-    return trimmed ? trimmed.split(/\s+/) : [];
+    return parseLegacyArgs(legacyArgs.replace(/^\s+|\s+$/g, ''));
   }
   if (Buffer.byteLength(argsJson, 'utf8') > MAX_JSON_BYTES) {
     argumentError('args-json exceeds 64 KiB');
