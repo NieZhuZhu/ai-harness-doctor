@@ -50,7 +50,7 @@ Nothing above changes the audited repository.
 |---|---|
 | Inventory | Canonical files, tool rules, nested scopes, MCP, hooks, commands, permissions, and subagents. |
 | Coverage | Recognized agents: Claude Code, Cursor, Windsurf, GitHub Copilot, Gemini CLI, Cline, Roo, Continue, Trae, Amazon Q Developer, JetBrains Junie, Warp, Firebase Studio, Goose, Kiro, Augment Code, and Kilo Code. |
-| Security | Plaintext secrets (AWS, GitHub, OpenAI, Anthropic, Google, HuggingFace, GitLab, npm, PyPI, Slack, Stripe credentials and JWTs), broad permissions, insecure MCP transports, dangerous hook bodies, and bypass guidance. |
+| Security | Plaintext secrets (AWS, GitHub, OpenAI, Anthropic, Google, OpenRouter, Groq, xAI, Perplexity, HuggingFace, GitLab, npm, PyPI, Slack, Stripe credentials and JWTs), broad permissions, insecure MCP transports, dangerous hook bodies, and bypass guidance. |
 | Consistency | Missing scripts, direct dependency binaries, moved paths, package-manager drift, runtime-version drift (Node.js, Python, Go, Rust, Java, Ruby, .NET), broken links, competing lockfiles, false-positive-safe non-path identifiers such as labeled lint rules, branch refs, or GitHub Actions `uses` references, and slash-joined supported-tool enumerations (`npm/yarn/pnpm`, `jest/vitest/mocha`, `prettier/biome/dprint`, `node 16/18/20`) that list options rather than declare one. |
 | Instruction quality | Oversized context, wholesale README copying, silent conflict adjudication, overlaps, and same-scope conflicts. |
 | Scope | Root-to-nearest `AGENTS.md` inheritance plus bounded Claude, Cursor, and Copilot glob applicability. |
