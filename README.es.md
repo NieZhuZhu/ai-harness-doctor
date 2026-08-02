@@ -121,7 +121,7 @@ El guard de GitHub combina scan y drift en una revisión de PR. Los hallazgos lo
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/NieZhuZhu/ai-harness-doctor
-    rev: v1.21.0
+    rev: v1.21.1
     hooks:
       - id: ai-harness-doctor-drift
       - id: ai-harness-doctor-scan
