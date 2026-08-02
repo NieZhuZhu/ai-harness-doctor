@@ -1091,6 +1091,10 @@ def declared_paths(text):
             token = m.group(1).strip()
             if not token or token in seen:
                 continue
+            # Pull-request templates commonly ask contributors to write `N/A` for
+            # irrelevant fields. That placeholder is a form value, not a repo path.
+            if token.upper() in {"N/A", "NA"}:
+                continue
             # A backtick span wrapped in matching quotes is a string-literal
             # example value (e.g. `'/usr/bin/google-chrome'`, `"./downloads"`),
             # not a repo path reference. Only the backticks were stripped, leaving

@@ -118,11 +118,14 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
         r"|yarn\s+([A-Za-z0-9:_][A-Za-z0-9:_-]*))\b"
     )
     for lineno, code in line_collected_code(text):
+        # Ignore trailing shell comments in fenced command examples; they often
+        # contain prose such as "all npm packages" that is not executable.
+        command_code = code.split("#", 1)[0].rstrip()
         # Skip English prose sentences so imperatives like "make sure the tests
         # pass" are not parsed into phantom command targets (CORR-02).
-        if _looks_like_prose(code):
+        if _looks_like_prose(command_code):
             continue
-        for invocation in facts.iter_make_invocations(code):
+        for invocation in facts.iter_make_invocations(command_code):
             name = invocation["name"]
             directory = invocation["directory"]
             # A make "target" that is a bare English word ("make sure",
@@ -154,7 +157,7 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
                 continue
             if target_sets and not any(name in targets for targets in target_sets):
                 findings.append(_make_finding(lineno, name))
-        for m in cmd_re.finditer(code):
+        for m in cmd_re.finditer(command_code):
             tool = m.group(1) or "yarn"
             name = m.group(2) or m.group(3)
             # Treat package-manager builtins as valid unconditionally; false negatives

@@ -142,6 +142,32 @@ class DriftTests(unittest.TestCase):
             )
             self.assertNotIn("D6", messages)
 
+
+    def test_d1_ignores_trailing_shell_comment_words(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"build": "tsc"}}),
+                encoding="utf-8",
+            )
+            text = """```sh
+yarn build  # build all npm packages
+```
+"""
+
+            findings = check_drift.d1_command_drift(repo, text)
+
+            self.assertEqual(findings, [])
+
+    def test_d2_ignores_na_template_placeholder(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            text = "Use `N/A` for irrelevant pull request template sections."
+
+            findings = check_drift.d2_path_drift(repo, text)
+
+            self.assertEqual(findings, [])
+
     def test_nested_scope_does_not_use_sibling_package_facts(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
