@@ -163,29 +163,18 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
                 continue
             # Same for yarn/pnpm node_modules/.bin passthrough (`yarn vitest`,
             # `pnpm mastra`) — see facts.is_node_bin_passthrough (TD-02).
-            if (
-                any(
-                    facts.is_node_bin_passthrough(directory, tool, name)
-                    for directory in directories
-                )
-                or (
-                    tool in {"yarn", "pnpm"}
-                    and name
-                    in (
-                        scope_dependencies
-                        if scope_dependencies != "not computed"
-                        else facts.all_package_dependency_bin_names(directories[0])
-                    )
-                )
-            ):
-                if tool in {"yarn", "pnpm"} and scope_dependencies == "not computed":
-                    # Preserve the existing canonical-scope contract: a parent
-                    # AGENTS.md may describe a binary supplied by one of its
-                    # descendant packages. Scripts/paths/facts below never use
-                    # this descendant fallback.
-                    scope_dependencies = facts.all_package_dependency_bin_names(
-                        directories[0]
-                    )
+            if tool in {"yarn", "pnpm"} and scope_dependencies == "not computed":
+                # Preserve the existing canonical-scope contract: a parent
+                # AGENTS.md may describe a binary supplied by one of its
+                # descendant packages. Compute this repository-wide fallback at
+                # most once per AGENTS.md; otherwise every unknown yarn/pnpm
+                # command repeats the full descendant package walk in large
+                # monorepos. Scripts/paths/facts below never use this fallback.
+                scope_dependencies = facts.all_package_dependency_bin_names(directories[0])
+            if any(
+                facts.is_node_bin_passthrough(directory, tool, name)
+                for directory in directories
+            ) or (tool in {"yarn", "pnpm"} and name in scope_dependencies):
                 continue
             if script_sets and not any(name in scripts for scripts in script_sets):
                 findings.append(
