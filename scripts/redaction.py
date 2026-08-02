@@ -38,6 +38,21 @@ SECRET_PATTERNS = [
     ("npm token", re.compile(r"\bnpm_[A-Za-z0-9]{20,}\b")),
     ("PyPI token", re.compile(r"\bpypi-[A-Za-z0-9_\-]{16,}\b")),
     ("Stripe secret key", re.compile(r"\b[sr]k_live_[0-9A-Za-z]{16,}\b")),
+    # Additional agent/MCP-ecosystem service credentials that leak in `.mcp.json`
+    # env blocks and agent settings alongside the LLM-provider keys above. Each
+    # carries a distinctive prefix (or fixed dotted shape), so recall stays high
+    # without matching bare high-entropy strings.
+    # Tavily is the web-search API most commonly wired into agents/MCP servers;
+    # keys are `tvly-<random>` (dev keys add a `dev-` infix).
+    ("Tavily API key", re.compile(r"\btvly-(?:dev-)?[A-Za-z0-9]{16,}\b")),
+    # DigitalOcean personal/OAuth/refresh tokens (`dop_v1_`/`doo_v1_`/`dor_v1_`)
+    # are 64 hex chars and leak from infra/deploy MCP servers.
+    ("DigitalOcean token", re.compile(r"\bdo[opr]_v1_[a-f0-9]{64}\b")),
+    # Doppler secret-manager tokens carry a fixed `dp.<type>.` prefix (personal,
+    # service, CLI, service-account, SCIM, audit).
+    ("Doppler token", re.compile(r"\bdp\.(?:pt|st|ct|sa|scim|audit)\.[A-Za-z0-9]{20,}\b")),
+    # SendGrid API keys have the fixed `SG.<22>.<43>` base64url shape.
+    ("SendGrid API key", re.compile(r"\bSG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}\b")),
     ("JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")),
     ("Private key block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
     (

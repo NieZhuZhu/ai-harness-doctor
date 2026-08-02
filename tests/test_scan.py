@@ -3202,6 +3202,45 @@ class SecretRecallTests(unittest.TestCase):
         key = "pplx-" + ("A1b2C3d4" * 6)
         self.assertIn("Perplexity API key", scan.secret_hits(f"PERPLEXITY_API_KEY={key}"))
 
+    def test_tavily_key_is_detected(self):
+        # Tavily is the web-search API most commonly wired into agents/MCP
+        # servers; `tvly-` keys leak straight from `.mcp.json` env blocks.
+        key = "tvly-" + ("A1b2C3d4" * 4)
+        self.assertIn("Tavily API key", scan.secret_hits(f"TAVILY_API_KEY={key}"))
+        self.assertNotIn(key, scan.redact_secret_values(f"TAVILY_API_KEY={key}"))
+
+    def test_tavily_dev_key_is_detected(self):
+        key = "tvly-" + "dev-" + ("A1b2C3d4" * 4)
+        self.assertIn("Tavily API key", scan.secret_hits(f"TAVILY_API_KEY={key}"))
+
+    def test_digitalocean_token_is_detected(self):
+        # DigitalOcean personal/OAuth/refresh tokens are `do[opr]_v1_` + 64 hex.
+        token = "dop_v1_" + ("0123456789abcdef" * 4)
+        self.assertIn("DigitalOcean token", scan.secret_hits(f"DIGITALOCEAN_TOKEN={token}"))
+        self.assertNotIn(token, scan.redact_secret_values(f"DIGITALOCEAN_TOKEN={token}"))
+
+    def test_doppler_token_is_detected(self):
+        # Doppler secret-manager tokens carry a fixed `dp.<type>.` prefix.
+        token = "dp." + "st." + ("A1b2C3d4" * 4)
+        self.assertIn("Doppler token", scan.secret_hits(f"DOPPLER_TOKEN={token}"))
+        self.assertNotIn(token, scan.redact_secret_values(f"DOPPLER_TOKEN={token}"))
+
+    def test_sendgrid_key_is_detected(self):
+        # SendGrid API keys have the fixed `SG.<22>.<43>` base64url shape.
+        key = "SG." + ("A" * 22) + "." + ("B" * 43)
+        self.assertIn("SendGrid API key", scan.secret_hits(f"SENDGRID_API_KEY={key}"))
+        self.assertNotIn(key, scan.redact_secret_values(f"SENDGRID_API_KEY={key}"))
+
+    def test_new_service_credentials_do_not_flag_benign_text(self):
+        # The new prefixes must not fire on ordinary prose or unrelated tokens.
+        for benign in (
+            "Configure the Tavily search integration before running.",
+            "The dp.pt notation is short for data processing throughput.",
+            "SG.Warnings are logged to the console.",
+            "See doc_v1_overview for the migration guide.",
+        ):
+            self.assertEqual(scan.secret_hits(benign), [], benign)
+
     def test_benign_text_is_not_flagged(self):
         for benign in (
             "This section explains how to configure your token before running.",
