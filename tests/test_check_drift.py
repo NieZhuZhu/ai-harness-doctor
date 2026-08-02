@@ -940,6 +940,31 @@ class DriftTests(unittest.TestCase):
             self.assertTrue(report["ok"], report["findings"])
             self.assertEqual(report["findings"], [])
 
+
+    def test_pnpm_unknown_commands_compute_descendant_dependencies_once(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text('{"scripts": {}}\n', encoding="utf-8")
+            (repo / "AGENTS.md").write_text(
+                "Run `pnpm missing-one`, `pnpm missing-two`, and `pnpm missing-three`.\n",
+                encoding="utf-8",
+            )
+
+            calls = 0
+            original = check_drift.facts.all_package_dependency_bin_names
+
+            def counted(root):
+                nonlocal calls
+                calls += 1
+                return original(root)
+
+            with mock.patch.object(check_drift.facts, "all_package_dependency_bin_names", counted):
+                report = check_drift.run_checks(repo, check_drift.DEFAULT_MAX_BYTES)
+
+            d1 = [finding for finding in report["findings"] if finding["check"] == "D1"]
+            self.assertEqual(calls, 1)
+            self.assertEqual(len(d1), 3)
+
     def test_npm_bin_style_reference_still_triggers_d1(self):
         # The yarn bin-passthrough exemption must not leak to npm, which has no
         # such fallback (`npm vitest` errors with "Unknown command").

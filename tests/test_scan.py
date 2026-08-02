@@ -2679,7 +2679,7 @@ class ExtendedSurfaceTests(unittest.TestCase):
         # Guard rail for the scoping fix: a genuinely broad rule whose COMMAND is
         # a wildcard (`Bash(*)`, `Bash(*:*)`, bare `*`) must still be flagged, so
         # the fix does not open a hole for unrestricted-execution grants.
-        for rule in ("Bash(*)", "Bash(*:*)", "*"):
+        for rule in ("Bash(*)", "Bash (*)", "Execute (*)", "Shell (*)", "Bash(*:*)", "*"):
             with tempfile.TemporaryDirectory() as td:
                 repo = Path(td) / "repo"
                 _write(repo / "AGENTS.md", "# Project overview\nRun `npm test`.\n")
