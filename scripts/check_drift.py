@@ -33,6 +33,35 @@ _PROSE_TARGET_WORDS = facts._PROSE_TARGET_WORDS
 _looks_like_prose = facts.looks_like_prose
 line_collected_code = facts.iter_code_tokens
 
+
+def _strip_shell_comment(code):
+    """Remove a shell comment without truncating hashes inside quotes."""
+    single = chr(39)
+    quote = None
+    escaped = False
+    for index, char in enumerate(code):
+        if escaped:
+            escaped = False
+            continue
+        if quote == single:
+            if char == single:
+                quote = None
+            continue
+        if char == "\\" and quote in {None, chr(34), chr(96)}:
+            escaped = True
+            continue
+        if char in {single, chr(34), chr(96)}:
+            if quote == char:
+                quote = None
+            elif quote is None:
+                quote = char
+            continue
+        if quote is None and char == "#" and (
+            index == 0 or code[index - 1].isspace() or code[index - 1] in ";&|()"
+        ):
+            return code[:index].rstrip()
+    return code.rstrip()
+
 # package.json scripts and Makefile targets are read via the shared facts layer
 # so this gate and the Phase-0 engine read them identically (TD-02).
 package_scripts = facts.package_scripts
@@ -120,7 +149,7 @@ def d1_command_drift(root, text, fallback_root=None, ancestors=None):
     for lineno, code in line_collected_code(text):
         # Ignore trailing shell comments in fenced command examples; they often
         # contain prose such as "all npm packages" that is not executable.
-        command_code = code.split("#", 1)[0].rstrip()
+        command_code = _strip_shell_comment(code)
         # Skip English prose sentences so imperatives like "make sure the tests
         # pass" are not parsed into phantom command targets (CORR-02).
         if _looks_like_prose(command_code):

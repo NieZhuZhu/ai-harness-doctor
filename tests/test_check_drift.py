@@ -159,6 +159,23 @@ yarn build  # build all npm packages
 
             self.assertEqual(findings, [])
 
+    def test_d1_quoted_hash_does_not_hide_following_commands(self):
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "package.json").write_text(
+                json.dumps({"scripts": {"build": "tsc"}}),
+                encoding="utf-8",
+            )
+            text = """```sh
+printf "# keep" && npm run missing
+```
+"""
+
+            findings = check_drift.d1_command_drift(repo, text)
+
+            self.assertEqual(len(findings), 1)
+            self.assertIn("`missing`", findings[0]["message"])
+
     def test_d2_ignores_na_template_placeholder(self):
         with tempfile.TemporaryDirectory() as td:
             repo = Path(td)
