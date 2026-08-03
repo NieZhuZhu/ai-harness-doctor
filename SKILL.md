@@ -339,6 +339,12 @@ python3 scripts/eval_run.py --tasks tasks.json --label before --workdir /path/to
 python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/repo -o results-after.json
 ```
 
+Large task sets may opt into bounded concurrency with `--parallel N` (`1`–`32`; default `1`). Tasks within each round or matrix runner execute concurrently, while persisted records retain task declaration order. Timeouts, grading, and evidence validation are unchanged.
+
+```bash
+python3 scripts/eval_run.py --tasks tasks.json --label after --workdir /path/to/repo --parallel 4 -o results-after.json
+```
+
 Compare results:
 
 ```bash

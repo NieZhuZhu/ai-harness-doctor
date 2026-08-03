@@ -223,6 +223,7 @@ Adapters não Claude são deliberadamente finos. Distribuição ampla cabe ao Ru
 - O instalador usa lock, journal, propriedade e recuperação.
 - Ferramentas MCP são somente leitura; finding não é falha de transporte.
 - Juízes externos e LLM reais são opt-in. Endpoints remotos exigem HTTPS, HTTP só é permitido em loopback, redirects são recusados e falhas voltam ao juiz determinístico.
+- A concorrência de tarefas eval é explícita e limitada com `--parallel N` (`1`–`32`, padrão `1`); a ordem dos resultados permanece determinística.
 - Artefatos e relatórios eval ocultam credenciais de alta confiança em diagnósticos runner/judge, metadata usage aninhada e templates matrix; preservam usage numérico, avaliam com saída original limitada e rejeitam stored pass que contradigam falhas runner/judge explícitas.
 - Sem telemetria. Desative o check npm com `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1`.
 

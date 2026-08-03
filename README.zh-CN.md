@@ -223,6 +223,7 @@ HIGH 安全发现永远不能进入 baseline。普通损坏 baseline 不会压�
 - Installer mutation 会加锁、写 journal、追踪所有权并支持恢复。
 - MCP 工具保持只读；finding 不是 transport failure。
 - 外部 judge 和真实 LLM grading 都是 opt-in；远程 endpoint 必须使用 HTTPS，本地 loopback HTTP 需显式配置，redirect 会被拒绝，失败会回退确定性 judge。
+- Eval 任务并发需通过 `--parallel N`（`1`–`32`，默认 `1`）显式启用且有上限；结果顺序保持确定性。
 - Eval 结果产物和报告会脱敏 runner/judge 诊断、嵌套 usage metadata 与 matrix runner template 中的高置信凭据；数值 usage 仍保留，评分使用有界原始输出，且与显式 runner/judge failure 矛盾的 stored pass 会被拒绝。
 - 无遥测。可用 `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1` 关闭可选 npm 更新检查。
 

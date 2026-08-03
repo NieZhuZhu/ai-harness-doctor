@@ -223,6 +223,7 @@ Non-Claude adapter는 의도적으로 얇습니다. 폭넓은 rule distribution�
 - Installer mutation은 lock, journal, ownership, recovery를 사용합니다.
 - MCP tool은 read-only이며 finding은 transport failure가 아닙니다.
 - External judge와 real LLM grading은 opt-in입니다. 원격 endpoint는 HTTPS가 필요하고 loopback HTTP만 명시적으로 허용되며 redirect는 거부되고 실패 시 deterministic judge로 fallback합니다.
+- Eval task 동시 실행은 `--parallel N`(`1`–`32`, 기본값 `1`)으로 명시적으로 제한해 활성화하며 결과 순서는 deterministic하게 유지됩니다.
 - Eval 결과 artifact와 report는 runner/judge 진단, nested usage metadata, matrix runner template의 신뢰도 높은 credential을 redacted 처리합니다. Numeric usage는 유지되고 grading은 bounded raw output을 사용하며 explicit runner/judge failure와 모순되는 stored pass는 거부됩니다.
 - Telemetry는 없습니다. `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1`로 npm update check를 끌 수 있습니다.
 

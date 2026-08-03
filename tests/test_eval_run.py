@@ -13,6 +13,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from shlex import quote as shlex_quote
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 EVAL = ROOT / "scripts" / "eval_run.py"
@@ -278,6 +279,82 @@ class TaskSchemaPreflightTests(unittest.TestCase):
                     Path(td),
                     tasks=validated,
                 )
+            )
+
+
+class ParallelExecutionTests(unittest.TestCase):
+    def test_parallel_workers_accepts_bounded_positive_integers(self):
+        self.assertEqual(eval_run._parallel_workers("1"), 1)
+        self.assertEqual(eval_run._parallel_workers(str(eval_run.PARALLEL_MAX)), eval_run.PARALLEL_MAX)
+        for value in ("0", "-1", "+1", "01", "1.5", " 1", "33", "text"):
+            with self.subTest(value=value):
+                with self.assertRaises(eval_run.argparse.ArgumentTypeError):
+                    eval_run._parallel_workers(value)
+
+    def test_run_round_executes_concurrently_and_preserves_task_order(self):
+        tasks = [{"id": str(index)} for index in range(3)]
+        barrier = threading.Barrier(len(tasks))
+
+        def fake_runner(_runner, task, *_args, **_kwargs):
+            barrier.wait(timeout=2)
+            return {"id": task["id"], "passed": True}
+
+        args = Namespace(
+            runner="runner",
+            judge_cmd=None,
+            no_default_judge=False,
+            judge_llm="off",
+            parallel=3,
+        )
+        with mock.patch.object(eval_run, "run_runner_record", side_effect=fake_runner):
+            records = eval_run._run_round(tasks, args, Path("."))
+
+        self.assertEqual([record["id"] for record in records], ["0", "1", "2"])
+
+    def test_matrix_parallel_execution_preserves_declared_order(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tasks = root / "tasks.json"
+            task_data = [
+                {
+                    "id": str(index),
+                    "prompt": "answer",
+                    "check": {"type": "regex", "value": "ok"},
+                    "timeout_s": 10,
+                }
+                for index in range(3)
+            ]
+            tasks.write_text(json.dumps(task_data), encoding="utf-8")
+            barrier = threading.Barrier(len(task_data))
+
+            def fake_runner(_runner, task, *_args, **_kwargs):
+                barrier.wait(timeout=2)
+                return {"id": task["id"], "passed": True, "duration_s": 0}
+
+            args = Namespace(
+                tasks=str(tasks),
+                workdir=str(root),
+                evidence=[],
+                judge_cmd=None,
+                no_default_judge=False,
+                judge_llm="off",
+                parallel=3,
+                matrix_json=str(root / "matrix.json"),
+                matrix_report=str(root / "matrix.md"),
+                output=None,
+                baseline=None,
+                fail_under=None,
+            )
+            with (
+                mock.patch.object(eval_run, "runner_binary", return_value=None),
+                mock.patch.object(eval_run, "run_task_with_runner", side_effect=fake_runner),
+            ):
+                self.assertEqual(eval_run.run_matrix(args, {"agent": "runner"}), 0)
+
+            matrix = json.loads((root / "matrix.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                [record["id"] for record in matrix["agents"]["agent"]["tasks"]],
+                ["0", "1", "2"],
             )
 
 

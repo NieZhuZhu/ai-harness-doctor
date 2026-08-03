@@ -2,6 +2,7 @@
 """Small pluggable eval harness for before/after AI harness validation."""
 
 import argparse
+import concurrent.futures
 import hashlib
 import ipaddress
 import json
@@ -30,6 +31,16 @@ from redaction import redact_secret_values  # noqa: E402
 
 EVIDENCE_SCHEMA_VERSION = 1
 EVIDENCE_STALE_EXIT = 7
+PARALLEL_MAX = 32
+
+
+def _parallel_workers(value):
+    if not re.fullmatch(r"[1-9][0-9]*", value or ""):
+        raise argparse.ArgumentTypeError(f"must be an integer in [1, {PARALLEL_MAX}]")
+    workers = int(value)
+    if workers > PARALLEL_MAX:
+        raise argparse.ArgumentTypeError(f"must be an integer in [1, {PARALLEL_MAX}]")
+    return workers
 
 
 class TaskFileError(ValueError):
@@ -2001,10 +2012,17 @@ def run_runner_record(runner, task, workdir, judge_cmd, default_judge=True, judg
     return sanitize_result_record(record)
 
 
+def _run_in_order(items, worker, parallel):
+    if parallel == 1 or len(items) < 2:
+        return [worker(item) for item in items]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as executor:
+        return list(executor.map(worker, items))
+
+
 def _run_round(tasks, args, workdir):
     """Run every task once and return the list of graded task records."""
-    return [
-        run_runner_record(
+    def run(task):
+        return run_runner_record(
             args.runner,
             task,
             workdir,
@@ -2012,8 +2030,8 @@ def _run_round(tasks, args, workdir):
             not args.no_default_judge,
             judge_llm=getattr(args, "judge_llm", "off"),
         )
-        for task in tasks
-    ]
+
+    return _run_in_order(tasks, run, getattr(args, "parallel", 1))
 
 
 def run_tasks(args):
@@ -2309,8 +2327,8 @@ def run_matrix(args, runners):
         if binary and shutil.which(binary) is None:
             print(manual_protocol(binary, args.tasks), file=sys.stderr)
             return 127
-        agent_records[name] = [
-            run_task_with_runner(
+        def run(task):
+            return run_task_with_runner(
                 runner,
                 task,
                 workdir,
@@ -2318,8 +2336,12 @@ def run_matrix(args, runners):
                 not args.no_default_judge,
                 judge_llm=getattr(args, "judge_llm", "off"),
             )
-            for task in tasks
-        ]
+
+        agent_records[name] = _run_in_order(
+            tasks,
+            run,
+            getattr(args, "parallel", 1),
+        )
     summary = {}
     for name, recs in agent_records.items():
         total = len(recs)
@@ -2708,6 +2730,13 @@ def main(argv=None):
     parser.add_argument(
         "--stats",
         help="Aggregate multi-round statistics (flakiness, mean/variance) from an existing results JSON file.",
+    )
+    parser.add_argument(
+        "--parallel",
+        type=_parallel_workers,
+        default=1,
+        metavar="N",
+        help=f"Run up to N eval tasks concurrently while preserving result order (1-{PARALLEL_MAX}, default 1).",
     )
     parser.add_argument(
         "--rounds",
