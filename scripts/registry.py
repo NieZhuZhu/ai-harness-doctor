@@ -678,6 +678,48 @@ _NONPATH_LIST_INTRO_RE = re.compile(
     re.I,
 )
 
+# Standard MCP wire methods are protocol identifiers even when compact prose
+# does not repeat a nearby "method" label. Keep this exact and deliberately
+# small: ordinary two-segment tokens remain paths, and an explicit filesystem
+# cue still wins in ``_is_protocol_or_media_identifier``.
+_PROTOCOL_METHOD_IDS = frozenset(
+    {
+        "resources/read",
+        "tools/call",
+        "sampling/createMessage",
+        "tasks/get",
+        "tasks/result",
+        "tasks/cancel",
+    }
+)
+# A concrete IANA media type has a registered top-level type and a non-empty
+# subtype. This distinguishes ``application/json`` and
+# ``application/octet-stream`` from ordinary repository paths without treating
+# arbitrary ``word/word`` tokens as MIME types.
+_MEDIA_TYPE_RE = re.compile(
+    r"(?:application|audio|font|image|message|model|multipart|text|video)/"
+    r"[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*",
+    re.I,
+)
+
+
+def _is_protocol_or_media_identifier(line, match):
+    """Return true for an exact MCP method or concrete IANA media type.
+
+    Explicit filesystem language in the same bounded window keeps the token a
+    path, preserving fail-closed behavior for unusual repositories that really
+    contain a directory such as ``resources/read`` or ``application/json``.
+    """
+    token = match.group(1).strip()
+    is_protocol_method = token in _PROTOCOL_METHOD_IDS
+    is_media_type = token == token.lower() and bool(_MEDIA_TYPE_RE.fullmatch(token))
+    if not is_protocol_method and not is_media_type:
+        return False
+    before = line[max(0, match.start() - _LABEL_WINDOW):match.start()]
+    after = line[match.end():match.end() + _LABEL_WINDOW]
+    return not _PATH_LABEL_RE.search(before + " " + after)
+
+
 # A linter rule id (`react/exhaustive-deps`, `import/no-cycle`,
 # `react/rules-of-hooks`) has the same `plugin/rule` shape as a two-segment repo
 # path, but its rule segment is a hyphenated identifier that no real directory
@@ -1219,6 +1261,11 @@ def declared_paths(text):
             # a hyphenated color utility, so directory paths never match (see
             # _is_tailwind_opacity_modifier).
             if _is_tailwind_opacity_modifier(token):
+                continue
+            # Exact MCP wire methods and concrete IANA media types are protocol
+            # identifiers, not repository paths. Explicit filesystem language
+            # still wins (see ``_is_protocol_or_media_identifier``).
+            if _is_protocol_or_media_identifier(line, m):
                 continue
             # A two-segment `org/name` token explicitly labeled as a Docker/OCI
             # image or an RPC/API method by adjacent same-line context is a

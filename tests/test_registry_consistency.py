@@ -519,6 +519,34 @@ class SharedConstantConsistencyTests(unittest.TestCase):
                 expected,
             )
 
+    def test_protocol_methods_and_media_types_are_not_declared_paths(self):
+        # Microsoft Agent Framework documents MCP wire-method names and concrete
+        # media types without repeating "method" beside every token. Their
+        # protocol/MIME shapes are not repository-relative filesystem paths.
+        non_paths = [
+            "Skill resources are fetched on demand via `resources/read`.",
+            "Before each `tools/call`, kwargs are filtered through an allowlist.",
+            "The server can send `sampling/createMessage` requests.",
+            "Poll `tasks/get`, fetch `tasks/result`, or send `tasks/cancel`.",
+            "Modes include `application/json` and `application/octet-stream`.",
+        ]
+        for line in non_paths:
+            self.assertEqual(
+                registry.declared_paths(line + "\n"),
+                [],
+                f"protocol identifier in {line!r} wrongly classified as a path",
+            )
+            self.assertEqual(semantic.declared_paths(line + "\n"), [])
+
+        # Filesystem intent remains fail-closed even when a path happens to have
+        # a protocol-like or media-type-like shape.
+        paths = [
+            "Edit the `resources/read` directory fixture.",
+            "Open the `application/json` file in the repository.",
+        ]
+        for line in paths:
+            self.assertEqual(len(registry.declared_paths(line + "\n")), 1)
+
     def test_versioned_and_screaming_case_identifiers_are_not_declared_paths(self):
         # A backtick token carrying a mid-token `@` is a versioned runtime
         # identifier or a pinned Docker/OCI tag (`actions/checkout@v4`,
