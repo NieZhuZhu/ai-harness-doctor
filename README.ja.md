@@ -223,6 +223,7 @@ Non-Claude adapter は意図的に薄い設計です。広範な rule distributi
 - Installer mutation は lock、journal、ownership、recovery を使用します。
 - MCP tools は read-only。Finding は transport failure ではありません。
 - External judge と real LLM grading は opt-in。Remote endpoint は HTTPS 必須、loopback HTTP は明示的に許可し、redirect は拒否され、失敗時は deterministic judge に fallback します。
+- Eval task の並行実行は `--parallel N`（`1`～`32`、default `1`）で明示的かつ上限付きで有効化し、結果順序は deterministic に保たれます。
 - Eval result artifact と report は runner/judge diagnostics、nested usage metadata、matrix runner template の高信頼 credential を redact します。Numeric usage は保持され、grading は bounded raw output を使い、explicit runner/judge failure と矛盾する stored pass は拒否されます。
 - Telemetry はありません。任意の npm update check は `AI_HARNESS_DOCTOR_NO_UPDATE_CHECK=1` で無効化できます。
 
