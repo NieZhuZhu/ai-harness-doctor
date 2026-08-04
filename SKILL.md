@@ -289,7 +289,7 @@ python3 scripts/eval_run.py --generate /path/to/repo -o tasks.json
 python3 scripts/eval_run.py --generate /path/to/repo --target packages/api/src/index.ts -o api-tasks.json
 ```
 
-Each generated task asks the agent for a concrete fact (install command, test/lint/build command, Node/Go/Python version, test framework, formatter, commit convention, ...) and passes only when the answer matches the fact the repo actually declares — so a higher score directly reflects whether `AGENTS.md` made the agent answer correctly.
+Each generated task asks the agent for a concrete fact (the lockfile-backed package manager and its standard install command, test/lint/build command, Node/Go/Python version, test framework, formatter, commit convention, ...) and passes only when the answer matches the fact the repo actually declares. The install task deliberately asks for the standard package-manager command rather than claiming to discover a repository-specific bootstrap script from lockfile evidence alone. Structured Continue rules also honor `globs` / `alwaysApply` frontmatter, so commands from disjoint package scopes do not manufacture conflicts. A higher score therefore directly reflects whether the active harness made the agent answer the encoded facts correctly.
 
 Treat draft inference follows the same fact boundary: only contained manifests,
 lockfiles, Makefiles, Python tooling, CI config, and instruction sources may
