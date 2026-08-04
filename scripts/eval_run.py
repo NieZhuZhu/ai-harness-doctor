@@ -843,7 +843,7 @@ def generate_tasks(repo_root, target=None):
             install_verbs = "install|i|add|ci" if pm == "npm" else "install|i|add"
             add(
                 "install",
-                "What is the exact command to install dependencies in this repo?",
+                "What is the standard package-manager command to install dependencies?",
                 r"(?i)\b" + re.escape(pm) + r"\s+(" + install_verbs + r")\b",
                 evidence=pm_evidence,
             )

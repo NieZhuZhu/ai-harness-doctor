@@ -83,6 +83,9 @@
       "id": "continue",
       "label": "Continue",
       "scan_patterns": [".continuerules", ".continue/rules/*.md"],
+      "applicability": {
+        ".continue/rules/*.md": "continue-rules"
+      },
       "stub_paths": [".continuerules"],
       "stub_kind": "pointer",
       "stub_content": "All agent instructions live in AGENTS.md (single source of truth). Do not add rules here.\n",

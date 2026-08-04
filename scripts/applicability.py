@@ -3,7 +3,7 @@
 
 This is intentionally NOT a YAML parser. It accepts only the documented
 metadata controls needed by Claude ``.claude/rules/**/*.md``, Cursor ``.mdc``,
-and Copilot/VS Code ``.instructions.md`` files. Unsupported YAML fails closed
+Continue ``.continue/rules/*.md``, and Copilot/VS Code ``.instructions.md`` files. Unsupported YAML fails closed
 for conflict analysis, while callers can still inventory and security-scan the
 original file.
 """
@@ -15,12 +15,14 @@ MODES = {"always", "path", "conditional", "manual", "ignored", "invalid"}
 SUPPORTED_FORMATS = {
     "claude-rules",
     "cursor-mdc",
+    "continue-rules",
     "cursor-ignored-md",
     "copilot-instructions",
 }
 _CONTROL_FIELDS = {
     "claude-rules": {"paths"},
     "cursor-mdc": {"alwaysApply", "description", "globs"},
+    "continue-rules": {"name", "alwaysApply", "description", "globs"},
     "copilot-instructions": {"applyTo", "description", "name"},
 }
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
@@ -425,6 +427,24 @@ def classify(text, format_kind, path, truncated=False):
             else:
                 globs = _patterns(metadata.get("globs"), "globs")
                 if globs:
+                    mode = "path"
+                elif description:
+                    mode = "conditional"
+                else:
+                    mode = "manual"
+        elif format_kind == "continue-rules":
+            if metadata is None:
+                mode = "always"
+                globs = []
+            else:
+                has_always = "alwaysApply" in metadata
+                always = _boolean(metadata.get("alwaysApply"), "alwaysApply", False)
+                description = metadata.get("description", "").strip()
+                globs = _patterns(metadata.get("globs"), "globs")
+                if always or (not has_always and not globs):
+                    mode = "always"
+                    globs = []
+                elif globs:
                     mode = "path"
                 elif description:
                     mode = "conditional"

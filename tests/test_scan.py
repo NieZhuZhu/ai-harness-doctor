@@ -1071,6 +1071,42 @@ class StructuredApplicabilityTests(unittest.TestCase):
             self.assertNotIn("pnpm", conflict_values)
             self.assertNotIn("yarn", conflict_values)
 
+    def test_continue_globs_keep_disjoint_stack_rules_out_of_conflicts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self._repo(Path(td))
+            _write(root / "extensions/intellij/FooTest.kt", "class FooTest\n")
+            _write(root / "core/example.test.ts", "test('x', () => {})\n")
+            _write(
+                root / ".continue/rules/intellij.md",
+                "---\n"
+                "description: IntelliJ test commands\n"
+                "alwaysApply: false\n"
+                "globs: extensions/intellij/**/*Test.kt\n"
+                "---\n"
+                "Run `./gradlew test`.\n",
+            )
+            _write(
+                root / ".continue/rules/core.md",
+                "---\n"
+                "description: Core test commands\n"
+                "alwaysApply: false\n"
+                'globs: "core/**/*"\n'
+                "---\n"
+                "Run `npm test`.\n",
+            )
+
+            report = self._scan(root)
+            by_path = {item["path"]: item for item in report["applicability"]}
+            self.assertEqual(
+                by_path[".continue/rules/intellij.md"]["match_count"],
+                1,
+            )
+            self.assertEqual(
+                by_path[".continue/rules/core.md"]["match_count"],
+                1,
+            )
+            self.assertEqual(report["conflicts"], [])
+
     def test_invalid_and_no_current_match_are_non_blocking_diagnostics(self):
         with tempfile.TemporaryDirectory() as td:
             root = self._repo(Path(td))

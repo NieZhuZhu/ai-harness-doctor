@@ -3995,6 +3995,11 @@ class GenerateTasksTests(unittest.TestCase):
             self.assertTrue(eval_run.regex_passes(by_id["go-version"]["check"]["value"], "1.22"))
             self.assertTrue(eval_run.regex_passes(by_id["go-module"]["check"]["value"], "github.com/acme/widget"))
             self.assertFalse(eval_run.regex_passes(by_id["install"]["check"]["value"], "npm install"))
+            self.assertIn(
+                "standard package-manager command",
+                by_id["install"]["prompt"],
+            )
+            self.assertNotIn("exact command to install dependencies in this repo", by_id["install"]["prompt"])
             self.assertIn("Which code formatter does this repo use?", by_id["formatter"]["prompt"])
             self.assertNotIn("formatter/linter", by_id["formatter"]["prompt"])
             for t in tasks:
